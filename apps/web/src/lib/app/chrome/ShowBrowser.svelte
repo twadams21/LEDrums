@@ -39,30 +39,30 @@
   // Navigation verbs (anything that changes which show is active) dismiss the browser so
   // you land back in the workspace on the chosen show. Save / Delete stay open.
   function createShow(): void {
-    store.newShow();
+    store.library.newShow();
     dismiss();
   }
   function save(): void {
-    store.saveShow();
+    store.library.saveShow();
     saved = true;
     if (savedTimer) clearTimeout(savedTimer);
     savedTimer = setTimeout(() => (saved = false), 1400);
   }
   function commitSaveAs(name: string): void {
-    store.saveShowAs(name);
+    store.library.saveShowAs(name);
     dismiss();
   }
   function closeShow(): void {
-    store.closeShow();
+    store.library.closeShow();
     dismiss();
   }
   function openRow(id: string): void {
-    if (id !== store.activeShowId) store.openShow(id);
+    if (id !== store.library.activeShowId) store.library.openShow(id);
     dismiss();
   }
 
   function rowActions(id: string): ContextMenuAction[] {
-    return [{ label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.deleteShow(id) }];
+    return [{ label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.library.deleteShow(id) }];
   }
 </script>
 
@@ -81,7 +81,7 @@
     {#if savingAs}
       <span class="saveas">
         <CommitInput
-          value={store.activeShow?.name ?? ''}
+          value={store.library.activeShow?.name ?? ''}
           placeholder="Save as…"
           ariaLabel="New show name"
           onCommit={(name) => commitSaveAs(name)}
@@ -96,14 +96,14 @@
   </div>
 
   <ul class="list">
-    {#each store.shows as show (show.id)}
+    {#each store.library.shows as show (show.id)}
       <li>
         <EditableRow
           label={show.name}
-          active={store.activeShowId === show.id}
+          active={store.library.activeShowId === show.id}
           renameLabel="Rename show"
           onclick={() => openRow(show.id)}
-          onCommit={(name) => store.renameShow(show.id, name)}
+          onCommit={(name) => store.library.renameShow(show.id, name)}
           actions={rowActions(show.id)}
         />
       </li>

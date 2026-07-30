@@ -72,8 +72,8 @@ describe('EffectRow — foundational (rename + duplicate only)', () => {
 describe('SongRow', () => {
   it('marks the live song with a trailing status dot and activates on click', async () => {
     const store = new TriggerLab(fakeClient);
-    const song = store.songs.find((s) => s.id === store.activeSongId)!;
-    const spy = vi.spyOn(store, 'setActiveSong');
+    const song = store.library.songs.find((s) => s.id === store.library.activeSongId)!;
+    const spy = vi.spyOn(store.library, 'setActiveSong'); // SongRow calls through the published controller (S11)
     const { container } = render(SongRow, { props: { store, song } });
     expect(container.querySelector('.li-trailing .dot')).not.toBeNull(); // active → dot
     await fireEvent.click(container.querySelector('.li-main')!);
@@ -82,8 +82,8 @@ describe('SongRow', () => {
 
   it('omits the status dot for a non-active song', () => {
     const store = new TriggerLab(fakeClient);
-    const other = store.songs.find((s) => s.id !== store.activeSongId);
-    const song = other ?? { ...store.songs[0]!, id: '__inactive__' };
+    const other = store.library.songs.find((s) => s.id !== store.library.activeSongId);
+    const song = other ?? { ...store.library.songs[0]!, id: '__inactive__' };
     const { container } = render(SongRow, { props: { store, song } });
     expect(container.querySelector('.li-trailing .dot')).toBeNull();
   });

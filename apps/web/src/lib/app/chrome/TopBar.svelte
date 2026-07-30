@@ -1,7 +1,7 @@
 <script lang="ts">
   /* Top bar: brand · show identity · presence · share · engine status · output pill.
      The show control is the document identity: the active show's name shown + edited
-     in place (→ store.renameShow), with a ListMusic affordance that opens the show
+     in place (→ store.library.renameShow), with a ListMusic affordance that opens the show
      browser (New / Open / Save / Save-As / Close / Rename / Delete). The live section
      context rides underneath so the bar still reads at a glance. Transport lives in its
      own bar below this one (see AuthorShell) — the bar stays an identity/status strip. */
@@ -23,9 +23,9 @@
 
   let { store }: { store: TriggerLab } = $props();
 
-  const activeName = $derived(store.activeSection?.name ?? '—');
-  const showName = $derived(store.activeShow?.name ?? 'Untitled show');
-  const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
+  const activeName = $derived(store.arrangement.activeSection?.name ?? '—');
+  const showName = $derived(store.library.activeShow?.name ?? 'Untitled show');
+  const sectionCount = $derived(store.library.activeSong?.sections.length ?? 0);
 
   let browserOpen = $state(false);
   let backupsOpen = $state(false);
@@ -34,7 +34,7 @@
 
   function commitName(name: string): void {
     editingName = false;
-    store.renameShow(store.activeShowId, name);
+    store.library.renameShow(store.library.activeShowId, name);
   }
 </script>
 

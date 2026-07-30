@@ -144,7 +144,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!nameOrKey) return; // a pad graph is pre-selected on boot
     const key = this.resolveGraphKey(nameOrKey);
     if (!key) return;
-    const section = this.store.activeSectionId;
+    const section = this.store.arrangement.activeSectionId;
     if (section) this.store.selectGraphInSection(section, key);
     else this.store.selectedPadKey = key;
   }
@@ -237,7 +237,7 @@ class ShotSeamImpl implements ShotSeam {
 
   previewSectionsDnd(kind: 'graph' | 'section'): void {
     this.shell.setView('sections');
-    const sections = this.store.activeSong?.sections ?? [];
+    const sections = this.store.library.activeSong?.sections ?? [];
     if (sections.length === 0) return;
     if (kind === 'graph') {
       // Land the line one gap in from the top of the first non-empty section (or gap 0).

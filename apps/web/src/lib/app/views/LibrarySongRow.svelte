@@ -31,9 +31,9 @@
   // "Remove from show" (drops the ref without cloning — the inverse of import).
   const actions = $derived<ContextMenuAction[]>([
     row.inThisShow
-      ? { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) }
-      : { label: 'Import to show', icon: Import, onSelect: () => store.importSongReference(row.id) },
-    { label: deleteLabel, icon: Trash2, danger: true, disabled: !row.deletable, onSelect: () => store.deleteLibrarySong(row.id) },
+      ? { label: 'Remove from show', icon: X, onSelect: () => store.library.removeSongReference(row.id) }
+      : { label: 'Import to show', icon: Import, onSelect: () => store.library.importSongReference(row.id) },
+    { label: deleteLabel, icon: Trash2, danger: true, disabled: !row.deletable, onSelect: () => store.library.deleteLibrarySong(row.id) },
   ]);
 </script>
 
@@ -42,7 +42,7 @@
   label={row.name}
   secondary={usedByLabel}
   bind:editing
-  onCommit={(name) => store.renameLibrarySong(row.id, name)}
+  onCommit={(name) => store.library.renameLibrarySong(row.id, name)}
   {actions}
   renameLabel="Library song name"
 >
@@ -54,16 +54,16 @@
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename library song" size={13} onclick={() => (editing = true)} />
     {#if row.inThisShow}
-      <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.removeSongReference(row.id)} />
+      <IconButton icon={X} label="Remove from show" size={13} onclick={() => store.library.removeSongReference(row.id)} />
     {:else}
-      <IconButton icon={Import} label="Import to show" size={13} onclick={() => store.importSongReference(row.id)} />
+      <IconButton icon={Import} label="Import to show" size={13} onclick={() => store.library.importSongReference(row.id)} />
     {/if}
     <IconButton
       icon={Trash2}
       label={row.deletable ? 'Delete from library' : usedByLabel}
       size={13}
       disabled={!row.deletable}
-      onclick={() => store.deleteLibrarySong(row.id)}
+      onclick={() => store.library.deleteLibrarySong(row.id)}
     />
   {/snippet}
 </EditableRow>

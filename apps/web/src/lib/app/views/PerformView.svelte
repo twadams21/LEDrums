@@ -16,7 +16,7 @@
   let { store, shell: _shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   // section-recall strip → a single-select SegmentedControl (replaces the bespoke oklch chips).
-  const recallOptions = $derived(store.sections.map((s) => ({ value: s.id, label: s.name })));
+  const recallOptions = $derived(store.arrangement.sections.map((s) => ({ value: s.id, label: s.name })));
 
   // one big pad per drum → fires that drum's first authored zone (preview/live).
   const drumPads = $derived(
@@ -45,7 +45,7 @@
   <div class="precall">
     <Eyebrow>Recall</Eyebrow>
     <SegmentedControl
-      value={store.activeSectionId ?? ''}
+      value={store.arrangement.activeSectionId ?? ''}
       options={recallOptions}
       onChange={(id) => store.setActiveSection(id)}
       ariaLabel="Recall section"

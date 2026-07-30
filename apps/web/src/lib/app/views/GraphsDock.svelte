@@ -15,8 +15,8 @@
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  const song = $derived(store.activeSong);
-  const section = $derived(store.activeSection);
+  const song = $derived(store.library.activeSong);
+  const section = $derived(store.arrangement.activeSection);
   const graphs = $derived(section?.graphs ?? []);
 
   /** Hotkey label for the n-th card: 1–9, then 0 for the tenth; none beyond. */
@@ -35,7 +35,7 @@
   function newGraph(): void {
     if (!section) return;
     const key = store.createGraph();
-    store.addGraphToSection(section.id, key);
+    store.arrangement.addGraphToSection(section.id, key);
     shell.clearSelection();
   }
   function sourceSub(key: string): string {
@@ -61,7 +61,7 @@
         <button
           type="button"
           class="sectab"
-          class:on={sec.id === store.activeSectionId}
+          class:on={sec.id === store.arrangement.activeSectionId}
           onclick={() => store.setActiveSection(sec.id)}
         >
           {sec.name}<span class="cnt">{sec.graphs.length}</span>
@@ -78,7 +78,7 @@
       <p class="none">No section is active — pick one in the Sections view.</p>
     {:else}
       {#each graphs as key, i (key)}
-        {@const g = store.resolvedView.graphs[key]}
+        {@const g = store.library.resolvedView.graphs[key]}
         {@const hk = hotkey(i)}
         {@const thumb = g ? graphThumb(g) : null}
         <button

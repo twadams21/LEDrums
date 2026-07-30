@@ -49,86 +49,86 @@ afterEach(() => {
 describe('export → import → resolve', () => {
   it('exports a local song into the pool and materializes it in the referencing show’s runtime view', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1'); // the seed song
+    const libId = store.library.exportSongToLibrary('set-1'); // the seed song
     expect(libId).toBeTruthy();
-    expect(store.songLibraryList.map((s) => s.id)).toEqual([libId]);
+    expect(store.library.songLibraryList.map((s) => s.id)).toEqual([libId]);
 
     // referencing it makes the song appear in the resolved view (not the raw authored songs)
-    expect(store.songs.some((s) => s.id === libId)).toBe(false);
-    store.importSongReference(libId!);
-    expect(store.songRefs).toEqual([libId]);
-    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
+    expect(store.library.songs.some((s) => s.id === libId)).toBe(false);
+    store.library.importSongReference(libId!);
+    expect(store.library.songRefs).toEqual([libId]);
+    expect(store.library.resolvedSongs.some((s) => s.id === libId)).toBe(true);
 
     // the resolved view is renderable: the referenced song's section graphs are all present
-    const refSong = store.resolvedSongs.find((s) => s.id === libId)!;
-    for (const sec of refSong.sections) for (const key of sec.graphs) expect(store.resolvedView.graphs[key]).toBeDefined();
+    const refSong = store.library.resolvedSongs.find((s) => s.id === libId)!;
+    for (const sec of refSong.sections) for (const key of sec.graphs) expect(store.library.resolvedView.graphs[key]).toBeDefined();
   });
 
   it('import is a no-op for an unknown library id or an already-referenced one', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference('nope');
-    expect(store.songRefs).toEqual([]);
-    store.importSongReference(libId);
-    store.importSongReference(libId); // idempotent
-    expect(store.songRefs).toEqual([libId]);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.importSongReference('nope');
+    expect(store.library.songRefs).toEqual([]);
+    store.library.importSongReference(libId);
+    store.library.importSongReference(libId); // idempotent
+    expect(store.library.songRefs).toEqual([libId]);
   });
 });
 
 describe('canonical propagation + detach', () => {
   it('renaming the library song propagates to every referencing show; detach isolates', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
+    const libId = store.library.exportSongToLibrary('set-1')!;
 
     // show A references it
-    const showA = store.activeShowId;
-    store.importSongReference(libId);
+    const showA = store.library.activeShowId;
+    store.library.importSongReference(libId);
 
     // show B references the SAME library song
-    const showB = store.newShow('B');
-    store.importSongReference(libId);
+    const showB = store.library.newShow('B');
+    store.library.importSongReference(libId);
 
     // edit the one canonical copy → both shows' resolved views update
-    store.renameLibrarySong(libId, 'Canonical Name');
-    expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Canonical Name');
-    store.openShow(showA);
-    expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Canonical Name');
+    store.library.renameLibrarySong(libId, 'Canonical Name');
+    expect(store.library.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Canonical Name');
+    store.library.openShow(showA);
+    expect(store.library.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Canonical Name');
 
     // detach in A → a local copy, the ref is dropped, and a later library rename no longer reaches A
-    const localId = store.detachSongReference(libId)!;
+    const localId = store.library.detachSongReference(libId)!;
     expect(localId).toBeTruthy();
-    expect(store.songRefs).toEqual([]); // ref severed in A
-    expect(store.songs.some((s) => s.id === localId)).toBe(true); // now a local song
-    store.renameLibrarySong(libId, 'Changed Again');
-    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(false); // A no longer references it
+    expect(store.library.songRefs).toEqual([]); // ref severed in A
+    expect(store.library.songs.some((s) => s.id === localId)).toBe(true); // now a local song
+    store.library.renameLibrarySong(libId, 'Changed Again');
+    expect(store.library.resolvedSongs.some((s) => s.id === libId)).toBe(false); // A no longer references it
     // …but show B still does, and still tracks the library
-    store.openShow(showB);
-    expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Changed Again');
+    store.library.openShow(showB);
+    expect(store.library.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Changed Again');
   });
 });
 
 describe('referenced songs are navigable + playable + editable (S42 consumption)', () => {
   it('a referenced song is a valid active song, and its sections resolve', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference(libId);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.importSongReference(libId);
 
     // it is NOT a local song, yet setActiveSong accepts it (reads the resolved list)
-    expect(store.songs.some((s) => s.id === libId)).toBe(false);
-    store.setActiveSong(libId);
-    expect(store.activeSongId).toBe(libId);
-    expect(store.activeSong?.id).toBe(libId);
-    expect(store.activeSong!.sections.length).toBeGreaterThan(0);
-    expect(store.activeSection).toBeTruthy(); // its first section became active (playable)
+    expect(store.library.songs.some((s) => s.id === libId)).toBe(false);
+    store.library.setActiveSong(libId);
+    expect(store.library.activeSongId).toBe(libId);
+    expect(store.library.activeSong?.id).toBe(libId);
+    expect(store.library.activeSong!.sections.length).toBeGreaterThan(0);
+    expect(store.arrangement.activeSection).toBeTruthy(); // its first section became active (playable)
   });
 
   it('editing a referenced graph writes through to the LIBRARY copy; authored state keeps the ref (no copy)', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference(libId);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.importSongReference(libId);
 
     // a referenced graph carrying a play node (keys are namespaced `lib:<libId>/…`)
-    const libGraphs = store.songLibrary.songs[libId]!.graphs;
+    const libGraphs = store.library.songLibrary.songs[libId]!.graphs;
     const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'effect'))!;
     expect(refKey).toBeTruthy();
 
@@ -138,65 +138,65 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     play.params = { ...play.params, __s42probe: 0.4242 };
 
     // the canonical LIBRARY copy changed (S41 aliasing — resolved holds the library rune's proxies)
-    const libPlay = store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'effect')!;
+    const libPlay = store.library.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'effect')!;
     expect((libPlay.params as Record<string, number>).__s42probe).toBe(0.4242);
 
     // …and the show did NOT absorb a copy: authored graphs stay local-only; the show still holds a REF
     expect(store.graphs[refKey]).toBeUndefined();
-    expect(store.songRefs).toEqual([libId]);
+    expect(store.library.songRefs).toEqual([libId]);
   });
 
   it('buildShow carries a referenced song + its namespaced graphs (engine push; passes integrity)', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference(libId);
-    store.setActiveSong(libId);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.importSongReference(libId);
+    store.library.setActiveSong(libId);
 
     // the resolved show source is what syncShowToServer sends — building it must NOT throw on the
     // `lib:<id>/…` graph keys (core integrity exempts them) and must include the referenced content.
     const show = buildShow({
       buses: store.buses,
-      graphs: store.resolvedView.graphs,
-      sections: store.sections,
-      effects: store.resolvedView.effects,
-      presets: store.resolvedView.presets,
+      graphs: store.library.resolvedView.graphs,
+      sections: store.arrangement.sections,
+      effects: store.library.resolvedView.effects,
+      presets: store.library.resolvedView.presets,
       drums: store.drums,
-      songs: store.resolvedSongs,
+      songs: store.library.resolvedSongs,
     });
     expect(show.songs?.some((s) => s.id === libId)).toBe(true);
-    const refKey = Object.keys(store.songLibrary.songs[libId]!.graphs)[0]!;
+    const refKey = Object.keys(store.library.songLibrary.songs[libId]!.graphs)[0]!;
     expect(show.graphs[refKey]).toBeDefined();
   });
 
   it('removeSongReference drops the ref WITHOUT cloning (the inverse of import)', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference(libId);
-    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.importSongReference(libId);
+    expect(store.library.resolvedSongs.some((s) => s.id === libId)).toBe(true);
 
-    store.removeSongReference(libId);
-    expect(store.songRefs).toEqual([]);
-    expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(false); // left the resolved view
-    expect(store.songs.some((s) => s.id === libId)).toBe(false); // NOT cloned into local songs
-    expect(store.songLibrary.songs[libId]).toBeTruthy(); // the library copy is untouched
+    store.library.removeSongReference(libId);
+    expect(store.library.songRefs).toEqual([]);
+    expect(store.library.resolvedSongs.some((s) => s.id === libId)).toBe(false); // left the resolved view
+    expect(store.library.songs.some((s) => s.id === libId)).toBe(false); // NOT cloned into local songs
+    expect(store.library.songLibrary.songs[libId]).toBeTruthy(); // the library copy is untouched
   });
 });
 
 describe('delete-in-use guard', () => {
   it('blocks deleting a referenced library song and reports the using shows', () => {
     const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.renameShow(store.activeShowId, 'Main Show');
-    store.importSongReference(libId);
+    const libId = store.library.exportSongToLibrary('set-1')!;
+    store.library.renameShow(store.library.activeShowId, 'Main Show');
+    store.library.importSongReference(libId);
 
-    const usedBy = store.deleteLibrarySong(libId);
-    expect(usedBy).toEqual([{ id: store.activeShowId, name: 'Main Show' }]);
-    expect(store.songLibraryList.map((s) => s.id)).toEqual([libId]); // still present
+    const usedBy = store.library.deleteLibrarySong(libId);
+    expect(usedBy).toEqual([{ id: store.library.activeShowId, name: 'Main Show' }]);
+    expect(store.library.songLibraryList.map((s) => s.id)).toEqual([libId]); // still present
 
     // drop the reference → now deletable
-    store.detachSongReference(libId);
-    expect(store.deleteLibrarySong(libId)).toEqual([]);
-    expect(store.songLibraryList).toEqual([]);
+    store.library.detachSongReference(libId);
+    expect(store.library.deleteLibrarySong(libId)).toEqual([]);
+    expect(store.library.songLibraryList).toEqual([]);
   });
 });
 
@@ -210,8 +210,8 @@ describe('pool-id reservation (no collision with local song mints)', () => {
     const POOL = 'song-2000000000';
     localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(serializeSongLibrary({ songs: { [POOL]: libSong(POOL) } } as SongLibrary)));
     const store = new TriggerLab(fakeClient);
-    expect(store.songLibraryList.map((s) => s.id)).toEqual([POOL]);
-    const local = store.createSong('Local');
+    expect(store.library.songLibraryList.map((s) => s.id)).toEqual([POOL]);
+    const local = store.library.createSong('Local');
     expect(local).not.toBe(POOL);
     expect(suffix(local)).toBeGreaterThan(2_000_000_000); // counter advanced past the pool id
   });
@@ -224,8 +224,8 @@ describe('pool-id reservation (no collision with local song mints)', () => {
       store.start(); // attaches the WS callbacks
       const blob = serializeSongLibrary({ songs: { [POOL]: libSong(POOL) } } as SongLibrary);
       h.cb!.onState!(defaultProject(), MODEL, [], [], OUTPUT, null, blob, null, OSC_LISTEN);
-      expect(store.songLibraryList.map((s) => s.id)).toEqual([POOL]); // adopted
-      const local = store.createSong('Local');
+      expect(store.library.songLibraryList.map((s) => s.id)).toEqual([POOL]); // adopted
+      const local = store.library.createSong('Local');
       expect(suffix(local)).toBeGreaterThan(3_000_000_000); // counter advanced past the adopted id
       store.stop();
     });
@@ -238,14 +238,14 @@ describe('song-library persistence (autosave → reload)', () => {
     withRaf(() => {
       const store = new TriggerLab(fakeClient);
       store.start();
-      libId = store.exportSongToLibrary('set-1')!;
-      store.importSongReference(libId);
+      libId = store.library.exportSongToLibrary('set-1')!;
+      store.library.importSongReference(libId);
       store.stop(); // flush song library + show library → localStorage
     });
 
     const reloaded = new TriggerLab(fakeClient);
-    expect(reloaded.songLibraryList.map((s) => s.id)).toEqual([libId]); // pool restored
-    expect(reloaded.songRefs).toEqual([libId]); // the active show's reference restored
-    expect(reloaded.resolvedSongs.some((s) => s.id === libId)).toBe(true); // resolves after reload
+    expect(reloaded.library.songLibraryList.map((s) => s.id)).toEqual([libId]); // pool restored
+    expect(reloaded.library.songRefs).toEqual([libId]); // the active show's reference restored
+    expect(reloaded.library.resolvedSongs.some((s) => s.id === libId)).toBe(true); // resolves after reload
   });
 });

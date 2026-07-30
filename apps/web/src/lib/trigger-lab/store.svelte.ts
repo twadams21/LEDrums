@@ -374,38 +374,20 @@ export class TriggerLab {
   envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
 
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
-  // `songs` / `songRefs` / `activeSongId` are owned by {@link showsCtl} (R23) — see the
-  // delegators alongside its field. The section-arrangement concern (the active-section
-  // pointer, the clipboard, the sections/activeSection deriveds, and section CRUD) is owned
-  // by {@link sectionsCtl} (R24, store split 5/5) — the store delegates its public surface
-  // to this via the accessors + forwarders below, so callers/tests are unchanged. The store
-  // supplies the active-song reads and the `songs` rune swap through the injected host.
-  private readonly sectionsCtl = new SectionsController({
+  // `songs` / `songRefs` / `activeSongId` are owned by {@link library} (R23). The
+  // section-arrangement concern (the active-section pointer, the clipboard, the
+  // sections/activeSection deriveds, and section CRUD) is owned by {@link arrangement}
+  // (R24, store split 5/5). Both collaborators are PUBLIC (INIT-02 S6/S10): callers reach
+  // them as `store.arrangement.*` / `store.library.*` and the store forwards NEITHER. The
+  // store supplies the active-song reads and the `songs` rune swap through the injected host.
+  readonly arrangement = new SectionsController({
     isViewer: () => this.isViewer,
-    activeSong: () => this.activeSong,
-    activeSongId: () => this.activeSongId,
-    songs: () => this.songs,
-    setSongs: (songs) => (this.songs = songs),
+    activeSong: () => this.library.activeSong,
+    activeSongId: () => this.library.activeSongId,
+    songs: () => this.library.songs,
+    setSongs: (songs) => (this.library.songs = songs),
   } satisfies SectionsControllerHost);
 
-  // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
-  /** The ONE active section (U4 merged the old look-recall + arrange focus): the section you're
-      playing IS the one you're editing. Drives hit-resolution (its graphs fire, in the play
-      surface below), the look-morph recall, and the Sections / Trigger views' highlight. */
-  get activeSectionId(): string | null {
-    return this.sectionsCtl.activeSectionId;
-  }
-  set activeSectionId(id: string | null) {
-    this.sectionsCtl.activeSectionId = id;
-  }
-  /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
-      Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
-  get sectionClipboard(): SetlistSection | null {
-    return this.sectionsCtl.sectionClipboard;
-  }
-  set sectionClipboard(v: SetlistSection | null) {
-    this.sectionsCtl.sectionClipboard = v;
-  }
 
   // --- clipboard paste dialogs (S44) ---------------------------------------------
   /** Open when the Songs paste flow is active — the dialog picks a destination (this show vs the
@@ -426,8 +408,8 @@ export class TriggerLab {
   patchLabels = $state<Record<string, string>>({});
 
   // Shows / setlist / song-library state (showLibrary, activeShowId, songs, songRefs, activeSongId,
-  // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link showsCtl} (R23, store split
-  // 4/5). The store delegates its public surface via the accessors below.
+  // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link library} (R23, store split
+  // 4/5), reached directly as `store.library.*`.
 
   // Transient engine truth, adopted from the link — never computed locally (INIT-01 Decision 3).
   /** The engine's transport clock, from `stats.engine.timeMs`. 0 while the link is down. */
@@ -493,11 +475,11 @@ export class TriggerLab {
   });
   /** Shows / setlist / song-library (R23, store split 4/5) — the multi-show document library, the
       setlist songs, the canonical song pool, their resolved runtime view, and the server-library
-      cold-load/write-through sync, extracted into {@link ShowsController}. The store delegates its
-      public surface to this via the accessors + forwarders below, and supplies the authored-state
-      swap machinery, the graph model, the section-arrangement boundary (R24), and the WS link
-      through the injected host. */
-  private readonly showsCtl = new ShowsController({
+      cold-load/write-through sync, extracted into {@link ShowsController}. PUBLIC as
+      `store.library` (INIT-02 S10) — callers reach it directly, the store forwards nothing.
+      The store supplies the authored-state swap machinery, the graph model, the
+      section-arrangement boundary (R24), and the WS link through the injected host. */
+  readonly library = new ShowsController({
     graphs: () => this.graphs,
     graphNames: () => this.graphNames,
     effects: () => this.effects,
@@ -512,131 +494,12 @@ export class TriggerLab {
     applyShow: (show) => this.applyShow(show),
     resetAuthoredToSeed: () => this.resetAuthoredToSeed(),
     normalizeGraphs: () => this.normalizeGraphs(),
-    setActiveSectionId: (id) => (this.activeSectionId = id),
+    setActiveSectionId: (id) => (this.arrangement.activeSectionId = id),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
     send: (msg) => this.client.send(msg),
   } satisfies ShowsControllerHost);
 
-  // --- shows / setlist / song-library state delegators (R23) — owned by showsCtl ---------------
-  /** Which show is live — its `authored` is what the authored runes mirror. */
-  get activeShowId(): string {
-    return this.showsCtl.activeShowId;
-  }
-  set activeShowId(id: string) {
-    this.showsCtl.activeShowId = id;
-  }
-  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS. */
-  get songs(): Song[] {
-    return this.showsCtl.songs;
-  }
-  set songs(v: Song[]) {
-    this.showsCtl.songs = v;
-  }
-  /** Library-song references (S41): ids into {@link songLibrary} the active show resolves in. */
-  get songRefs(): string[] {
-    return this.showsCtl.songRefs;
-  }
-  set songRefs(v: string[]) {
-    this.showsCtl.songRefs = v;
-  }
-  /** which song the Sections view + Songs rail show. */
-  get activeSongId(): string {
-    return this.showsCtl.activeSongId;
-  }
-  set activeSongId(id: string) {
-    this.showsCtl.activeSongId = id;
-  }
-  /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
-  get songLibrary(): SongLibrary {
-    return this.showsCtl.songLibrary;
-  }
-  set songLibrary(v: SongLibrary) {
-    this.showsCtl.songLibrary = v;
-  }
-  /** The show list for the browser UI — `{ id, name }` in insertion order. */
-  get shows(): { id: string; name: string }[] {
-    return this.showsCtl.shows;
-  }
-  /** The active show (id + name + its cached authored). null only before construction completes. */
-  get activeShow(): Show | null {
-    return this.showsCtl.activeShow;
-  }
-  /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
-  get activeSong(): Song | null {
-    return this.showsCtl.activeSong;
-  }
-  /** The active show with its library references materialized in (S42). */
-  get resolvedView() {
-    return this.showsCtl.resolvedView;
-  }
-  /** The materialized song list (local + referenced) — the setlist the Songs rail + engine read. */
-  get resolvedSongs(): Song[] {
-    return this.showsCtl.resolvedSongs;
-  }
-  /** The song pool as id+name+usedBy for the library UI (delete-guard surface). */
-  get songLibraryList(): { id: string; name: string; usedBy: { id: string; name: string }[] }[] {
-    return this.showsCtl.songLibraryList;
-  }
-
-  // --- shows / setlist / song-library forwarders (R23) — thin, API-preserving ------------------
-  newShow(name?: string): string {
-    return this.showsCtl.newShow(name);
-  }
-  openShow(id: string): void {
-    this.showsCtl.openShow(id);
-  }
-  saveShow(): void {
-    this.showsCtl.saveShow();
-  }
-  saveShowAs(name: string): string {
-    return this.showsCtl.saveShowAs(name);
-  }
-  renameShow(id: string, name: string): void {
-    this.showsCtl.renameShow(id, name);
-  }
-  deleteShow(id: string): void {
-    this.showsCtl.deleteShow(id);
-  }
-  closeShow(): void {
-    this.showsCtl.closeShow();
-  }
-  exportSongToLibrary(songId: string): string | null {
-    return this.showsCtl.exportSongToLibrary(songId);
-  }
-  importSongReference(librarySongId: string): void {
-    this.showsCtl.importSongReference(librarySongId);
-  }
-  removeSongReference(librarySongId: string): void {
-    this.showsCtl.removeSongReference(librarySongId);
-  }
-  detachSongReference(librarySongId: string): string | null {
-    return this.showsCtl.detachSongReference(librarySongId);
-  }
-  renameLibrarySong(librarySongId: string, name: string): void {
-    this.showsCtl.renameLibrarySong(librarySongId, name);
-  }
-  deleteLibrarySong(librarySongId: string): { id: string; name: string }[] {
-    return this.showsCtl.deleteLibrarySong(librarySongId);
-  }
-  showsUsingSong(librarySongId: string): { id: string; name: string }[] {
-    return this.showsCtl.showsUsingSong(librarySongId);
-  }
-  setActiveSong(songId: string): void {
-    this.showsCtl.setActiveSong(songId);
-  }
-  createSong(name?: string): string {
-    return this.showsCtl.createSong(name);
-  }
-  renameSong(id: string, name: string): void {
-    this.showsCtl.renameSong(id, name);
-  }
-  duplicateSong(id: string): string | null {
-    return this.showsCtl.duplicateSong(id);
-  }
-  removeSong(id: string): void {
-    this.showsCtl.removeSong(id);
-  }
   /** Multi-client presence (S1) from the server's `presence` message: who is the single editor,
       whether WE are it, and the live headcount. null until the first presence arrives (offline /
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
@@ -861,7 +724,7 @@ export class TriggerLab {
     // mirror the ACTIVE show's authored over the seed defaults — a migrated/fresh slice is partial,
     // so applyAuthored fills any absent field. loadShowLibrary never throws: a valid library wins;
     // else a legacy single blob migrates to one "Default Show"; else a fresh "Untitled Show" seeds.
-    this.applyAuthored(this.showsCtl.hydrateFromStorage());
+    this.applyAuthored(this.library.hydrateFromStorage());
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -872,31 +735,14 @@ export class TriggerLab {
   selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
 
   // The resolved runtime view (`resolvedView`/`resolvedSongs`) + the `songLibraryList` are owned by
-  // {@link showsCtl} (R23) — the store exposes them via the getters alongside its field. Consumers
-  // (selectedGraph, graphLabel, showSource, the paste/clipboard region) read through those getters.
+  // {@link library} (R23). Consumers (selectedGraph, graphLabel, showSource, the paste/clipboard
+  // region) read them straight off `this.library` — there are no getters in between.
 
   // Read through the RESOLVED graphs (S42): selecting a referenced library graph opens the
   // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
   // (propagation) — while a local graph resolves to the same proxy it always did.
-  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.resolvedView.graphs[this.selectedPadKey] ?? null : null);
+  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.library.resolvedView.graphs[this.selectedPadKey] ?? null : null);
 
-  // `shows`/`activeShow` (show derived) and `activeSong` (over the RESOLVED song list) are owned by
-  // {@link showsCtl} (R23) — exposed via the getters alongside its field. The section-arrangement
-  // deriveds are owned by {@link sectionsCtl} (R24) and exposed via the getters below (they read the
-  // active song through that same seam).
-  /** The active section (SetlistSection) in the active song — the section you play + edit.
-      Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
-  get activeSection(): SetlistSection | null {
-    return this.sectionsCtl.activeSection;
-  }
-  /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the
-      offline sim recalls, and the Perform view lists — DERIVED from the active song's authored
-      sections so authored looks (S16) are the single source of truth (no separate fixture look
-      array to drift). `buildShow` reads this for `Show.sections`; the offline `setActiveSection`
-      recall resolves the look here. Empty when there is no active song. */
-  get sections(): Section[] {
-    return this.sectionsCtl.sections;
-  }
   /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
       and authored graphs alike, no distinction — in graph insertion order (pads first, then
       created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
@@ -930,7 +776,7 @@ export class TriggerLab {
   graphLabel(key: string): string {
     // Resolved names (S42): a referenced library graph's display name lives in the resolved
     // view, not the local `graphNames`; local names are a subset, so labels still resolve.
-    return graphsLib.graphLabelOf(this.resolvedView.graphNames, key, this.pads);
+    return graphsLib.graphLabelOf(this.library.resolvedView.graphNames, key, this.pads);
   }
 
   // --- lifecycle -----------------------------------------------------------
@@ -1085,15 +931,15 @@ export class TriggerLab {
     return $state.snapshot({
       graphs: this.graphs,
       graphNames: this.graphNames,
-      songs: this.songs,
-      songRefs: this.songRefs,
+      songs: this.library.songs,
+      songRefs: this.library.songRefs,
       buses: this.buses,
       presets: this.presets,
       effects: this.effects,
       canvasScenes: this.canvasScenes,
       selectedPadKey: this.selectedPadKey,
-      activeSongId: this.activeSongId,
-      activeSectionId: this.activeSectionId,
+      activeSongId: this.library.activeSongId,
+      activeSectionId: this.arrangement.activeSectionId,
       bpm: this.bpm,
       velocity: this.velocity,
       beatsPerBar: this.beatsPerBar,
@@ -1107,10 +953,10 @@ export class TriggerLab {
   private applyAuthored(a: Partial<AuthoredState>): void {
     if (a.graphs) this.graphs = a.graphs;
     if (a.graphNames) this.graphNames = a.graphNames;
-    if (a.songs) this.songs = a.songs;
+    if (a.songs) this.library.songs = a.songs;
     // Always assigned (even when absent) so a show that references nothing CLEARS the outgoing
     // show's refs on a swap — no cross-show bleed of references (seed/applyShow reset to []).
-    this.songRefs = a.songRefs ?? [];
+    this.library.songRefs = a.songRefs ?? [];
     if (a.buses) this.buses = a.buses;
     // Union, never replace (mirrors effects below): a stale localStorage slice must
     // not drop the built-in generator `:default` presets, or play nodes that point at
@@ -1123,8 +969,8 @@ export class TriggerLab {
     // scene-less show clears prior scenes — no cross-show bleed.
     this.canvasScenes = a.canvasScenes ?? [];
     if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
-    if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
-    if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
+    if (a.activeSongId !== undefined) this.library.activeSongId = a.activeSongId;
+    if (a.activeSectionId !== undefined) this.arrangement.activeSectionId = a.activeSectionId;
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
@@ -1191,10 +1037,10 @@ export class TriggerLab {
     if (this.persistDispose || typeof localStorage === 'undefined') return;
     this.persistDispose = $effect.root(() => {
       $effect(() => {
-        const lib = this.showsCtl.currentLibrary();
+        const lib = this.library.currentLibrary();
         // Deep-read the song library too, so a song-library edit (export / rename / delete)
         // re-schedules a save on the SAME debounce as any authored edit.
-        const songLib = this.showsCtl.currentSongLibrary();
+        const songLib = this.library.currentSongLibrary();
         this.scheduleSave(lib, songLib);
       });
     });
@@ -1203,8 +1049,8 @@ export class TriggerLab {
         if (!this.saveTimer) return;
         clearTimeout(this.saveTimer);
         this.saveTimer = null;
-        writeStoredLibrary(serializeShowLibrary(this.showsCtl.currentLibrary()));
-        writeStoredSongLibrary(serializeSongLibrary(this.showsCtl.currentSongLibrary()));
+        writeStoredLibrary(serializeShowLibrary(this.library.currentLibrary()));
+        writeStoredSongLibrary(serializeSongLibrary(this.library.currentSongLibrary()));
       };
       window.addEventListener('beforeunload', this.flushOnUnload);
     }
@@ -1218,8 +1064,8 @@ export class TriggerLab {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    writeStoredLibrary(serializeShowLibrary(this.showsCtl.currentLibrary()));
-    writeStoredSongLibrary(serializeSongLibrary(this.showsCtl.currentSongLibrary()));
+    writeStoredLibrary(serializeShowLibrary(this.library.currentLibrary()));
+    writeStoredSongLibrary(serializeSongLibrary(this.library.currentSongLibrary()));
     this.persistDispose();
     this.persistDispose = null;
     if (this.flushOnUnload && typeof window !== 'undefined') {
@@ -1246,9 +1092,9 @@ export class TriggerLab {
       this.syncShowToServer();
       // …and pushes the authored show library to the server (the source of truth), so a
       // browser-storage clear no longer loses shows. Sig-guarded; no-op until the first state.
-      this.showsCtl.syncLibraryToServer();
+      this.library.syncLibraryToServer();
       // …and the canonical song library (the sibling pool), same gated write-through.
-      this.showsCtl.syncSongLibraryToServer();
+      this.library.syncSongLibraryToServer();
       // The write (local cache + server push) has flushed → settle to "Saved" (held at
       // "Saving…" for the min-visible window first). A no-op for the skipped mount save.
       this.saveStatusCtl.saved();
@@ -1256,9 +1102,9 @@ export class TriggerLab {
   }
 
   // Show CRUD (new/open/save/save-as/rename/delete/close) + song-library refs (export/import/
-  // detach/rename/delete/usedBy) live on {@link showsCtl} (R23); the store exposes them as thin
-  // forwarders alongside its field. The authored-state swap they drive (resetAuthoredToSeed /
-  // applyShow / normalizeGraphs / toAuthored) stays here and is reached through the injected host.
+  // detach/rename/delete/usedBy) live on {@link library} (R23) and are called there directly.
+  // The authored-state swap they drive (resetAuthoredToSeed / applyShow / normalizeGraphs /
+  // toAuthored) stays here and is reached through the injected host.
 
   // --- engine link plumbing ------------------------------------------------
 
@@ -1285,7 +1131,7 @@ export class TriggerLab {
         // pool): adopt server on first state / seed it from our cache / viewer live-follows. Role-
         // aware (S1) — presence arrives before this state on a (re)connect, so `isViewer` is settled.
         // Owned by {@link ShowsController} (R23).
-        this.showsCtl.reconcileOnState(showLibrary, songLibrary);
+        this.library.reconcileOnState(showLibrary, songLibrary);
       },
       onPresence: (editorId, youAreEditor, clientCount) => {
         // Adopt the server's view of who edits + the headcount. Drives `role`/`isViewer`, which
@@ -1295,12 +1141,12 @@ export class TriggerLab {
       onShowLibrary: (library) => {
         // Live authored-library push from the editor, relayed by the server. Only a viewer follows it
         // (the editor is the source and is never sent its own echo). Owned by {@link ShowsController}.
-        this.showsCtl.followShowLibrary(library);
+        this.library.followShowLibrary(library);
       },
       onSongLibrary: (library) => {
         // Live SONG-library push from the editor, relayed by the server — the sibling of
         // onShowLibrary. Only a viewer follows it. Owned by {@link ShowsController}.
-        this.showsCtl.followSongLibrary(library);
+        this.library.followSongLibrary(library);
       },
       onControllerStatus: (status) => {
         // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
@@ -1340,8 +1186,8 @@ export class TriggerLab {
           this.engineSync.baselineTransport(cur);
           this.client.send({ t: 'setTransport', ...cur });
           // align the engine's active section with the store's current active section
-          if (this.activeSectionId) {
-            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
+          if (this.arrangement.activeSectionId) {
+            this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId: this.arrangement.activeSectionId });
           }
         } else {
           // a drop means our next open must re-send the transport + Show
@@ -1476,19 +1322,19 @@ export class TriggerLab {
       recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
-  private get showSource(): ShowSource {
-    const rv = this.resolvedView;
+  get showSource(): ShowSource {
+    const rv = this.library.resolvedView;
     return {
       buses: this.buses,
       graphs: rv.graphs,
-      sections: this.sections,
+      sections: this.arrangement.sections,
       // Send virtual canvas effects + their default presets alongside the real registry so
       // the engine's VoicePool can host `canvas:<id>` voices; scene docs register the generators.
       effects: [...rv.effects, ...this.canvasEffects],
       presets: [...rv.presets, ...this.allPresets.filter((p) => p.effectId.startsWith('canvas:'))],
       canvasScenes: this.canvasScenes,
       drums: this.drums,
-      songs: this.resolvedSongs,
+      songs: this.library.resolvedSongs,
     };
   }
 
@@ -1498,14 +1344,14 @@ export class TriggerLab {
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
     // setShow reseeds the active section to the first song/section — restore focus.
-    if (this.activeSectionId) {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
+    if (this.arrangement.activeSectionId) {
+      this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId: this.arrangement.activeSectionId });
     }
   }
 
   // The server-authoritative library adopt + write-through (cold-load reconcile / viewer follow /
   // sig-guarded push, for BOTH the show library and the canonical song pool) lives on
-  // {@link showsCtl} (R23) — driven from the `state`/`showLibrary`/`songLibrary` handlers above and
+  // {@link library} (R23) — driven from the `state`/`showLibrary`/`songLibrary` handlers above and
   // the autosave tick. Only the engine SHOW push ({@link syncShowToServer}, resolved-in refs) stays.
 
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */
@@ -1592,10 +1438,10 @@ export class TriggerLab {
    * input-router — U3 — not this pad path.)
    */
   private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string; key: string }> {
-    const section = this.activeSection;
+    const section = this.arrangement.activeSection;
     // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
     // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
-    const graphs = this.resolvedView.graphs;
+    const graphs = this.library.resolvedView.graphs;
     if (section) {
       const resolved: Array<{ graph: TriggerGraph; label: string; key: string }> = [];
       for (const key of section.graphs) {
@@ -1632,7 +1478,7 @@ export class TriggerLab {
       {@link hit} this does NOT filter by trigger-source match: it plays exactly the n-th graph
       the active section lists, and is a no-op when the section has fewer graphs. */
   fireSectionGraph(index: number): void {
-    const key = this.activeSection?.graphs[index];
+    const key = this.arrangement.activeSection?.graphs[index];
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
@@ -1674,9 +1520,9 @@ export class TriggerLab {
    * arrangement edit is local — but no look morphs, because the engine is the only renderer.
    */
   setActiveSection(sectionId: string): void {
-    this.activeSectionId = sectionId;
+    this.arrangement.activeSectionId = sectionId;
     if (this.link === 'open') {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId });
+      this.client.send({ t: 'recallSection', songId: this.library.activeSongId, sectionId });
     }
   }
 
@@ -1689,7 +1535,7 @@ export class TriggerLab {
   selectGraphInSection(sectionId: string, graphKey: string): void {
     this.setActiveSection(sectionId);
     // Resolved lookup (S42) so a referenced section's `lib:<id>/…` graph is selectable/openable.
-    if (this.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
+    if (this.library.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -1890,60 +1736,6 @@ export class TriggerLab {
     this.serverError = null;
   }
 
-  // --- setlist arranging (songs → sections → per-drum graph slots) ----------
-  // Song CRUD (setActiveSong / createSong / renameSong / duplicateSong / removeSong) lives on
-  // {@link showsCtl} (R23) — forwarded above. The section-arrangement edits (add/rename/remove/
-  // reorder sections + graph slots + looks, R24) live on {@link sectionsCtl} — thin, API-preserving
-  // forwarders below. They mutate the songs rune ShowsController owns, reached through the host.
-
-  /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
-  addGraphToSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.addGraphToSection(sectionId, graphKey);
-  }
-  /** Remove a graph reference from a section's flat list. */
-  removeGraphFromSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.removeGraphFromSection(sectionId, graphKey);
-  }
-  /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
-  setSectionGraphs(sectionId: string, graphs: string[]): void {
-    this.sectionsCtl.setSectionGraphs(sectionId, graphs);
-  }
-  /** Reorder a section in the active song by drag/drop. */
-  moveSection(sectionId: string, toIndex: number): void {
-    this.sectionsCtl.moveSection(sectionId, toIndex);
-  }
-  /** Move one graph placement within a section or across sections by drag/drop. */
-  moveGraphPlacement(fromSectionId: string, graphKey: string, toSectionId: string, toIndex: number): void {
-    this.sectionsCtl.moveGraphPlacement(fromSectionId, graphKey, toSectionId, toIndex);
-  }
-  /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). */
-  setLook(sectionId: string, busId: string, effectId: string | null): void {
-    this.sectionsCtl.setLook(sectionId, busId, effectId);
-  }
-  addSongSection(name: string): void {
-    this.sectionsCtl.addSongSection(name);
-  }
-  /** Rename a section of the active song (no-op-safe on an unknown id). */
-  renameSection(sectionId: string, name: string): void {
-    this.sectionsCtl.renameSection(sectionId, name);
-  }
-  /** Delete a section from the active song, re-pointing `activeSectionId` when it was active. */
-  removeSection(sectionId: string): void {
-    this.sectionsCtl.removeSection(sectionId);
-  }
-  /** Copy a section of the active song onto the in-app clipboard. */
-  copySection(sectionId: string): void {
-    this.sectionsCtl.copySection(sectionId);
-  }
-  /** Paste the in-app clipboard as a NEW section appended to the active song, and make it active. */
-  pasteSection(): void {
-    this.sectionsCtl.pasteSection();
-  }
-  /** Duplicate a section in one step (copy + paste). */
-  duplicateSection(sectionId: string): void {
-    this.sectionsCtl.duplicateSection(sectionId);
-  }
-
   // --- system clipboard copy / paste (S44, group K) ------------------------------
   // Copy lifts an authored thing PLUS its dependency closure into a portable ClipDoc (clipdoc.ts)
   // and writes the JSON to the system clipboard, so it pastes across browser sessions and servers.
@@ -1958,23 +1750,23 @@ export class TriggerLab {
       envelope carries plain data, never live rune proxies. */
   private clipSources(): ClosureSources {
     return {
-      graphs: $state.snapshot(this.resolvedView.graphs),
-      graphNames: $state.snapshot(this.resolvedView.graphNames),
-      effects: $state.snapshot(this.resolvedView.effects) as EffectDef[],
-      presets: $state.snapshot(this.resolvedView.presets) as Preset[],
+      graphs: $state.snapshot(this.library.resolvedView.graphs),
+      graphNames: $state.snapshot(this.library.resolvedView.graphNames),
+      effects: $state.snapshot(this.library.resolvedView.effects) as EffectDef[],
+      presets: $state.snapshot(this.library.resolvedView.presets) as Preset[],
       canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
     };
   }
 
   /** Provenance stamped on every exported ClipDoc (advisory only — never gates paste). */
   private clipMeta(): Partial<ClipDocMeta> {
-    const name = this.activeShow?.name;
+    const name = this.library.activeShow?.name;
     return name ? { sourceShow: name } : {};
   }
 
   /** Find a section by id anywhere in the resolved setlist (local or referenced song). */
   private findResolvedSection(sectionId: string): SetlistSection | undefined {
-    for (const song of this.resolvedView.songs) {
+    for (const song of this.library.resolvedView.songs) {
       const sec = song.sections.find((s) => s.id === sectionId);
       if (sec) return sec;
     }
@@ -1991,7 +1783,7 @@ export class TriggerLab {
 
   /** Copy a graph (by key) + its effect/preset closure to the system clipboard. */
   async copyGraphToClipboard(key: string): Promise<void> {
-    if (!this.resolvedView.graphs[key]) return;
+    if (!this.library.resolvedView.graphs[key]) return;
     await this.writeClip(buildGraphClipDoc(key, this.clipSources(), this.clipMeta()), 'Graph copied.');
   }
 
@@ -2000,7 +1792,7 @@ export class TriggerLab {
   async copySectionToClipboard(sectionId: string): Promise<void> {
     const section = this.findResolvedSection(sectionId);
     if (!section) return;
-    this.copySection(sectionId); // in-app fast path (no-op for a referenced song's section)
+    this.arrangement.copySection(sectionId); // in-app fast path (no-op for a referenced song's section)
     await this.writeClip(
       buildSectionClipDoc($state.snapshot(section), this.clipSources(), this.clipMeta()),
       'Section copied.',
@@ -2009,7 +1801,7 @@ export class TriggerLab {
 
   /** Copy a song + its full closure to the system clipboard. */
   async copySongToClipboard(songId: string): Promise<void> {
-    const song = this.resolvedView.songs.find((s) => s.id === songId);
+    const song = this.library.resolvedView.songs.find((s) => s.id === songId);
     if (!song) return;
     await this.writeClip(buildSongClipDoc($state.snapshot(song), this.clipSources(), this.clipMeta()), 'Song copied.');
   }
@@ -2043,11 +1835,11 @@ export class TriggerLab {
     if (res.kind === 'graph' && res.graphKey) {
       this.selectedPadKey = res.graphKey;
     } else if (res.kind === 'section' && res.section) {
-      this.sectionsCtl.insertSection(res.section);
+      this.arrangement.insertSection(res.section);
     } else if (res.kind === 'song' && res.song) {
       const song = res.song;
-      this.songs = [...this.songs, song];
-      this.activeSongId = song.id;
+      this.library.songs = [...this.library.songs, song];
+      this.library.activeSongId = song.id;
     }
   }
 
@@ -2070,7 +1862,7 @@ export class TriggerLab {
 
     // Song → Library: extract a fresh, self-contained namespaced closure into the pool.
     if (doc.kind === 'song' && opts.songDest === 'library') {
-      const libId = freshId('song', (id) => id in this.songLibrary.songs);
+      const libId = freshId('song', (id) => id in this.library.songLibrary.songs);
       const sources: ClosureSources = {
         graphs: doc.deps.graphs ?? {},
         graphNames: doc.deps.graphNames ?? {},
@@ -2078,7 +1870,7 @@ export class TriggerLab {
         presets: doc.deps.presets ?? [],
       };
       const closure = extractSongClosure(doc.payload.song, sources, libId);
-      this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
+      this.library.songLibrary = songRefsLib.withLibrarySong(this.library.songLibrary, closure);
       // Reserve the new pool entry's raw node/edge ids: S42 lets a user edit this referenced graph,
       // so a fresh node mint must clear any high id the pasted closure carried in.
       reserveIds(idsFromLibrarySong(closure));
@@ -2112,8 +1904,8 @@ export class TriggerLab {
   async pasteSectionFromClipboard(): Promise<void> {
     const text = await readClipboardText();
     if (text === null) {
-      if (this.sectionClipboard) {
-        this.pasteSection();
+      if (this.arrangement.sectionClipboard) {
+        this.arrangement.pasteSection();
         return;
       }
       this.pasteFallback = { context: 'section' };
@@ -2212,10 +2004,10 @@ export class TriggerLab {
   deleteGraph(key: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (!(key in this.graphs)) return;
-    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
+    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.library.songs, key);
     this.graphs = next.graphs;
     this.graphNames = next.graphNames;
-    this.songs = next.songs;
+    this.library.songs = next.songs;
     if (this.selectedPadKey === key) this.selectedPadKey = null;
   }
 
@@ -2238,7 +2030,7 @@ export class TriggerLab {
       the graph/trigger is missing, or an authored graph has no source bound yet. */
   triggerSource(graphKey: string): TriggerSource | undefined {
     // Resolved (S42): a referenced section's rows read their graph's source from the resolved view.
-    return this.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
+    return this.library.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
   }
 
   // --- registries / lookups ------------------------------------------------
@@ -3245,7 +3037,7 @@ export class TriggerLab {
       know still labels itself instead of rendering blank. Replaces the retired sim registry's
       `effectName`; the resolved view is the same set that registry was fed from. */
   effectName(id: string): string {
-    return this.resolvedView.effects.find((e) => e.id === id)?.name ?? id;
+    return this.library.resolvedView.effects.find((e) => e.id === id)?.name ?? id;
   }
 
   /** The live CC value table — the S38 param-row tick reads it for `cc` sources. */

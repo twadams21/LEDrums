@@ -12,22 +12,27 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     { id: 's1', name: 'Song One', sections: [{}, {}] },
     { id: 's2', name: 'Song Two', sections: [{}] },
   ];
+  const { library: libraryOver, ...rest } = over as { library?: Record<string, unknown> };
   return {
-    songs,
-    // The rail renders the RESOLVED setlist (S42); with no references it mirrors `songs`.
-    resolvedSongs: songs,
-    activeSongId: 's1',
     canEdit: true, // standalone/editor can author (S2); a viewer (false) hides the Add button
-    createSong: vi.fn(),
-    renameSong: vi.fn(),
-    duplicateSong: vi.fn(),
-    removeSong: vi.fn(),
-    setActiveSong: vi.fn(),
-    // Library-reference verbs — present so the origin-aware row actions resolve (unused for local rows).
-    renameLibrarySong: vi.fn(),
-    detachSongReference: vi.fn(),
-    removeSongReference: vi.fn(),
-    ...over,
+    ...rest,
+    // Songs/setlist live on the published ShowsController (INIT-02 S10) — `store.library.*`.
+    library: {
+      songs,
+      // The rail renders the RESOLVED setlist (S42); with no references it mirrors `songs`.
+      resolvedSongs: songs,
+      activeSongId: 's1',
+      createSong: vi.fn(),
+      renameSong: vi.fn(),
+      duplicateSong: vi.fn(),
+      removeSong: vi.fn(),
+      setActiveSong: vi.fn(),
+      // Library-reference verbs — present so the origin-aware row actions resolve (unused for local rows).
+      renameLibrarySong: vi.fn(),
+      detachSongReference: vi.fn(),
+      removeSongReference: vi.fn(),
+      ...(libraryOver ?? {}),
+    },
   } as unknown as TriggerLab;
 }
 
@@ -53,14 +58,14 @@ describe('SongRail', () => {
     const store = mockStore();
     const { container } = render(SongRail, { props: { store } });
     await fireEvent.click(container.querySelectorAll('.li-main')[1]!);
-    expect(store.setActiveSong).toHaveBeenCalledWith('s2');
+    expect(store.library.setActiveSong).toHaveBeenCalledWith('s2');
   });
 
   it('adds a song from the header button', async () => {
     const store = mockStore();
     const { getByLabelText } = render(SongRail, { props: { store } });
     await fireEvent.click(getByLabelText('Add song'));
-    expect(store.createSong).toHaveBeenCalledTimes(1);
+    expect(store.library.createSong).toHaveBeenCalledTimes(1);
   });
 
   it('hides the Add song button for a read-only viewer (S2)', () => {
@@ -72,8 +77,10 @@ describe('SongRail', () => {
     // A show that references one library song: it appears in the resolved setlist tail, badged.
     const songs = [{ id: 's1', name: 'Local', sections: [{}] }];
     const store = mockStore({
-      songs,
-      resolvedSongs: [...songs, { id: 'song-9', name: 'Shared', sections: [{}, {}] }],
+      library: {
+        songs,
+        resolvedSongs: [...songs, { id: 'song-9', name: 'Shared', sections: [{}, {}] }],
+      },
     });
     const { container } = render(SongRail, { props: { store } });
     const rows = container.querySelectorAll('.li');
@@ -83,7 +90,7 @@ describe('SongRail', () => {
     expect(container.querySelector('.pill')?.textContent).toContain('Library');
     // clicking the reference row selects it (navigable), by its library id
     await fireEvent.click(container.querySelectorAll('.li-main')[1]!);
-    expect(store.setActiveSong).toHaveBeenCalledWith('song-9');
+    expect(store.library.setActiveSong).toHaveBeenCalledWith('song-9');
   });
 
   it('renames a song through the inline rename (double-click → type → Enter)', async () => {
@@ -93,6 +100,6 @@ describe('SongRail', () => {
     const input = (await findByLabelText('Rename song')) as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'Intro' } });
     await fireEvent.keyDown(input, { key: 'Enter' });
-    await waitFor(() => expect(store.renameSong).toHaveBeenCalledWith('s1', 'Intro'));
+    await waitFor(() => expect(store.library.renameSong).toHaveBeenCalledWith('s1', 'Intro'));
   });
 });

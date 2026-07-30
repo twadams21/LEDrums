@@ -24,7 +24,7 @@
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  const song = $derived(store.activeSong);
+  const song = $derived(store.library.activeSong);
   const sections = $derived(song?.sections ?? []);
   const shortcutPlatform: ShortcutPlatform = platformShortcutModifier(globalThis.navigator?.platform ?? '');
 
@@ -94,9 +94,9 @@
   const sectionSel = $derived.by(() => {
     const sel = shell.selection;
     if (sel?.kind !== 'section') return null;
-    const songIdx = store.resolvedSongs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
+    const songIdx = store.library.resolvedSongs.findIndex((s) => s.sections.some((sec) => sec.id === sel.sectionId));
     if (songIdx < 0) return null;
-    const owner = store.resolvedSongs[songIdx]!;
+    const owner = store.library.resolvedSongs[songIdx]!;
     const sectionIdx = owner.sections.findIndex((sec) => sec.id === sel.sectionId);
     const section = owner.sections[sectionIdx]!;
     return { song: owner, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
@@ -110,7 +110,7 @@
 
   function place(graphKey: string): void {
     if (!pendingSectionId) return;
-    store.addGraphToSection(pendingSectionId, graphKey);
+    store.arrangement.addGraphToSection(pendingSectionId, graphKey);
     pendingSectionId = null;
   }
   /** Author a fresh graph, add it to the pending section, activate + open it for editing. */
@@ -118,7 +118,7 @@
     if (!pendingSectionId) return;
     const sectionId = pendingSectionId;
     const key = store.createGraph();
-    store.addGraphToSection(sectionId, key);
+    store.arrangement.addGraphToSection(sectionId, key);
     store.selectGraphInSection(sectionId, key);
     pendingSectionId = null;
     shell.setView('trigger'); // land on the canvas to edit the new graph
@@ -131,7 +131,7 @@
     if (sel?.kind !== 'section') return;
     if (!sections.some((sec) => sec.id === sel.sectionId)) return;
     e.preventDefault();
-    store.duplicateSection(sel.sectionId);
+    store.arrangement.duplicateSection(sel.sectionId);
   }
 
   function startSectionDrag(sectionId: string, event: DragEvent): void {
@@ -188,7 +188,7 @@
     if (!store.canEdit || dragging?.kind !== 'section') return;
     event.preventDefault();
     event.stopPropagation();
-    store.moveSection(dragging.sectionId, sectionGapAt(event.clientX));
+    store.arrangement.moveSection(dragging.sectionId, sectionGapAt(event.clientX));
     store.setActiveSection(dragging.sectionId);
     shell.select({ kind: 'section', sectionId: dragging.sectionId });
     clearDrag();
@@ -198,7 +198,7 @@
     if (!store.canEdit || dragging?.kind !== 'graph') return;
     event.preventDefault();
     event.stopPropagation();
-    store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, index);
+    store.arrangement.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, index);
     store.selectGraphInSection(sectionId, dragging.graphKey);
     clearDrag();
   }
@@ -222,7 +222,7 @@
       <h2>{song?.name ?? 'No song'}</h2>
     </div>
     {#if store.canEdit}
-      <button class="addsection" type="button" onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}>
+      <button class="addsection" type="button" onclick={() => store.arrangement.addSongSection(`Section ${sections.length + 1}`)}>
         <Plus size={14} aria-hidden="true" /> Section
       </button>
     {/if}

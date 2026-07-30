@@ -95,10 +95,10 @@ describe('TriggerLab persisted id reservation', () => {
     const { sectionId } = persistLibrary(9200, graph);
 
     const store = new TriggerLab(fakeClient);
-    store.copySection(sectionId);
-    store.pasteSection();
+    store.arrangement.copySection(sectionId);
+    store.arrangement.pasteSection();
 
-    const ids = store.activeSong!.sections.map((s) => s.id);
+    const ids = store.library.activeSong!.sections.map((s) => s.id);
     expect(ids).toContain(sectionId);
     expect(new Set(ids).size).toBe(ids.length);
   });
