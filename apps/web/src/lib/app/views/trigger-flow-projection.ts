@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, TriggerGraph } from '../../trigger-lab/sim';
+import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from '../../trigger-lab/sim';
 import { graphToFlowNodes, type TriggerFlowNode } from './graph-to-flow';
 
 export type TriggerProjectionCache = {
@@ -20,6 +20,62 @@ function mixRowSetSignature(graph: TriggerGraph | null | undefined, mixNodeId: s
     .join(',');
 }
 
+/** What one kind contributes to its node's signature, on top of the shared `base`. */
+type SigFn = (n: GraphNode, base: string, graph: TriggerGraph | null | undefined) => string;
+
+/** A kind that deliberately contributes NOTHING beyond `base`. Spelled as a named function rather
+    than an inline arrow at ten keys so "this kind has no structural fields" reads as a DECISION on
+    the page — which is the whole point of deleting the old `default:` arm. */
+const baseOnly: SigFn = (_n, base) => base;
+
+/** Shared by the canonical `effect` key AND its legacy `play` alias, so the two spellings cannot
+    drift apart again — spelling only 'play' is exactly what made the arm dead (S1). The legacy key
+    is DELIBERATELY TEMPORARY: 11-decisions.md drops 'play' from the authoring union, tracked as
+    INIT-06 chunk 06C, which owns the persistence-side threading that removal requires. */
+const effectSig: SigFn = (n, base) =>
+  `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
+
+/**
+ * Per-kind signature contributions, keyed on NodeKind with NO DEFAULT ARM. The old
+ * `default: return base` is what let repeated-switches-0001 exist at all — it silently absorbed
+ * every kind nobody had thought about, which is exactly how `effect` came to be unsigned (S1).
+ * Being a total `Record<NodeKind, SigFn>`, adding a kind to the union is now a COMPILE ERROR here
+ * instead of a silent fallthrough. Same idiom as trigger-node-meta.ts's three tables.
+ *
+ * TEN canonical kinds legitimately contribute nothing and each gets an explicit `baseOnly` entry:
+ * trigger, all, random, sequence, chance, toggle, delay, scope, output, envelope. That count is
+ * measured, not assumed — the golden table in the test file is the authority, so a miscount here
+ * fails a test rather than shipping.
+ */
+const KIND_SIG: Record<NodeKind, SigFn> = {
+  // --- contributes nothing beyond base (10 canonical kinds, deliberately) ---
+  trigger: baseOnly,
+  all: baseOnly,
+  random: baseOnly,
+  sequence: baseOnly,
+  chance: baseOnly,
+  toggle: baseOnly,
+  delay: baseOnly,
+  scope: baseOnly,
+  output: baseOnly,
+  envelope: baseOnly,
+
+  // --- carries structural fields ---
+  switch: (n, base) => `${base}:on=${n.on}:valueMode=${n.valueMode}:bands=${(n.bands ?? []).join(',')}`,
+  effect: effectSig,
+  play: effectSig, // legacy persisted alias — see effectSig; owned by chunk 06C
+
+  modifier: (n, base) => `${base}:modifier=${n.modifierId ?? ''}`,
+  mix: (n, base, graph) => `${base}:mix=${n.mixBlendMode ?? 'normal'}:rows=${mixRowSetSignature(graph, n.id)}`,
+  cc: (n, base) => `${base}:cc=${n.ccController ?? ''}:${n.ccChannel ?? ''}`,
+  note: (n, base) =>
+    `${base}:note=${n.noteNumber ?? ''}:${n.noteChannel ?? ''}:${n.noteMode ?? ''}:${n.noteReleaseMs ?? ''}`,
+  osc: (n, base) => `${base}:osc=${n.oscAddress ?? ''}`,
+  randomMod: (n, base) => `${base}:random=${n.randomDistribution ?? ''}:${n.randomSteps ?? ''}`,
+  lfo: (n, base) =>
+    `${base}:lfo=${n.lfo?.waveform ?? ''}:${n.lfo?.rateMode ?? ''}:${n.lfo?.rateHz ?? ''}:${n.lfo?.division ?? ''}:${n.lfo?.phase ?? ''}`,
+};
+
 /** Structural signature of a graph node for projection reuse. When `graph` is supplied, a Mix
     node's signature also folds in its incoming flow-edge SET, so ADDING or REMOVING a wire into a
     Mix node rebuilds it — xyflow then re-measures the per-edge `mix-edge:<id>` handles instead of
@@ -28,33 +84,7 @@ function mixRowSetSignature(graph: TriggerGraph | null | undefined, mixNodeId: s
 export function triggerNodeSignature(n: GraphNode, graph?: TriggerGraph | null): string {
   const modInputs = (n.modInputs ?? []).map((m) => m.param).join(',');
   const base = `${n.id}:${n.kind}:pos=${n.x},${n.y}:mod=${modInputs}`;
-  switch (n.kind) {
-    case 'switch':
-      return `${base}:on=${n.on}:valueMode=${n.valueMode}:bands=${(n.bands ?? []).join(',')}`;
-    // `effect` is the CANONICAL kind and `play` only its legacy persisted alias —
-    // normalizeTriggerGraphToGen3 (graph-integrity.ts:148/154) rewrites play→effect on every graph
-    // that reaches the store, so spelling only 'play' here made the arm dead and dropped
-    // effectId/playType/canvasScene out of every real effect node's signature.
-    case 'play':
-    case 'effect':
-      return `${base}:playType=${n.playType ?? ''}:effect=${n.effectId}:canvas=${n.canvasScene ?? ''}`;
-    case 'modifier':
-      return `${base}:modifier=${n.modifierId ?? ''}`;
-    case 'mix':
-      return `${base}:mix=${n.mixBlendMode ?? 'normal'}:rows=${mixRowSetSignature(graph, n.id)}`;
-    case 'cc':
-      return `${base}:cc=${n.ccController ?? ''}:${n.ccChannel ?? ''}`;
-    case 'note':
-      return `${base}:note=${n.noteNumber ?? ''}:${n.noteChannel ?? ''}:${n.noteMode ?? ''}:${n.noteReleaseMs ?? ''}`;
-    case 'osc':
-      return `${base}:osc=${n.oscAddress ?? ''}`;
-    case 'randomMod':
-      return `${base}:random=${n.randomDistribution ?? ''}:${n.randomSteps ?? ''}`;
-    case 'lfo':
-      return `${base}:lfo=${n.lfo?.waveform ?? ''}:${n.lfo?.rateMode ?? ''}:${n.lfo?.rateHz ?? ''}:${n.lfo?.division ?? ''}:${n.lfo?.phase ?? ''}`;
-    default:
-      return base;
-  }
+  return KIND_SIG[n.kind](n, base, graph);
 }
 
 export function triggerEdgeSignature(e: Pick<GraphEdge, 'id' | 'from' | 'to' | 'fromPort' | 'toPort' | 'opacity'>): string {
