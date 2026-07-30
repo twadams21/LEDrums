@@ -239,8 +239,9 @@ fn parse_tunnel_url(line: &str) -> Option<String> {
 
 /// Extract the room PIN from the banner — printed both as `(PIN <pin>)` on the tunnel line and as
 /// `Room PIN: <pin>` (the latter prints even if the tunnel later fails, so it is the reliable
-/// source). The server accepts ANY non-empty `LEDRUMS_PIN`, so the token is captured up to the next
-/// whitespace or `)` rather than assuming digits.
+/// source). The server accepts any `LEDRUMS_PIN` of at least MIN_PIN_LENGTH (4) characters; the
+/// charset is still unconstrained, so the token is captured up to the next whitespace or `)`
+/// rather than assuming digits.
 fn parse_pin(line: &str) -> Option<String> {
     let re = regex::Regex::new(r"(?:\(PIN |Room PIN: )([^\s)]+)").unwrap();
     re.captures(line)
@@ -664,7 +665,9 @@ mod tests {
 
     #[test]
     fn parses_non_numeric_pin_matching_server_behavior() {
-        // The server accepts ANY non-empty LEDRUMS_PIN, so the parser must not assume digits.
+        // The server accepts any LEDRUMS_PIN of at least MIN_PIN_LENGTH (4) characters; the
+        // charset is still unconstrained, so the parser must not assume digits. (INIT-05 added
+        // the length floor and nothing else — this test's inputs are all well above it.)
         assert_eq!(
             parse_pin("  Room PIN: hunter2! (required to join)").as_deref(),
             Some("hunter2!")

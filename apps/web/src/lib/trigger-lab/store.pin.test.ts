@@ -56,6 +56,11 @@ afterEach(() => {
   delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
 });
 
+/** The two admission refusals the client reports (INIT-05): a wrong PIN, and a cooldown in
+    which the server never compared the PIN at all. */
+const WRONG_PIN = { throttled: false, retryAfterSeconds: null };
+const THROTTLED = (retryAfterSeconds: number | null) => ({ throttled: true, retryAfterSeconds });
+
 describe('store — room PIN + tunnel (S3)', () => {
   it('onAuthError raises the gate and counts refusals', () => {
     const h = newHarness();
@@ -64,14 +69,53 @@ describe('store — room PIN + tunnel (S3)', () => {
       store.start();
       expect(store.authRequired).toBe(false);
 
-      h.cb!.onAuthError!();
+      h.cb!.onAuthError!(WRONG_PIN);
       expect(store.authRequired).toBe(true);
       expect(store.authFailCount).toBe(1);
       expect(store.link).toBe('offline');
 
-      h.cb!.onAuthError!();
+      h.cb!.onAuthError!(WRONG_PIN);
       expect(store.authFailCount).toBe(2);
+      expect(store.authThrottledSeconds).toBeNull(); // a wrong PIN is not a cooldown
 
+      store.stop();
+    });
+  });
+
+  it('a THROTTLED refusal records the wait and still counts, so the gate resolves (INIT-05)', () => {
+    const h = newHarness();
+    const store = new TriggerLab(harnessClient(h));
+    withRaf(() => {
+      store.start();
+
+      h.cb!.onAuthError!(THROTTLED(30));
+      expect(store.authRequired).toBe(true);
+      // It MUST count: the gate reads this to tell "still waiting on the server" from
+      // "refused again", and a throttled retry that did not move it would hang on "Joining…".
+      expect(store.authFailCount).toBe(1);
+      expect(store.authThrottledSeconds).toBe(30);
+
+      // A cooldown with no number on the wire is still a cooldown, not a wrong PIN.
+      h.cb!.onAuthError!(THROTTLED(null));
+      expect(store.authThrottledSeconds).toBe(0);
+
+      // A later wrong-PIN refusal clears the cooldown flag — the copy must follow the LAST one.
+      h.cb!.onAuthError!(WRONG_PIN);
+      expect(store.authThrottledSeconds).toBeNull();
+
+      store.stop();
+    });
+  });
+
+  it('a successful connect clears both the gate and the cooldown', () => {
+    const h = newHarness();
+    const store = new TriggerLab(harnessClient(h));
+    withRaf(() => {
+      store.start();
+      h.cb!.onAuthError!(THROTTLED(5));
+      h.cb!.onConnection!('open');
+      expect(store.authRequired).toBe(false);
+      expect(store.authThrottledSeconds).toBeNull();
       store.stop();
     });
   });
@@ -121,7 +165,7 @@ describe('store — room PIN + tunnel (S3)', () => {
     const store = new TriggerLab(harnessClient(h));
     withRaf(() => {
       store.start();
-      h.cb!.onAuthError!();
+      h.cb!.onAuthError!(WRONG_PIN);
 
       store.submitPin('  4242  '); // trimmed
       expect(h.reconnects).toEqual(['4242']);

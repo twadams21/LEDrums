@@ -1,0 +1,249 @@
+{
+  "artifact": "INIT-05 pin-throttle-probe",
+  "finding": "resilience-hole-0006",
+  "what": "Adversarial live-socket evidence that the PIN admission throttle is real in the running server, not merely green in the suite. Both runs were produced by the SAME script (the HEAD copy), pointed at two servers via --url — which is why a baseline run is possible at all: the probe does not exist at the baseline sha.",
+  "baselineDeviation": "The plan names Phase 0 sha 3708648 as the baseline. This run uses fa641b0 (review/impl) instead: it is the commit THIS lane branched from, so the before/after difference is attributable to INIT-05 alone. 3708648 predates INIT-04, whose connection cap and handler extraction would otherwise show up inside INIT-05 evidence.",
+  "runs": {
+    "before": {
+      "probe": "pin-throttle-probe",
+      "expect": "none",
+      "serverSha": "fa641b0",
+      "target": "ws://127.0.0.1:4821",
+      "ok": true,
+      "checks": [
+        {
+          "name": "every wrong PIN is refused",
+          "pass": true,
+          "detail": "refused/4401 refused/4401 refused/4401 refused/4401 refused/4401 refused/4401 refused/4401 refused/4401"
+        },
+        {
+          "name": "the first refusals are the invalid-pin code, not the throttled one",
+          "pass": true,
+          "detail": "codes 4401,4401,4401,4401,4401"
+        },
+        {
+          "name": "the host-token bypass is admitted throughout, never throttled",
+          "pass": true,
+          "detail": "admitted admitted admitted"
+        },
+        {
+          "name": "BASELINE: no dial is ever throttled — the 4429 code does not exist here",
+          "pass": true,
+          "detail": "codes 4401,4401,4401,4401,4401,4401,4401,4401"
+        },
+        {
+          "name": "BASELINE: the correct PIN is admitted immediately, however many refusals preceded it",
+          "pass": true,
+          "detail": "admitted "
+        },
+        {
+          "name": "BASELINE: refusals cost nothing — every dial is answered without a growing delay",
+          "pass": true,
+          "detail": "slowest refusal 6ms"
+        }
+      ],
+      "observations": {
+        "hostBefore": {
+          "outcome": "admitted",
+          "elapsedMs": 464
+        },
+        "wrongPinFlood": [
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 6
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 3
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 5
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 2
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 3
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 3
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          }
+        ],
+        "hostDuring": {
+          "outcome": "admitted",
+          "elapsedMs": 404
+        },
+        "correctDuringCooldown": {
+          "outcome": "admitted",
+          "elapsedMs": 403
+        },
+        "waitedMs": 1500,
+        "correctAfterCooldown": {
+          "outcome": "admitted",
+          "elapsedMs": 403
+        },
+        "hostAfter": {
+          "outcome": "admitted",
+          "elapsedMs": 401
+        }
+      }
+    },
+    "after": {
+      "probe": "pin-throttle-probe",
+      "expect": "throttled",
+      "serverSha": "e59a2d6",
+      "target": "self-booted",
+      "ok": true,
+      "checks": [
+        {
+          "name": "every wrong PIN is refused",
+          "pass": true,
+          "detail": "refused/4401 refused/4401 refused/4401 refused/4401 refused/4401 refused/4401 refused/4429 refused/4429"
+        },
+        {
+          "name": "the first refusals are the invalid-pin code, not the throttled one",
+          "pass": true,
+          "detail": "codes 4401,4401,4401,4401,4401"
+        },
+        {
+          "name": "the host-token bypass is admitted throughout, never throttled",
+          "pass": true,
+          "detail": "admitted admitted admitted"
+        },
+        {
+          "name": "the allowance runs out: later dials close 4429, not 4401",
+          "pass": true,
+          "detail": "2 of 8 dials were throttled"
+        },
+        {
+          "name": "THE FINDING: the CORRECT PIN is refused during the cooldown",
+          "pass": true,
+          "detail": "refused 4429 \"too many attempts; retry in 1s\""
+        },
+        {
+          "name": "the refusal states a wait, so the client can be honest about it",
+          "pass": true,
+          "detail": "reason \"too many attempts; retry in 1s\""
+        },
+        {
+          "name": "NO PERMANENT LOCKOUT: the same correct PIN is admitted once the cooldown lapses",
+          "pass": true,
+          "detail": "admitted  after waiting 1500ms"
+        }
+      ],
+      "observations": {
+        "hostBefore": {
+          "outcome": "admitted",
+          "elapsedMs": 408
+        },
+        "wrongPinFlood": [
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 7
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 5
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          },
+          {
+            "outcome": "refused",
+            "code": 4401,
+            "reason": "invalid pin",
+            "elapsedMs": 4
+          },
+          {
+            "outcome": "refused",
+            "code": 4429,
+            "reason": "too many attempts; retry in 1s",
+            "elapsedMs": 5
+          },
+          {
+            "outcome": "refused",
+            "code": 4429,
+            "reason": "too many attempts; retry in 1s",
+            "elapsedMs": 5
+          }
+        ],
+        "hostDuring": {
+          "outcome": "admitted",
+          "elapsedMs": 403
+        },
+        "correctDuringCooldown": {
+          "outcome": "refused",
+          "code": 4429,
+          "reason": "too many attempts; retry in 1s",
+          "elapsedMs": 3
+        },
+        "waitedMs": 1500,
+        "correctAfterCooldown": {
+          "outcome": "admitted",
+          "elapsedMs": 403
+        },
+        "hostAfter": {
+          "outcome": "admitted",
+          "elapsedMs": 402
+        }
+      }
+    }
+  },
+  "difference": "Exactly one thing changed, and nothing else did. BEFORE: all 8 wrong-PIN dials refused 4401 in <=6ms, unlimited, no cooldown ever, and the correct PIN admitted immediately afterwards — a 10^6 space walkable at connection rate. AFTER: the first 6 dials refuse 4401, then the allowance runs out and dials close 4429 with a stated wait, the CORRECT PIN is refused 4429 during the cooldown (proving the PIN is never even compared), and the SAME correct PIN is admitted once the cooldown lapses (proving no permanent lockout). The host-token bypass is admitted before, during and after the flood in BOTH runs — the host can never lock itself out.",
+  "notCovered": "The probe exercises the SINGLE-PEER path only. The global tier and its known-good exemption are proven by unit test (admission-throttle.test.ts, pin-gate.test.ts), not here: driving 100 distributed failures over real sockets would prove nothing the fake clock does not already prove, and would leave the machine cooling for 60s.",
+  "howToReproduce": [
+    "AFTER:  node scripts/pin-throttle-probe.mjs",
+    "BEFORE: git worktree add /tmp/ledrums-baseline-fa641b0 fa641b0 && (cd /tmp/ledrums-baseline-fa641b0 && pnpm install --frozen-lockfile)",
+    "        then boot it on its own port (PORT=4821 OSC_PORT=4822 LEDRUMS_PIN=4242 LEDRUMS_HOST_TOKEN=<64 chars> pnpm --filter @ledrums/server start)",
+    "        and run the HEAD copy against it: node scripts/pin-throttle-probe.mjs --url ws://127.0.0.1:4821 --pin 4242 --host-token <same> --server-sha fa641b0 --expect none",
+    "        finally: git worktree remove /tmp/ledrums-baseline-fa641b0",
+    "Neither run takes the machine gate lock (each server binds its own port), so both are safe alongside pnpm gates."
+  ]
+}

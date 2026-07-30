@@ -32,6 +32,33 @@ export type { BootRecoveryInfo, ClientMessage, ServerMessage } from './schemas';
  * auto-reconnect loop and prompts for a PIN instead of dialing forever. */
 export const WS_CLOSE_INVALID_PIN = 4401;
 
+/** WS close code used when a connection is refused because the peer has spent its PIN-attempt
+ * allowance and is in a cooldown — the PIN was never even compared (see the server's
+ * `admission-throttle`). Distinct from {@link WS_CLOSE_INVALID_PIN} so the PIN overlay can say
+ * "too many attempts, wait 30s" instead of the lie "Incorrect PIN": during a cooldown even the
+ * CORRECT PIN is refused, so reusing 4401 would tell a legitimate drummer their PIN is wrong.
+ * Echoes HTTP 429 Too Many Requests. */
+export const WS_CLOSE_PIN_THROTTLED = 4429;
+
+/** Build the close reason for a {@link WS_CLOSE_PIN_THROTTLED} refusal, carrying the wait as
+ * whole seconds (rounded UP, so acting on it is never premature; floored at 1, because "retry in
+ * 0s" reads as "retry now" when the peer would still be refused). Both sides of the socket go
+ * through this pair rather than through a regex written twice — the wire format has one home. */
+export function throttledCloseReason(retryAfterMs: number): string {
+  const seconds = Math.max(1, Math.ceil(retryAfterMs / 1_000));
+  return `too many attempts; retry in ${seconds}s`;
+}
+
+/** Read the wait back out of a {@link throttledCloseReason} string, or null when the reason is
+ * absent or not in that form — a close reason is best-effort on the wire (proxies may drop it),
+ * so the caller must have a copy that reads without a number. */
+export function retryAfterSecondsFrom(reason: string | null | undefined): number | null {
+  const match = /^too many attempts; retry in (\d+)s$/.exec(reason ?? '');
+  if (match === null) return null;
+  const seconds = Number(match[1]);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
 
 // ---------------------------------------------------------------------------
 // Server → Client (JSON, plus a separate binary frame channel)

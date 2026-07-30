@@ -122,6 +122,12 @@ export interface ShotSeam {
       we hold it with others connected, so the "You're editing" indicator renders; `solo` clears
       presence back to standalone, where neither shows. */
   previewPresence(role?: 'viewer' | 'editor' | 'solo'): void;
+  /** Raise the blocking room-PIN gate in one of its two refusal states, so ui-shot can capture
+      copy that is otherwise only reachable against a real gated server. `arg` is `wrong`
+      (default) → the 4401 "Incorrect PIN" hint; `throttled` → the 4429 cooldown, which is the
+      state that must NEVER read as "incorrect", because during it the server refuses without
+      comparing the PIN at all. A bare number is taken as the cooldown's seconds. */
+  previewPinGate(kind?: 'wrong' | 'throttled' | string): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -398,6 +404,16 @@ class ShotSeamImpl implements ShotSeam {
       role === 'solo' ? null : { editorId: role === 'editor' ? 'me' : 'other-client', youAreEditor: role === 'editor', clientCount: 2 };
   }
 
+  previewPinGate(kind: 'wrong' | 'throttled' | string = 'wrong'): void {
+    // Nothing bespoke here: these are exactly the three fields the store's own onAuthError
+    // writes when the server closes the socket at the admission gate.
+    const seconds = Number(kind);
+    const throttled = kind === 'throttled' || Number.isFinite(seconds);
+    this.store.authRequired = true;
+    this.store.authThrottledSeconds = throttled ? (Number.isFinite(seconds) ? seconds : 30) : null;
+    this.store.authFailCount += 1;
+  }
+
   previewSaveStatus(status: SaveStatus = 'error'): void {
     if (status === 'error') {
       // Make the failure REAL, not painted on. A status merely assigned here is settled back to
@@ -528,6 +544,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'save-status':
         this.previewSaveStatus(arg as SaveStatus | undefined);
+        break;
+      case 'pin-gate':
+        this.previewPinGate(arg);
         break;
       case 'presence':
       case 'takeover':

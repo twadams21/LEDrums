@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { WS_CLOSE_INVALID_PIN, WS_CLOSE_PIN_THROTTLED } from '@ledrums/protocol';
 import { ClientRegistry } from './client-registry';
+import { createAdmissionThrottle } from './admission-throttle';
 import { createMutablePinGate } from './pin-gate';
 import { createMonitorBus } from './monitor';
 import type { ServerMessage } from './ws-protocol';
@@ -319,5 +320,109 @@ describe('connection cap (S16 — resilience-hole-0005 amplifier)', () => {
     ['non-numeric', 'lots'],
   ])('LEDRUMS_MAX_CLIENTS %s falls back to 32', (_label, value) => {
     expect(resolveMaxClients({ LEDRUMS_MAX_CLIENTS: value })).toBe(MAX_CLIENTS_DEFAULT);
+  });
+});
+
+describe('PIN admission throttle wiring (INIT-05 — resilience-hole-0006)', () => {
+  const PIN = '123456';
+  const REMOTE = { socket: { remoteAddress: '10.0.0.9' }, headers: { 'cf-connecting-ip': '198.51.100.4' } };
+
+  /** The handler over a throttle on a hand-driven clock — the wiring proof needs no waiting. */
+  function throttled(policy: Parameters<typeof createAdmissionThrottle>[0] = {}) {
+    let t = 0;
+    const admissionThrottle = createAdmissionThrottle(policy, () => t);
+    const h = harness({ pin: PIN, deps: { admissionThrottle } });
+    return {
+      ...h,
+      admissionThrottle,
+      advance: (ms: number) => {
+        t += ms;
+      },
+      /** One connection attempt from the same remote peer; returns the socket it closed/admitted. */
+      dial: (pin: string) => {
+        const ws = new FakeSocket();
+        h.handler(ws, req({ url: `/ws?pin=${pin}`, ...REMOTE }));
+        return ws;
+      },
+    };
+  }
+
+  it('LIVE PATH: the 7th dial from one peer is refused 4429 even with the CORRECT PIN', () => {
+    const { dial, advance, clients } = throttled();
+    for (let i = 0; i < 6; i++) {
+      expect(dial('000000').closed).toMatchObject({ code: WS_CLOSE_INVALID_PIN });
+    }
+    const cooling = dial(PIN);
+    expect(cooling.closed).toEqual({ code: WS_CLOSE_PIN_THROTTLED, reason: 'too many attempts; retry in 1s' });
+    expect(clients.size).toBe(0); // nothing was ever admitted
+
+    advance(1_001);
+    const admitted = dial(PIN);
+    expect(admitted.closed).toBeNull();
+    expect(clients.size).toBe(1); // no permanent lockout
+  });
+
+  it('emits ONE monitor event per escalation, not one per failed attempt', () => {
+    const { dial, advance, events } = throttled();
+    for (let i = 0; i < 6; i++) dial('000000');
+    for (let i = 0; i < 10; i++) dial('000000'); // all refused while cooling — silent
+    const alerts = events.filter((e) => e.label === 'Repeated PIN refusals');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toMatchObject({
+      type: 'error',
+      label: 'Repeated PIN refusals',
+      detail: '6 failed attempts from cf:198.51.100.4; cooling down 1s',
+    });
+
+    advance(1_001);
+    dial('000000'); // escalates again → exactly one more event
+    expect(events.filter((e) => e.label === 'Repeated PIN refusals')).toHaveLength(2);
+  });
+
+  it('labels a GLOBAL escalation distinctly — the operator\'s only signal that access is held closed', () => {
+    const { dial, admissionThrottle, events } = throttled();
+    for (let i = 0; i < 99; i++) admissionThrottle.recordFailure(`cf:203.0.113.${i}`);
+    dial('000000'); // the 100th failure across the server trips the global tier
+    const globals = events.filter((e) => e.label === 'Remote access cooling down (global)');
+    expect(globals).toHaveLength(1);
+    expect(globals[0]?.detail).toContain('cooling down 60s');
+    expect(events.filter((e) => e.label === 'Repeated PIN refusals')).toHaveLength(0);
+  });
+
+  it('the trusted host app is never throttled, however many wrong dials precede it', () => {
+    const TOKEN = 'a'.repeat(64);
+    let t = 0;
+    const admissionThrottle = createAdmissionThrottle({}, () => t);
+    const { handler, clients } = harness({ pin: PIN, deps: { hostToken: TOKEN, admissionThrottle } });
+    for (let i = 0; i < 20; i++) {
+      handler(new FakeSocket(), req({ url: '/ws?pin=000000' })); // loopback, no token → gated
+    }
+    const host = new FakeSocket();
+    handler(host, req({ url: `/ws?hostToken=${TOKEN}` }));
+    expect(host.closed).toBeNull();
+    expect(clients.size).toBe(1);
+  });
+
+  it('an open gate (plain local dev) never refuses, with the REAL default throttle', () => {
+    // No injection here: this is the wiring as main.ts gets it. 20 dials stays under the
+    // connection cap, so the only thing that could refuse is the throttle.
+    const { handler, clients } = harness({ pin: null });
+    for (let i = 0; i < 20; i++) {
+      const ws = new FakeSocket();
+      handler(ws, req({ url: '/ws?pin=whatever', ...REMOTE }));
+      expect(ws.closed).toBeNull();
+    }
+    expect(clients.size).toBe(20);
+  });
+
+  it('buckets by peer: one guesser cannot lock out a different remote peer', () => {
+    // Same socket address, different cf-connecting-ip — the case peerKeyFrom exists to separate.
+    const { handler } = harness({ pin: PIN, deps: { admissionThrottle: createAdmissionThrottle({}, () => 0) } });
+    const guesser = { socket: { remoteAddress: '10.0.0.9' }, headers: { 'cf-connecting-ip': '198.51.100.4' } };
+    const drummer = { socket: { remoteAddress: '10.0.0.9' }, headers: { 'cf-connecting-ip': '203.0.113.7' } };
+    for (let i = 0; i < 10; i++) handler(new FakeSocket(), req({ url: '/ws?pin=000000', ...guesser }));
+    const ws = new FakeSocket();
+    handler(ws, req({ url: `/ws?pin=${PIN}`, ...drummer }));
+    expect(ws.closed).toBeNull();
   });
 });
