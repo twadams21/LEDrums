@@ -59,15 +59,15 @@
   controller={store.controllerStatus}
   candidates={store.controllerCandidates}
   scanning={store.controllerScanning}
-  takeover={store.controllerTakeover}
+  takeover={store.controllerTest.takeover}
   recommendation={store.controllerRecommendation}
   canEdit={store.canEdit}
   onDiscover={() => store.discoverControllers()}
   onAdopt={(host) => store.adoptController(host)}
   onSetAuth={(password) => store.setControllerAuth(password)}
   onIdentify={() => store.identifyController()}
-  onTestData={(pattern) => store.setControllerTestData(pattern)}
-  onBackToLive={() => store.backToLive()}
+  onTestData={(pattern) => store.controllerTest.setTestData(pattern)}
+  onBackToLive={() => store.controllerTest.backToLive()}
 />
 <Separator />
 

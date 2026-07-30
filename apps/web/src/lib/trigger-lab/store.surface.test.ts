@@ -29,9 +29,9 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
 
 /** Ceiling on the member count. The store only shrinks from here — a step that publishes a
     collaborator deletes forwarders, so this ratchet never needs raising. */
-const MEMBER_CAP = 384;
+const MEMBER_CAP = 381;
 /** Ceiling on store.svelte.ts's line count. Same direction: down only. */
-const LOC_CAP = 3519;
+const LOC_CAP = 3507;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -61,7 +61,6 @@ const EXPECTED_MEMBERS: string[] = [
   'autoWireEffectToOutput',
   'autosaveArmed',
   'availableModParams',
-  'backToLive',
   'backups',
   'batchIntoCurrentUndo',
   'beat',
@@ -102,7 +101,6 @@ const EXPECTED_MEMBERS: string[] = [
   'controllerRecommendation',
   'controllerScanning',
   'controllerStatus',
-  'controllerTakeover',
   'controllerTest',
   'copyGraphToClipboard',
   'copyNode',
@@ -323,7 +321,6 @@ const EXPECTED_MEMBERS: string[] = [
   'setCcNodeSource',
   'setChance',
   'setControllerAuth',
-  'setControllerTestData',
   'setCrossfade',
   'setDelayMode',
   'setDelayMs',

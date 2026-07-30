@@ -18,7 +18,7 @@
 
   // S49: while the adopted controller runs a built-in test pattern it ignores the live output
   // stream, so the pill drops from LIVE to a loud amber TEST for the whole takeover.
-  const view = $derived(deriveOutputPill(store.link, store.output, store.controllerTakeover !== null));
+  const view = $derived(deriveOutputPill(store.link, store.output, store.controllerTest.takeover !== null));
 </script>
 
 <StatusPill tone={view.tone} label={view.label} pulse={view.pulse} title={view.title} />

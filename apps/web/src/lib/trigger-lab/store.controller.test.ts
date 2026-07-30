@@ -146,44 +146,44 @@ describe('store — controller test patterns + takeover (S49)', () => {
   it('setControllerTestData sends the pattern for an editor and no-ops for a viewer', () => {
     const pattern: ControllerTestPattern = { op: 'setColor', color: [255, 0, 0, 0], colorRes: '8Bit', pixPortNum: 0, pixNum: 0 };
     const editor = wired();
-    editor.store.setControllerTestData(pattern);
+    editor.store.controllerTest.setTestData(pattern);
     expect(editor.h.sent).toContainEqual({ t: 'controllerTestData', pattern });
 
     const viewer = wired();
     viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
-    viewer.store.setControllerTestData(pattern);
+    viewer.store.controllerTest.setTestData(pattern);
     expect(viewer.h.sent).toEqual([]);
   });
 
   it('backToLive sends the exit for an editor and no-ops for a viewer', () => {
     const editor = wired();
-    editor.store.backToLive();
+    editor.store.controllerTest.backToLive();
     expect(editor.h.sent).toContainEqual({ t: 'controllerBackToLive' });
 
     const viewer = wired();
     viewer.store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 };
-    viewer.store.backToLive();
+    viewer.store.controllerTest.backToLive();
     expect(viewer.h.sent).toEqual([]);
   });
 
   it('controllerTakeover mirrors the server-reported testPattern on the status', () => {
     const { store, h } = wired();
-    expect(store.controllerTakeover).toBeNull(); // no status yet
+    expect(store.controllerTest.takeover).toBeNull(); // no status yet
     h.cb!.onControllerStatus!(status());
-    expect(store.controllerTakeover).toBeNull(); // adopted, live mode
+    expect(store.controllerTest.takeover).toBeNull(); // adopted, live mode
     const pattern = { op: 'rgbwCycle' } as const;
     h.cb!.onControllerStatus!(status({ testPattern: pattern }));
-    expect(store.controllerTakeover).toEqual(pattern);
+    expect(store.controllerTest.takeover).toEqual(pattern);
     h.cb!.onControllerStatus!(status({ testPattern: null }));
-    expect(store.controllerTakeover).toBeNull(); // back to live
+    expect(store.controllerTest.takeover).toBeNull(); // back to live
   });
 
   it('drops the takeover with the rest of the controller state on a link drop', () => {
     const { store, h } = wired();
     h.cb!.onControllerStatus!(status({ testPattern: { op: 'colorFade' } }));
-    expect(store.controllerTakeover).toEqual({ op: 'colorFade' });
+    expect(store.controllerTest.takeover).toEqual({ op: 'colorFade' });
     h.cb!.onConnection!('closed');
-    expect(store.controllerTakeover).toBeNull();
+    expect(store.controllerTest.takeover).toBeNull();
   });
 });
 

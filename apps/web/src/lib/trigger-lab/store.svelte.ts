@@ -479,8 +479,10 @@ export class TriggerLab {
   /** PixLite controller test-pattern (S49) — the LOUD test-data takeover (drive / exit) + its
       reactive view, extracted into {@link ControllerTest} (R22, store split 3/5). Sibling of
       {@link monitor}; the active pattern is server-reported on the monitor's status, so this reads
-      it through `currentTestPattern`. The store delegates its public surface below, unchanged. */
-  private readonly controllerTest = new ControllerTest({
+      it through `currentTestPattern`. PUBLIC (INIT-02 S3): callers reach the collaborator itself
+      (`store.controllerTest.takeover` / `.setTestData()` / `.backToLive()`) — the forwarder layer
+      that used to re-export its surface on the store is gone. */
+  readonly controllerTest = new ControllerTest({
     send: (msg) => this.client.send(msg),
     isViewer: () => this.isViewer,
     currentTestPattern: () => this.monitor.status?.testPattern ?? null,
@@ -497,12 +499,6 @@ export class TriggerLab {
   get controllerCandidates(): DiscoveredController[] {
     return this.monitor.candidates;
   }
-  /** The active controller test pattern (S49), or null in LIVE mode. Drives the panel banner AND
-      {@link deriveOutputPill}'s third argument. See {@link ControllerTest.takeover}. */
-  get controllerTakeover(): ControllerTestPattern | null {
-    return this.controllerTest.takeover;
-  }
-
   /** Shows / setlist / song-library (R23, store split 4/5) — the multi-show document library, the
       setlist songs, the canonical song pool, their resolved runtime view, and the server-library
       cold-load/write-through sync, extracted into {@link ShowsController}. The store delegates its
@@ -1851,10 +1847,10 @@ export class TriggerLab {
     this.client.send({ t: 'setOutput', ...partial });
   }
 
-  // --- PixLite controller monitor + test (S48/S49, group L) -----------------
-  // Public API preserved as thin forwarders onto {@link monitor} (R20) and {@link controllerTest}
-  // (R22) — the store split. The domain docs + gating live on those controllers; these keep the
-  // store's call surface unchanged.
+  // --- PixLite controller monitor (S48/S49, group L) ------------------------
+  // Thin forwarders onto {@link monitor} (R20) — the store split. The domain docs + gating live on
+  // that controller; these keep the store's call surface unchanged. {@link controllerTest} (R22)
+  // no longer has forwarders here: INIT-02 S3 published it, so its callers reach it directly.
 
   watchController(watching: boolean): void {
     this.monitor.watch(watching);
@@ -1917,14 +1913,6 @@ export class TriggerLab {
   identifyHoop(drumId: string, hoop: number, durationS = 5): void {
     if (this.isViewer) return; // read-only viewer (S2): device flash is editor-only
     this.client.send({ t: 'identifyHoop', drumId, hoop, durationS });
-  }
-
-  setControllerTestData(pattern: ControllerTestPattern): void {
-    this.controllerTest.setTestData(pattern);
-  }
-
-  backToLive(): void {
-    this.controllerTest.backToLive();
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).
