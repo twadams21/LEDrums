@@ -94,6 +94,19 @@
     "target": ".idock",
     "settle": 1500
   },
+  "patch-drum-zones": {
+    "state": "patch:trigger:snare",
+    "target": ".zones",
+    "settle": 1500
+  },
+  "modifier-inspector": {
+    "state": "view:trigger,add:modifier,select:modifier",
+    "target": "Node editor"
+  },
+  "section-inspector": {
+    "state": "view:sections,section",
+    "target": ".detail"
+  },
   "objects": {
     "state": "view:objects",
     "target": "main.center"
@@ -154,5 +167,18 @@
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
     "settle": 1200
+  },
+  "styleguide-primitives": {
+    "route": "?style",
+    "target": "#primitives"
+  },
+  "styleguide-controller-states": {
+    "route": "?style",
+    "target": "Controller status panel (PixLite)",
+    "viewport": "2400x1600"
+  },
+  "styleguide-adopt-row": {
+    "route": "?style",
+    "target": "Adopt-by-IP row"
   }
 }

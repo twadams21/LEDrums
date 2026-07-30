@@ -25,7 +25,11 @@
   const keys = $derived(src === undefined ? [] : Array.isArray(src) ? src : [src]);
 </script>
 
-<div class="demo" class:wide>
+<!-- `role="region"` + the card's own title as its accessible name makes every demo targetable by
+     `pnpm ui-shot --route "?style" --target "<title>"` forever, per the ui-shot README's rule that a
+     surface with an accessible name is screenshot-able (and that `data-shot` is a smell). No rendered
+     pixels change. Adopted styleguide-wide by the INIT-09 veto round. -->
+<div class="demo" class:wide role="region" aria-label={title}>
   <div class="head">
     <Eyebrow>{title}</Eyebrow>
     <span class="ptrs">

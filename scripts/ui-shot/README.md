@@ -50,6 +50,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `select:<k>`| select the node most recently `add`ed with that kind (flips the Node Editor to Inspector) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |
 | `settings`  | open the app Settings dialog |
+| `section`   | select a section (by name substring or 0-based index; bare `section` = the first) → the Sections detail aside / SectionInspector |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.
 
@@ -69,7 +70,7 @@ Presets are **for CI/sweep stability and locked baselines only** — not a regis
 { "gen3-scope-inspector": { "state": "view:trigger,add:scope,select:scope", "target": "Node editor" } }
 ```
 
-Fields: `state`, `target`, optional `name` (defaults to the key), optional `viewport` (`"1280x800"`), optional `settle` (ms — for animated canvases: visualizer, patch, gallery). Run one by name (`pnpm ui-shot gen3-scope-inspector`), list them (`--list`), or sweep all (`--all`).
+Fields: `state`, `target`, optional `name` (defaults to the key), optional `viewport` (`"1280x800"`), optional `settle` (ms — for animated canvases: visualizer, patch, gallery), optional `route` (a raw query string, e.g. `"?style"` — the styleguide presets use it, since `?style` mounts `Styleguide.svelte` instead of the app and so has no `__LEDRUMS_SHOT__` seam to drive with `state`). Run one by name (`pnpm ui-shot gen3-scope-inspector`), list them (`--list`), or sweep all (`--all`).
 
 ## Conventions — capturable by convention, not maintenance
 
