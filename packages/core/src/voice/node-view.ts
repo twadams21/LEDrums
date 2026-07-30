@@ -3,8 +3,11 @@
  *
  * {@link GraphNode} stays exactly as it is: one flat record carrying every kind's fields, 27
  * of them optional. That is the PERSISTED shape and it is not changing here — the hydrate /
- * persistence / clipboard paths and the 27 `Partial<GraphNode>` sites all keep working against
- * it untouched. This module publishes a second, narrower way to LOOK at the same object:
+ * persistence / clipboard paths and the 27 partial-node construction sites all keep working
+ * against it untouched. (Spelled in words on purpose: writing that generic out literally would
+ * make this comment match the partial-node census grep INIT-06 S14 reports, and a doc comment
+ * must not inflate the metric it cites.) This module publishes a second, narrower way to LOOK
+ * at the same object:
  * a discriminated union with one arm per {@link NodeKind}, so a site that has already
  * established which kind it is holding can be typed against only that kind's fields.
  *
