@@ -188,3 +188,78 @@ describe('SaveStatusController', () => {
     expect(ctl.status).toBe('idle');
   });
 });
+
+/* The honest 'error' state. "Saved" used to be unconditional; when a local write fails, the
+   indicator has to say so — immediately, and until something actually succeeds. */
+describe('SaveStatusController — failed()', () => {
+  it('lands on error IMMEDIATELY from saving, bypassing the min-visible floor', () => {
+    const { clock, advance } = makeClock();
+    const changes: SaveStatus[] = [];
+    const ctl = new SaveStatusController((s) => changes.push(s), { clock });
+    ctl.saving();
+    ctl.failed('quota'); // well inside the floor
+    expect(ctl.status).toBe('error'); // no waiting — an error should not sit behind a spinner
+    advance(0);
+    expect(changes).toEqual(['saving', 'error']);
+  });
+
+  it('lands on error from idle too (a flush with no visible saving window)', () => {
+    const { clock } = makeClock();
+    const ctl = new SaveStatusController(() => {}, { clock });
+    ctl.failed('unavailable');
+    expect(ctl.status).toBe('error');
+  });
+
+  it('does NOT auto-settle — the error stays on screen indefinitely', () => {
+    const { clock, advance } = makeClock();
+    const ctl = new SaveStatusController(() => {}, { clock });
+    ctl.saving();
+    ctl.failed('quota');
+    advance((MIN_SAVING_MS + SAVED_HOLD_MS) * 10);
+    expect(ctl.status).toBe('error'); // unlike 'saved', it has no hold that expires
+  });
+
+  it('cancels a deferred saved() so a late success cannot land on top of the failure', () => {
+    const { clock, advance } = makeClock();
+    const ctl = new SaveStatusController(() => {}, { clock });
+    ctl.saving();
+    ctl.saved(); // deferred: the floor has not elapsed
+    ctl.failed('quota'); // a second write in the same cycle failed
+    advance(MIN_SAVING_MS * 4);
+    expect(ctl.status).toBe('error'); // the queued 'saved' was cancelled, not merely overwritten
+  });
+
+  it('carries the reason for the tooltip, and clears it on any non-error state', () => {
+    const { clock, advance } = makeClock();
+    const seen: Array<string | null> = [];
+    const ctl = new SaveStatusController((_s, err) => seen.push(err), { clock });
+    ctl.saving();
+    ctl.failed('the song library could not be saved (quota)');
+    expect(ctl.error).toBe('the song library could not be saved (quota)');
+    ctl.saved();
+    expect(ctl.error).toBeNull();
+    advance(SAVED_HOLD_MS);
+    expect(seen).toEqual([null, 'the song library could not be saved (quota)', null, null]);
+  });
+
+  it('re-announces when a second failure names a different cause', () => {
+    const { clock } = makeClock();
+    const changes: SaveStatus[] = [];
+    const ctl = new SaveStatusController((s) => changes.push(s), { clock });
+    ctl.failed('quota');
+    ctl.failed('unavailable');
+    expect(ctl.error).toBe('unavailable');
+    expect(changes).toEqual(['error', 'error']); // the status is unchanged; the reason is not
+  });
+
+  it('a later successful save clears the error, then settles to idle as usual', () => {
+    const { clock, advance } = makeClock();
+    const ctl = new SaveStatusController(() => {}, { clock });
+    ctl.saving();
+    ctl.failed('quota');
+    ctl.saved(); // the next write got through — this is the ONLY thing that clears 'error'
+    expect(ctl.status).toBe('saved'); // immediate: there is no saving window left to honour
+    advance(SAVED_HOLD_MS);
+    expect(ctl.status).toBe('idle');
+  });
+});

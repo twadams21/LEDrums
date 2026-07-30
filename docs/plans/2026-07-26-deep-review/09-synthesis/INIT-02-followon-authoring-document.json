@@ -1,0 +1,122 @@
+{
+  "initiative_id": "INIT-02-followon-authoring-document",
+  "variant": "synthesis",
+  "provenance": {
+    "phase": "execution",
+    "lane": "init02c2",
+    "model": "claude-opus-5",
+    "effort": "high",
+    "run_id": "init02c2-b90e1c"
+  },
+  "summary": "The tracked follow-on emitted by INIT-02 S23, and the ONLY surviving form of sonnet's AuthoringStore ambition: both reviewers killed it as a step of INIT-02 and both offered ticketing it as the repair. INIT-02 published five collaborators and took store.svelte.ts from a measured 3519 LOC / 384 members to 3258 LOC / 320 members \u2014 real, but divergent-change-0002 is not closed, because the authoring document itself still converges on one file. Eight change axes still converge on store.svelte.ts and are named here so none is lost: (1) node/graph authoring, (2) undo snapshots, (3) clipboard/paste, (4) the WS link, (5) persistence, (6) transport, (7) backups, (8) OSC/tunnel status. The three sub-clusters below take the first three \u2014 the authoring document proper; axes 4-8 are the store's link and IO responsibilities and are deliberately NOT part of this follow-on. This record exists so that fact has an owner and a shape instead of dying in a test-file header comment where no later phase can pick it up. The shape is NOT one ~3,000-LOC/~100-file AuthoringStore commit \u2014 that is precisely what the attacks killed. It is three sub-clusters, in the order that survived those attacks, each run through the same add-accessor -> migrate-production -> migrate-tests -> delete strangler that INIT-02 proved out, each with a durable resting state where the work can stop and still be merged.",
+  "findings_addressed": [
+    "divergent-change-0002"
+  ],
+  "design": [
+    {
+      "id": "S1",
+      "title": "Sub-cluster one: graphs + nodes",
+      "intent": "The authoring document's core \u2014 graph CRUD, node add/move/delete, the graph-name map, pad-key selection, normalizeGraphs and the seed reset. First because every other axis reads it, so migrating it later would mean migrating it twice. Publish as a collaborator with an injected Host exactly as INIT-02 S14 did for the five that landed: construct it against a stub host in tests, no store. Resting state: the collaborator is public, its forwarders are deleted, and the surface ratchet in store.surface.test.ts records the exact removal count in the same commit.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.surface.test.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm gates` green at every step; the member inventory in store.surface.test.ts shows an exact removal count per commit, and both caps are tightened to the newly measured values rather than left slack. The rename-normalised diff gate from INIT-02 S8 applies to the test-retarget commit.",
+      "reverses": "`git revert` per step \u2014 the strangler's whole point is that each of the four phases (add accessor / migrate production / migrate tests / delete) is independently revertible, and only the delete is irreversible-by-construction."
+    },
+    {
+      "id": "S2",
+      "title": "Sub-cluster two: undo snapshots + clipboard/paste",
+      "intent": "pushUndoSnapshot / undo / redo and the clipboard + paste paths, which are the two axes that read the WHOLE authoring document rather than a slice of it \u2014 which is why they follow graphs/nodes rather than lead. Same strangler, same resting state.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store.surface.test.ts"
+      ],
+      "risk": "high",
+      "verification": "`pnpm gates` green; store.clipboard.test.ts, store.node-clipboard.test.ts, store.patch-clipboard.test.ts stay green with call-shape edits only. Undo/redo parity is the risk here \u2014 a characterization matrix over the snapshot boundaries comes FIRST, in the shape INIT-02 S15 used before unifying the two library syncs.",
+      "reverses": "`git revert` per step, but with a caveat S1 does not have: the undo STACK is runtime state, not persisted, so reverting mid-cluster leaves any snapshots taken under the new shape unreadable by the old code. Revert between commits, not during a session \u2014 and if the characterization matrix has already landed, keep it: it is pure test addition and is the evidence a second attempt would need."
+    },
+    {
+      "id": "S3",
+      "title": "Sub-cluster three: wiring",
+      "intent": "connect / disconnect / reconnect / splice and their validation entry points. Last because INIT-02 S19-S20 already named the wire ends (WireEnds), so this cluster's interface is the one already in its final shape \u2014 the remaining work is moving it, not designing it.",
+      "files": [
+        "apps/web/src/lib/trigger-lab/store.svelte.ts",
+        "apps/web/src/lib/trigger-lab/store/graph-wiring.ts",
+        "apps/web/src/lib/trigger-lab/store.surface.test.ts"
+      ],
+      "risk": "medium",
+      "verification": "`pnpm gates` green; store.splice.test.ts and store/graph-wiring.test.ts green with call-shape edits only, case counts unchanged."
+    }
+  ],
+  "sequencing": [
+    [
+      "S1"
+    ],
+    [
+      "S2"
+    ],
+    [
+      "S3"
+    ]
+  ],
+  "interface_deltas": [
+    {
+      "at": "apps/web/src/lib/trigger-lab/store.svelte.ts",
+      "removed": [
+        "the graph/node authoring forwarders (S1)",
+        "the undo-snapshot and clipboard forwarders (S2)",
+        "the wiring forwarders (S3)"
+      ],
+      "added": [
+        "three collaborator accessors on TriggerLab, each with an injected Host interface in the shape INIT-02 S14 established"
+      ],
+      "net_interface_change": "reduces",
+      "note": "Same trade INIT-02 made five times: one accessor replaces N forwarders, so the member count falls while the reachable behaviour is unchanged. The Host interfaces stay exported (11-decisions.md, INIT-02)."
+    }
+  ],
+  "behaviour_parity_evidence_plan": {
+    "baseline_reference": "ff90948 (INIT-02 S22) \u2014 store.svelte.ts at 3258 LOC / 320 members, suite at 3265 tests (core 840 / web 1681 / server 548 / io 102 / protocol 27 / error-ingest 31 / desktop 36).",
+    "checks": [
+      "`pnpm gates` green on committed HEAD at every step; the test count only rises unless a step deletes tests, and any deletion is named in its commit message.",
+      "store.surface.test.ts's member inventory changes by an EXACT stated count in the same commit as each publish/delete \u2014 the instrument INIT-02 S1 built for precisely this.",
+      "The rename-normalised diff gate (INIT-02 S8) on every test-retarget commit: the diff must contain call-shape edits and nothing else.",
+      "A characterization matrix BEFORE the undo/clipboard cluster (S2), in the shape of INIT-02 S15 \u2014 pin the snapshot boundaries as direct unit tests first, and if the matrix shows the two axes genuinely diverge, stop and report rather than forcing them together."
+    ],
+    "known_gaps": "No fixture-corpus gate: greenfield data posture (two users, no real show files) means parity is proven by the suite plus the surface instrument, not by replaying authored documents. Undo/redo parity is the genuine risk and is not fully covered by the existing suite \u2014 S2's characterization matrix exists to close that gap before the migration, not after. ui-shot evidence is not part of this follow-on: none of the three sub-clusters is a behaviour change, so there is nothing new for a screenshot to show. A step that DOES change behaviour is out of this record's scope."
+  },
+  "rollback_strategy": "Per sub-cluster, per step. Each of S1/S2/S3 is four commits (add accessor / migrate production / migrate tests / delete forwarders) and each leaves a durable resting state, so the work can stop after any completed sub-cluster and still be merged. `git revert` restores the prior step; only the final delete of a cluster is irreversible by construction, and it is the last commit of that cluster for exactly that reason. Explicitly NOT a single ~3,000-LOC/~100-file commit \u2014 that shape was killed by both reviewers and is the failure mode this record is written to prevent.",
+  "estimated_loc": 3000,
+  "dependencies_on_other_initiatives": [
+    "INIT-02-store-decomposition"
+  ],
+  "open_questions": [
+    {
+      "question": "Should the three sub-clusters land as one collaborator (an authoring-document object with three internal areas) or three sibling collaborators on TriggerLab? INIT-02 published five siblings and that shape held; one object would cut the member count further but re-opens the god-object argument one level down.",
+      "blocks_execution": false,
+      "owner": "trent"
+    },
+    {
+      "question": "Does the undo snapshot stay a whole-document snapshot after S1/S2, or become per-collaborator? A whole-document snapshot keeps undo semantics identical (the safe default, assumed here); per-collaborator would be cheaper but changes what a single undo means to the user.",
+      "blocks_execution": false,
+      "owner": "trent"
+    }
+  ],
+  "synthesis_inputs": {
+    "variants_considered": [
+      "sonnet",
+      "opus",
+      "fable"
+    ],
+    "refutations_consumed": [
+      "sonnet's S10 AuthoringStore step \u2014 killed by both reviewers as a single migration; its sub-cluster ORDER (graphs/nodes, then undo/clipboard, then wiring) is what survived and is carried here.",
+      "opus reviewer, landed against INIT-02 S23: recording the remaining change axes only in a test-file header comment leaves the initiative's critical finding closing with no owner. This artifact is that repair."
+    ],
+    "rationale": "Both reviewers killed the AuthoringStore as a step and both offered ticketing it as the repair, so this record is the repair rather than a fourth attempt at the step. Its numbers are MEASURED at ff90948, not estimated: `wc -l apps/web/src/lib/trigger-lab/store.svelte.ts` = 3257 (3258 as the ratchet counts it, splitting on newlines) and EXPECTED_MEMBERS.length = 320, against a pre-migration baseline of 3519 LOC / 384 members measured at 7c16a07^ \u2014 a 261-line / 64-member reduction across INIT-02. The plan text's '3,630' pre-migration figure was a stale estimate; the measured value is 3519.",
+    "attacks_addressed": [
+      "'the follow-on is just a comment' \u2014 it is a schema-shaped artifact in 09-synthesis/ alongside the initiative plans, discoverable by the same means as every other initiative.",
+      "'the numbers are estimates' \u2014 every number here is read at ff90948 or at 7c16a07^ and the command that produced it is named."
+    ]
+  }
+}

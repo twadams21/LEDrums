@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
+import { STORAGE_KEY, SHOWS_STORAGE_KEY, SONGS_STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
+import {
+  writeStoredLibrary,
+  writeStoredSongLibrary,
+  type StorageWriteResult,
+} from './shows-controller.svelte';
 import { makeNode, type EffectDef, type Preset } from './sim';
 import { EFFECTS, PRESETS } from './fixtures';
 import type { WSClient } from '../ws/client';
@@ -10,7 +15,7 @@ import type { WSClient } from '../ws/client';
    blob, and that createGraph mints a persistable authored graph. The pure module's
    serialize/deserialize contract is covered separately in persistence.test.ts. */
 
-import { MemStorage } from '../test-support/mem-storage';
+import { MemStorage, ThrowingStorage, quotaExceededError } from '../test-support/mem-storage';
 
 // The store never connects in these tests (start() is not called), so a no-op client
 // that satisfies the constructor's factory is enough.
@@ -102,6 +107,64 @@ describe('TriggerLab effects hydration (union, never replace)', () => {
     expect(store.effects.some((e) => e.id === 'my-custom-fx')).toBe(true); // user effect kept
     expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true); // built-ins present
     expect(store.effects).toHaveLength(EFFECTS.length + 1); // built-ins de-duped, +1 user effect
+  });
+});
+
+/* resilience-hole-0007, part one. The library writers used to swallow every failure and return
+   `void`, so a full quota looked exactly like a successful save. They now REPORT — while still
+   never throwing, because a throw here reaches the render loop or a lifecycle hook. No caller
+   reads the result yet (S22 does), so behaviour is unchanged by construction. */
+describe('local library writes report their outcome (never throw)', () => {
+  const payload = { version: 3, shows: [] } as unknown as Parameters<typeof writeStoredLibrary>[0];
+  const songPayload = { version: 1, songs: [] } as unknown as Parameters<typeof writeStoredSongLibrary>[0];
+
+  it('reports ok on a happy write, and the bytes really land', () => {
+    expect(writeStoredLibrary(payload)).toEqual({ ok: true });
+    expect(writeStoredSongLibrary(songPayload)).toEqual({ ok: true });
+    expect(localStorage.getItem(SHOWS_STORAGE_KEY)).toBe(JSON.stringify(payload));
+  });
+
+  it("reports reason 'quota' when the origin is out of room — under either browser's error name", () => {
+    for (const name of ['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'] as const) {
+      (globalThis as { localStorage?: Storage }).localStorage = new ThrowingStorage(() =>
+        quotaExceededError(name),
+      ) as unknown as Storage;
+      let result: StorageWriteResult | undefined;
+      expect(() => {
+        result = writeStoredLibrary(payload);
+      }).not.toThrow();
+      expect(result).toMatchObject({ ok: false, reason: 'quota' });
+      expect((result as { message: string }).message).toBeTruthy(); // the cause is nameable
+    }
+  });
+
+  it("reports reason 'unavailable' when there is no localStorage at all (SSR / storage off)", () => {
+    delete (globalThis as { localStorage?: Storage }).localStorage;
+    let result: StorageWriteResult | undefined;
+    expect(() => {
+      result = writeStoredSongLibrary(songPayload);
+    }).not.toThrow();
+    expect(result).toMatchObject({ ok: false, reason: 'unavailable' });
+  });
+
+  it("reports reason 'error' for any other write failure", () => {
+    const boom = new Error('SecurityError: access denied');
+    boom.name = 'SecurityError';
+    (globalThis as { localStorage?: Storage }).localStorage = new ThrowingStorage(() => boom) as unknown as Storage;
+    let result: StorageWriteResult | undefined;
+    expect(() => {
+      result = writeStoredLibrary(payload);
+    }).not.toThrow();
+    expect(result).toEqual({ ok: false, reason: 'error', message: 'SecurityError: access denied' });
+  });
+
+  it('fails only the keys the double is told to fail (the partial-loss case S22 needs)', () => {
+    (globalThis as { localStorage?: Storage }).localStorage = new ThrowingStorage(
+      () => quotaExceededError(),
+      (k) => k === SONGS_STORAGE_KEY,
+    ) as unknown as Storage;
+    expect(writeStoredLibrary(payload)).toEqual({ ok: true }); // the show library still lands...
+    expect(writeStoredSongLibrary(songPayload)).toMatchObject({ ok: false, reason: 'quota' }); // ...the songs do not
   });
 });
 

@@ -6,6 +6,18 @@
     "state": "view:trigger",
     "target": ".top"
   },
+  "save-indicator-error": {
+    "state": "view:trigger,save-status:error",
+    "target": ".top"
+  },
+  "top-bar-takeover": {
+    "state": "view:trigger,takeover:viewer",
+    "target": ".top"
+  },
+  "top-bar-editing": {
+    "state": "view:trigger,takeover:editor",
+    "target": ".top"
+  },
   "transport": {
     "state": "view:trigger",
     "target": ".xport"

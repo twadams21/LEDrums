@@ -27,11 +27,24 @@ import { harnessClient, newHarness } from '../test-support/ws-harness';
    dial out on construction, this file fails loudly instead of going flaky. localStorage is the
    shared MemStorage double, same beforeEach/afterEach pair as store.shows.test.ts. */
 
-/** Ceiling on the member count. The store only shrinks from here — a step that publishes a
-    collaborator deletes forwarders, so this ratchet never needs raising. */
-const MEMBER_CAP = 318;
-/** Ceiling on store.svelte.ts's line count. Same direction: down only. */
-const LOC_CAP = 3223;
+/* THE RULE (INIT-02 S23). Both caps sit at the MEASURED post-migration values with no slack, so
+   the very next member or line trips them. Decomposition steps only shrink them — publishing a
+   collaborator deletes forwarders — so the direction is down. That is not a law, though: NEW
+   BEHAVIOUR can legitimately raise a cap, and S22 did (`saveError` + `writeLocalCaches`, the
+   honest save-error state). **A commit that raises a cap must say why in its message.** A commit
+   that raises one silently is the thing this instrument exists to catch.
+
+   Where INIT-02 got to, and what it did NOT finish: 384 members / 3519 LOC before S1 (measured at
+   7c16a07^) down to the values below — 64 members and 261 lines removed across five published
+   collaborators. divergent-change-0002 is NOT closed by that: eight change axes still converge on
+   store.svelte.ts. They are enumerated, ordered and owned in
+   docs/plans/2026-07-26-deep-review/09-synthesis/INIT-02-followon-authoring-document.json —
+   a real artifact rather than this comment, so a later phase can pick the work up. */
+
+/** Ceiling on the member count — the measured value at this commit, exactly. */
+const MEMBER_CAP = 320;
+/** Ceiling on store.svelte.ts's line count — likewise measured, likewise exact. */
+const LOC_CAP = 3258;
 
 const EXPECTED_MEMBERS: string[] = [
   'acceptsMidiChannel',
@@ -245,6 +258,7 @@ const EXPECTED_MEMBERS: string[] = [
   'restoringUndo',
   'role',
   'runUndoable',
+  'saveError',
   'saveNodeAsPreset',
   'saveStatus',
   'saveStatusCtl',
@@ -352,6 +366,7 @@ const EXPECTED_MEMBERS: string[] = [
   'voiceLevelDisplay',
   'wireClient',
   'writeClip',
+  'writeLocalCaches',
 ];
 
 function surfaceOf(o: object): string[] {

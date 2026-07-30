@@ -562,21 +562,27 @@
     if (!g) return false;
     // Pointer inside a precise handle's radius → validate that exact port (mod / param / flow).
     if (toHandle != null) {
-      if (from.type === 'target') return canConnect(g, toId, from.nodeId, undefined, toPortOf(from.handleId));
-      return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, toPortOf(toHandle));
+      // reverse drag: the drop target becomes the SOURCE — the named ends make the swap explicit.
+      if (from.type === 'target') return canConnect(g, { from: toId, to: from.nodeId, toPort: toPortOf(from.handleId) });
+      return canConnect(g, { from: from.nodeId, to: toId, fromPort: from.handleId ?? undefined, toPort: toPortOf(toHandle) });
     }
     // Drop-anywhere on the node body → mirror dropConnect's source-kind routing.
     if (from.type === 'target') {
       const paramPort = toPortOf(from.handleId);
       const toPort =
         paramPort && voice.paramKeyOf(paramPort) !== null ? paramPort : kindOf(toId) === 'modifier' ? 'mod' : undefined;
-      return canConnect(g, toId, from.nodeId, undefined, toPort);
+      return canConnect(g, { from: toId, to: from.nodeId, toPort }); // reverse drag: ends swapped
     }
     if (kindOf(from.nodeId) && voice.isModSourceKind(kindOf(from.nodeId)!)) {
       const port = predictParamPort(toId);
-      return port ? canConnect(g, from.nodeId, toId, from.handleId ?? undefined, port) : false;
+      return port ? canConnect(g, { from: from.nodeId, to: toId, fromPort: from.handleId ?? undefined, toPort: port }) : false;
     }
-    return canConnect(g, from.nodeId, toId, from.handleId ?? undefined, kindOf(from.nodeId) === 'modifier' ? 'mod' : undefined);
+    return canConnect(g, {
+      from: from.nodeId,
+      to: toId,
+      fromPort: from.handleId ?? undefined,
+      toPort: kindOf(from.nodeId) === 'modifier' ? 'mod' : undefined,
+    });
   }
   function dropConnect(
     fromId: string,

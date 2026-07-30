@@ -29,7 +29,7 @@
   const patchOutput = $derived(kit?.outputs.find((o) => o.id === editor.outputId) ?? null);
   const outputIndex = $derived(kit?.outputs.findIndex((o) => o.id === editor.outputId) ?? -1);
   const expanded = $derived(kit?.global.expanded ?? false);
-  const liveRouting = $derived(shell.patchRouting);
+  const liveRouting = $derived(shell.patch.routing);
 
   function pixelsForHoop(h: HoopRef): number {
     const d = kit?.drums.find((x) => x.id === h.drumId);

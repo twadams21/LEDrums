@@ -68,7 +68,7 @@ describe('graph-wiring validation never throws (fuzz)', () => {
       const toPort = pick(toPorts, rand);
       let result: unknown;
       expect(() => {
-        result = canConnect(graph, from, to, port, toPort);
+        result = canConnect(graph, { from, to, fromPort: port, toPort });
       }).not.toThrow();
       expect(typeof result).toBe('boolean');
     }
@@ -85,7 +85,7 @@ describe('graph-wiring validation never throws (fuzz)', () => {
       const toPort = pick(toPorts, rand);
       let result: unknown;
       expect(() => {
-        result = canReconnect(graph, edgeId, from, to, port, toPort);
+        result = canReconnect(graph, edgeId, { from, to, fromPort: port, toPort });
       }).not.toThrow();
       expect(typeof result).toBe('boolean');
     }
@@ -108,52 +108,52 @@ describe('graph-wiring — modifier (mod) port scoping', () => {
   }
 
   it('accepts a mod wire from a modifier node into a play node', () => {
-    expect(canConnect(modGraph(), 'm1', 'p1', undefined, 'mod')).toBe(true);
+    expect(canConnect(modGraph(), { from: 'm1', to: 'p1', toPort: 'mod' })).toBe(true);
   });
 
   it('accepts a mod→mod chain wire', () => {
-    expect(canConnect(modGraph(), 'm1', 'm2', undefined, 'mod')).toBe(true);
+    expect(canConnect(modGraph(), { from: 'm1', to: 'm2', toPort: 'mod' })).toBe(true);
   });
 
   it('rejects a mod wire from a NON-modifier source (scoped handles)', () => {
-    expect(canConnect(modGraph(), 'a1', 'p1', undefined, 'mod')).toBe(false); // container → mod
-    expect(canConnect(modGraph(), 'trigger', 'p1', undefined, 'mod')).toBe(false);
+    expect(canConnect(modGraph(), { from: 'a1', to: 'p1', toPort: 'mod' })).toBe(false); // container → mod
+    expect(canConnect(modGraph(), { from: 'trigger', to: 'p1', toPort: 'mod' })).toBe(false);
   });
 
   it('rejects a mod wire into a node with no mod input (a container)', () => {
-    expect(canConnect(modGraph(), 'm1', 'a1', undefined, 'mod')).toBe(false);
+    expect(canConnect(modGraph(), { from: 'm1', to: 'a1', toPort: 'mod' })).toBe(false);
   });
 
   it("accepts a modifier's output on an effect-flow wire", () => {
-    expect(canConnect(modGraph(), 'm1', 'p1')).toBe(true);
-    expect(canConnect(modGraph(), 'm1', 'a1')).toBe(true);
+    expect(canConnect(modGraph(), { from: 'm1', to: 'p1' })).toBe(true);
+    expect(canConnect(modGraph(), { from: 'm1', to: 'a1' })).toBe(true);
   });
 
   it('accepts a trigger-flow wire into a modifier node', () => {
-    expect(canConnect(modGraph(), 'trigger', 'm1')).toBe(true);
-    expect(canConnect(modGraph(), 'a1', 'm1')).toBe(true);
+    expect(canConnect(modGraph(), { from: 'trigger', to: 'm1' })).toBe(true);
+    expect(canConnect(modGraph(), { from: 'a1', to: 'm1' })).toBe(true);
   });
 
   it('flow `in` and `mod` inputs on one node are distinct — not duplicates of each other', () => {
     const g = modGraph();
     g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
     // an identical mod wire is a dup...
-    expect(canConnect(g, 'm1', 'p1', undefined, 'mod')).toBe(false);
+    expect(canConnect(g, { from: 'm1', to: 'p1', toPort: 'mod' })).toBe(false);
     // ...but the flow input is a different port entirely; flow duplicate detection still
     // keys on the canonical in-port aliases.
     const g2 = modGraph();
     g2.edges.push({ id: 'e3', from: 'trigger', to: 'p1', toPort: 'in' });
     // trigger→p1 already exists on flow 'in' (e1 has undefined toPort ≡ 'in') → dup
-    expect(canConnect(g2, 'trigger', 'p1')).toBe(false);
+    expect(canConnect(g2, { from: 'trigger', to: 'p1' })).toBe(false);
   });
 
   it('reconnecting an edge onto the mod port validates against source kind', () => {
     const g = modGraph();
     g.edges.push({ id: 'e2', from: 'm1', to: 'p1', toPort: 'mod' });
     // repoint the mod wire to m2's mod input (mod→mod) — legal
-    expect(canReconnect(g, 'e2', 'm1', 'm2', undefined, 'mod')).toBe(true);
+    expect(canReconnect(g, 'e2', { from: 'm1', to: 'm2', toPort: 'mod' })).toBe(true);
     // repoint the trigger-flow edge onto a mod port — illegal (trigger isn't a modifier)
-    expect(canReconnect(g, 'e1', 'trigger', 'p1', undefined, 'mod')).toBe(false);
+    expect(canReconnect(g, 'e1', { from: 'trigger', to: 'p1', toPort: 'mod' })).toBe(false);
   });
 });
 
@@ -173,64 +173,64 @@ describe('graph-wiring — modulation (param) port scoping', () => {
   }
 
   it('accepts an envelope → play param row wire', () => {
-    expect(canConnect(modulGraph(), 'env1', 'p1', undefined, 'param:brightness')).toBe(true);
+    expect(canConnect(modulGraph(), { from: 'env1', to: 'p1', toPort: 'param:brightness' })).toBe(true);
   });
 
   it('accepts an envelope → modifier param row wire', () => {
-    expect(canConnect(modulGraph(), 'env1', 'm1', undefined, 'param:decayMs')).toBe(true);
+    expect(canConnect(modulGraph(), { from: 'env1', to: 'm1', toPort: 'param:decayMs' })).toBe(true);
   });
 
   it('rejects a modulation wire from a NON-source node (scoped handles)', () => {
-    expect(canConnect(modulGraph(), 'trigger', 'p1', undefined, 'param:brightness')).toBe(false);
-    expect(canConnect(modulGraph(), 'm1', 'p1', undefined, 'param:brightness')).toBe(false); // modifier isn't a mod source
+    expect(canConnect(modulGraph(), { from: 'trigger', to: 'p1', toPort: 'param:brightness' })).toBe(false);
+    expect(canConnect(modulGraph(), { from: 'm1', to: 'p1', toPort: 'param:brightness' })).toBe(false); // modifier isn't a mod source
   });
 
   it('rejects a modulation wire into a node with no params (a container)', () => {
-    expect(canConnect(modulGraph(), 'env1', 'a1', undefined, 'param:brightness')).toBe(false);
+    expect(canConnect(modulGraph(), { from: 'env1', to: 'a1', toPort: 'param:brightness' })).toBe(false);
   });
 
   it("rejects an envelope's output on a trigger-flow wire (source only feeds param ports)", () => {
-    expect(canConnect(modulGraph(), 'env1', 'p1')).toBe(false); // no toPort = flow wire
-    expect(canConnect(modulGraph(), 'env1', 'a1')).toBe(false);
+    expect(canConnect(modulGraph(), { from: 'env1', to: 'p1' })).toBe(false); // no toPort = flow wire
+    expect(canConnect(modulGraph(), { from: 'env1', to: 'a1' })).toBe(false);
   });
 
   it('rejects a trigger-flow wire INTO an envelope node (source takes no flow input)', () => {
-    expect(canConnect(modulGraph(), 'trigger', 'env1')).toBe(false);
-    expect(canConnect(modulGraph(), 'a1', 'env1')).toBe(false);
+    expect(canConnect(modulGraph(), { from: 'trigger', to: 'env1' })).toBe(false);
+    expect(canConnect(modulGraph(), { from: 'a1', to: 'env1' })).toBe(false);
   });
 
   it('flow, mod and param inputs on one node are distinct ports (not mutual duplicates)', () => {
     const g = modulGraph();
     g.edges.push({ id: 'e2', from: 'env1', to: 'p1', toPort: 'param:brightness' });
-    expect(canConnect(g, 'env1', 'p1', undefined, 'param:brightness')).toBe(false); // exact dup
-    expect(canConnect(g, 'env1', 'p1', undefined, 'param:size')).toBe(true); // a different row is fine
+    expect(canConnect(g, { from: 'env1', to: 'p1', toPort: 'param:brightness' })).toBe(false); // exact dup
+    expect(canConnect(g, { from: 'env1', to: 'p1', toPort: 'param:size' })).toBe(true); // a different row is fine
   });
 
   it('two envelopes may drive the same param row (they sum at render)', () => {
     const g = modulGraph();
     g.nodes.push(makeNode('envelope', 'env2', 0, 400));
     g.edges.push({ id: 'e2', from: 'env1', to: 'p1', toPort: 'param:brightness' });
-    expect(canConnect(g, 'env2', 'p1', undefined, 'param:brightness')).toBe(true);
+    expect(canConnect(g, { from: 'env2', to: 'p1', toPort: 'param:brightness' })).toBe(true);
   });
 });
 
 describe('graph-wiring validation — targeted verdicts (no throw)', () => {
   it('rejects self-connects, unknown ids, and cross-graph ids', () => {
-    expect(canConnect(graph, 'r1', 'r1')).toBe(false); // self
-    expect(canConnect(graph, 'ghost', 'p1')).toBe(false); // unknown source
-    expect(canConnect(graph, 'r1', 'ghost')).toBe(false); // unknown target
-    expect(canConnect(graph, 'nope-a', 'nope-b')).toBe(false); // both cross-graph
-    expect(canConnect(graph, '__proto__', 'p1')).toBe(false); // prototype-key id
+    expect(canConnect(graph, { from: 'r1', to: 'r1' })).toBe(false); // self
+    expect(canConnect(graph, { from: 'ghost', to: 'p1' })).toBe(false); // unknown source
+    expect(canConnect(graph, { from: 'r1', to: 'ghost' })).toBe(false); // unknown target
+    expect(canConnect(graph, { from: 'nope-a', to: 'nope-b' })).toBe(false); // both cross-graph
+    expect(canConnect(graph, { from: '__proto__', to: 'p1' })).toBe(false); // prototype-key id
   });
 
   it('rejects wiring out of a sink or into a source-only node (direction)', () => {
-    expect(canConnect(graph, 'p1', 'r1')).toBe(false); // play has no output
-    expect(canConnect(graph, 'r1', 'trigger')).toBe(false); // trigger has no input
+    expect(canConnect(graph, { from: 'p1', to: 'r1' })).toBe(false); // play has no output
+    expect(canConnect(graph, { from: 'r1', to: 'trigger' })).toBe(false); // trigger has no input
   });
 
   it('accepts a legal new wire and a legal reconnect', () => {
-    expect(canConnect(graph, 'trigger', 't1')).toBe(true); // trigger → toggle
-    expect(canReconnect(graph, 'e2', 'r1', 't1')).toBe(true); // repoint e2's target r1 → t1
+    expect(canConnect(graph, { from: 'trigger', to: 't1' })).toBe(true); // trigger → toggle
+    expect(canReconnect(graph, 'e2', { from: 'r1', to: 't1' })).toBe(true); // repoint e2's target r1 → t1
   });
 
   it('rejects an exact duplicate wire but allows different bands to the same child', () => {
@@ -241,8 +241,8 @@ describe('graph-wiring validation — targeted verdicts (no throw)', () => {
       ],
       edges: [{ id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' }],
     };
-    expect(canConnect(g, 's1', 'p1', 'band-0')).toBe(false); // exact (source-port → target) dup
-    expect(canConnect(g, 's1', 'p1', 'band-1')).toBe(true); // different band, same child is fine
+    expect(canConnect(g, { from: 's1', to: 'p1', fromPort: 'band-0' })).toBe(false); // exact (source-port → target) dup
+    expect(canConnect(g, { from: 's1', to: 'p1', fromPort: 'band-1' })).toBe(true); // different band, same child is fine
   });
 
   it('rejects a wire that would form a cycle, without throwing', () => {
@@ -250,11 +250,11 @@ describe('graph-wiring validation — targeted verdicts (no throw)', () => {
       nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0)],
       edges: [{ id: 'e1', from: 'a', to: 'b' }],
     };
-    expect(canConnect(g, 'b', 'a')).toBe(false); // would create an a↔b cycle
+    expect(canConnect(g, { from: 'b', to: 'a' })).toBe(false); // would create an a↔b cycle
   });
 
   it('canReconnect rejects an unknown edge id without throwing', () => {
-    expect(canReconnect(graph, 'no-such-edge', 'r1', 't1')).toBe(false);
+    expect(canReconnect(graph, 'no-such-edge', { from: 'r1', to: 't1' })).toBe(false);
   });
 });
 
@@ -266,9 +266,9 @@ describe('duplicate detection over canonical ports', () => {
       nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('random', 'r1', 100, 0)],
       edges: [{ id: 'e1', from: 'trigger', to: 'r1', fromPort: '', toPort: 'in' }],
     };
-    expect(canConnect(g, 'trigger', 'r1')).toBe(false); // undefined ports ≡ ''/'in'
-    expect(canConnect(g, 'trigger', 'r1', '', 'in')).toBe(false); // same spelling
-    expect(canConnect(g, 'trigger', 'r1', undefined, 'in')).toBe(false); // mixed
+    expect(canConnect(g, { from: 'trigger', to: 'r1' })).toBe(false); // undefined ports ≡ ''/'in'
+    expect(canConnect(g, { from: 'trigger', to: 'r1', fromPort: '', toPort: 'in' })).toBe(false); // same spelling
+    expect(canConnect(g, { from: 'trigger', to: 'r1', toPort: 'in' })).toBe(false); // mixed
   });
 
   it('canReconnect applies the same canonical-port dedup', () => {
@@ -284,7 +284,7 @@ describe('duplicate detection over canonical ports', () => {
       ],
     };
     // repointing e2 onto r1's default input duplicates e1 (spelled 'in') → reject
-    expect(canReconnect(g, 'e2', 'trigger', 'r1')).toBe(false);
+    expect(canReconnect(g, 'e2', { from: 'trigger', to: 'r1' })).toBe(false);
   });
 
   it('normalizeFromPort / normalizeToPort collapse the aliases', () => {
@@ -308,24 +308,24 @@ describe('graph-wiring — rejection reasons (classifyConnection)', () => {
   }
 
   it('returns null for a legal wire', () => {
-    expect(classifyConnection(g(), 'trigger', 't1')).toBeNull(); // trigger → toggle
-    expect(canConnect(g(), 'trigger', 't1')).toBe(true); // and the boolean agrees
+    expect(classifyConnection(g(), { from: 'trigger', to: 't1' })).toBeNull(); // trigger → toggle
+    expect(canConnect(g(), { from: 'trigger', to: 't1' })).toBe(true); // and the boolean agrees
   });
 
   it('reports `direction` when the ports cannot legally connect', () => {
-    expect(classifyConnection(g(), 'trigger', 'env1')).toBe('direction'); // a mod source takes no flow input
-    expect(classifyConnection(g(), 'env1', 'p1')).toBe('direction'); // a mod source only feeds param ports
+    expect(classifyConnection(g(), { from: 'trigger', to: 'env1' })).toBe('direction'); // a mod source takes no flow input
+    expect(classifyConnection(g(), { from: 'env1', to: 'p1' })).toBe('direction'); // a mod source only feeds param ports
   });
 
   it('reports `direction` for unknown / cross-graph / prototype-key ids (never throws)', () => {
-    expect(classifyConnection(g(), 'ghost', 'p1')).toBe('direction');
-    expect(classifyConnection(g(), 'r1', 'ghost')).toBe('direction');
-    expect(classifyConnection(g(), '__proto__', 'p1')).toBe('direction');
+    expect(classifyConnection(g(), { from: 'ghost', to: 'p1' })).toBe('direction');
+    expect(classifyConnection(g(), { from: 'r1', to: 'ghost' })).toBe('direction');
+    expect(classifyConnection(g(), { from: '__proto__', to: 'p1' })).toBe('direction');
   });
 
   it('reports `duplicate` for an already-wired slot', () => {
     // e2 already wires r1 → p1 on the default flow input.
-    expect(classifyConnection(g(), 'r1', 'p1')).toBe('duplicate');
+    expect(classifyConnection(g(), { from: 'r1', to: 'p1' })).toBe('duplicate');
   });
 
   it('reports `duplicate` only per (source-port → target) slot, not across bands', () => {
@@ -336,23 +336,23 @@ describe('graph-wiring — rejection reasons (classifyConnection)', () => {
       ],
       edges: [{ id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' }],
     };
-    expect(classifyConnection(bands, 's1', 'p1', 'band-0')).toBe('duplicate');
-    expect(classifyConnection(bands, 's1', 'p1', 'band-1')).toBeNull(); // a different band is fine
+    expect(classifyConnection(bands, { from: 's1', to: 'p1', fromPort: 'band-0' })).toBe('duplicate');
+    expect(classifyConnection(bands, { from: 's1', to: 'p1', fromPort: 'band-1' })).toBeNull(); // a different band is fine
   });
 
   it('reports `cycle` for a self-connect and for a back-edge that closes a loop', () => {
-    expect(classifyConnection(g(), 'r1', 'r1')).toBe('cycle'); // self is the smallest loop
+    expect(classifyConnection(g(), { from: 'r1', to: 'r1' })).toBe('cycle'); // self is the smallest loop
     const loop: TriggerGraph = {
       nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0)],
       edges: [{ id: 'e1', from: 'a', to: 'b' }],
     };
-    expect(classifyConnection(loop, 'b', 'a')).toBe('cycle'); // b → a would close a↔b
+    expect(classifyConnection(loop, { from: 'b', to: 'a' })).toBe('cycle'); // b → a would close a↔b
   });
 
   it('precedence: an impossible-direction wire reads as `direction`, never a phantom cycle/dup', () => {
     // r1 → trigger: `trigger` already reaches r1 (trigger → r1), so a cycle check would ALSO fire —
     // but the wire is impossible by direction (trigger takes no input), the true first cause.
-    expect(classifyConnection(g(), 'r1', 'trigger')).toBe('direction');
+    expect(classifyConnection(g(), { from: 'r1', to: 'trigger' })).toBe('direction');
   });
 });
 
@@ -362,17 +362,17 @@ describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
   }
 
   it('returns null for a legal repoint', () => {
-    expect(classifyReconnect(g(), 'e2', 'r1', 't1')).toBeNull(); // repoint e2 target r1 → t1
-    expect(canReconnect(g(), 'e2', 'r1', 't1')).toBe(true);
+    expect(classifyReconnect(g(), 'e2', { from: 'r1', to: 't1' })).toBeNull(); // repoint e2 target r1 → t1
+    expect(canReconnect(g(), 'e2', { from: 'r1', to: 't1' })).toBe(true);
   });
 
   it('reports `direction` for an unknown edge id (nothing to move)', () => {
-    expect(classifyReconnect(g(), 'no-such-edge', 'r1', 't1')).toBe('direction');
+    expect(classifyReconnect(g(), 'no-such-edge', { from: 'r1', to: 't1' })).toBe('direction');
   });
 
   it('ignores the moved edge so its own presence is not a phantom duplicate', () => {
     // Repointing e2 (r1 → p1) back onto p1 must NOT read as a duplicate of itself.
-    expect(classifyReconnect(g(), 'e2', 'r1', 'p1')).toBeNull();
+    expect(classifyReconnect(g(), 'e2', { from: 'r1', to: 'p1' })).toBeNull();
   });
 
   it('reports `duplicate` when the repoint collides with a DIFFERENT edge', () => {
@@ -387,7 +387,7 @@ describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
         { id: 'e2', from: 'trigger', to: 't1' },
       ],
     };
-    expect(classifyReconnect(dup, 'e2', 'trigger', 'r1')).toBe('duplicate'); // collides with e1
+    expect(classifyReconnect(dup, 'e2', { from: 'trigger', to: 'r1' })).toBe('duplicate'); // collides with e1
   });
 
   it('reports `cycle` when the repoint would close a loop (over the graph WITHOUT the moved edge)', () => {
@@ -401,7 +401,77 @@ describe('graph-wiring — rejection reasons (classifyReconnect)', () => {
         { id: 'e3', from: 'a', to: 'c' },
       ],
     };
-    expect(classifyReconnect(chain, 'e3', 'c', 'a')).toBe('cycle');
+    expect(classifyReconnect(chain, 'e3', { from: 'c', to: 'a' })).toBe('cycle');
+  });
+});
+
+/* data-clumps-0005 guard rail. TriggerGraphView's `validateDrop` deliberately SWAPS the two id
+   slots when the drag began at an INPUT handle — the dropped-on node becomes the source:
+
+     if (from.type === 'target') return canConnect(g, { from: toId, to: from.nodeId, toPort: toPort });   // :565, :573
+
+   Both `fromId` and `toId` are `string` and both port slots are optional, so a transposition
+   type-checks silently. These cases reproduce that call shape verbatim (drag-origin id in the
+   `toId` slot, drop-target id in the `fromId` slot, `fromPort` always undefined) and assert BOTH
+   the reverse verdict and the forward one, so swapping the ids turns a green case red instead of
+   mis-validating a drag in the UI. */
+describe('graph-wiring — reverse-drag call shape (TriggerGraphView end-swap)', () => {
+  /** trigger → play, plus a Trail modifier, an envelope source and a container — all unwired. */
+  function g(): TriggerGraph {
+    return {
+      nodes: [
+        makeNode('trigger', 'trigger', 0, 0),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('modifier', 'm1', 100, 100, { modifierId: 'trail' }),
+        makeNode('envelope', 'env1', 0, 200),
+        makeNode('all', 'a1', 100, 300),
+      ],
+      edges: [],
+    };
+  }
+
+  it('accepts a reverse drag from a flow input onto an upstream node (and the forward spelling does not)', () => {
+    // drag begins at p1's flow `in` handle, releases on the trigger node body.
+    expect(canConnect(g(), { from: 'trigger', to: 'p1' })).toBe(true);
+    // the same two ids the other way round is direction-illegal — a transposition cannot pass.
+    expect(canConnect(g(), { from: 'p1', to: 'trigger' })).toBe(false);
+  });
+
+  it('accepts a reverse drag from a `mod` input onto a modifier (and not transposed)', () => {
+    // drag begins at p1's `mod` handle → toPortOf('mod'), releases on m1.
+    expect(canConnect(g(), { from: 'm1', to: 'p1', toPort: 'mod' })).toBe(true);
+    expect(canConnect(g(), { from: 'p1', to: 'm1', toPort: 'mod' })).toBe(false);
+  });
+
+  it('accepts a reverse drag from a `param:` row onto a modulation source (and not transposed)', () => {
+    // drag begins at p1's exposed `param:brightness` row, releases on the envelope.
+    expect(canConnect(g(), { from: 'env1', to: 'p1', toPort: 'param:brightness' })).toBe(true);
+    expect(canConnect(g(), { from: 'p1', to: 'env1', toPort: 'param:brightness' })).toBe(false);
+  });
+
+  it('reports `direction` for a reverse drag onto a node that cannot drive that port', () => {
+    // drag from p1's `mod` handle released on a container: `mod` wires leave modifiers only.
+    expect(classifyConnection(g(), { from: 'a1', to: 'p1', toPort: 'mod' })).toBe('direction');
+    expect(canConnect(g(), { from: 'a1', to: 'p1', toPort: 'mod' })).toBe(false);
+  });
+
+  it('reports `duplicate` for a reverse drag re-making a wire that already exists', () => {
+    const dup = g();
+    dup.edges.push({ id: 'e1', from: 'm1', to: 'p1', toPort: 'mod' });
+    expect(classifyConnection(dup, { from: 'm1', to: 'p1', toPort: 'mod' })).toBe('duplicate');
+    // transposed, the SAME arguments read as `direction`, not `duplicate` — the reason moves too.
+    expect(classifyConnection(dup, { from: 'p1', to: 'm1', toPort: 'mod' })).toBe('direction');
+  });
+
+  it('reports `cycle` for a reverse drag that closes a loop', () => {
+    const loop: TriggerGraph = {
+      nodes: [makeNode('random', 'a', 0, 0), makeNode('random', 'b', 100, 0)],
+      edges: [{ id: 'e1', from: 'a', to: 'b' }],
+    };
+    // drag begins at a's flow input, releases on b → b → a would close a↔b.
+    expect(classifyConnection(loop, { from: 'b', to: 'a' })).toBe('cycle');
+    // forward is merely a duplicate of e1 — a transposition changes the reason.
+    expect(classifyConnection(loop, { from: 'a', to: 'b' })).toBe('duplicate');
   });
 });
 
@@ -440,6 +510,38 @@ describe('canSplice (R08 wire-splice guard)', () => {
     const g = chain();
     g.edges.push({ id: 'e3', from: 'x', to: 'c' });
     expect(canSplice(g, 'e2', 'x')).toBe(false);
+  });
+
+  /* canSplice makes TWO internal positional classifyConnection calls (graph-wiring.ts:132-135) —
+     `source → node` carrying the edge's fromPort, then `node → target` carrying its toPort. The
+     chain() fixture above is all-`random`, so it is direction-SYMMETRIC and would stay green if
+     those two calls had their ends or their ports transposed. These two cases are asymmetric on
+     purpose, so a transposition inside canSplice goes red. */
+  it('accepts a splice on a direction-ASYMMETRIC wire (bites an end transposition)', () => {
+    // trigger has no input and play has no output, so only `trigger → x → p1` classifies legal:
+    // reversing either internal call makes this false.
+    const g: TriggerGraph = {
+      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('play', 'p1', 200, 0), makeNode('random', 'x', 100, 200)],
+      edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
+    };
+    expect(canSplice(g, 'e1', 'x')).toBe(true);
+  });
+
+  it("keeps the edge's fromPort on the SOURCE→node wire only (bites a port transposition)", () => {
+    // x already feeds p1 on band-0. The spliced `x → p1` wire takes the DEFAULT source port, so it
+    // is not that duplicate; carrying e1's fromPort onto it instead would read as one and refuse.
+    const g: TriggerGraph = {
+      nodes: [
+        makeNode('switch', 's1', 0, 0, { on: 'value', valueMode: 'bands', bands: [0.3, 0.6] }),
+        makeNode('play', 'p1', 200, 0),
+        makeNode('random', 'x', 100, 200),
+      ],
+      edges: [
+        { id: 'e1', from: 's1', to: 'p1', fromPort: 'band-0' },
+        { id: 'e2', from: 'x', to: 'p1', fromPort: 'band-0' },
+      ],
+    };
+    expect(canSplice(g, 'e1', 'x')).toBe(true);
   });
 
   it('refuses a modulation wire (only flow wires splice)', () => {

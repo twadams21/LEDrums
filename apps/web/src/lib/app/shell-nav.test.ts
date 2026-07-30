@@ -1,23 +1,23 @@
-import { describe, expect, it } from 'vitest';
-import {
-  VIEWS,
-  clearSelection,
-  initialNav,
-  isSelected,
-  parseSearch,
-  select,
-  setView,
-  type Selection,
-} from './shell-nav';
+/* Shell navigation behaviour. Until INIT-02 S17 these cases drove a pure reducer in shell-nav.ts;
+   the reducer is now inlined into ShellStore, so they drive `new ShellStore()` directly — rune
+   classes construct fine in this repo's node test env (store.*.test.ts does it throughout).
 
-describe('initialNav', () => {
+   EVERY case from the reducer suite survives, one-for-one (17 of them). The one that matters most
+   is "clears the selection on a real view change": that invariant is the entire reason the module
+   existed, and it must not have been lost in the move. */
+
+import { describe, expect, it } from 'vitest';
+import { ShellStore } from './shell-store.svelte';
+import { VIEWS, parseSearch, type Selection } from './shell-nav';
+
+describe('initial state', () => {
   it('defaults to trigger with nothing selected', () => {
-    const nav = initialNav();
-    expect(nav).toEqual({ view: 'trigger', selection: null });
+    const shell = new ShellStore();
+    expect({ view: shell.view, selection: shell.selection }).toEqual({ view: 'trigger', selection: null });
   });
 
   it('honours a seeded view', () => {
-    expect(initialNav({ view: 'patch' })).toMatchObject({ view: 'patch' });
+    expect(new ShellStore({ view: 'patch' }).view).toBe('patch');
   });
 });
 
@@ -29,36 +29,44 @@ describe('VIEWS', () => {
 
 describe('setView', () => {
   it('clears the selection on a real view change', () => {
-    let nav = select(initialNav(), { kind: 'bus', busId: 'base' });
-    expect(nav.selection).not.toBeNull();
-    nav = setView(nav, 'patch');
-    expect(nav.view).toBe('patch');
-    expect(nav.selection).toBeNull();
+    const shell = new ShellStore();
+    shell.select({ kind: 'bus', busId: 'base' });
+    expect(shell.selection).not.toBeNull();
+    shell.setView('patch');
+    expect(shell.view).toBe('patch');
+    expect(shell.selection).toBeNull();
   });
 
-  it('is a no-op (same reference) when the view is unchanged', () => {
-    const nav = select(initialNav(), { kind: 'bus', busId: 'base' });
-    expect(setView(nav, nav.view)).toBe(nav); // selection preserved
+  it('is a no-op when the view is unchanged (selection preserved)', () => {
+    const shell = new ShellStore();
+    const selection: Selection = { kind: 'bus', busId: 'base' };
+    shell.select(selection);
+    shell.setView(shell.view);
+    expect(shell.view).toBe('trigger');
+    expect(shell.selection).toEqual(selection); // NOT cleared — the guard is what saves it
   });
 });
 
 describe('select', () => {
   it('loads the selection and keeps the view', () => {
-    const next = select(initialNav(), { kind: 'node', nodeId: 'n-1' });
-    expect(next.view).toBe('trigger');
-    expect(next.selection).toEqual({ kind: 'node', nodeId: 'n-1' });
+    const shell = new ShellStore();
+    shell.select({ kind: 'node', nodeId: 'n-1' });
+    expect(shell.view).toBe('trigger');
+    expect(shell.selection).toEqual({ kind: 'node', nodeId: 'n-1' });
   });
 
   it('clearSelection drops the selection', () => {
-    let nav = select(initialNav(), { kind: 'patch', nodeId: 'output' });
-    nav = clearSelection(nav);
-    expect(nav.selection).toBeNull();
+    const shell = new ShellStore();
+    shell.select({ kind: 'patch', nodeId: 'output' });
+    shell.clearSelection();
+    expect(shell.selection).toBeNull();
   });
 
   it('exposes a selected section (rename + recall panel)', () => {
-    const next = select(initialNav({ view: 'sections' }), { kind: 'section', sectionId: 'sec-2' });
-    expect(next.view).toBe('sections');
-    expect(next.selection).toEqual({ kind: 'section', sectionId: 'sec-2' });
+    const shell = new ShellStore({ view: 'sections' });
+    shell.select({ kind: 'section', sectionId: 'sec-2' });
+    expect(shell.view).toBe('sections');
+    expect(shell.selection).toEqual({ kind: 'section', sectionId: 'sec-2' });
   });
 });
 
@@ -72,7 +80,9 @@ describe('isSelected', () => {
     [{ kind: 'section', sectionId: 's1' }, { kind: 'section', sectionId: 's2' }, false],
   ];
   it.each(cases)('compares %o vs %o → %s', (current, probe, expected) => {
-    expect(isSelected(select(initialNav(), current), probe)).toBe(expected);
+    const shell = new ShellStore();
+    shell.select(current);
+    expect(shell.isSelected(probe)).toBe(expected);
   });
 });
 

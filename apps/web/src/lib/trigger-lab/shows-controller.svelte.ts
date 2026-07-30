@@ -44,8 +44,7 @@ import {
   type SongLibrary,
   type PersistedSongLibrary,
 } from './persistence';
-import { ShowLibrarySync } from './store/show-library-sync';
-import { SongLibrarySync } from './store/song-library-sync';
+import { LibrarySync } from './store/library-sync';
 import { nid, freshId, reserveIds } from './store/ids';
 import { seedSongs } from './store/seed';
 import { authoredIdsFromLibrary, idsFromSongLibrary } from './store/reserve-library-ids';
@@ -85,25 +84,41 @@ function readStoredSongLibrary(): unknown {
   return readStoredKey(SONGS_STORAGE_KEY);
 }
 
-/** Write the versioned library envelope. Best-effort — quota / private-mode failures are swallowed
-    (persistence must never throw into the render loop or lifecycle). */
-export function writeStoredLibrary(payload: PersistedShowLibrary): void {
-  if (typeof localStorage === 'undefined') return;
+/** What a local write actually did. A write still NEVER throws — but it no longer lies by
+    silence either: the caller can see that the bytes did not land, and `reason` names the cause
+    precisely enough to tell the user (a boolean could not). `quota` is the origin's storage
+    budget, `unavailable` is SSR / a browser with localStorage switched off, `error` is anything
+    else (a serialisation failure, a security exception). */
+export type StorageWriteResult = { ok: true } | { ok: false; reason: 'quota' | 'unavailable' | 'error'; message: string };
+
+/** Chrome/Safari raise `QuotaExceededError`; Firefox raises `NS_ERROR_DOM_QUOTA_REACHED`. */
+function reasonFor(err: unknown): 'quota' | 'error' {
+  const name = err instanceof Error ? err.name : '';
+  return name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' ? 'quota' : 'error';
+}
+
+/** JSON-write one localStorage key, reporting the outcome. The try/catch stays exactly where it
+    was: persistence must still never throw into the render loop or a lifecycle hook. */
+function writeStoredKey(key: string, payload: unknown): StorageWriteResult {
+  if (typeof localStorage === 'undefined') {
+    return { ok: false, reason: 'unavailable', message: 'localStorage is not available' };
+  }
   try {
-    localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore */
+    localStorage.setItem(key, JSON.stringify(payload));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: reasonFor(err), message: err instanceof Error ? err.message : String(err) };
   }
 }
 
-/** Write the versioned SONG-library envelope (best-effort, mirrors {@link writeStoredLibrary}). */
-export function writeStoredSongLibrary(payload: PersistedSongLibrary): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore */
-  }
+/** Write the versioned library envelope. Never throws; returns whether the bytes landed. */
+export function writeStoredLibrary(payload: PersistedShowLibrary): StorageWriteResult {
+  return writeStoredKey(SHOWS_STORAGE_KEY, payload);
+}
+
+/** Write the versioned SONG-library envelope (mirrors {@link writeStoredLibrary}). */
+export function writeStoredSongLibrary(payload: PersistedSongLibrary): StorageWriteResult {
+  return writeStoredKey(SONGS_STORAGE_KEY, payload);
 }
 
 /** The store-side surface the shows controller depends on — injected so it stays free of the
@@ -172,13 +187,22 @@ export class ShowsController {
       cold load and pushed on change via {@link songSync}. Hydrated in {@link hydrateFromStorage}. */
   songLibrary = $state<SongLibrary>({ songs: {} });
 
-  /** Server-authoritative show-library controller (cold-load adopt + write-through). */
-  private readonly libSync = new ShowLibrarySync();
-  /** Server-authoritative SONG-library controller — the sibling of {@link libSync}. */
-  private readonly songSync = new SongLibrarySync();
+  /** Server-authoritative show-library controller (cold-load adopt + write-through). The codec is
+      supplied HERE rather than living in the sync module, so one {@link LibrarySync} policy serves
+      both libraries (INIT-02 S16) without the module knowing either library's shape. */
+  private readonly libSync = new LibrarySync({
+    serialize: serializeShowLibrary,
+    deserialize: deserializeShowLibrary,
+  });
+  /** Server-authoritative SONG-library controller — the sibling of {@link libSync}, same policy,
+      its own codec. */
+  private readonly songSync = new LibrarySync({
+    serialize: serializeSongLibrary,
+    deserialize: deserializeSongLibrary,
+  });
   /** Whether boot found REAL local content (a valid library, or a migratable legacy blob). When
       true, the localStorage cache is the freshest source (written on every edit) and the server's
-      cold-load library must not clobber it — see {@link ShowLibrarySync.planReconcile}. */
+      cold-load library must not clobber it — see {@link LibrarySync.planReconcile}. */
   private bootedFromLocalLibrary = false;
   /** Whether boot found a REAL local song library — the song-pool sibling of
       {@link bootedFromLocalLibrary}, so the server's cold-load song library can't clobber unsynced
@@ -566,7 +590,7 @@ export class ShowsController {
   // persists them and broadcasts them on the `state` message. The web ADOPTS each once, on the first
   // state of a cold load (server wins); thereafter the web is the source and pushes every change up.
   // localStorage is a fast cache. The once-per-session gate + echo suppression live in the two
-  // ShowLibrarySync/SongLibrarySync controllers.
+  // LibrarySync controllers (one policy, one codec each).
 
   /** Reconcile BOTH server libraries against ours on a `state` message — the cold-load adopt (server
       wins) / seed-from-cache / viewer-follow path for the show library AND the canonical song pool.

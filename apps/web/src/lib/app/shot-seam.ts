@@ -23,6 +23,9 @@ import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.sve
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
+import type { SaveStatus } from '../trigger-lab/save-status';
+import { defaultRouting } from './patch-graph';
+import { patchToOutputs } from './patch-routing';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -101,9 +104,24 @@ export interface ShotSeam {
       anchor. Lights the node-face no-path-to-output badge + the lint strip row (Effect selected).
       Uses genuine `compileRenderPlan` output. */
   notReachingOutput(): void;
+  /** Wire every hoop into the outputs (the `defaultRouting` chain) and commit it, so the Patch
+      surface can be captured in its WIRED state. The seed project declares outputs with NO hoops,
+      so the hoop/output inspectors' first/last-pixel read-out has nothing to show — and that
+      read-out is the entire reason the live-routing channel exists. */
+  wirePatch(): void;
   /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
       per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
   previewToasts(tone?: ToastTone): void;
+  /** Drive the TopBar save indicator into a given state so ui-shot can capture it. `arg` is the
+      SaveStatus (`saving` / `saved` / `error`); omitted → `error`, the one that cannot otherwise
+      be reached without actually filling the browser's storage quota. */
+  previewSaveStatus(status?: SaveStatus): void;
+  /** Seed multi-client presence so the TopBar's role affordances can be captured (02A flagged
+      that TAKEOVER had no way in). `arg` is the role to stand in: `viewer` (default) → another
+      client holds the editor slot, so the read-only banner + Take over button render; `editor` →
+      we hold it with others connected, so the "You're editing" indicator renders; `solo` clears
+      presence back to standalone, where neither shows. */
+  previewPresence(role?: 'viewer' | 'editor' | 'solo'): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -351,6 +369,16 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  /** Wire every hoop into the outputs (the `defaultRouting` chain) and commit it via the same
+      `setRouting` call PatchGraphView makes on a rewire — so the Patch inspectors render a real
+      first/last-pixel span instead of their "wire this hoop in" empty state. Duplicates no logic. */
+  wirePatch(): void {
+    const drums = this.store.project?.kit.drums ?? [];
+    if (drums.length === 0) return;
+    const routing = defaultRouting(drums.map((d) => ({ id: d.id, hoopCount: d.hoops?.length ?? 0 })));
+    this.store.setRouting(patchToOutputs(routing));
+  }
+
   previewToasts(tone?: ToastTone): void {
     // ttl:0 keeps them pinned for the capture (no auto-dismiss race). Oldest-first so the
     // host renders info → success → error top-to-bottom when showing the full set.
@@ -361,6 +389,43 @@ class ShotSeamImpl implements ShotSeam {
       error: 'That clipboard content isn’t from LEDrums.',
     };
     for (const t of tones) pushToast(messages[t], { tone: t, ttl: 0 });
+  }
+
+  previewPresence(role: 'viewer' | 'editor' | 'solo' = 'viewer'): void {
+    // `role` is derived from presence alone, so seeding presence IS the whole seam — nothing here
+    // reaches past the same public field the server's `presence` message writes.
+    this.store.presence =
+      role === 'solo' ? null : { editorId: role === 'editor' ? 'me' : 'other-client', youAreEditor: role === 'editor', clientCount: 2 };
+  }
+
+  previewSaveStatus(status: SaveStatus = 'error'): void {
+    if (status === 'error') {
+      // Make the failure REAL, not painted on. A status merely assigned here is settled back to
+      // 'saved' → 'idle' by the app's own next autosave cycle, which lands mid-capture — the
+      // indicator was caught fading out of frame when this shot was first taken. With writes
+      // actually throwing, every later cycle re-produces the error and the state holds.
+      // The patch goes on Storage.prototype: assigning to `localStorage.setItem` would hit the
+      // named-property setter and merely store a KEY called "setItem".
+      const err = new Error('The quota has been exceeded.');
+      err.name = 'QuotaExceededError';
+      Storage.prototype.setItem = function setItem(): void {
+        throw err;
+      };
+    }
+    // Cancel the cycle already in flight — its queued success would otherwise clear the state
+    // we are here to capture — then paint the value so the shot needn't wait for the next one.
+    const internals = this.store as unknown as {
+      saveTimer: ReturnType<typeof setTimeout> | null;
+      saveStatusCtl: { dispose(): void };
+    };
+    if (internals.saveTimer) {
+      clearTimeout(internals.saveTimer);
+      internals.saveTimer = null;
+    }
+    internals.saveStatusCtl.dispose();
+    this.store.saveStatus = status;
+    this.store.saveError =
+      status === 'error' ? 'The song library could not be saved (quota: the quota has been exceeded).' : null;
   }
 
   async apply(spec: string): Promise<void> {
@@ -435,6 +500,13 @@ class ShotSeamImpl implements ShotSeam {
         this.shell.setView('patch');
         if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
         break;
+      case 'patch-wired':
+        // Commit the default hoop→output wiring first, THEN select — so a hoop/output inspector
+        // renders a real first/last-pixel span instead of its "wire this hoop in" empty state.
+        this.shell.setView('patch');
+        this.wirePatch();
+        if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
+        break;
       case 'expanded':
         // Flip the Advatek expanded/normal controller mode — the ONLY control over the output-port
         // count (8 expanded / 4 normal). Drives kit.outputs reconcile so the patch graph's output
@@ -453,6 +525,13 @@ class ShotSeamImpl implements ShotSeam {
       case 'toast':
       case 'toasts':
         this.previewToasts(arg as ToastTone | undefined);
+        break;
+      case 'save-status':
+        this.previewSaveStatus(arg as SaveStatus | undefined);
+        break;
+      case 'presence':
+      case 'takeover':
+        this.previewPresence(arg as 'viewer' | 'editor' | 'solo' | undefined);
         break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);

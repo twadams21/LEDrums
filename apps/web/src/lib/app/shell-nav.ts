@@ -1,13 +1,21 @@
-/* Shell navigation model — the unified app's view-router + inspector selection,
-   as a PURE reducer (no runes, no DOM) so the invariants are unit-testable in
-   the node test env. `shell-store.svelte.ts` is a thin rune wrapper over this.
-   Mirrors the show-builder split: pure core, reactive shell.
+/* Shell navigation VOCABULARY — the view/selection types the shell speaks, plus the one
+   genuinely shared function: the URL deep-link parser.
 
-   The app is mode-less: there is no Perform/Author mode — it is simply whichever
-   `view` is selected (Perform being one of them). The invariant lives here once
-   (locality): switching views clears the selection. Selections open in place —
-   node/patch in the graph views' Node Editor drawer, bus in the Buses panel,
-   section in the Sections view — so there is no global dock tab to route. */
+   This used to be a pure reducer with a `ShellNav` state object and five transitions
+   (`initialNav`/`setView`/`select`/`clearSelection`/`isSelected`) that `shell-store.svelte.ts`
+   wrapped one-for-one. That indirection bought nothing — the reducer had exactly one caller and
+   the "so the invariants are unit-testable in node" rationale had expired: rune classes construct
+   fine in this repo's node test env, which store.*.test.ts demonstrates at length. INIT-02 S17
+   inlined the transitions into ShellStore, where the state they transition actually lives.
+
+   What stays here is what is genuinely shared or genuinely pure: the types (imported by the
+   store, LeftRail and the inspectors), `VIEWS` (the rail order AND the parser's whitelist), and
+   `parseSearch` — a real URL parser with edge cases and App.svelte's only direct import from this
+   module, which is why it remains a separate pure function rather than a ShellStore method.
+
+   The app is mode-less: there is no Perform/Author mode — it is simply whichever `view` is
+   selected (Perform being one of them). The invariant that switching views clears the selection
+   now lives in ShellStore.setView, next to the fields it clears. */
 
 export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'patch' | 'monitor';
 
@@ -27,58 +35,12 @@ export type Selection =
   | { kind: 'bus'; busId: string }
   | { kind: 'section'; sectionId: string };
 
-export interface ShellNav {
-  view: View;
-  selection: Selection | null;
-}
-
 export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigger', 'patch', 'monitor'];
 
-export function initialNav(init: Partial<Pick<ShellNav, 'view'>> = {}): ShellNav {
-  return {
-    view: init.view ?? 'trigger',
-    selection: null,
-  };
-}
-
-/** Switch the workspace view; resets the Inspector selection (wireframe:
-    "switching views resets the Inspector"). No-op when already on the view. */
-export function setView(nav: ShellNav, view: View): ShellNav {
-  if (view === nav.view) return nav;
-  return { ...nav, view, selection: null };
-}
-
-/** Load something into its inspector surface. */
-export function select(nav: ShellNav, selection: Selection): ShellNav {
-  return { ...nav, selection };
-}
-
-export function clearSelection(nav: ShellNav): ShellNav {
-  if (nav.selection === null) return nav;
-  return { ...nav, selection: null };
-}
-
-/** True when `sel` refers to the same inspectable as the current selection —
-    lets views render an "active" affordance without re-deriving equality. */
-export function isSelected(nav: ShellNav, sel: Selection): boolean {
-  const s = nav.selection;
-  if (!s || s.kind !== sel.kind) return false;
-  switch (s.kind) {
-    case 'node':
-      return s.nodeId === (sel as { nodeId: string }).nodeId;
-    case 'patch':
-      return s.nodeId === (sel as { nodeId: PatchNodeId }).nodeId;
-    case 'bus':
-      return s.busId === (sel as { busId: string }).busId;
-    case 'section':
-      return s.sectionId === (sel as { sectionId: string }).sectionId;
-  }
-}
-
 /** Parse the view deep-link from a query string (?view=). Unknown values are dropped. */
-export function parseSearch(search: string): Partial<Pick<ShellNav, 'view'>> {
+export function parseSearch(search: string): { view?: View } {
   const p = new URLSearchParams(search);
-  const out: Partial<Pick<ShellNav, 'view'>> = {};
+  const out: { view?: View } = {};
   const v = p.get('view');
   if (v && (VIEWS as readonly string[]).includes(v)) out.view = v as View;
   return out;

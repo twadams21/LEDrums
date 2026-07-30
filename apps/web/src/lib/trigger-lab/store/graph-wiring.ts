@@ -23,6 +23,20 @@ function directionOk(fromKind: NodeKind, toKind: NodeKind, toPort: ToPort): bool
   return nodeHasOutput(fromKind) && nodeHasInput(toKind) && !nodeIsModSource(fromKind);
 }
 
+/** The two ends of a wire, named. Every validator below takes ONE of these instead of a
+    positional `(fromId, toId, fromPort?, toPort?)` tail, because both id slots are `string` and
+    both port slots are optional — so a from/to transposition used to type-check silently. The
+    call that most needed the names is TriggerGraphView's reverse drag, which swaps the ends on
+    purpose: `canConnect(g, { from: toId, to: from.nodeId, toPort })` now says so out loud.
+    `toPort` is the {@link ToPort} union, NOT `string` — widening it would erase the port-kind
+    check that tells a `mod` input from a flow input. */
+export interface WireEnds {
+  from: string;
+  to: string;
+  fromPort?: string;
+  toPort?: ToPort;
+}
+
 /** Canonical source-port: `''`/null/undefined all mean "the default output". Duplicate
     detection and stored edges both go through this so no alias can slip past the dedup. */
 export const normalizeFromPort = (p?: string | null): string | undefined => (p ? p : undefined);
@@ -32,17 +46,11 @@ export const normalizeToPort = (p?: ToPort | null): 'mod' | `param:${string}` | 
 
 /** Whether an existing edge occupies the same (from, to, source-port, target-port) slot —
     the duplicate-wire identity, compared over canonical ports on BOTH sides. */
-const sameSlot = (
-  e: { from: string; to: string; fromPort?: string; toPort?: ToPort },
-  fromId: string,
-  toId: string,
-  fromPort?: string,
-  toPort?: ToPort,
-): boolean =>
-  e.from === fromId &&
-  e.to === toId &&
-  normalizeFromPort(e.fromPort) === normalizeFromPort(fromPort) &&
-  normalizeToPort(e.toPort) === normalizeToPort(toPort);
+const sameSlot = (e: WireEnds, w: WireEnds): boolean =>
+  e.from === w.from &&
+  e.to === w.to &&
+  normalizeFromPort(e.fromPort) === normalizeFromPort(w.fromPort) &&
+  normalizeToPort(e.toPort) === normalizeToPort(w.toPort);
 
 /** Can node `targetId` reach node `startId` by following edges from `startId`? (cycle test). */
 export function reaches(graph: TriggerGraph, startId: string, targetId: string): boolean {
@@ -66,50 +74,37 @@ export function reaches(graph: TriggerGraph, startId: string, targetId: string):
      - `cycle`: the wire would feed the signal back on itself (self-loop included). */
 export type WireRejection = 'direction' | 'duplicate' | 'cycle';
 
-/** The rejection reason for a NEW wire `fromId →(fromPort) toId (toPort)`, or `null` when the
+/** The rejection reason for a NEW wire `w.from →(w.fromPort) w.to (w.toPort)`, or `null` when the
     wire is legal. The single source of wiring verdicts: {@link canConnect} is `=== null` over
     this, and the UI surfaces the reason (red in-drag styling + a toast). Precedence matters —
     an impossible-direction wire is reported as `direction`, never as a phantom duplicate/cycle.
     Pure + total — NEVER throws on any input (unknown ids / kinds just yield `direction`). */
-export function classifyConnection(
-  graph: TriggerGraph,
-  fromId: string,
-  toId: string,
-  fromPort?: string,
-  toPort?: ToPort,
-): WireRejection | null {
-  if (fromId === toId) return 'cycle'; // a node wired to itself is the smallest loop
-  const from = graph.nodes.find((n) => n.id === fromId);
-  const to = graph.nodes.find((n) => n.id === toId);
-  if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return 'direction';
+export function classifyConnection(graph: TriggerGraph, w: WireEnds): WireRejection | null {
+  if (w.from === w.to) return 'cycle'; // a node wired to itself is the smallest loop
+  const from = graph.nodes.find((n) => n.id === w.from);
+  const to = graph.nodes.find((n) => n.id === w.to);
+  if (!from || !to || !directionOk(from.kind, to.kind, w.toPort)) return 'direction';
   // dup is per (source-port → target-port): two different bands MAY route to the same child,
   // and a node's flow `in` + `mod` inputs are distinct; the same wire on both ports is rejected.
-  if (graph.edges.some((e) => sameSlot(e, fromId, toId, fromPort, toPort))) return 'duplicate';
-  if (reaches(graph, toId, fromId)) return 'cycle';
+  if (graph.edges.some((e) => sameSlot(e, w))) return 'duplicate';
+  if (reaches(graph, w.to, w.from)) return 'cycle';
   return null;
 }
 
-/** The rejection reason for moving edge `edgeId` to `fromId →(fromPort) toId (toPort)`, or `null`
+/** The rejection reason for moving edge `edgeId` to `w.from →(w.fromPort) w.to (w.toPort)`, or `null`
     when legal — same checks as {@link classifyConnection} but IGNORING the edge being moved (so
     its own presence never trips the dup / cycle guard). Pure + total — never throws. */
-export function classifyReconnect(
-  graph: TriggerGraph,
-  edgeId: string,
-  fromId: string,
-  toId: string,
-  fromPort?: string,
-  toPort?: ToPort,
-): WireRejection | null {
-  if (fromId === toId) return 'cycle';
+export function classifyReconnect(graph: TriggerGraph, edgeId: string, w: WireEnds): WireRejection | null {
+  if (w.from === w.to) return 'cycle';
   if (!graph.edges.some((e) => e.id === edgeId)) return 'direction'; // no such edge to move
-  const from = graph.nodes.find((n) => n.id === fromId);
-  const to = graph.nodes.find((n) => n.id === toId);
-  if (!from || !to || !directionOk(from.kind, to.kind, toPort)) return 'direction';
-  if (graph.edges.some((e) => e.id !== edgeId && sameSlot(e, fromId, toId, fromPort, toPort))) {
+  const from = graph.nodes.find((n) => n.id === w.from);
+  const to = graph.nodes.find((n) => n.id === w.to);
+  if (!from || !to || !directionOk(from.kind, to.kind, w.toPort)) return 'direction';
+  if (graph.edges.some((e) => e.id !== edgeId && sameSlot(e, w))) {
     return 'duplicate';
   }
   // cycle check over the graph WITHOUT the edge being moved
-  if (reaches({ nodes: graph.nodes, edges: graph.edges.filter((e) => e.id !== edgeId) }, toId, fromId)) {
+  if (reaches({ nodes: graph.nodes, edges: graph.edges.filter((e) => e.id !== edgeId) }, w.to, w.from)) {
     return 'cycle';
   }
   return null;
@@ -130,37 +125,24 @@ export function canSplice(graph: TriggerGraph, edgeId: string, nodeId: string): 
   if (edge.from === nodeId || edge.to === nodeId) return false; // can't splice into your own wire
   const without: TriggerGraph = { ...graph, edges: graph.edges.filter((e) => e.id !== edgeId) };
   return (
-    classifyConnection(without, edge.from, nodeId, edge.fromPort, undefined) === null &&
-    classifyConnection(without, nodeId, edge.to, undefined, edge.toPort) === null
+    classifyConnection(without, { from: edge.from, to: nodeId, fromPort: edge.fromPort }) === null &&
+    classifyConnection(without, { from: nodeId, to: edge.to, toPort: edge.toPort }) === null
   );
 }
 
-/** Whether a new wire `fromId →(fromPort) toId (toPort)` is legal: distinct endpoints, both
+/** Whether a new wire `w.from →(w.fromPort) w.to (w.toPort)` is legal: distinct endpoints, both
     nodes exist, direction is valid for the port (a `mod` wire only from a modifier node into a
     `mod` input; a flow wire the normal way, never from a modifier), not a duplicate (same
     source-port → target-port), and would not form a cycle. Pure + total — NEVER throws on any
     input (unknown ids / kinds just fail). Thin verdict over {@link classifyConnection}. */
-export function canConnect(
-  graph: TriggerGraph,
-  fromId: string,
-  toId: string,
-  fromPort?: string,
-  toPort?: ToPort,
-): boolean {
-  return classifyConnection(graph, fromId, toId, fromPort, toPort) === null;
+export function canConnect(graph: TriggerGraph, w: WireEnds): boolean {
+  return classifyConnection(graph, w) === null;
 }
 
-/** Whether moving edge `edgeId` to `fromId →(fromPort) toId (toPort)` is legal — same checks
+/** Whether moving edge `edgeId` to `w.from →(w.fromPort) w.to (w.toPort)` is legal — same checks
     as {@link canConnect} but IGNORING the edge being moved (so its own presence never trips
     the dup / cycle guard). A false result means the drag should snap back, not delete the
     wire. Pure + total — never throws. Thin verdict over {@link classifyReconnect}. */
-export function canReconnect(
-  graph: TriggerGraph,
-  edgeId: string,
-  fromId: string,
-  toId: string,
-  fromPort?: string,
-  toPort?: ToPort,
-): boolean {
-  return classifyReconnect(graph, edgeId, fromId, toId, fromPort, toPort) === null;
+export function canReconnect(graph: TriggerGraph, edgeId: string, w: WireEnds): boolean {
+  return classifyReconnect(graph, edgeId, w) === null;
 }
