@@ -48,7 +48,7 @@
   const drumHint = $derived(store.project ? drumLinkHint(store.project.inputMap, src, store.drums) : null);
   const kindNow = $derived(src?.kind ?? 'drum');
   const learning = $derived(
-    !!gkey && store.midiLearnTarget?.kind === 'trigger' && store.midiLearnTarget.graphKey === gkey,
+    !!gkey && store.midi.learnTarget?.kind === 'trigger' && store.midi.learnTarget.graphKey === gkey,
   );
 
   const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
@@ -195,7 +195,7 @@
             onclick={(e) => {
               e.preventDefault();
               if (!gkey) return;
-              learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'trigger', graphKey: gkey });
+              learning ? store.midi.cancelLearn() : store.midi.startLearn({ kind: 'trigger', graphKey: gkey });
             }}
           >
             <Radio size={13} aria-hidden="true" />

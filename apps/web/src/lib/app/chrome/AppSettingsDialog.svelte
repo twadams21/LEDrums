@@ -13,7 +13,7 @@
 
   const channelValue = $derived(store.midiChannel === null ? 'all' : String(store.midiChannel));
   const midiEmpty = $derived(
-    deviceListEmptyState(store.midiAvailable, store.midiUnavailableReason, store.midiDevices.length),
+    deviceListEmptyState(store.midi.available, store.midi.unavailableReason, store.midi.devices.length),
   );
   const CHANNEL_OPTS = midiChannelOptions();
 
@@ -42,7 +42,7 @@
         <p class="empty">{midiEmpty}</p>
       {:else}
         <ul class="devlist">
-          {#each store.midiDevices as device (device.id)}
+          {#each store.midi.devices as device (device.id)}
             <li class="dev" class:off={device.state === 'disconnected'}>
               <span class="dev-name" title={device.manufacturer ? `${device.name} — ${device.manufacturer}` : device.name}>{device.name}</span>
               <StatusPill

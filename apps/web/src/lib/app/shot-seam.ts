@@ -303,11 +303,11 @@ class ShotSeamImpl implements ShotSeam {
     // recommendation comes from the real NIC list the inspector's mount requests, so this captures
     // the true "different IP addresses" guidance, not a stub.
     if (kind === 'discover') {
-      this.store.controllerStatus = null;
+      this.store.controllerMonitor.status = null;
       this.shell.select({ kind: 'patch', nodeId: 'controller' });
       let f = 0;
       const hold = (): void => {
-        this.store.controllerStatus = null; // resist the dev server's own (null) status echoes
+        this.store.controllerMonitor.status = null; // resist the dev server's own (null) status echoes
         if (f++ < 30) requestAnimationFrame(hold);
       };
       requestAnimationFrame(hold);
@@ -337,7 +337,7 @@ class ShotSeamImpl implements ShotSeam {
       lastSeen: reachable ? Date.now() : Date.now() - 8_000,
       testPattern: null,
     };
-    this.store.controllerStatus = status;
+    this.store.controllerMonitor.status = status;
     // Open the Patch controller node's inspector (patch selection 'controller' → PatchControllerInspector).
     this.shell.select({ kind: 'patch', nodeId: 'controller' });
     // The inspector's mount sends `watchController`, and a dev server with no adopted controller may
@@ -345,7 +345,7 @@ class ShotSeamImpl implements ShotSeam {
     // frames so the injected status is what the panel renders when ui-shot captures. Dev-only.
     let frames = 0;
     const reassert = (): void => {
-      this.store.controllerStatus = status;
+      this.store.controllerMonitor.status = status;
       if (frames++ < 30) requestAnimationFrame(reassert);
     };
     requestAnimationFrame(reassert);

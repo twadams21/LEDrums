@@ -43,8 +43,8 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { LiveInputTables } from './live-input';
 import { WSClient, type ConnectionState } from '../ws/client';
-import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { BackupSnapshotMeta, BootRecoveryInfo, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { type MidiEvent } from '../midi/webmidi';
+import type { BackupSnapshotMeta, BootRecoveryInfo, ClientMessage, MonitorEvent, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -469,40 +469,28 @@ export class TriggerLab {
       must NOT be reactive (it is bookkeeping for the derivation, not rendered). */
   private prevPacketSample: PacketSample | null = null;
   /** PixLite controller monitor (S48/S49/R29) — reactive status/candidates/scanning + the panel send
-      helpers, extracted into {@link ControllerMonitor} (R20). The store delegates its public surface
-      to this via the accessors + forwarders below, so callers/tests are unchanged. */
-  private readonly monitor = new ControllerMonitor({
+      helpers, extracted into {@link ControllerMonitor} (R20). PUBLIC (INIT-02 S5): callers reach the
+      collaborator itself (`store.controllerMonitor.status` / `.candidates` / `.scanning` /
+      `.watch()` / `.adapters` / `.recommendationFor()` / `.requestNetworkAdapters()` /
+      `.discover()` / `.adopt()` / `.setAuth()` / `.identify()`) — the forwarder layer is gone. The
+      name is `controllerMonitor`, NOT a bare `monitor`, so it cannot be misread as a sibling of the
+      unrelated `monitorEvents`/`monitorTypeFilter` app-log cluster that stays on the store. */
+  readonly controllerMonitor = new ControllerMonitor({
     send: (msg) => this.client.send(msg),
     isViewer: () => this.isViewer,
     setOutput: (patch) => this.setOutput(patch),
   });
   /** PixLite controller test-pattern (S49) — the LOUD test-data takeover (drive / exit) + its
       reactive view, extracted into {@link ControllerTest} (R22, store split 3/5). Sibling of
-      {@link monitor}; the active pattern is server-reported on the monitor's status, so this reads
-      it through `currentTestPattern`. The store delegates its public surface below, unchanged. */
-  private readonly controllerTest = new ControllerTest({
+      {@link controllerMonitor}; the active pattern is server-reported on the monitor's status, so
+      this reads it through `currentTestPattern`. PUBLIC (INIT-02 S3): callers reach the collaborator
+      itself (`store.controllerTest.takeover` / `.setTestData()` / `.backToLive()`) — the forwarder
+      layer that used to re-export its surface on the store is gone. */
+  readonly controllerTest = new ControllerTest({
     send: (msg) => this.client.send(msg),
     isViewer: () => this.isViewer,
-    currentTestPattern: () => this.monitor.status?.testPattern ?? null,
+    currentTestPattern: () => this.controllerMonitor.status?.testPattern ?? null,
   });
-  /** Live status of the ADOPTED PixLite controller (S47/S48). See {@link ControllerMonitor.status}.
-      Settable so the ui-shot seam can inject a synthetic status. */
-  get controllerStatus(): ControllerStatus | null {
-    return this.monitor.status;
-  }
-  set controllerStatus(status: ControllerStatus | null) {
-    this.monitor.status = status;
-  }
-  /** Ranked discovery candidates (best-first). See {@link ControllerMonitor.candidates}. */
-  get controllerCandidates(): DiscoveredController[] {
-    return this.monitor.candidates;
-  }
-  /** The active controller test pattern (S49), or null in LIVE mode. Drives the panel banner AND
-      {@link deriveOutputPill}'s third argument. See {@link ControllerTest.takeover}. */
-  get controllerTakeover(): ControllerTestPattern | null {
-    return this.controllerTest.takeover;
-  }
-
   /** Shows / setlist / song-library (R23, store split 4/5) — the multi-show document library, the
       setlist songs, the canonical song pool, their resolved runtime view, and the server-library
       cold-load/write-through sync, extracted into {@link ShowsController}. The store delegates its
@@ -807,36 +795,22 @@ export class TriggerLab {
       and torn down in {@link stop}. Null while not running. */
   private errorCaptureUninstall: (() => void) | null = null;
   /** MIDI input + MIDI-learn (R6/S37) — the WebMIDI device layer + learn-arm machinery, extracted
-      into {@link MidiController} (R21). The store keeps `forwardMidi`/`receiveInputEcho` (entangled
-      with the offline sim + S04 badges) and delegates the rest via the accessors + forwarders below,
-      so callers/tests are unchanged. */
-  private readonly midi = new MidiController({
+      into {@link MidiController} (R21). PUBLIC (INIT-02 S4): callers reach the collaborator itself
+      (`store.midi.learnTarget` / `.devices` / `.available` / `.unavailableReason` / `.startLearn()`
+      / `.cancelLearn()`) — the forwarder layer is gone. The store still OWNS `midiChannel` (a
+      $derived over the patch input map), `forwardMidi` and `receiveInputEcho`, which stay here
+      because they are entangled with the S04 activity badges, not with the device layer. */
+  readonly midi = new MidiController({
     isViewer: () => this.isViewer,
     getInputMap: () => this.project?.inputMap ?? null,
     setInputMap: (inputMap) => this.setInputMap(inputMap),
     setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
   });
-  /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
-      {@link MidiController.learnTarget}. */
-  get midiLearnTarget(): MidiLearnTarget | null {
-    return this.midi.learnTarget;
-  }
-  /** The global MIDI channel filter (null = omni), from the patch input map. */
+  /** The global MIDI channel filter (null = omni), from the patch input map. Store-owned, NOT part
+      of {@link MidiController}: it is a $derived over `project.inputMap`, and the learn appliers
+      gate on it via {@link acceptsMidiChannel}. */
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
-  /** Live WebMIDI input devices for the settings list. See {@link MidiController.devices}. */
-  get midiDevices(): MidiDeviceInfo[] {
-    return this.midi.devices;
-  }
-  /** Whether WebMIDI access succeeded — drives the settings empty-state copy. See
-      {@link MidiController.available}. */
-  get midiAvailable(): boolean {
-    return this.midi.available;
-  }
-  /** Why WebMIDI is unavailable, when it is. See {@link MidiController.unavailableReason}. */
-  get midiUnavailableReason(): string | undefined {
-    return this.midi.unavailableReason;
-  }
 
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
@@ -876,10 +850,6 @@ export class TriggerLab {
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
       undoable action. Set only via {@link batchIntoCurrentUndo}. */
   private suppressUndoSnapshot = false;
-  /** Whether a controller discovery sweep is in flight. See {@link ControllerMonitor.scanning}. */
-  get controllerScanning(): boolean {
-    return this.monitor.scanning;
-  }
 
   constructor(
     makeClient: () => WSClient = () =>
@@ -1335,15 +1305,15 @@ export class TriggerLab {
       onControllerStatus: (status) => {
         // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
         // Discover affordance). This is the confidence chain's last link — rendered directly.
-        this.monitor.ingestStatus(status);
+        this.controllerMonitor.ingestStatus(status);
       },
       onControllerDiscovery: (candidates) => {
         // A discovery sweep finished — replace the candidate list wholesale (best-first).
-        this.monitor.ingestDiscovery(candidates);
+        this.controllerMonitor.ingestDiscovery(candidates);
       },
       onNetworkAdapters: (adapters) => {
         // The server enumerated its NICs — used to recommend which subnet/IP to set the PixLite to.
-        this.monitor.ingestNetworkAdapters(adapters);
+        this.controllerMonitor.ingestNetworkAdapters(adapters);
       },
       onBackups: (items) => {
         // Reply to listBackups (#123) — the local snapshot listing the Backups dialog renders.
@@ -1385,7 +1355,7 @@ export class TriggerLab {
           // Same for the adopted controller (S48): a dropped link can't confirm the box's rx truth,
           // so the panel must not keep a frozen "receiving". The next `controllerStatus` after a
           // reconnect (once the panel re-subscribes via watchController) repopulates it.
-          this.monitor.clearOnLinkDrop();
+          this.controllerMonitor.clearOnLinkDrop();
           // Forget presence on a drop → revert to standalone (local-wins) authoring until the next
           // handshake re-establishes our role, so an offline editor keeps full local control.
           this.presence = null;
@@ -1798,14 +1768,6 @@ export class TriggerLab {
     this.setInputMap({ ...this.project.inputMap, midiChannel: channel });
   }
 
-  startMidiLearn(target: MidiLearnTarget): void {
-    this.midi.startLearn(target);
-  }
-
-  cancelMidiLearn(): void {
-    this.midi.cancelLearn();
-  }
-
   private acceptsMidiChannel(channel: number | undefined): boolean {
     return acceptsChannel(this.midiChannel, channel);
   }
@@ -1851,21 +1813,6 @@ export class TriggerLab {
     this.client.send({ t: 'setOutput', ...partial });
   }
 
-  // --- PixLite controller monitor + test (S48/S49, group L) -----------------
-  // Public API preserved as thin forwarders onto {@link monitor} (R20) and {@link controllerTest}
-  // (R22) — the store split. The domain docs + gating live on those controllers; these keep the
-  // store's call surface unchanged.
-
-  watchController(watching: boolean): void {
-    this.monitor.watch(watching);
-  }
-
-  /** The server machine's network adapters (NICs) + a recommended controller IP each. See
-      {@link ControllerMonitor.adapters}. */
-  get networkAdapters(): NetworkAdapter[] {
-    return this.monitor.adapters;
-  }
-
   // --- project backups (#123) ----------------------------------------------
 
   /** Ask the server for the current snapshot list (a pure read — a viewer may refresh too). No-op
@@ -1883,33 +1830,6 @@ export class TriggerLab {
     this.client.send({ t: 'restoreBackup', id });
   }
 
-  /** The featured adapter for the controller recommendation — the one the output `iface` is bound
-      to, else the first NIC. Drives the panel's "set the A4 to …" guidance. null until known. */
-  get controllerRecommendation(): NetworkAdapter | null {
-    return this.monitor.recommendationFor(this.project?.output.iface);
-  }
-
-  /** Ask the server to (re)enumerate its NICs — called when the controller panel opens. */
-  requestNetworkAdapters(): void {
-    this.monitor.requestNetworkAdapters();
-  }
-
-  discoverControllers(): void {
-    this.monitor.discover();
-  }
-
-  adoptController(host: string): void {
-    this.monitor.adopt(host);
-  }
-
-  setControllerAuth(password: string): void {
-    this.monitor.setAuth(password);
-  }
-
-  identifyController(durationS = 5): void {
-    this.monitor.identify(durationS);
-  }
-
   /** Flash one hoop's LEDs full-on for `durationS` (E1 hoop identify) — the C5 Identify button.
    * `hoop` is 1-based (A1). Editor-gated (drives real hardware), like identifyController;
    * `durationS <= 0` clears any active identify. The WS protocol message + server handler
@@ -1917,14 +1837,6 @@ export class TriggerLab {
   identifyHoop(drumId: string, hoop: number, durationS = 5): void {
     if (this.isViewer) return; // read-only viewer (S2): device flash is editor-only
     this.client.send({ t: 'identifyHoop', drumId, hoop, durationS });
-  }
-
-  setControllerTestData(pattern: ControllerTestPattern): void {
-    this.controllerTest.setTestData(pattern);
-  }
-
-  backToLive(): void {
-    this.controllerTest.backToLive();
   }
 
   /** Set or clear a Patch node's display-label override (the Inspector's rename field).

@@ -33,9 +33,9 @@
   const AUTO = 'auto';
   const ifaceOptions = $derived.by(() => {
     const opts = [{ value: AUTO, label: 'Default (auto)' }];
-    for (const a of store.networkAdapters) opts.push({ value: a.address, label: `${a.name} · ${a.address}` });
+    for (const a of store.controllerMonitor.adapters) opts.push({ value: a.address, label: `${a.name} · ${a.address}` });
     const cur = out?.iface ?? '';
-    if (cur && !store.networkAdapters.some((a) => a.address === cur)) {
+    if (cur && !store.controllerMonitor.adapters.some((a) => a.address === cur)) {
       opts.push({ value: cur, label: `${cur} (manual)` });
     }
     return opts;
@@ -46,9 +46,9 @@
   // it server-side. onMount's cleanup fires on unmount, so a closed panel stops the poll. Also ask
   // the server to enumerate its NICs so the subnet recommendation + adapter picker have data.
   onMount(() => {
-    store.watchController(true);
-    store.requestNetworkAdapters();
-    return () => store.watchController(false);
+    store.controllerMonitor.watch(true);
+    store.controllerMonitor.requestNetworkAdapters();
+    return () => store.controllerMonitor.watch(false);
   });
 </script>
 
@@ -56,18 +56,18 @@
   output={store.output}
   packetsPerSec={store.outputPacketsPerSec}
   port={out?.port}
-  controller={store.controllerStatus}
-  candidates={store.controllerCandidates}
-  scanning={store.controllerScanning}
-  takeover={store.controllerTakeover}
-  recommendation={store.controllerRecommendation}
+  controller={store.controllerMonitor.status}
+  candidates={store.controllerMonitor.candidates}
+  scanning={store.controllerMonitor.scanning}
+  takeover={store.controllerTest.takeover}
+  recommendation={store.controllerMonitor.recommendationFor(out?.iface)}
   canEdit={store.canEdit}
-  onDiscover={() => store.discoverControllers()}
-  onAdopt={(host) => store.adoptController(host)}
-  onSetAuth={(password) => store.setControllerAuth(password)}
-  onIdentify={() => store.identifyController()}
-  onTestData={(pattern) => store.setControllerTestData(pattern)}
-  onBackToLive={() => store.backToLive()}
+  onDiscover={() => store.controllerMonitor.discover()}
+  onAdopt={(host) => store.controllerMonitor.adopt(host)}
+  onSetAuth={(password) => store.controllerMonitor.setAuth(password)}
+  onIdentify={() => store.controllerMonitor.identify()}
+  onTestData={(pattern) => store.controllerTest.setTestData(pattern)}
+  onBackToLive={() => store.controllerTest.backToLive()}
 />
 <Separator />
 

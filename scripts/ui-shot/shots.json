@@ -42,6 +42,18 @@
     "state": "view:trigger,add:mix,select:mix",
     "target": "Node editor"
   },
+  "midi-learn-trigger-source": {
+    "state": "view:trigger,select:trigger",
+    "target": "Node editor"
+  },
+  "midi-learn-drum-zones": {
+    "state": "view:trigger,select:trigger",
+    "target": ".zones"
+  },
+  "midi-learn-cc-node": {
+    "state": "view:trigger,add:cc,select:cc",
+    "target": "Node editor"
+  },
   "graphs-dock": {
     "state": "view:trigger",
     "target": ".graphbar"
@@ -63,6 +75,11 @@
   "patch-controller": {
     "state": "view:patch",
     "target": "node:controller",
+    "settle": 1500
+  },
+  "patch-trigger-inspector": {
+    "state": "patch:trigger:snare",
+    "target": ".idock",
     "settle": 1500
   },
   "objects": {
