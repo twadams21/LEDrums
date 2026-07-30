@@ -45,7 +45,7 @@ import { installProcessErrorCapture } from './process-errors';
 import { createFatalHandler } from './fatal-shutdown';
 import { createBroadcaster } from './ws-broadcast';
 import { createWsConnectionHandler } from './ws-connection';
-import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
+import { createShipQueue, type ShipQueue, type ShipQueueState } from './telemetry/ship-queue';
 import { createHttpTransport } from './telemetry/transport';
 import { createReporter, type Reporter } from './telemetry/reporter';
 import { isTelemetryEnabled, type ReportRecord } from './telemetry/envelope';
@@ -310,12 +310,55 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
     const osPlatform = platform();
     const osRelease = release();
     const version = appVersion();
+    const reportsPath = join(resolveProjectsDir(process.env), 'error-reports.jsonl');
+    const backupsPath = join(resolveProjectsDir(process.env), 'backups-outbox.jsonl');
+    /**
+     * The queue deliberately never emits onto the Monitor bus itself (that would let a shipping
+     * failure recurse into the very stream it ships), so translating its injected health callbacks
+     * into events is the composition root's job — here.
+     *
+     * Every one of these is `system`, NEVER `error`: an error event is observed by the Reporter,
+     * enqueued, fails to ship, and re-triggers the same transition. That is exactly the recursion
+     * the queue's isolation invariant exists to prevent, and this is the only place it could break.
+     */
+    const shipHealth = (
+      what: 'Error reporting' | 'Off-site backups',
+      queuePath: string,
+    ): { onStateChange: (s: ShipQueueState, d: string) => void; onDeadLetter: (c: number, s: number) => void } => ({
+      // Transition-only at the queue, so a long outage emits ONE event, not one per attempt.
+      onStateChange: (state, detail) => {
+        const verb = state === 'blocked' ? 'blocked' : state === 'retrying' ? 'retrying' : 'recovered';
+        monitor({
+          type: 'system',
+          direction: 'local',
+          source: 'server',
+          destination: 'telemetry',
+          label: `${what} ${verb}`,
+          detail,
+        });
+      },
+      onDeadLetter: (count, status) => {
+        monitor({
+          type: 'system',
+          direction: 'local',
+          source: 'server',
+          destination: 'telemetry',
+          label: `${what} dead-lettered`,
+          detail: `${count} item(s) after ${status} → ${queuePath}.deadletter.jsonl`,
+        });
+      },
+    });
     const queue = createShipQueue<ReportRecord>({
-      path: join(resolveProjectsDir(process.env), 'error-reports.jsonl'),
+      path: reportsPath,
       transport: createHttpTransport<ReportRecord>({ endpoint, token }),
       // Upsert by dedup key so a render-loop error firing 120×/s collapses to ONE queued
       // report whose count rises, instead of appending N near-identical rows (#137 C1).
       keyOf: (r) => r.dedupKey,
+      // Derived from MAX_BODY_BYTES (1_000_000) in workers/error-ingest/src/index.ts, with headroom
+      // for the batch envelope. This queue RETAINS up to maxBytes 2_000_000, so without a batch cut
+      // it can build a body the Worker permanently rejects at 413.
+      maxBatchBytes: 900_000,
+      ...shipHealth('Error reporting', reportsPath),
     });
     reporter = createReporter({
       queue,
@@ -339,10 +382,14 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
     const backupUrl = backupsEndpoint(endpoint);
     if (backupUrl) {
       backupsQueue = createShipQueue<BackupRecord>({
-        path: join(resolveProjectsDir(process.env), 'backups-outbox.jsonl'),
+        path: backupsPath,
         transport: createHttpTransport<BackupRecord>({ endpoint: backupUrl, token }),
         maxItems: 100,
+        // Left on the default maxBatchBytes: /backups has its own far larger cap on the Worker
+        // (MAX_BACKUP_BODY_BYTES 16_000_000), and the default already ships bundles one or few at a
+        // time, which is what keeps a single bad bundle's blast radius to itself.
         maxBytes: 8_000_000,
+        ...shipHealth('Off-site backups', backupsPath),
       });
     }
     flushReportsSync = () => {
@@ -360,7 +407,7 @@ if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
       source: 'server',
       destination: 'telemetry',
       label: 'Remote error reporting enabled',
-      detail: `endpoint=${endpoint}${backupUrl ? ` · backups=${backupUrl}` : ''}`,
+      detail: `endpoint=${endpoint}${backupUrl ? ` · backups=${backupUrl}` : ''} · poison batches land in ${reportsPath}.deadletter.jsonl`,
     });
   } else {
     monitor({
