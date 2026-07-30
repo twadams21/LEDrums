@@ -16,7 +16,7 @@
 import { defaultEnvelope } from './envelope';
 import { defaultLfoSettings } from './lfo'; // S36
 import type { ModParamSpec, ModSource } from './modulation';
-import type { GraphEdge, GraphNode, TriggerGraph } from './types';
+import type { GraphEdge, GraphNode, NodeKind, TriggerGraph } from './types';
 import type { Mapping } from './modulation';
 
 /** The well-known `env` key an `envelope` source node stores its single shape under (source
@@ -27,10 +27,24 @@ export const ENVELOPE_NODE_KEY = 'shape';
 /** The `NodeKind`s that are modulation SOURCES (wire from their output into a `param:<key>`
     input). Widens with S36 (`'lfo'`) / S37 (`'cc'`). Kept here so the web wiring layer and the
     resolver agree on one list. */
-export const MOD_SOURCE_KINDS = ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as const; // S36 'lfo' + S37 'cc'
+export const MOD_SOURCE_KINDS = [
+  'envelope',
+  'lfo',
+  'cc',
+  'note',
+  'osc',
+  'randomMod',
+] as const satisfies readonly NodeKind[]; // S36 'lfo' + S37 'cc'
 
-/** Whether a node kind is a modulation source. */
-export function isModSourceKind(kind: string): boolean {
+/** The subset of {@link NodeKind} that are modulation sources. Derived from the array rather than
+    respelled, so the two can never disagree — and the `satisfies` clause above means a member that
+    is not a real NodeKind is a compile error rather than a silently dead string. */
+export type ModSourceKind = (typeof MOD_SOURCE_KINDS)[number];
+
+/** Whether a node kind is a modulation source. A type PREDICATE, not a boolean: it narrows its
+    argument to {@link ModSourceKind}, which is what lets a per-kind dispatch table be indexed
+    without an unchecked cast. Body unchanged — runtime behaviour is byte-identical. */
+export function isModSourceKind(kind: string): kind is ModSourceKind {
   return (MOD_SOURCE_KINDS as readonly string[]).includes(kind);
 }
 

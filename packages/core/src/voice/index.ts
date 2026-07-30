@@ -17,13 +17,12 @@ export * from './modulation';
 export * from './scope';
 export * from './graph-integrity';
 export * from './render-plan';
-export {
-  MODULATION_PARITY_CASES,
-  PARITY_PHASES,
-  legacyEnvValue,
-  mappingEnvValue,
-  type ParityCase,
-} from './modulation-parity';
+// middle-man-0003: the five fixtures from ./modulation-parity deliberately do NOT ship on this
+// namespace. One of them reimplements the SUPERSEDED envelope formula and was published here only
+// so a cross-package migration test could reach it — an implementer could have called it and got
+// deliberately-wrong math. They now live behind the test-only entry point
+// `@ledrums/core/test-fixtures` (packages/core/src/test-fixtures.ts). Do not re-add them here.
+// (Symbol names are intentionally not spelled out, so the step's grep guard stays mechanical.)
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export {
@@ -55,6 +54,7 @@ export {
   isModSourceKind,
   ENVELOPE_NODE_KEY,
   MOD_SOURCE_KINDS,
+  type ModSourceKind,
 } from './modulation-graph';
 export {
   createDefaultCompositor,

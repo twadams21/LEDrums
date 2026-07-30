@@ -22,18 +22,13 @@ export function hoopLabel(index: number): string {
 }
 
 export function parseHoopTarget(targetId: string | undefined, fallbackDrumId: string): { drumId: string; hoops: number[] } {
-  const { drumId, hoopIndices } = voice.parseHoopTarget(targetId, fallbackDrumId, {
-    sourceDrumOnNoHash: true,
-    emptyFallback: 'none',
-    sort: true,
-  });
+  const { drumId, hoopIndices } = voice.parseHoopTarget(targetId, fallbackDrumId, voice.HOOP_TARGET_POLICIES.inspector);
   return { drumId: drumId ?? fallbackDrumId, hoops: hoopIndices };
 }
 
-export function encodeHoopTarget(drumId: string, hoops: readonly number[]): string {
-  const normalized = [...new Set(hoops)].filter((v) => Number.isInteger(v) && v >= 1).sort((a, b) => a - b); // 1-based (A1)
-  return `${drumId}#${normalized.join(',')}`;
-}
+/** Re-exported from core so the hoop-target ENCODER is spelled in exactly one module
+    (`packages/core/src/voice/scope.ts`) alongside the decoder it must round-trip with. */
+export const encodeHoopTarget = voice.encodeHoopTarget;
 
 export function selectionFromNode(node: Pick<GraphNode, 'scope' | 'targetId'>, drums: readonly DrumInfo[], fallbackDrumId = drums[0]?.id ?? 'kick'): ScopeSelection {
   if (node.scope === 'kit') return { kind: 'kit' };

@@ -26,7 +26,7 @@
 {#if node.kind === 'randomMod'}
   <div class="kindbody">
     <figure class="preview">
-      <NodeSignalPreview kind="random" {distribution} {steps} w={228} h={72} />
+      <NodeSignalPreview kind="randomMod" {distribution} {steps} w={228} h={72} />
       <figcaption>Distribution curve</figcaption>
     </figure>
     <Field layout="row" label="Distribution">

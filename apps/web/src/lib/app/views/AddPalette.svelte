@@ -127,7 +127,7 @@
     {:else if it.previewKind === 'osc'}
       <NodeSignalPreview kind="osc" ccValue={() => 0.48} w={56} h={32} />
     {:else if it.previewKind === 'randomMod'}
-      <NodeSignalPreview kind="random" w={56} h={32} />
+      <NodeSignalPreview kind="randomMod" w={56} h={32} />
     {/if}
   {:else if it.preview === 'route' && node}
     <NodeStatePreview

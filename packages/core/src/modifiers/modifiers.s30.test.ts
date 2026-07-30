@@ -44,7 +44,7 @@ const link = (modifierId: string, params: Record<string, number | string>, bypas
 /** Apply a chain once at (timeMs, dt) over a fresh strip; return channel-0 per pixel. */
 function applyOnce(chain: ResolvedModifier[], fb: Framebuffer, timeMs: number, dt: number): number[] {
   const state: unknown[] = [];
-  applyModifierChain(chain, state, fb, range(fb.pixelCount), model(fb.pixelCount), timeMs, dt);
+  applyModifierChain(chain, state, fb, range(fb.pixelCount), { model: model(fb.pixelCount), timeMs, dt });
   return [...Array(fb.pixelCount)].map((_, i) => fb.rgba[i * 4]!);
 }
 
@@ -55,7 +55,7 @@ function runTotals(chain: ResolvedModifier[], srcAt: (i: number) => Framebuffer,
   const out: number[] = [];
   for (let t = 0; t < ticks; t++) {
     const fb = srcAt(t);
-    applyModifierChain(chain, state, fb, range(n), model(n), t * dt, dt);
+    applyModifierChain(chain, state, fb, range(n), { model: model(n), timeMs: t * dt, dt });
     let s = 0;
     for (let k = 0; k < fb.rgba.length; k++) s += fb.rgba[k]!;
     out.push(s);
@@ -147,9 +147,9 @@ describe('Grain modifier — animated seeded noise', () => {
     const drive = (): [number[], number[]] => {
       const s: unknown[] = [];
       const f0 = lit();
-      applyModifierChain(chain, s, f0, range(16), model(16), 0, 16);
+      applyModifierChain(chain, s, f0, range(16), { model: model(16), timeMs: 0, dt: 16 });
       const f1 = lit();
-      applyModifierChain(chain, s, f1, range(16), model(16), 16, 16);
+      applyModifierChain(chain, s, f1, range(16), { model: model(16), timeMs: 16, dt: 16 });
       return [[...f0.rgba], [...f1.rgba]];
     };
     const [a0, a1] = drive();

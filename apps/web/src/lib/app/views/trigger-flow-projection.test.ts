@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeNode, type TriggerGraph } from '../../trigger-lab/sim';
+import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../../trigger-lab/sim';
 import {
   emptyTriggerProjectionCache,
   projectionDesyncIds,
@@ -291,6 +291,141 @@ describe('projectionDesyncIds', () => {
     expect(projectionDesyncIds(['a', 'ghost', 'c'], ['a', 'c'])).toEqual(['ghost']);
     expect(projectionDesyncIds(['g1', 'g2'], [])).toEqual(['g1', 'g2']);
     expect(projectionDesyncIds([], ['a'])).toEqual([]);
+  });
+});
+
+// repeated-switches-0001 regression (INIT-06 S1): the signature switch spelled only `case 'play':`,
+// but graph-integrity.ts:148/154 rewrite every `play` node to `effect` inside
+// normalizeTriggerGraphToGen3, and hydrate.ts runs that normalisation on every graph reaching the
+// store — so the 'play' arm was UNREACHABLE and every real effect node fell through to
+// `default: return base`. Its effectId / playType / canvasScene never entered the signature, so
+// projectTriggerFlowNodes reused the previous flow-node object verbatim when an effect node's
+// effect changed. These three assertions are what proves the arm is live.
+describe('triggerNodeSignature — canonical effect nodes', () => {
+  const effect = (over: Partial<GraphNode>) => makeNode('effect', 'e1', 10, 20, over);
+
+  it('folds effectId into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:radial-wash' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:strobe' })),
+    );
+  });
+
+  it('folds playType into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:radial-wash', playType: 'hits' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:radial-wash', playType: 'waves' })),
+    );
+  });
+
+  it('folds canvasScene into the signature of a canonical effect node', () => {
+    expect(triggerNodeSignature(effect({ effectId: 'gen:canvas', canvasScene: 'scene-a' }))).not.toBe(
+      triggerNodeSignature(effect({ effectId: 'gen:canvas', canvasScene: 'scene-b' })),
+    );
+  });
+
+  it('signs a legacy persisted `play` node the same way as its canonical `effect` twin', () => {
+    // The normalizer rewrites kind on load, so the two spellings must not disagree about which
+    // fields matter — only the `kind` segment of the signature may differ.
+    const play = triggerNodeSignature(makeNode('play', 'e1', 10, 20, { effectId: 'gen:strobe' }));
+    const canonical = triggerNodeSignature(effect({ effectId: 'gen:strobe' }));
+    expect(play.replace(':play:', ':effect:')).toBe(canonical);
+  });
+});
+
+// INIT-06 S6 PARITY ORACLE. The switch (with its kind-absorbing `default: return base`) became a
+// total `Record<NodeKind, SigFn>` with no default arm. These strings were CAPTURED from the
+// pre-refactor function at the parent commit — they are measured bytes, not a re-derivation, so a
+// miscount of which kinds contribute nothing fails here rather than shipping. Every node below is
+// built from ONE over-populated field bag, so an arm that reads a field belonging to another kind
+// would change its string and be caught.
+const SIG_FIELDS = {
+  modInputs: [{ param: 'brightness' }, { param: 'hue' }],
+  on: 'value', valueMode: 'bands', threshold: 0.4, invert: true, bands: [0.2, 0.8],
+  effectId: 'gen:radial-wash', playType: 'waves', canvasScene: 'scene-a', presetId: 'p1', busId: 'b1',
+  modifierId: 'trail', bypass: true,
+  mixBlendMode: 'screen',
+  p: 0.3,
+  delayMode: 'beats', ms: 250, division: '1/8',
+  noRepeat: true,
+  scope: 'hoop', targetId: 'snare#1,3',
+  source: { kind: 'drum', drumId: 'kick', zone: 'head' },
+  lfo: { waveform: 'sine', rateMode: 'hz', rateHz: 2, division: '1/4', phase: 0.25 },
+  ccController: 74, ccChannel: 3, ccSource: 'midi', oscAddress: '/led/x',
+  noteNumber: 48, noteChannel: 2, noteMode: 'velocity', noteReleaseMs: 120,
+  randomDistribution: 'gaussian', randomSteps: 7,
+  params: { brightness: 0.5 },
+  env: { brightness: { kind: 'decay', amount: 1, points: [{ t: 0, v: 1 }, { t: 1, v: 0 }] } },
+} satisfies Partial<GraphNode>;
+
+const SIG_GOLDENS: Record<string, string> = {
+  trigger: 'n-trigger:trigger:pos=12,34:mod=brightness,hue',
+  effect: 'n-effect:effect:pos=12,34:mod=brightness,hue:playType=waves:effect=gen:radial-wash:canvas=scene-a',
+  all: 'n-all:all:pos=12,34:mod=brightness,hue',
+  random: 'n-random:random:pos=12,34:mod=brightness,hue',
+  sequence: 'n-sequence:sequence:pos=12,34:mod=brightness,hue',
+  switch: 'n-switch:switch:pos=12,34:mod=brightness,hue:on=value:valueMode=bands:bands=0.2,0.8',
+  chance: 'n-chance:chance:pos=12,34:mod=brightness,hue',
+  toggle: 'n-toggle:toggle:pos=12,34:mod=brightness,hue',
+  delay: 'n-delay:delay:pos=12,34:mod=brightness,hue',
+  modifier: 'n-modifier:modifier:pos=12,34:mod=brightness,hue:modifier=trail',
+  mix: 'n-mix:mix:pos=12,34:mod=brightness,hue:mix=screen:rows=w1,w2',
+  scope: 'n-scope:scope:pos=12,34:mod=brightness,hue',
+  output: 'n-output:output:pos=12,34:mod=brightness,hue',
+  envelope: 'n-envelope:envelope:pos=12,34:mod=brightness,hue',
+  lfo: 'n-lfo:lfo:pos=12,34:mod=brightness,hue:lfo=sine:hz:2:1/4:0.25',
+  cc: 'n-cc:cc:pos=12,34:mod=brightness,hue:cc=74:3',
+  note: 'n-note:note:pos=12,34:mod=brightness,hue:note=48:2:velocity:120',
+  osc: 'n-osc:osc:pos=12,34:mod=brightness,hue:osc=/led/x',
+  randomMod: 'n-randomMod:randomMod:pos=12,34:mod=brightness,hue:random=gaussian:7',
+};
+
+// Locally listed on purpose: if CanonicalGraphNodeKind grows, this array does NOT grow with it, so
+// the totality test below fails and someone has to decide what the new kind signs.
+const CANONICAL_KINDS = [
+  'trigger', 'effect', 'all', 'random', 'sequence', 'switch', 'chance', 'toggle', 'delay',
+  'modifier', 'mix', 'scope', 'output', 'envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod',
+] as const;
+
+describe('triggerNodeSignature — golden table over every canonical kind', () => {
+  const sigOf = (kind: NodeKind) => {
+    const n = makeNode(kind, `n-${kind}`, 12, 34, SIG_FIELDS);
+    return triggerNodeSignature(n, {
+      version: 3,
+      nodes: [n],
+      edges: [
+        { id: 'w1', from: 'a', to: `n-${kind}` },
+        { id: 'w2', from: 'b', to: `n-${kind}` },
+        { id: 'w3', from: 'env', to: `n-${kind}`, toPort: 'param:brightness' },
+      ],
+    });
+  };
+
+  for (const kind of CANONICAL_KINDS) {
+    it(`signs a ${kind} node byte-identically to the pre-Record switch`, () => {
+      expect(sigOf(kind)).toBe(SIG_GOLDENS[kind]);
+    });
+  }
+
+  it('covers all 19 canonical kinds with a golden (no kind silently untested)', () => {
+    expect(CANONICAL_KINDS).toHaveLength(19);
+    expect(Object.keys(SIG_GOLDENS).sort()).toEqual([...CANONICAL_KINDS].sort());
+  });
+
+  // The measured count the plan corrected from "eight" to TEN. This is the assertion that makes
+  // "these kinds contribute nothing" a decision rather than a fallthrough — if a future arm starts
+  // contributing, or a new kind lands as baseOnly, this number has to be changed deliberately.
+  it('exactly TEN canonical kinds contribute nothing beyond base', () => {
+    const baseOnlyKinds = CANONICAL_KINDS.filter((k) => sigOf(k) === `n-${k}:${k}:pos=12,34:mod=brightness,hue`);
+    expect([...baseOnlyKinds].sort()).toEqual(
+      ['all', 'chance', 'delay', 'envelope', 'output', 'random', 'scope', 'sequence', 'toggle', 'trigger'].sort(),
+    );
+    expect(baseOnlyKinds).toHaveLength(10);
+  });
+
+  it('routes the legacy `play` alias through the SAME entry as canonical `effect`', () => {
+    // Not merely equal output — the two keys share one function object, so they cannot drift.
+    const play = makeNode('play', 'n-x', 12, 34, SIG_FIELDS);
+    const effect = makeNode('effect', 'n-x', 12, 34, SIG_FIELDS);
+    expect(triggerNodeSignature(play).replace(':play:', ':effect:')).toBe(triggerNodeSignature(effect));
   });
 });
 

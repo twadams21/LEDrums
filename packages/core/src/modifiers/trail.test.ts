@@ -32,7 +32,7 @@ function runTicks(chain: ResolvedModifier[], inputs: number[], dt: number): numb
   const out: number[] = [];
   for (let i = 0; i < inputs.length; i++) {
     const fb = px(inputs[i]!);
-    applyModifierChain(chain, state, fb, r, m, i * dt, dt);
+    applyModifierChain(chain, state, fb, r, { model: m, timeMs: i * dt, dt });
     out.push(ch0(fb));
   }
   return out;

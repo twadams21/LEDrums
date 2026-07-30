@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { migrateGraphEnvMaps, migrateGraphsEnvMaps, normalizeGraphs, type SpecsFor } from './hydrate';
 import { makeNode, type Envelope, type ParamSpec, type TriggerGraph } from '../sim';
 import { voice } from '@ledrums/core';
+// Parity fixtures come from the TEST-ONLY entry point, not core's shipped `voice` namespace —
+// `legacyEnvValue` is the superseded envelope formula and must not be reachable from production.
+import { MODULATION_PARITY_CASES, PARITY_PHASES, legacyEnvValue } from '@ledrums/core/test-fixtures';
 
 /* S35 — legacy play-node EnvMap → S34 modulation graph. The hydrate-time migrator folds each
    play node's per-param `env` into an `envelope` SOURCE node + a `param:<key>` mapping edge and
@@ -34,10 +37,10 @@ function migratedValue(spec: ParamSpec, base: number, env: Envelope, phase: numb
 }
 
 describe('S35 EnvMap migration — parity with the legacy env sweep (S33 fixture)', () => {
-  for (const c of voice.MODULATION_PARITY_CASES) {
+  for (const c of MODULATION_PARITY_CASES) {
     it(`sample-identical across the voice life: ${c.label}`, () => {
-      for (const phase of voice.PARITY_PHASES) {
-        const legacy = voice.legacyEnvValue(c.spec, c.base, c.env, phase);
+      for (const phase of PARITY_PHASES) {
+        const legacy = legacyEnvValue(c.spec, c.base, c.env, phase);
         // Parity holds to floating-point precision (the model additionally range-clamps — a no-op
         // within range, a ~1 ULP snap at an exact endpoint), matching S33's 12-digit bound.
         expect(migratedValue(c.spec, c.base, c.env, phase)).toBeCloseTo(legacy, 12);

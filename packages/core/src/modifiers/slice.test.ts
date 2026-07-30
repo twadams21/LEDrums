@@ -22,7 +22,7 @@ function channels(fb: Framebuffer, c: number): number[] {
 
 function apply(params: ResolvedParams, values: number[], state: unknown[] = [], r = range(0, values.length)): Framebuffer {
   const fb = strip(values);
-  applyModifierChain([link(params)], state, fb, r, model(values.length), 0, 16);
+  applyModifierChain([link(params)], state, fb, r, { model: model(values.length), timeMs: 0, dt: 16 });
   return fb;
 }
 

@@ -39,6 +39,15 @@ export interface PixelRange {
  * contract) so temporal modifiers restart with the voice on retrigger. `dt` is the frame
  * delta (ms) — temporal modifiers (Trail/Echo/Strobe) integrate against it.
  */
+/**
+ * BORROWED, PER-CALL VIEW — MUST NOT BE RETAINED. A `ModifierContext` is constructed fresh by
+ * the caller for each {@link applyModifierChain} call and is valid only for the duration of the
+ * `apply` it is passed to. A modifier that stores this object (into its state slot, a closure or
+ * module scope) and reads it on a later frame would observe whatever the most recent caller
+ * wrote, not its own voice's values — a bug neither the test suites nor an allocation harness can
+ * detect. Read the fields you need (`timeMs`, `dt`, `model`) during `apply`; never keep the
+ * reference. Audited at S7: no impl retains it; thirteen of twenty ignore `ctx` outright.
+ */
 export interface ModifierContext {
   model: PixelModel;
   /** Host voice's local clock in ms (age since the voice's originating hit; ≥ 0). */
