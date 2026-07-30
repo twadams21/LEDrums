@@ -33,22 +33,14 @@ describe('input-router', () => {
     expect(e.getProject().composition.layers.find((l) => l.id === 'trigger')!.activeClipId).toBe('chase');
   });
 
-  it('applies setParam without a structural change', () => {
-    const e = new Engine(defaultProject());
-    const r = applyClientMessage(e, { t: 'setParam', layerId: 'base', clipId: 'base-swirl', key: 'hue', value: 99 }, 0);
-    expect(r.structural).toBe(false);
-    expect(e.getProject().composition.layers[0]!.clips[0]!.params.hue).toBe(99);
-  });
-
   it('ignores an unmapped MIDI note without throwing', () => {
     const e = new Engine(defaultProject());
     expect(() => applyClientMessage(e, { t: 'midi', note: 7, velocity: 100, on: true }, 0)).not.toThrow();
     e.tick(16);
   });
 
-  it('marks structural changes for layer/transport edits', () => {
+  it('marks a transport edit structural (the one surviving member of that family, S11)', () => {
     const e = new Engine(defaultProject());
-    expect(applyClientMessage(e, { t: 'setLayer', layerId: 'base', opacity: 0.5 }, 0).structural).toBe(true);
     expect(applyClientMessage(e, { t: 'setTransport', bpm: 140 }, 0).structural).toBe(true);
   });
 });

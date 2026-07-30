@@ -236,7 +236,7 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
       expect(requiresEditor(t)).toBe(false);
     }
     // Authoring mutations are editor-only.
-    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
+    for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
     }
   });

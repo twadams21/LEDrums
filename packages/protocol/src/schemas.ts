@@ -10,22 +10,15 @@
 // voice Show pass through structurally validated but never deep-inspected or key-stripped.
 import { z } from 'zod';
 import {
-  BLEND_MODES,
-  clipSchema,
   inputMapSchema,
   kitGlobalSchema,
-  layerSchema,
   nodeLayoutSchema,
   outputSchema,
   outputSettingsSchema,
   outputStateSchema,
-  paramValueSchema,
   projectPatchSchema,
   projectSchema,
   rgbOrderSchema,
-  sectionSchema,
-  songSchema,
-  triggerBindingSchema,
   vec3Schema,
 } from '@ledrums/core';
 import type { EngineStats, voice } from '@ledrums/core';
@@ -77,7 +70,6 @@ export const showSchema = z.custom<voice.Show>((v) => showBusesShape.safeParse(v
 // ---------------------------------------------------------------------------
 // Reused core enums (single-source with the domain model)
 // ---------------------------------------------------------------------------
-const blendModeSchema = z.enum(BLEND_MODES);
 const outputProtocolSchema = outputSettingsSchema.shape.protocol;
 // The setKitGlobal message carries kit-global fields as an OPTIONAL partial (only the edited
 // field is sent), so each is the core field's constraint with its schema DEFAULT stripped —
@@ -95,19 +87,6 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('cc'), controller: z.number(), value: z.number(), channel: z.number().optional() }).strict(),
   z.object({ t: z.literal('programChange'), value: z.number(), channel: z.number().optional() }).strict(),
   z.object({ t: z.literal('osc'), address: z.string(), value: z.number() }).strict(),
-  z.object({ t: z.literal('setParam'), layerId: z.string(), clipId: z.string(), key: z.string(), value: paramValueSchema }).strict(),
-  z.object({
-    t: z.literal('setLayer'),
-    layerId: z.string(),
-    blendMode: blendModeSchema.optional(),
-    opacity: z.number().optional(),
-    activeClipId: z.string().nullable().optional(),
-    name: z.string().optional(),
-  }).strict(),
-  z.object({ t: z.literal('addLayer'), layer: layerSchema }).strict(),
-  z.object({ t: z.literal('removeLayer'), layerId: z.string() }).strict(),
-  z.object({ t: z.literal('addClip'), layerId: z.string(), clip: clipSchema }).strict(),
-  z.object({ t: z.literal('removeClip'), layerId: z.string(), clipId: z.string() }).strict(),
   z.object({ t: z.literal('setTransport'), bpm: z.number().optional(), playing: z.boolean().optional(), beatsPerBar: z.number().optional() }).strict(),
   z.object({
     t: z.literal('setKitTransform'),
@@ -158,14 +137,6 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     port: z.number().optional(),
     iface: z.string().optional(),
   }).strict(),
-  z.object({ t: z.literal('setActiveSection'), songId: z.string(), sectionId: z.string() }).strict(),
-  z.object({ t: z.literal('setBinding'), sectionId: z.string(), binding: triggerBindingSchema }).strict(),
-  z.object({ t: z.literal('removeBinding'), sectionId: z.string(), drumId: z.string(), slot: z.number() }).strict(),
-  z.object({ t: z.literal('addSong'), song: songSchema }).strict(),
-  z.object({ t: z.literal('removeSong'), songId: z.string() }).strict(),
-  z.object({ t: z.literal('addSection'), songId: z.string(), section: sectionSchema }).strict(),
-  z.object({ t: z.literal('removeSection'), songId: z.string(), sectionId: z.string() }).strict(),
-  z.object({ t: z.literal('setSectionLayerClip'), sectionId: z.string(), layerId: z.string(), clipId: z.string().nullable() }).strict(),
   z.object({ t: z.literal('setInputMap'), inputMap: inputMapSchema }).strict(),
   z.object({ t: z.literal('setProject'), patch: projectPatchSchema }).strict(),
   z.object({ t: z.literal('setShow'), show: showSchema }).strict(),

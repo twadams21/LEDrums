@@ -23,7 +23,8 @@ import type { ClientMessage } from './ws-protocol';
  * removed until its behaviour is pinned here.
  *
  * Discriminant list verified by grep against apps/web/src (`t: 'set…'` sends), NOT by reading the
- * protocol union — the union carries fourteen further structural messages no client sends:
+ * protocol union. (The union USED to carry fourteen further structural messages no client sent;
+ * S11 deleted them and their reducer arms together.) The set driven here:
  *   setKitTransform · setKitGlobal · setHoopConfig · setKitNodeLayout · setKitOutputs ·
  *   setOutput · setInputMap · setTransport
  *

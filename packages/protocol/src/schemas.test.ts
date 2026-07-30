@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clipSchema,
   inputMapSchema,
-  layerSchema,
   outputSchema,
   projectPatchSchema,
   projectSchema,
-  sectionSchema,
-  songSchema,
-  triggerBindingSchema,
 } from '@ledrums/core';
 import {
   clientMessageSchema,
@@ -25,11 +20,6 @@ const minimalKit = {
   global: {},
   drums: [{ id: 'kick', diameterIn: 8, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
 };
-const layer = layerSchema.parse({ id: 'l1' });
-const clip = clipSchema.parse({ id: 'c1', effectId: 'swirl' });
-const song = songSchema.parse({ id: 's1' });
-const section = sectionSchema.parse({ id: 'sec1' });
-const binding = triggerBindingSchema.parse({ drumId: 'kick', slot: 0, layerId: 'l1', clipId: 'c1' });
 const inputMap = inputMapSchema.parse({});
 const output = outputSchema.parse({ id: 'o1', segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 2 }] }); // D1: segments on the output; 1-based hoops (A1)
 const patch = projectPatchSchema.parse({ kit: minimalKit });
@@ -48,12 +38,6 @@ const clientSamples: ClientMessage[] = [
   { t: 'cc', controller: 0, value: 5 },
   { t: 'programChange', value: 2 },
   { t: 'osc', address: '/vol', value: 0.5 },
-  { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
-  { t: 'setLayer', layerId: 'base', blendMode: 'add', opacity: 0.5, activeClipId: null, name: 'x' },
-  { t: 'addLayer', layer },
-  { t: 'removeLayer', layerId: 'base' },
-  { t: 'addClip', layerId: 'base', clip },
-  { t: 'removeClip', layerId: 'base', clipId: 'c1' },
   { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4 },
   { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true, color: '#ff8800' },
   { t: 'setKitGlobal', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
@@ -61,14 +45,6 @@ const clientSamples: ClientMessage[] = [
   { t: 'setKitOutputs', outputs: [output] },
   { t: 'setKitNodeLayout', nodeLayout: { 'output:1': { x: 40, y: 120 }, 'hoop:kick:1': { x: 360, y: 120 } } },
   { t: 'setOutput', state: 'armed', protocol: 'sacn', host: '10.0.0.5', rgbOrder: 'GRB', fps: 44, broadcast: true, priority: 100, port: 6454, iface: 'en0' },
-  { t: 'setActiveSection', songId: 's1', sectionId: 'sec1' },
-  { t: 'setBinding', sectionId: 'sec1', binding },
-  { t: 'removeBinding', sectionId: 'sec1', drumId: 'kick', slot: 0 },
-  { t: 'addSong', song },
-  { t: 'removeSong', songId: 's1' },
-  { t: 'addSection', songId: 's1', section },
-  { t: 'removeSection', songId: 's1', sectionId: 'sec1' },
-  { t: 'setSectionLayerClip', sectionId: 'sec1', layerId: 'l1', clipId: null },
   { t: 'setInputMap', inputMap },
   { t: 'setProject', patch },
   { t: 'setShow', show: showFixture },
@@ -153,6 +129,45 @@ describe('clientMessageSchema', () => {
     expect(clientMessageSchema.safeParse({ t: 'setHoopConfig', hoopIndex: 1 }).success).toBe(false); // missing drumId
     expect(clientMessageSchema.safeParse({ t: 'setKitGlobal', hoopCount: 4.5 }).success).toBe(false); // hoopCount must be an integer
     expect(clientMessageSchema.safeParse('not an object').success).toBe(false);
+  });
+
+  /**
+   * INIT-01 S11. The fourteen composition messages (layer/clip/section/song/binding editing) were
+   * decoded and applied by a reducer no client ever addressed — the web sends zero of them (verified
+   * by grep per discriminant in the S11 commit body). Their reducer arms and their protocol variants
+   * died in the SAME commit, deliberately: deleting the reducer first would leave a window where
+   * they decode and nothing applies them — a SILENT DROP, the exact defect class this initiative
+   * exists to remove.
+   *
+   * So the disposition is DECODE-LEVEL REJECTION, and that has to be asserted rather than inferred
+   * from an absent union member: a stale client's message must come back as an error, never be
+   * accepted and ignored.
+   */
+  const RETIRED = [
+    { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
+    { t: 'setLayer', layerId: 'base', opacity: 0.5 },
+    { t: 'addLayer', layer: { id: 'l1' } },
+    { t: 'removeLayer', layerId: 'base' },
+    { t: 'addClip', layerId: 'base', clip: { id: 'c1', effectId: 'swirl' } },
+    { t: 'removeClip', layerId: 'base', clipId: 'c1' },
+    { t: 'setActiveSection', songId: 's1', sectionId: 'sec1' },
+    { t: 'setBinding', sectionId: 'sec1', binding: { drumId: 'kick', slot: 0, layerId: 'l1', clipId: 'c1' } },
+    { t: 'removeBinding', sectionId: 'sec1', drumId: 'kick', slot: 0 },
+    { t: 'addSong', song: { id: 's1' } },
+    { t: 'removeSong', songId: 's1' },
+    { t: 'addSection', songId: 's1', section: { id: 'sec1' } },
+    { t: 'removeSection', songId: 's1', sectionId: 'sec1' },
+    { t: 'setSectionLayerClip', sectionId: 'sec1', layerId: 'l1', clipId: null },
+  ];
+
+  it.each(RETIRED)('rejects the retired composition message $t at DECODE (S11)', (msg) => {
+    expect(clientMessageSchema.safeParse(msg).success).toBe(false);
+    expect(clientMessageTypes.has(msg.t)).toBe(false);
+  });
+
+  it('retired exactly fourteen discriminants and kept setTransport (the one live member)', () => {
+    expect(RETIRED).toHaveLength(14);
+    expect(clientMessageTypes.has('setTransport')).toBe(true);
   });
 });
 

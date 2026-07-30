@@ -148,29 +148,6 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
     case 'osc':
       engine.applyEvent({ kind: 'osc', address: msg.address, value: msg.value, timeMs: now });
       return { structural: false, monitor: { kind: 'osc', label: msg.address, value: msg.value } };
-    case 'setParam':
-      engine.setParam(msg.layerId, msg.clipId, msg.key, msg.value);
-      return { structural: false };
-    case 'setLayer':
-      engine.setLayerProps(msg.layerId, {
-        ...(msg.blendMode !== undefined ? { blendMode: msg.blendMode } : {}),
-        ...(msg.opacity !== undefined ? { opacity: msg.opacity } : {}),
-        ...(msg.activeClipId !== undefined ? { activeClipId: msg.activeClipId } : {}),
-        ...(msg.name !== undefined ? { name: msg.name } : {}),
-      });
-      return { structural: true };
-    case 'addLayer':
-      engine.addLayer(msg.layer);
-      return { structural: true };
-    case 'removeLayer':
-      engine.removeLayer(msg.layerId);
-      return { structural: true };
-    case 'addClip':
-      engine.addClip(msg.layerId, msg.clip);
-      return { structural: true };
-    case 'removeClip':
-      engine.removeClip(msg.layerId, msg.clipId);
-      return { structural: true };
     case 'setTransport':
       engine.setTransport({
         ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
@@ -223,30 +200,6 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.port !== undefined ? { port: msg.port } : {}),
         ...(msg.iface !== undefined ? { iface: msg.iface } : {}),
       });
-      return { structural: true };
-    case 'setActiveSection':
-      engine.setActiveSection(msg.songId, msg.sectionId);
-      return { structural: true };
-    case 'setBinding':
-      engine.setBinding(msg.sectionId, msg.binding);
-      return { structural: true };
-    case 'removeBinding':
-      engine.removeBinding(msg.sectionId, msg.drumId, msg.slot);
-      return { structural: true };
-    case 'addSong':
-      engine.addSong(msg.song);
-      return { structural: true };
-    case 'removeSong':
-      engine.removeSong(msg.songId);
-      return { structural: true };
-    case 'addSection':
-      engine.addSection(msg.songId, msg.section);
-      return { structural: true };
-    case 'removeSection':
-      engine.removeSection(msg.songId, msg.sectionId);
-      return { structural: true };
-    case 'setSectionLayerClip':
-      engine.setSectionLayerClip(msg.sectionId, msg.layerId, msg.clipId);
       return { structural: true };
     case 'setInputMap':
       engine.setInputMap(msg.inputMap);

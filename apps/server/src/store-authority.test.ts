@@ -225,19 +225,39 @@ describe('S8 — one reducer: a structural edit lands exactly once', () => {
     expect(autosaver.markDirty).not.toHaveBeenCalled();
   });
 
-  it('the fourteen composition messages no client sends are inert here — S11 deletes them outright', () => {
-    const { voiceHost, autosaver, broadcasts, send } = wiring();
-    const before = JSON.stringify(voiceHost.getProject());
+  /**
+   * The reducer's coverage, pinned by enumeration. S8 made `applyStructuralMessage`'s return value
+   * the broadcast-and-persist signal, so a MISSING arm is no longer a silent half-apply that the
+   * other reducer covered — it is an edit that never reaches the wire or the disk. This asserts the
+   * live structural set drives it, and that nothing else does.
+   *
+   * (The fourteen composition messages that used to fall through here are gone from the protocol
+   * entirely as of S11 — rejected at DECODE, proved in packages/protocol's suite. They cannot reach
+   * this handler to be inert.)
+   */
+  it('every live structural discriminant is covered, and only those', () => {
+    const { voiceHost, send, broadcasts, autosaver } = wiring();
+    const STRUCTURAL: ClientMessage[] = [
+      { t: 'setKitTransform', drumId: 'kick', color: '#ff8800' },
+      { t: 'setKitGlobal', hoopCount: 4 },
+      { t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: 100 },
+      { t: 'setKitOutputs', outputs: [{ id: 'out1', channelsPerPixel: 3, segments: [] }] },
+      { t: 'setKitNodeLayout', nodeLayout: { 'output:1': { x: 1, y: 2 } } },
+      { t: 'setOutput', fps: 30 },
+      { t: 'setInputMap', inputMap: voiceHost.getProject().inputMap },
+      { t: 'setTransport', bpm: 100 },
+    ];
+    for (const msg of STRUCTURAL) {
+      broadcasts.length = 0;
+      send(msg);
+      expect(broadcasts.filter((m) => m.t === 'state'), `${msg.t} must broadcast state`).toHaveLength(1);
+    }
+    expect(autosaver.markDirty).toHaveBeenCalledTimes(STRUCTURAL.length);
 
-    // Recorded, not hidden: deleting the legacy reducer's CALL (S8) before its arms and protocol
-    // variants (S11) leaves exactly one commit in which these decode and apply nothing. The web
-    // sends zero of them — re-proved by grep in the S8 commit body — so no shipped path notices.
-    send({ t: 'addSong', song: { id: 's1', name: 'S', sections: [] } });
-    send({ t: 'setActiveSection', songId: 's1', sectionId: 'x' });
-
-    expect(JSON.stringify(voiceHost.getProject())).toBe(before);
+    // …and a read is not structural, however close it looks.
+    broadcasts.length = 0;
+    send({ t: 'listBackups' });
     expect(broadcasts.filter((m) => m.t === 'state')).toHaveLength(0);
-    expect(autosaver.markDirty).not.toHaveBeenCalled();
   });
 });
 
