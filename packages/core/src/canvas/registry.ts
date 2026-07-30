@@ -30,10 +30,6 @@ export function tryGetCanvasScene(sceneId: string): CanvasScene | undefined {
   return scenes.get(sceneId);
 }
 
-export function listCanvasScenes(): CanvasScene[] {
-  return [...scenes.values()];
-}
-
 /** Resolve a `canvas:<sceneId>` effect id to its (memoized) scene adapter, or
     `undefined` for a non-canvas id / unregistered scene — the effects registry's
     fallback, giving the bridge one uniform lookup for hosted AND canvas voices. */

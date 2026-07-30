@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseKit } from './kit-schema';
 import { buildPixelModel, type PixelModel } from './pixel-model';
-import { buildPixelGrid, forEachPixelWithin, nearestPixelWithin } from './pixel-grid';
+import { buildPixelGrid, forEachPixelWithin, nearestPixelIdWithin } from './pixel-grid';
 import { distance, mulberry32, type Vec3 } from '../math';
 
 function model(): PixelModel {
@@ -77,17 +77,16 @@ describe('pixel-grid', () => {
   const m = model();
   const grid = buildPixelGrid(m);
 
-  it('nearestPixelWithin matches the brute-force nearest scan (confetti equivalence)', () => {
+  it('nearestPixelIdWithin matches the brute-force nearest scan (confetti equivalence)', () => {
     const reach = Math.max(40, m.bounds.size * 0.08);
     for (const pt of randomPoints(m, 200)) {
       const brute = bruteNearest(m, pt);
-      const hit = nearestPixelWithin(grid, pt, reach);
+      const id = nearestPixelIdWithin(grid, pt, reach);
       if (brute.dist > reach) {
-        expect(hit).toBeNull();
+        expect(id).toBe(-1);
       } else {
-        expect(hit).not.toBeNull();
-        expect(hit!.id).toBe(brute.id);
-        expect(hit!.dist).toBeCloseTo(brute.dist, 10);
+        expect(id).toBe(brute.id);
+        expect(distance(m.pixels[id]!.world, pt)).toBeCloseTo(brute.dist, 10);
       }
     }
   });
@@ -126,7 +125,7 @@ describe('pixel-grid', () => {
       pixelCount: 0,
     };
     const g = buildPixelGrid(empty);
-    expect(nearestPixelWithin(g, { x: 0, y: 0, z: 0 }, 100)).toBeNull();
+    expect(nearestPixelIdWithin(g, { x: 0, y: 0, z: 0 }, 100)).toBe(-1);
     forEachPixelWithin(g, { x: 0, y: 0, z: 0 }, 100, () => {
       throw new Error('should not visit');
     });

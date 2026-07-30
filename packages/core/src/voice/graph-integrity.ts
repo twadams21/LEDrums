@@ -239,10 +239,3 @@ export function normalizeTriggerGraphToGen3(graph: PersistedTriggerGraph): Trigg
 export function validateTriggerGraphIntegrity(graph: TriggerGraph): TriggerGraphIssue[] {
   return normalizeTriggerGraphToGen3(graph).issues;
 }
-
-export function assertTriggerGraphIntegrity(graph: TriggerGraph): void {
-  const issues = validateTriggerGraphIntegrity(graph);
-  if (issues.length) {
-    throw new Error(`Invalid trigger graph: ${issues.map((i) => i.code).join(', ')}`);
-  }
-}

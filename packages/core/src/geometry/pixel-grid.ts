@@ -123,14 +123,3 @@ export function nearestPixelIdWithin(grid: PixelGrid, point: Vec3, radius: numbe
   }
   return bestId;
 }
-
-/** Object-returning convenience over {@link nearestPixelIdWithin}. */
-export function nearestPixelWithin(
-  grid: PixelGrid,
-  point: Vec3,
-  radius: number,
-): { id: number; dist: number } | null {
-  const id = nearestPixelIdWithin(grid, point, radius);
-  if (id < 0) return null;
-  return { id, dist: distance(grid.model.pixels[id]!.world, point) };
-}
