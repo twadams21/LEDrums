@@ -64,4 +64,32 @@ describe('voice host path — propagateToVoiceHost(setKitTransform)', () => {
     propagateToVoiceHost(host, msg({ color: '#72d572' }));
     expect(setKitTransform).toHaveBeenCalledWith('kick', { color: '#72d572' });
   });
+
+  /* INIT-01 S5: hoopSpacingMm + diameterIn were missing from THIS arm's spread while the legacy
+     arm forwarded both — so a rig calibration of hoop spacing / shell diameter was persisted but
+     never reached the live voice geometry. Same drop class as pixelsPerHoop above, opposite path. */
+  it('forwards hoopSpacingMm and diameterIn to the live voice host (S5)', () => {
+    const setKitTransform = vi.fn();
+    const host = { setKitTransform } as unknown as VoiceEngineHost;
+    propagateToVoiceHost(host, msg({ hoopSpacingMm: 45, diameterIn: 22 }));
+    expect(setKitTransform).toHaveBeenCalledWith('kick', { hoopSpacingMm: 45, diameterIn: 22 });
+  });
+
+  it('forwards every transform field a full-field edit carries (no silent survivor)', () => {
+    const setKitTransform = vi.fn();
+    const host = { setKitTransform } as unknown as VoiceEngineHost;
+    const full = {
+      origin: { x: 1, y: 2, z: 3 },
+      rotation: { x: 4, y: 5, z: 6 },
+      localSpinDeg: 90,
+      startAngleDeg: 15,
+      pixelsPerHoop: 200,
+      hoopSpacingMm: 45,
+      diameterIn: 22,
+      flip: true,
+      color: '#ff8800',
+    };
+    propagateToVoiceHost(host, msg(full));
+    expect(setKitTransform).toHaveBeenCalledWith('kick', full);
+  });
 });

@@ -1,6 +1,7 @@
 import type { Autosaver } from '../autosave';
 import type { EngineHost } from '../engine-host';
 import { listProjects, loadProject, saveProject } from '../projects';
+import type { VoiceEngineHost } from '../voice-engine-host';
 import { encodeServer, type ClientMessage } from '../ws-protocol';
 
 /** Minimal socket surface this handler needs to reply to the requesting client — just the JSON
@@ -13,6 +14,10 @@ export interface JsonSink {
 /** Collaborators the project-IO handler needs from the server wiring. */
 export interface ProjectHandlerDeps {
   host: EngineHost;
+  /** The voice-bus host, or `null` in legacy mode. REQUIRED, not optional: a load that forgets to
+   * re-point the live render host is exactly the bug S5 closes, and an omitted field must be a
+   * compile error rather than a silent half-load. */
+  voiceHost: VoiceEngineHost | null;
   autosaver: Autosaver;
   /** Broadcast the full `state` message to all clients (`broadcastJson(stateMessage())`). */
   broadcastState(): void;
@@ -42,6 +47,11 @@ export function handleProjectMessage(msg: ClientMessage, ws: JsonSink, deps: Pro
     }
     deps.host.engine.setProject(loaded);
     deps.host.reloadOutputSettings();
+    // S5 LOAD AUTHORITY: in voice mode the voice host owns the live render + output, so a load that
+    // only re-pointed the legacy engine left it rendering the PREVIOUS project's geometry while the
+    // `state` broadcast below described the newly loaded one. Adopt the same object (kit, inputMap,
+    // output AND the authored composition/transport) and rebuild geometry.
+    deps.voiceHost?.adoptProject(loaded);
     deps.broadcastState();
     deps.autosaver.markDirty(); // the loaded project is now the live state — persist it
     return true;

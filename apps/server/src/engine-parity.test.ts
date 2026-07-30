@@ -209,55 +209,36 @@ describe('engine parity — structural discriminants both reducers agree on', ()
 
     expect(pA).toEqual(pB);
   });
-});
 
-// --- the drifts, recorded rather than hidden -------------------------------------------------
-
-describe('engine parity — KNOWN DRIFT (recorded, not hidden)', () => {
-  it('setKitTransform: the voice arm DROPS hoopSpacingMm + diameterIn; everything else agrees', () => {
+  it('setKitTransform: all NINE transform fields land identically (S5 closed the hoopSpacingMm + diameterIn drop)', () => {
     const { pA, pB, pristine } = drive(FULL_TRANSFORM);
 
     expect(pA).not.toEqual(pristine);
     expect(pB).not.toEqual(pristine);
 
-    const drumA = pA.kit.drums.find((d) => d.id === 'kick')!;
+    // The two fields the voice arm used to drop, now asserted on BOTH sides by name — a re-drop
+    // would fail here as well as in the whole-Project comparison below.
     const drumB = pB.kit.drums.find((d) => d.id === 'kick')!;
-    const kickPristine = pristine.kit.drums.find((d) => d.id === 'kick')!;
+    expect(drumB.hoopSpacingMm).toBe(FULL_TRANSFORM.hoopSpacingMm);
+    expect(drumB.diameterIn).toBe(FULL_TRANSFORM.diameterIn);
 
-    // KNOWN DRIFT (S5 closes this): propagateToVoiceHost's setKitTransform arm forwards seven of
-    // the nine fields — `hoopSpacingMm` and `diameterIn` are absent from its spread list, though
-    // the legacy arm forwards both AND VoiceEngineHost.setKitTransform's signature already accepts
-    // them. A rig calibration of hoop spacing or shell diameter therefore reaches the persisted
-    // project (the legacy reducer runs first, on the shared object) but NEVER the live voice
-    // geometry until a restart.
-    expect(drumA.hoopSpacingMm).toBe(FULL_TRANSFORM.hoopSpacingMm);
-    expect(drumB.hoopSpacingMm).toBe(kickPristine.hoopSpacingMm);
-    expect(drumA.diameterIn).toBe(FULL_TRANSFORM.diameterIn);
-    expect(drumB.diameterIn).toBe(kickPristine.diameterIn);
-
-    // …and NOTHING else diverges: neutralise exactly the two drifting fields and the whole
-    // Projects must be deep-equal. Any further divergence fails here rather than hiding behind
-    // the two assertions above.
-    drumB.hoopSpacingMm = drumA.hoopSpacingMm;
-    drumB.diameterIn = drumA.diameterIn;
     expect(pA).toEqual(pB);
   });
 
-  it('setTransport: propagateToVoiceHost has no arm at all — the voice host never sees a BPM edit', () => {
+  it('setTransport: the transport edit lands identically (S5 gave the voice host a transport writer)', () => {
     const { pA, pB, pristine } = drive(FULL_TRANSPORT);
 
-    // KNOWN DRIFT (S5 closes this): there is no `setTransport` case in propagateToVoiceHost, and
-    // the voice loop reads its OWN `this.project.composition.transport` through advanceTransport.
-    // A BPM/beatsPerBar edit reaches the voice loop today only via the shared project0 reference —
-    // which splits on the first adoptPatch (it rebuilds `this.project` by spread, carrying
-    // `composition` from the OLD object).
-    expect(pA.composition.transport).toEqual({ bpm: 137, playing: false, beatsPerBar: 7 });
-    expect(pB.composition.transport).toEqual(pristine.composition.transport);
+    expect(pA).not.toEqual(pristine);
+    expect(pB).not.toEqual(pristine);
+    expect(pB.composition.transport).toEqual({ bpm: 137, playing: false, beatsPerBar: 7 });
 
-    pB.composition.transport = { ...pA.composition.transport };
     expect(pA).toEqual(pB);
   });
+});
 
+// --- the drift that survives this chunk ------------------------------------------------------
+
+describe('engine parity — KNOWN DRIFT (recorded, not hidden)', () => {
   it('setKitOutputs: the LEGACY reducer has no arm — output rewiring is a no-op in legacy mode', () => {
     const { pA, pB, pristine } = drive({ t: 'setKitOutputs', outputs: FULL_OUTPUTS });
 
@@ -293,6 +274,7 @@ describe('engine parity — the harness is not vacuous', () => {
     FULL_OUTPUT_SETTINGS,
     { t: 'setInputMap', inputMap: FULL_INPUT_MAP },
     FULL_TRANSFORM,
+    FULL_TRANSPORT,
   ];
 
   for (const msg of agreeing) {

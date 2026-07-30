@@ -292,6 +292,38 @@ export class VoiceEngineHost {
     this.reloadKit();
   }
 
+  /** Edit the live transport (BPM / play state / bar length). The loop reads
+   * `project.composition.transport` through {@link advanceTransport} on EVERY frame, so this write
+   * is the whole mechanism — no rebuild, no reload. Mirrors Engine.setTransport (mutation parity).
+   *
+   * S5: without this the voice host had no transport WRITER at all and depended on the legacy
+   * reducer mutating a project object it happened to share by reference — an invariant
+   * {@link adoptPatch} breaks the moment a patch is pasted. */
+  setTransport(partial: Partial<Transport>): void {
+    Object.assign(this.project.composition.transport, partial);
+  }
+
+  /**
+   * Adopt a WHOLE loaded project (S5 LOAD AUTHORITY) — {@link adoptPatch}'s full-project sibling.
+   * Where adoptPatch swaps only the three device slices of a pasted patch, this takes the complete
+   * document a `loadProject` produced, so the authored `composition` (and hence `transport`) comes
+   * with it, then rebuilds geometry ONCE via {@link reloadKit}.
+   *
+   * The project object is adopted BY REFERENCE, not spread: the legacy host is handed the very same
+   * object on load, and that shared identity is what makes the autosaver persist the live state
+   * rather than a stale copy (documented at main.ts's host construction). S8 turns that invariant
+   * into an assertion.
+   *
+   * Without this, loading a project in voice mode re-broadcast a `state` describing a kit the live
+   * engine was not rendering: only `host.engine.setProject(loaded)` ran, leaving the voice host on
+   * the previous project's geometry, input map, and output settings.
+   */
+  adoptProject(project: Project): void {
+    this.project = project;
+    this.kit = project.kit;
+    this.reloadKit();
+  }
+
   /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds
    * the active song so transport recall maps indices against the current arrangement. */
   setShow(show: voice.Show): void {

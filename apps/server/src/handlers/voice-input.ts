@@ -129,9 +129,10 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
 
 /**
  * Voice mode: the legacy reducer mutates the shared project, but the voice host owns the
- * live render + output. Propagate kit/output/input-map edits so real device behaviour
- * changes without a restart. (`setKitOutputs` has no legacy reducer case, so the host
- * mutation here is what actually applies it.) Other message types are no-ops.
+ * live render + output. Propagate kit/output/input-map/transport edits so real device
+ * behaviour changes without a restart. (`setKitOutputs` has no legacy reducer case, so the
+ * host mutation here is what actually applies it; `setTransport` is forwarded because the
+ * voice loop reads its own transport per frame — S5.) Other message types are no-ops.
  */
 export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMessage): void {
   switch (msg.t) {
@@ -142,6 +143,11 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
         ...(msg.localSpinDeg !== undefined ? { localSpinDeg: msg.localSpinDeg } : {}),
         ...(msg.startAngleDeg !== undefined ? { startAngleDeg: msg.startAngleDeg } : {}),
         ...(msg.pixelsPerHoop !== undefined ? { pixelsPerHoop: msg.pixelsPerHoop } : {}),
+        // S5: hoopSpacingMm + diameterIn were absent from this spread while the legacy arm
+        // forwarded both — a rig calibration of hoop spacing or shell diameter reached the
+        // persisted project but never the LIVE voice geometry until a restart.
+        ...(msg.hoopSpacingMm !== undefined ? { hoopSpacingMm: msg.hoopSpacingMm } : {}),
+        ...(msg.diameterIn !== undefined ? { diameterIn: msg.diameterIn } : {}),
         ...(msg.flip !== undefined ? { flip: msg.flip } : {}),
         ...(msg.color !== undefined ? { color: msg.color } : {}),
       });
@@ -182,6 +188,18 @@ export function propagateToVoiceHost(voiceHost: VoiceEngineHost, msg: ClientMess
       break;
     case 'setInputMap':
       voiceHost.setInputMap(msg.inputMap);
+      break;
+    case 'setTransport':
+      // S5 TRANSPORT AUTHORITY: this arm did not exist. The voice loop reads its OWN
+      // `project.composition.transport` every frame (advanceTransport), so a BPM edit reached it
+      // only through the project object the legacy reducer happens to share — a reference that
+      // splits on the first `adoptPatch` (which rebuilds `project` by spread). Forwarding it makes
+      // the voice host the authority over its own transport instead of a bystander.
+      voiceHost.setTransport({
+        ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
+        ...(msg.playing !== undefined ? { playing: msg.playing } : {}),
+        ...(msg.beatsPerBar !== undefined ? { beatsPerBar: msg.beatsPerBar } : {}),
+      });
       break;
   }
 }
