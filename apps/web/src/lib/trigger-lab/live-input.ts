@@ -1,8 +1,9 @@
 /**
  * Live input value tables (S37/S38) — the last MIDI CC, OSC and note value the editor has
  * SEEN, keyed exactly as the core engine keys them (`voice.ccKey` / `voice.noteKey` / raw OSC
- * address). This is input state, not render state: it is fed both by our own WebMIDI forward
- * and by the server's `input` echo, so it is live whether or not an engine link is open.
+ * address). This is input state, not render state: MIDI values arrive via our own WebMIDI
+ * forward, OSC values via the server's `input` echo — so the tables stay live whether or
+ * not an engine link is open.
  *
  * It backs the node-face live readouts — a `cc` node's value bar, an `osc` node's readout, a
  * `note` node's gate — which sample through the SAME core functions the engine samples with

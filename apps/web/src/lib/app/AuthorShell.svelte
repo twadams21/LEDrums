@@ -78,7 +78,7 @@
   <div class="top"><TopBar {store} /></div>
 
   <!-- Transport rides its own slim bar directly under the TopBar: a global
-       performance control (play/tempo/velocity/panic) that stays put across every
+       performance control (play/tempo/velocity) that stays put across every
        view — including Perform — instead of crowding the identity/status TopBar. -->
   <div class="xport"><Transport {store} /></div>
 

@@ -909,7 +909,6 @@ export class TriggerLab {
   // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
   // (propagation) — while a local graph resolves to the same proxy it always did.
   selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.resolvedView.graphs[this.selectedPadKey] ?? null : null);
-  beatPhase = $derived((this.beat % 4) / 4);
 
   // `shows`/`activeShow` (show derived) and `activeSong` (over the RESOLVED song list) are owned by
   // {@link showsCtl} (R23) — exposed via the getters alongside its field. The section-arrangement
