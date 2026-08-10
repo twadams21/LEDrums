@@ -24,9 +24,10 @@
  * (601aa55 stranded, 24c63b7 landed a day later). `pnpm ota doctor` shows the comparison.
  *
  * THE BUMP LANDS BY ITSELF. `main` is push-protected (ruleset "Block push to main"), so the bump is
- * committed on `chore/version-vX.Y.Z` and — only after a SUCCESSFUL publish — pushed as an
- * auto-merging PR. Publish-then-PR, never the reverse: if the build or upload fails, main must not
- * claim a version that never shipped.
+ * committed on `chore/version-vX.Y.Z` and — only after a SUCCESSFUL publish — pushed as a PR and
+ * merged (auto-merge if the repo allows it, otherwise merged outright; see `mergeVersionPr`).
+ * Publish-then-PR, never the reverse: if the build or upload fails, main must not claim a version
+ * that never shipped.
  *
  * A successful publish announces the release to Discord (#ledrums-updates, @everyone) via
  * ota-announce.mjs — posted only after the manifest is live, so it always means "installable now".
@@ -42,7 +43,12 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyVersionState, fetchPublishedManifest, planRelease } from './ota-version.mjs';
+import {
+  classifyAutoMergeFailure,
+  classifyVersionState,
+  fetchPublishedManifest,
+  planRelease,
+} from './ota-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -210,17 +216,52 @@ function openVersionBumpPr({ current, next, branch, originalBranch }) {
     return false;
   }
 
-  const merge = spawnSync('gh', ['pr', 'merge', branch, '--auto', '--merge'], { cwd: repoRoot, stdio: 'inherit' });
-  if (merge.status !== 0) {
+  if (!mergeVersionPr(branch, next)) return false;
+
+  returnToBranch(originalBranch);
+  return true;
+}
+
+/**
+ * Merge the version-bump PR: prefer auto-merge, but FALL BACK to merging outright.
+ *
+ * Auto-merge is a per-repository setting, and this repo has it switched off — the first live run
+ * (v0.2.12) opened the PR, got `enablePullRequestAutoMerge` rejected, and left the bump sitting in
+ * an open PR. That is the same stranded-bump failure the version guard exists to prevent, just one
+ * step further along, so "auto-merge is unavailable" must not be where the flow gives up.
+ *
+ * Falling back is safe here: the merge still goes through GitHub, so the `main` ruleset (and any
+ * required checks it grows later) is enforced server-side — a fallback merge can never bypass a
+ * gate that a `--auto` merge would have waited for.
+ */
+function mergeVersionPr(branch, next) {
+  const auto = spawnSync('gh', ['pr', 'merge', branch, '--auto', '--merge'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  if (auto.status === 0) {
+    console.log(`[ota] opened + auto-merging the v${next} version-bump PR (${branch}) ✓`);
+    return true;
+  }
+
+  const reason = classifyAutoMergeFailure(`${auto.stderr ?? ''}${auto.stdout ?? ''}`);
+  console.log(
+    reason === 'auto-merge-disabled'
+      ? `[ota] auto-merge is disabled for this repository — merging the v${next} bump PR directly instead.`
+      : `[ota] could not enable auto-merge (${(auto.stderr ?? '').trim() || 'unknown reason'}) — trying a direct merge.`,
+  );
+
+  const direct = spawnSync('gh', ['pr', 'merge', branch, '--merge'], { cwd: repoRoot, stdio: 'inherit' });
+  if (direct.status !== 0) {
     console.warn(
-      `[ota] WARNING: PR opened for ${branch} but auto-merge could not be enabled. Merge it manually:\n` +
+      `[ota] WARNING: the v${next} bump PR (${branch}) is OPEN and UNMERGED. Until it lands, main still\n` +
+        `      reads the previous version and the next release could re-mint v${next}. Merge it:\n` +
         `        gh pr merge ${branch} --merge`,
     );
     return false;
   }
 
-  console.log(`[ota] opened + auto-merging the v${next} version-bump PR (${branch}) ✓`);
-  returnToBranch(originalBranch);
+  console.log(`[ota] merged the v${next} version-bump PR (${branch}) ✓`);
   return true;
 }
 

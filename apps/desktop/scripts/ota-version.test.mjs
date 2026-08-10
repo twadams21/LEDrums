@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assessPublish,
+  classifyAutoMergeFailure,
   classifyVersionState,
   compareVersions,
   fetchPublishedManifest,
@@ -286,4 +287,22 @@ test('the very first publish of all is a release', () => {
   const got = assessPublish({ manifest: null, version: '0.1.0', target: 'darwin-aarch64' });
   assert.equal(got.ok, true);
   assert.equal(got.publishKind, 'release');
+});
+
+// ---------------------------------------------------------------- auto-merge fallback
+
+test('a repository with auto-merge switched off is recognised, so the flow can fall back', () => {
+  // The verbatim stderr from the first live release (v0.2.12): the bump PR opened, `--auto` was
+  // rejected, and the bump sat in an open PR — the stranded-bump failure one step further along.
+  assert.equal(
+    classifyAutoMergeFailure('GraphQL: Auto merge is not allowed for this repository (enablePullRequestAutoMerge)'),
+    'auto-merge-disabled',
+  );
+  assert.equal(classifyAutoMergeFailure('enablePullRequestAutoMerge'), 'auto-merge-disabled');
+});
+
+test('any other auto-merge failure is not mistaken for the disabled-repo case', () => {
+  assert.equal(classifyAutoMergeFailure('HTTP 503: upstream connect error'), 'unknown');
+  assert.equal(classifyAutoMergeFailure(''), 'unknown');
+  assert.equal(classifyAutoMergeFailure(undefined), 'unknown');
 });
