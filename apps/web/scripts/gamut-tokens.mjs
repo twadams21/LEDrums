@@ -138,7 +138,41 @@ export function computeRenditions(css) {
       }
     }
   }
+  const blocks = readAuthoredBlocks(css);
+  restateOverriddenTokens(srgb, blocks, 'rgb');
+  restateOverriddenTokens(p3, blocks, 'p3');
   return { srgb, p3 };
+}
+
+/**
+ * Stop a generated `:root` fallback from silently overriding a themed block.
+ *
+ * `:root` and `[data-accent='violet']` both score (0,1,0) — a pseudo-class against an
+ * attribute selector — so the cascade falls through to source order, and the generated
+ * region sits at the END of the file. A `:root` fallback for a token that a
+ * `[data-accent]` block also authors would therefore win everywhere, dragging that
+ * theme's token to the default accent's hue on narrow-gamut displays while wide-gamut
+ * ones kept the authored one. The two renditions would then differ in HUE, which is
+ * worse than the gamut mapping this file exists to remove.
+ *
+ * So: wherever `:root` gets a fallback for a token, every other block that authors the
+ * same token restates it — mapped if it needs mapping, verbatim if it was already fine.
+ * Restating a value that needed no change is redundant but harmless, and it is the only
+ * thing that keeps the block's own value winning.
+ */
+function restateOverriddenTokens(map, blocks, gamut) {
+  const shadowed = new Set((map.get(':root') ?? []).map((d) => d.name));
+  if (!shadowed.size) return;
+  for (const { selector, declarations } of blocks) {
+    if (selector === ':root') continue;
+    for (const { name, value } of declarations) {
+      if (!shadowed.has(name)) continue;
+      const existing = map.get(selector) ?? [];
+      if (existing.some((d) => d.name === name)) continue;
+      if (!map.has(selector)) map.set(selector, existing);
+      map.get(selector).push({ name, value: renditionFor(value, gamut) ?? value });
+    }
+  }
 }
 
 function renderBlocks(map) {

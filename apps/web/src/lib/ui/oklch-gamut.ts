@@ -88,9 +88,15 @@ export function maxChroma(L: number, hDeg: number, gamut: Gamut): number {
   return bound;
 }
 
-/* Which gamut the display actually has. Read once and kept live — dragging the window to
-   a different monitor flips it. `matchMedia` is absent under SSR and in the node test
-   environment, where sRGB is the safe assumption. */
+/* Which gamut the display actually has. `matchMedia` is absent under SSR and in the node
+   test environment, where sRGB is the safe assumption.
+
+   Dragging the window to a different monitor flips this and clears the cache, but the
+   change only reaches the screen when a caller next asks for a colour. For the one caller
+   that exists — LayersDock's voice tints, recomputed as live voice data arrives — that is
+   the next frame of a running show. Idle, the old tints persist until something moves;
+   both renditions are in-gamut on both displays, so the worst case is a slightly muted
+   chip until the next hit, never a wrong hue. */
 let displayGamut: Gamut = 'srgb';
 if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   const mq = window.matchMedia('(color-gamut: p3)');

@@ -57,9 +57,10 @@ describe('tokens.css gamut renditions', () => {
     const { srgb, p3 } = computeRenditions(css);
 
     // Derive the expected set independently of the generator's own bookkeeping.
+    const blocks = readAuthoredBlocks(css);
     const expectedSrgb = new Set<string>();
     const expectedP3 = new Set<string>();
-    for (const { selector, declarations } of readAuthoredBlocks(css)) {
+    for (const { selector, declarations } of blocks) {
       for (const { name, value } of declarations) {
         for (const lit of literalsIn(value)) {
           if (excursion(lit, 'rgb') > 0) expectedSrgb.add(`${selector} ${name}`);
@@ -67,8 +68,21 @@ describe('tokens.css gamut renditions', () => {
         }
       }
     }
-    expect(names(srgb)).toEqual(expectedSrgb);
-    expect(names(p3)).toEqual(expectedP3);
+
+    /* Plus the restatements: once `:root` carries a fallback for a token, every other
+       block authoring that token must restate it, or the generated `:root` rule (equal
+       specificity, later in the file) would override that block. See the cascade tests. */
+    const alsoRestated = (expected: Set<string>) => {
+      const shadowed = [...expected].filter((k) => k.startsWith(':root ')).map((k) => k.slice(':root '.length));
+      for (const { selector, declarations } of blocks) {
+        if (selector === ':root') continue;
+        for (const { name } of declarations) if (shadowed.includes(name)) expected.add(`${selector} ${name}`);
+      }
+      return expected;
+    };
+
+    expect(names(srgb)).toEqual(alsoRestated(expectedSrgb));
+    expect(names(p3)).toEqual(alsoRestated(expectedP3));
     // A token needing a P3 override must need an sRGB one too — P3 encloses sRGB.
     for (const key of expectedP3) expect(expectedSrgb).toContain(key);
   });
@@ -106,6 +120,166 @@ describe('tokens.css gamut renditions', () => {
           expect(mapped.c).toBeLessThanOrEqual(source!.c + 1e-9);
         }
       }
+    }
+  });
+});
+
+/* --- cascade model -------------------------------------------------------------
+   The generated region sits at the END of the file, and `:root` ties with
+   `[data-accent='violet']` on specificity — both (0,1,0). So source order decides, and
+   a generated `:root` fallback can silently outrank a themed block. Checking the
+   renditions in isolation cannot catch that; only resolving the cascade can. This
+   models the rules the browser actually applies, and refuses to guess: an unrecognised
+   selector or media condition fails the test rather than being assumed inert. */
+
+type Rule = { media: string | null; selector: string; decls: Map<string, string>; order: number };
+
+function parseRules(text: string): Rule[] {
+  const rules: Rule[] = [];
+  let order = 0;
+
+  const readDecls = (body: string) => {
+    const decls = new Map<string, string>();
+    for (const m of body.matchAll(/(--[\w-]+):\s*([^;]+);/g)) decls.set(m[1]!, m[2]!.trim());
+    return decls;
+  };
+
+  /** Walk one nesting level, recursing into @media. `body` holds no comments. */
+  const scan = (body: string, media: string | null) => {
+    const re = /([^{}]+)\{/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body))) {
+      const head = m[1]!.trim();
+      const open = m.index + m[0].length - 1;
+      let depth = 0;
+      let close = -1;
+      for (let i = open; i < body.length; i++) {
+        if (body[i] === '{') depth++;
+        else if (body[i] === '}' && --depth === 0) {
+          close = i;
+          break;
+        }
+      }
+      if (close === -1) throw new Error('unbalanced braces in tokens.css');
+      const inner = body.slice(open + 1, close);
+      if (head.startsWith('@media')) scan(inner, head.slice('@media'.length).trim());
+      else rules.push({ media, selector: head, decls: readDecls(inner), order: order++ });
+      re.lastIndex = close + 1;
+    }
+  };
+  scan(text.replace(/\/\*[\s\S]*?\*\//g, ''), null);
+  return rules;
+}
+
+/** (0, n, 0) — this file only ever uses `:root` and `[data-accent='x']`. */
+function specificity(selector: string): number {
+  if (selector === ':root') return 1;
+  if (/^\[data-accent='\w+'\]$/.test(selector)) return 1;
+  throw new Error(`cascade model does not understand selector: ${selector}`);
+}
+
+function selectorMatches(selector: string, accent: string | null): boolean {
+  if (selector === ':root') return true;
+  return selector === `[data-accent='${accent}']`;
+}
+
+function mediaMatches(media: string | null, gamut: 'srgb' | 'p3'): boolean {
+  if (media === null) return true;
+  if (media === 'not all and (color-gamut: p3)') return gamut === 'srgb';
+  if (media === '(color-gamut: p3)') return gamut === 'p3';
+  if (media === '(prefers-reduced-motion: reduce)') return false; // no colours in it
+  throw new Error(`cascade model does not understand media condition: ${media}`);
+}
+
+const RULES = parseRules(css);
+
+/** The value the browser would use for `name` in this accent mode on this display. */
+function resolve(name: string, accent: string | null, gamut: 'srgb' | 'p3'): string | undefined {
+  let winner: { value: string; spec: number; order: number } | undefined;
+  for (const rule of RULES) {
+    if (!mediaMatches(rule.media, gamut) || !selectorMatches(rule.selector, accent)) continue;
+    const value = rule.decls.get(name);
+    if (value === undefined) continue;
+    const spec = specificity(rule.selector);
+    if (!winner || spec > winner.spec || (spec === winner.spec && rule.order > winner.order)) {
+      winner = { value, spec, order: rule.order };
+    }
+  }
+  return winner?.value;
+}
+
+describe('cascade — what each display and accent mode actually resolves to', () => {
+  const ACCENTS = [null, 'violet', 'amber', 'lime'] as const;
+
+  /** Colour tokens authored anywhere, i.e. everything the cascade has to get right. */
+  const colourTokens = [
+    ...new Set(
+      readAuthoredBlocks(css).flatMap((b: { declarations: { name: string; value: string }[] }) =>
+        b.declarations.map((d) => d.name),
+      ),
+    ),
+  ];
+
+  it('sees the blocks it needs to (guards against the parser silently matching nothing)', () => {
+    expect(colourTokens.length).toBeGreaterThan(20);
+    expect(RULES.some((r) => r.media === 'not all and (color-gamut: p3)')).toBe(true);
+    expect(RULES.some((r) => r.selector === "[data-accent='violet']")).toBe(true);
+  });
+
+  it('resolves every token inside the display gamut, in every accent mode', () => {
+    for (const gamut of ['srgb', 'p3'] as const) {
+      for (const accent of ACCENTS) {
+        for (const name of colourTokens) {
+          const value = resolve(name, accent, gamut);
+          if (!value) continue;
+          for (const lit of literalsIn(value)) {
+            const ex = excursion(lit, gamut === 'p3' ? 'p3' : 'rgb');
+            expect(`${accent ?? 'default'}/${gamut} ${name} ${lit} → ${ex}`).toBe(
+              `${accent ?? 'default'}/${gamut} ${name} ${lit} → 0`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it('keeps each accent mode on its own hue — the sRGB rendition never borrows another theme', () => {
+    // The defect this pins: a generated `:root` fallback tying on specificity with
+    // `[data-accent='violet']` and winning on source order, so violet's tokens resolved
+    // to the default accent's hue on narrow-gamut displays while P3 kept the real one.
+    for (const accent of ACCENTS) {
+      for (const name of colourTokens) {
+        const onP3 = resolve(name, accent, 'p3');
+        const onSrgb = resolve(name, accent, 'srgb');
+        if (!onP3 || !onSrgb) continue;
+        const p3Lits = literalsIn(onP3);
+        const srgbLits = literalsIn(onSrgb);
+        expect(srgbLits.length).toBe(p3Lits.length);
+        p3Lits.forEach((lit, i) => {
+          const ref = asOklch(lit);
+          const fallback = asOklch(srgbLits[i]!);
+          const label = `${accent ?? 'default'} ${name}`;
+          expect(`${label} hue ${(fallback.h ?? 0).toFixed(1)}`).toBe(`${label} hue ${(ref.h ?? 0).toFixed(1)}`);
+          expect(`${label} L ${fallback.l.toFixed(3)}`).toBe(`${label} L ${ref.l.toFixed(3)}`);
+          expect(`${label} alpha ${fallback.alpha ?? 1}`).toBe(`${label} alpha ${ref.alpha ?? 1}`);
+          // Only chroma may differ, and only downward.
+          expect(fallback.c).toBeLessThanOrEqual(ref.c + 1e-9);
+        });
+      }
+    }
+  });
+
+  it('authors no colour outside the blocks the generator inspects', () => {
+    // readAuthoredBlocks only reads top-level selector blocks. A colour added inside a
+    // future @media block would never be gamut-checked, so fail loudly if one appears.
+    const authored = (css.split('/* === BEGIN generated')[0] ?? '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const seenByGenerator = new Set(
+      readAuthoredBlocks(css).flatMap((b: { declarations: { value: string }[] }) =>
+        b.declarations.flatMap((d) => literalsIn(d.value)),
+      ),
+    );
+    for (const lit of authored.match(/oklch\([^)]*\)/g) ?? []) {
+      expect(seenByGenerator.has(lit), `${lit} is authored where the generator cannot see it`).toBe(true);
     }
   });
 });

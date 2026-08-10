@@ -229,11 +229,13 @@
     --accent-bright: oklch(0.715 0.1745 300);
     --accent-ring: oklch(0.715 0.1745 300 / 0.55);
     --accent-glow: 0 0 0 1px oklch(0.715 0.1745 300 / 0.4), 0 0 18px oklch(0.625 0.196 300 / 0.45);
+    --border-accent: oklch(0.4625 0.1055 278);
   }
   [data-accent='amber'] {
     --accent-bright: oklch(0.865 0.135 82);
     --accent-ring: oklch(0.865 0.135 82 / 0.55);
     --accent-glow: 0 0 0 1px oklch(0.865 0.135 82 / 0.4), 0 0 18px oklch(0.800 0.150 78 / 0.45);
+    --border-accent: oklch(0.55 0.0825 167);
   }
   [data-accent='lime'] {
     --border-accent: oklch(0.5725 0.0978 192);

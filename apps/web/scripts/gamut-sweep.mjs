@@ -101,6 +101,7 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome' });
   const findings = [];
+  const accentResolved = [];
   let checked = 0;
   let unparsed = 0;
 
@@ -134,10 +135,67 @@ async function main() {
       }
       await page.screenshot({ path: join(OUT_DIR, `gamut-${view}-${gamut}.png`) });
     }
+
+    /* Accent-preview cascade, in the real engine. `:root` and `[data-accent='violet']`
+       tie on specificity, so a generated `:root` fallback placed later in the file
+       would quietly win and drag a theme onto the default accent's hue. Setting the
+       attribute is how the styleguide previews these, so check what the browser
+       actually resolves rather than trusting the generator's bookkeeping. */
+    for (const accent of ['violet', 'amber', 'lime']) {
+      const resolved = await page.evaluate((a) => {
+        const root = document.documentElement;
+        const previous = root.dataset.accent;
+        root.dataset.accent = a;
+        const cs = getComputedStyle(root);
+        const out = {};
+        for (const t of ['--accent', '--accent-bright', '--accent-ring', '--border-accent']) {
+          out[t] = cs.getPropertyValue(t).trim();
+        }
+        if (previous === undefined) delete root.dataset.accent;
+        else root.dataset.accent = previous;
+        return out;
+      }, accent);
+
+      for (const [token, literal] of Object.entries(resolved)) {
+        if (!literal) continue;
+        accentResolved.push({ gamut, accent, token, literal });
+        const ex = excursion(literal, gamut);
+        if (ex !== null && ex > 0.001) {
+          findings.push({ gamut, view: `accent:${accent}`, where: ':root', prop: token, literal, excursion: ex });
+        }
+      }
+    }
     await context.close();
   }
   await browser.close();
 
+  /* The sRGB rendition may lose chroma; it must never change hue. A hue shift means the
+     wrong declaration won the cascade, not that a colour was gamut-mapped. */
+  const toOklch = converter('oklch');
+  const byKey = new Map();
+  for (const r of accentResolved) byKey.set(`${r.gamut}|${r.accent}|${r.token}`, r.literal);
+  for (const { accent, token } of accentResolved.filter((r) => r.gamut === 'p3')) {
+    const ref = parse(byKey.get(`p3|${accent}|${token}`));
+    const fb = parse(byKey.get(`srgb|${accent}|${token}`) ?? '');
+    if (!ref || !fb) continue;
+    const a = toOklch(ref);
+    const b = toOklch(fb);
+    const dh = Math.abs(((((a.h ?? 0) - (b.h ?? 0)) % 360) + 540) % 360 - 180);
+    if (dh > 0.5) {
+      findings.push({
+        gamut: 'srgb',
+        view: `accent:${accent}`,
+        where: 'cascade',
+        prop: token,
+        literal: `${byKey.get(`srgb|${accent}|${token}`)} (P3 rendition is ${byKey.get(`p3|${accent}|${token}`)} — hue moved ${dh.toFixed(1)}°)`,
+        excursion: dh,
+      });
+    }
+  }
+
+  console.log(
+    `\naccent-preview cascade — ${accentResolved.length / 2} token(s) × p3/srgb resolved in real Chrome`,
+  );
   console.log(`\ngamut sweep — ${checked} computed colour value(s) across ${VIEWS.length} views × ${GAMUTS.join('/')}`);
   if (unparsed) console.log(`  ${unparsed} value(s) not parseable as a colour (skipped)`);
   const worst = new Map();
