@@ -28,19 +28,55 @@ pnpm --filter @ledrums/desktop fetch:cloudflared
 # dev (runs prepare-bundle: builds web + sidecar, then tauri dev)
 pnpm --filter @ledrums/desktop dev
 
-# production bundle (runs cargo build + web build + sidecar build + bundling)
+# production bundle for the HOST architecture (cargo build + web build + sidecar build + bundling)
 pnpm --filter @ledrums/desktop build
 # or, from the repo root:
 pnpm tauri:build
+
+# production bundle that runs natively on BOTH macOS architectures — what releases ship
+pnpm --filter @ledrums/desktop build:universal
 ```
 
 `pnpm tauri:build` is the only desktop hook wired into the root — the default `pnpm build`
 does **not** require a Rust toolchain.
 
+### Universal (x86_64 + arm64) builds
+
+`build:universal` is what CI ships (see [Release flow](#release-flow-normal-route-a-github-release)).
+It runs `tauri build --target universal-apple-darwin` with `LEDRUMS_SIDECAR_UNIVERSAL=1`, then runs
+the **parity guard**. Output lands under
+`src-tauri/target/universal-apple-darwin/release/bundle/macos/`.
+
+One-time prerequisite — both Rust darwin targets:
+
+```bash
+rustup target add x86_64-apple-darwin aarch64-apple-darwin
+```
+
+Three separate things inside the bundle have to be fat, and only the first is Tauri's job:
+
+| Mach-O | made universal by |
+| --- | --- |
+| the Rust shell | `tauri build --target universal-apple-darwin` (lipos it itself) |
+| the server sidecar | `build-sidecar.mjs --universal` (two SEA bases → `lipo`) |
+| `cloudflared` | `fetch-cloudflared.mjs --universal` (two release assets → `lipo`) |
+
+**The parity guard.** `verify-universal.mjs` walks the built `.app`, finds every Mach-O **by magic
+number** (the binaries that matter have no file extension), and fails the build unless each one
+carries both architectures. This is not ceremony: a universal bundle with one thin binary inside
+builds green, launches fine on the machine that built it, and silently runs under Rosetta — or
+fails outright — on the other architecture. Nothing else catches that. Run it standalone against
+any `.app` with `pnpm --filter @ledrums/desktop verify:universal [path/to/App.app]`.
+
+> **You can build a universal bundle on either Mac, but you can only *run* the matching slice.**
+> The sidecar's smoke test therefore exercises the host slice only; the other slice's proof is
+> structural (`lipo -archs` + the parity guard) plus CI running the build on an arm64 runner.
+
 ### Just the sidecar binary
 
 ```bash
 pnpm --filter @ledrums/desktop build:sidecar          # for the host triple
+node scripts/build-sidecar.mjs --universal            # one fat x86_64+arm64 binary (macOS)
 node scripts/build-sidecar.mjs --triple aarch64-apple-darwin   # name for another triple
 node scripts/build-sidecar.mjs --bundle-only          # stop after the esbuild bundle (no SEA)
 ```
@@ -89,6 +125,20 @@ loads, and warns loudly if it does not.
 > Produce each platform's binary **on that platform** (or in its CI), passing `--triple` if
 > auto-detection (`rustc -vV`) is wrong. The output is named `ledrums-server-<triple>` per
 > Tauri's sidecar convention.
+>
+> **…except across macOS architectures (`--universal`).** The cross-compiler caveat is about
+> *executing* `node`, and the SEA steps don't need to: the blob is arch-independent (this script
+> sets `useSnapshot: false` + `useCodeCache: false`, the two options that would bake a
+> host-specific V8 artifact into it) and `postject` edits the Mach-O structurally. So
+> `--universal` generates the blob once with the host Node, downloads the pinned LTS for **both**
+> darwin arches, injects the same blob into each, `lipo -create`s the pair, ad-hoc signs the fat
+> result, and asserts `lipo -archs` lists both before continuing. The foreign arch has **no
+> fallback** — if its pinned Node can't be fetched the build fails rather than emit a thin binary.
+>
+> The fat binary is written under **three** names — `ledrums-server-universal-apple-darwin`,
+> `-x86_64-apple-darwin`, `-aarch64-apple-darwin` — because a universal build asks for all three:
+> `tauri-build`'s build script runs once per cargo target and resolves `externalBin` against the
+> **per-arch** triples, while the bundler resolves it against the **build** target.
 
 > **Pinned SEA Node (handled automatically):** Node "Current" (odd-major) lines such as **v25**
 > trigger a postject Mach-O bug on macOS — the produced binary crashes at launch with
@@ -149,6 +199,13 @@ the expected hash to enforce it. **Release/packaging CI should set `CLOUDFLARED_
 platform** (the hash differs by OS/arch) so bundled binaries are integrity-checked, not just
 version-pinned.
 
+**Universal macOS.** `node scripts/fetch-cloudflared.mjs --universal` fetches **both** darwin
+assets and `lipo -create`s them into one fat binary, so a universal `.app` bundles a cloudflared
+that runs natively on either chip. The hash pin is **per asset**, so the universal path takes two
+of them — `CLOUDFLARED_SHA256_DARWIN_AMD64` and `CLOUDFLARED_SHA256_DARWIN_ARM64`. Plain
+`CLOUDFLARED_SHA256` would be ambiguous across two assets, so it is **ignored (with a warning)**
+in universal mode rather than silently applied to one of them.
+
 ## OTA auto-update (whole-bundle)
 
 The app updates itself **as one whole bundle**. The server sidecar, the web UI, and cloudflared
@@ -203,10 +260,18 @@ To rotate the key or re-provision, regenerate with `tauri signer generate`, upda
 ### Release flow (normal route: a GitHub Release)
 
 **Publishing a GitHub Release publishes the OTA update.** `.github/workflows/release-ota.yml`
-builds both macOS architectures (`darwin-x86_64` + `darwin-aarch64`), signs each with the updater
-key, publishes them to R2 one at a time, merges them into one `latest.json`, and announces to
-Discord. The tag is the version; no laptop is involved, and anyone who can create a release can
-ship.
+builds **one universal (x86_64 + arm64) macOS artifact**, signs it with the updater key, publishes
+it to R2 under **both** platform keys (`darwin-x86_64` + `darwin-aarch64`) one at a time, merges
+them into one `latest.json`, and announces to Discord. The tag is the version; no laptop is
+involved, and anyone who can create a release can ship.
+
+> **Why one artifact under two keys.** The Tauri updater cannot cross-grade architectures: an
+> x86_64 install stays x86_64 (i.e. under Rosetta) forever, however many arm64 releases ship, because
+> it only ever reads its own platform key. Serving the *same* universal bundle under both keys
+> sidesteps that — every existing install takes its next **ordinary** update and lands on a bundle
+> that runs natively on either chip. `latest.json`'s schema is unchanged and the `signature` is
+> identical under both keys (it is literally the same file), so no updater-client change is
+> involved. The cost is size: the Mach-O parts are carried twice.
 
 1. Land the version bump on `main` first: on a branch, `pnpm ota prepare --patch` (or `--minor` /
    `--major`) bumps every version file — and nothing else — then commit, PR, merge. The workflow's
@@ -231,6 +296,23 @@ triggers, never from pull requests.
 ### Release flow (local fallback: `pnpm ota bump`)
 
 The pre-CI path stays available so a CI outage cannot block an urgent fix.
+
+> **The fallback is a HOST-ARCH build, deliberately.** `pnpm ota bump` runs the plain
+> `pnpm --filter @ledrums/desktop build`, so it produces a single-architecture bundle and publishes
+> **only the host machine's platform key** — an Intel Mac publishes `darwin-x86_64` and leaves
+> `darwin-aarch64` pointing at whatever was live before (the manifest merge preserves it). That is
+> the right trade for an outage path: it must work from one laptop without cross-compilation
+> prerequisites. If you want the universal artifact from a laptop, build it explicitly and publish
+> it once per key:
+>
+> ```bash
+> pnpm --filter @ledrums/desktop build:universal
+> for T in darwin-x86_64 darwin-aarch64; do   # ONE AT A TIME — see the serial warning below
+>   OTA_TARGET=$T \
+>   OTA_BUNDLE_DIR=apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle \
+>     node apps/desktop/scripts/publish-ota.mjs
+> done
+> ```
 
 Because the signing key is namespaced, the root `pnpm tauri:build` script maps it onto the canonical
 `TAURI_SIGNING_PRIVATE_KEY*` env names Tauri expects, overriding the other project's key that
@@ -258,8 +340,9 @@ infisical run --projectId "$PROJ" --env prod -- bash -c \
   "OTA_PUBLIC_BASE=$BASE node apps/desktop/scripts/publish-ota.mjs"
 ```
 
-`scripts/publish-ota.mjs` locates the host platform's updater artifact under
-`src-tauri/target/release/bundle/`, uploads it to `r2://<bucket>/<version>/<target>/<file>`, and
+`scripts/publish-ota.mjs` locates the updater artifact under `src-tauri/target/release/bundle/`
+(override with `OTA_BUNDLE_DIR` — this is how CI publishes the one universal bundle under both
+keys), uploads it to `r2://<bucket>/<version>/<target>/<file>`, and
 writes the Tauri v2 manifest `latest.json` (`{ version, notes, pub_date, platforms[<os>-<arch>] =
 { signature, url } }`). It **merges** into any existing same-version manifest, so a multi-arch
 release built on several machines (e.g. `darwin-aarch64` + `darwin-x86_64`) accumulates into one
@@ -312,9 +395,10 @@ Separate channel + webhook from the error-report pings the ingest Worker sends
   fails the publish.
 - Set **`OTA_ANNOUNCE=0`** to publish without announcing (test publishes, re-uploads).
 
-> **Per-platform builds.** As with the sidecar (Node SEA is not a cross-compiler), produce each
-> platform's signed bundle **on that platform** and run `publish:ota` there; the manifest merge
-> keeps both arch entries.
+> **Per-platform builds (the fallback path only).** Releases ship one universal bundle under both
+> keys, so this no longer applies to CI. On the local fallback, a host-arch bundle publishes only
+> the host's key — produce the other platform's signed bundle **on that platform** and run
+> `publish:ota` there; the manifest merge keeps both arch entries.
 
 > **⚠ Publish serially — one platform at a time.** `publish-ota.mjs` updates `latest.json` with a
 > read-modify-write (fetch the manifest → merge this platform's entry → re-upload). Two publishes in

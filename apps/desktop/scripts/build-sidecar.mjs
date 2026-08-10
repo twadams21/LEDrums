@@ -12,15 +12,32 @@
 //      `ledrums-server-<target-triple>` (e.g. ledrums-server-x86_64-apple-darwin).
 //
 // Usage:
-//   node scripts/build-sidecar.mjs [--triple <triple>] [--bundle-only]
+//   node scripts/build-sidecar.mjs [--triple <triple>] [--universal] [--bundle-only]
 //
 //   --triple       override the auto-detected Rust host triple (for cross-target naming)
+//   --universal    macOS: emit ONE fat (x86_64 + arm64) binary — see below
 //   --bundle-only  stop after the esbuild bundle (skip SEA) — useful when Node SEA tooling
 //                  is unavailable; the orchestrator can finish packaging from the .cjs.
 //
 // Producing a binary for ANOTHER target triple requires building ON that platform (Node SEA
 // copies the *host* node executable; it is not a cross-compiler). Run this script on each
 // target OS/arch, or in that platform's CI, passing --triple if auto-detection is wrong.
+//
+// UNIVERSAL macOS (`--universal`, or LEDRUMS_SIDECAR_UNIVERSAL=1, or a `universal-apple-darwin`
+// triple). The "not a cross-compiler" caveat above is about EXECUTING node, and the SEA steps do
+// not need to execute the foreign-arch node: the SEA blob is arch-independent (this script sets
+// `useSnapshot: false` and `useCodeCache: false` — the two options that would bake a host-specific
+// V8 artifact into it — so the blob is just the JS payload plus SEA metadata), and postject injects
+// it by editing the Mach-O structurally. So we generate the blob ONCE with the runnable host Node,
+// download the pinned LTS for BOTH darwin arches, inject the same blob into each, and
+// `lipo -create` the pair into one fat binary.
+//
+// That fat binary is written under THREE names, because a universal Tauri build asks for all
+// three: `tauri-build`'s build script runs once per cargo target and resolves `externalBin`
+// against the PER-ARCH triples (`…-x86_64-apple-darwin`, `…-aarch64-apple-darwin`), while the
+// bundler resolves it against the BUILD target (`…-universal-apple-darwin`). A missing name fails
+// the build; a thin binary under any of them would be a silent single-arch regression — which is
+// what `verify-universal.mjs` exists to catch.
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -42,6 +59,19 @@ const args = process.argv.slice(2);
 const bundleOnly = args.includes('--bundle-only');
 const tripleArg = args.includes('--triple') ? args[args.indexOf('--triple') + 1] : undefined;
 
+const UNIVERSAL_TRIPLE = 'universal-apple-darwin';
+/** Fat-binary mode. `TAURI_ENV_TARGET_TRIPLE` is set by Tauri for beforeBuildCommand, so a
+ *  `tauri build --target universal-apple-darwin` reaches us even without the explicit flag. */
+const universal =
+  args.includes('--universal') ||
+  process.env.LEDRUMS_SIDECAR_UNIVERSAL === '1' ||
+  tripleArg === UNIVERSAL_TRIPLE ||
+  process.env.TAURI_ENV_TARGET_TRIPLE === UNIVERSAL_TRIPLE;
+
+if (universal && process.platform !== 'darwin') {
+  throw new Error(`--universal is macOS-only (lipo); this host is ${process.platform}.`);
+}
+
 /** Detect the Rust host target triple — Tauri names sidecars `<name>-<triple>`. */
 function hostTriple() {
   if (tripleArg) return tripleArg;
@@ -60,9 +90,13 @@ function hostTriple() {
   return `${arch}-unknown-linux-gnu`;
 }
 
-const triple = hostTriple();
+const triple = universal ? UNIVERSAL_TRIPLE : hostTriple();
 const exeSuffix = process.platform === 'win32' ? '.exe' : '';
 const outBinary = join(binariesDir, `ledrums-server-${triple}${exeSuffix}`);
+/** Extra names the SAME fat binary is copied to (see the universal note in the header). */
+const aliasBinaries = universal
+  ? ['x86_64-apple-darwin', 'aarch64-apple-darwin'].map((t) => join(binariesDir, `ledrums-server-${t}`))
+  : [];
 
 mkdirSync(sidecarDir, { recursive: true });
 mkdirSync(binariesDir, { recursive: true });
@@ -110,59 +144,71 @@ if (bundleOnly) {
 const PINNED_NODE = (process.env.LEDRUMS_SEA_NODE_VERSION || '22.23.1').replace(/^v/, '');
 
 /**
- * Resolve a Node executable to use as the SEA base. Uses the active Node when it is already on the
- * pinned line; otherwise downloads + verifies + caches the pinned LTS from nodejs.org (host
- * platform/arch). Falls back to the active Node only when it is an even-major LTS and the download
- * is unavailable (offline CI); refuses to produce a known-broken binary on a Current line.
+ * Download + checksum-verify + cache the pinned Node build for one platform/arch, returning the
+ * path to its `node` executable. Throws on any failure — callers decide whether a fallback is
+ * acceptable (it is for the host arch, it is NOT for a foreign arch: there is no substitute, and
+ * silently skipping it would produce a thin binary).
+ *
+ * @param {'darwin'|'linux'|'win'} platform
+ * @param {'x64'|'arm64'} arch
  */
-async function resolveBuildNode() {
-  const wantMajor = PINNED_NODE.split('.')[0];
-  const curMajor = process.versions.node.split('.')[0];
-  if (curMajor === wantMajor) return process.execPath; // already on the pinned line
-
-  const isWin = process.platform === 'win32';
-  const archMap = { x64: 'x64', arm64: 'arm64' };
-  const arch = archMap[process.arch] ?? process.arch;
-  const platform = isWin ? 'win' : process.platform; // darwin | linux | win
+async function fetchPinnedNode(platform, arch) {
+  const isWin = platform === 'win';
   const name = `node-v${PINNED_NODE}-${platform}-${arch}`;
   const ext = isWin ? 'zip' : 'tar.gz';
   const cacheRoot = join(desktopDir, '.node-pin');
   const nodeBin = isWin ? join(cacheRoot, name, 'node.exe') : join(cacheRoot, name, 'bin', 'node');
 
   if (existsSync(nodeBin)) {
-    console.log(`[sidecar] using cached pinned Node v${PINNED_NODE} as the SEA base`);
+    console.log(`[sidecar] using cached pinned Node v${PINNED_NODE} (${platform}-${arch})`);
     return nodeBin;
   }
 
+  mkdirSync(cacheRoot, { recursive: true });
+  const base = `https://nodejs.org/dist/v${PINNED_NODE}`;
+  console.log(`[sidecar] fetching pinned LTS v${PINNED_NODE} (${name}.${ext}) as a postject-safe SEA base…`);
+  const sumsRes = await fetch(`${base}/SHASUMS256.txt`);
+  if (!sumsRes.ok) throw new Error(`SHASUMS256 fetch ${sumsRes.status}`);
+  const want = (await sumsRes.text())
+    .split('\n')
+    .map((l) => l.trim().split(/\s+/))
+    .find(([, f]) => f === `${name}.${ext}`)?.[0];
+  if (!want) throw new Error(`no checksum entry for ${name}.${ext}`);
+
+  const tarRes = await fetch(`${base}/${name}.${ext}`);
+  if (!tarRes.ok) throw new Error(`archive fetch ${tarRes.status}`);
+  const buf = Buffer.from(await tarRes.arrayBuffer());
+  const got = createHash('sha256').update(buf).digest('hex');
+  if (got !== want) throw new Error(`checksum mismatch (${got} != ${want})`);
+
+  const archive = join(cacheRoot, `${name}.${ext}`);
+  writeFileSync(archive, buf);
+  // tar (GNU ≥1.15 + bsdtar) auto-detects gzip on extract, and bsdtar handles .zip too.
+  const ex = spawnSync('tar', ['-xf', archive, '-C', cacheRoot], { stdio: 'inherit' });
+  rmSync(archive, { force: true });
+  if (ex.status !== 0 || !existsSync(nodeBin)) throw new Error('extraction failed');
+  console.log(`[sidecar] pinned Node ready: ${nodeBin}`);
+  return nodeBin;
+}
+
+/** The pinned-Node coordinates for THIS host (also the only Node we can actually execute). */
+const hostNodePlatform = process.platform === 'win32' ? 'win' : process.platform; // darwin | linux | win
+const hostNodeArch = { x64: 'x64', arm64: 'arm64' }[process.arch] ?? process.arch;
+
+/**
+ * Resolve a Node executable to use as the SEA base for the HOST. Uses the active Node when it is
+ * already on the pinned line; otherwise downloads the pinned LTS. Falls back to the active Node
+ * only when it is an even-major LTS and the download is unavailable (offline CI); refuses to
+ * produce a known-broken binary on a Current line.
+ */
+async function resolveBuildNode() {
+  const wantMajor = PINNED_NODE.split('.')[0];
+  const curMajor = process.versions.node.split('.')[0];
+  if (curMajor === wantMajor) return process.execPath; // already on the pinned line
+
   try {
-    mkdirSync(cacheRoot, { recursive: true });
-    const base = `https://nodejs.org/dist/v${PINNED_NODE}`;
-    console.log(
-      `[sidecar] active Node is v${process.versions.node}; fetching pinned LTS v${PINNED_NODE} ` +
-        `(${name}.${ext}) for a reproducible, postject-safe SEA base…`,
-    );
-    const sumsRes = await fetch(`${base}/SHASUMS256.txt`);
-    if (!sumsRes.ok) throw new Error(`SHASUMS256 fetch ${sumsRes.status}`);
-    const want = (await sumsRes.text())
-      .split('\n')
-      .map((l) => l.trim().split(/\s+/))
-      .find(([, f]) => f === `${name}.${ext}`)?.[0];
-    if (!want) throw new Error(`no checksum entry for ${name}.${ext}`);
-
-    const tarRes = await fetch(`${base}/${name}.${ext}`);
-    if (!tarRes.ok) throw new Error(`archive fetch ${tarRes.status}`);
-    const buf = Buffer.from(await tarRes.arrayBuffer());
-    const got = createHash('sha256').update(buf).digest('hex');
-    if (got !== want) throw new Error(`checksum mismatch (${got} != ${want})`);
-
-    const archive = join(cacheRoot, `${name}.${ext}`);
-    writeFileSync(archive, buf);
-    // tar (GNU ≥1.15 + bsdtar) auto-detects gzip on extract, and bsdtar handles .zip too.
-    const ex = spawnSync('tar', ['-xf', archive, '-C', cacheRoot], { stdio: 'inherit' });
-    rmSync(archive, { force: true });
-    if (ex.status !== 0 || !existsSync(nodeBin)) throw new Error('extraction failed');
-    console.log(`[sidecar] pinned Node ready: ${nodeBin}`);
-    return nodeBin;
+    console.log(`[sidecar] active Node is v${process.versions.node}; using the pinned LTS instead.`);
+    return await fetchPinnedNode(hostNodePlatform, hostNodeArch);
   } catch (e) {
     const major = Number(curMajor);
     if (major >= 20 && major % 2 === 0) {
@@ -180,7 +226,9 @@ async function resolveBuildNode() {
   }
 }
 
+// The blob generator must be a node we can EXECUTE, so it is always the host's.
 const buildNode = await resolveBuildNode();
+const seaBaseLabel = buildNode === process.execPath ? `v${process.versions.node} (active)` : `pinned v${PINNED_NODE}`;
 
 const seaConfigFile = join(sidecarDir, 'sea-config.json');
 const blobFile = join(sidecarDir, 'server.blob');
@@ -198,28 +246,61 @@ writeFileSync(
 console.log('[sidecar] generating SEA blob…');
 execFileSync(buildNode, ['--experimental-sea-config', seaConfigFile], { stdio: 'inherit' });
 
-// Copy the pinned node executable as the binary base, then inject the blob into it.
-rmSync(outBinary, { force: true });
-copyFileSync(buildNode, outBinary);
-chmodSync(outBinary, 0o755);
-
-// macOS/Windows-signed node binaries must have their signature removed before postject mutates
-// the executable, then (mac) be re-signed ad-hoc afterwards.
 const isMac = process.platform === 'darwin';
-if (isMac) {
-  try {
-    execFileSync('codesign', ['--remove-signature', outBinary], { stdio: 'inherit' });
-  } catch {
-    console.warn('[sidecar] codesign --remove-signature failed (continuing)');
+const { inject } = await import('postject');
+const blob = readFileSync(blobFile);
+
+/**
+ * Turn one Node executable into the SEA at `dest`: copy, strip its signature (postject mutates the
+ * Mach-O, which invalidates it), inject the blob. Signing is deliberately NOT done here — a
+ * universal build signs once at the end, after lipo, and `codesign` signs every slice of a fat
+ * binary in one pass.
+ */
+async function makeSea(nodeExe, dest) {
+  rmSync(dest, { force: true });
+  copyFileSync(nodeExe, dest);
+  chmodSync(dest, 0o755);
+  if (isMac) {
+    try {
+      execFileSync('codesign', ['--remove-signature', dest], { stdio: 'inherit' });
+    } catch {
+      console.warn('[sidecar] codesign --remove-signature failed (continuing)');
+    }
   }
+  console.log(`[sidecar] injecting SEA blob with postject → ${dest}`);
+  await inject(dest, 'NODE_SEA_BLOB', blob, {
+    sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
+    machoSegmentName: isMac ? 'NODE_SEA' : undefined,
+  });
+  chmodSync(dest, 0o755);
 }
 
-console.log('[sidecar] injecting SEA blob with postject…');
-const { inject } = await import('postject');
-await inject(outBinary, 'NODE_SEA_BLOB', readFileSync(blobFile), {
-  sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
-  machoSegmentName: isMac ? 'NODE_SEA' : undefined,
-});
+if (universal) {
+  // One SEA per darwin arch, then lipo them into a single fat binary. The FOREIGN arch has no
+  // fallback: if its pinned Node cannot be fetched we must fail, never quietly ship a thin binary.
+  const slices = [];
+  for (const arch of ['x64', 'arm64']) {
+    const isHost = arch === hostNodeArch;
+    const nodeExe =
+      isHost && buildNode === process.execPath && process.versions.node === PINNED_NODE
+        ? process.execPath
+        : await fetchPinnedNode('darwin', arch).catch((e) => {
+            throw new Error(
+              `universal build needs the pinned Node v${PINNED_NODE} for darwin-${arch} and it could not ` +
+                `be fetched (${e.message}). Refusing to emit a single-architecture sidecar. ` +
+                `Fix connectivity, or pre-populate apps/desktop/.node-pin/.`,
+            );
+          });
+    const slice = join(sidecarDir, `ledrums-server.${arch}`);
+    await makeSea(nodeExe, slice);
+    slices.push(slice);
+  }
+  rmSync(outBinary, { force: true });
+  execFileSync('lipo', ['-create', '-output', outBinary, ...slices], { stdio: 'inherit' });
+  for (const slice of slices) rmSync(slice, { force: true });
+} else {
+  await makeSea(buildNode, outBinary);
+}
 
 if (isMac) {
   try {
@@ -230,6 +311,25 @@ if (isMac) {
 }
 
 chmodSync(outBinary, 0o755);
+
+if (universal) {
+  // Fail here rather than at bundle time: a thin "universal" sidecar is the exact silent
+  // regression this slice exists to prevent.
+  const archs = execFileSync('lipo', ['-archs', outBinary], { encoding: 'utf8' }).trim().split(/\s+/);
+  for (const want of ['x86_64', 'arm64']) {
+    if (!archs.includes(want)) {
+      throw new Error(`universal sidecar is missing the ${want} slice (lipo -archs → "${archs.join(' ')}")`);
+    }
+  }
+  console.log(`[sidecar] universal sidecar verified: ${archs.join(' + ')}`);
+  for (const alias of aliasBinaries) {
+    rmSync(alias, { force: true });
+    copyFileSync(outBinary, alias);
+    chmodSync(alias, 0o755);
+    console.log(`[sidecar] also emitted → ${alias}`);
+  }
+}
+
 console.log(`[sidecar] done → ${outBinary}`);
 
 // --- 3. smoke test (gates the build) ---------------------------------------
@@ -239,6 +339,10 @@ console.log(`[sidecar] done → ${outBinary}`);
 // ("unsupported thread-local, larger than 4GB") AND any other early crash. The build FAILS
 // (exit 1) on early exit, the dyld error, a spawn error, or a timeout with no banner, so a
 // broken binary can never be shipped silently.
+//
+// For a universal binary this exercises the HOST slice only — macOS runs the matching arch and
+// there is no way to execute the other one here. The foreign slice's proof is structural (the
+// `lipo -archs` assertion above and verify-universal.mjs) plus a run on that architecture in CI.
 //
 // The server reads `Number(env) || default`, so PORT=0 would fall back to the real default port;
 // we therefore bind real free TCP/UDP ports for the probe and pass those, avoiding collisions
@@ -314,10 +418,9 @@ const verdict = await new Promise((resolveVerdict) => {
 });
 
 if (!verdict.ok) {
-  const base = buildNode === process.execPath ? `v${process.versions.node} (active)` : `pinned v${PINNED_NODE}`;
   console.error(
     `\n[sidecar] SMOKE TEST FAILED: ${verdict.reason}.\n` +
-      `          SEA base Node: ${base}. Captured output:\n` +
+      `          SEA base Node: ${seaBaseLabel}. Captured output:\n` +
       verdict.out.split('\n').map((l) => `          | ${l}`).join('\n') +
       '\n',
   );
