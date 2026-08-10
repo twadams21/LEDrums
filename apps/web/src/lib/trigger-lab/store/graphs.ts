@@ -89,6 +89,45 @@ function padLabelForKey(pads: readonly Pad[], key: string): string | null {
   return p ? padLabel(p) : null;
 }
 
+/** Deep-copy every graph a song references under FRESH keys, returning the remapped song plus the
+    graph/name entries to merge into the authored runes. This is what makes a DUPLICATED SONG an
+    independent variant: `setlist.cloneSection` copies a section's ordered key LIST but the keys
+    themselves still address the one shared graph, so without this pass every edit inside the copy
+    (rewire a node, swap an effect, rename the graph) wrote straight through into the source song.
+    Cross-section reuse WITHIN a song is unaffected — a key referenced by two sections of the source
+    maps to the same new key, so the copy reuses its own graph exactly where the original did.
+
+    Effects / presets are deliberately NOT copied: they are show-level library objects the user picks
+    from (the Objects view lists them per show, not per song), and the clipboard song paste treats
+    them the same way. A dangling reference (a key with no graph) is carried through untouched —
+    faithful to the source song rather than silently repaired.
+
+    Pure: `mintKey` is injected so the caller owns id minting and tests stay deterministic. Pass
+    plain (snapshotted) graphs — {@link cloneGraph} structured-clones them. */
+export function cloneSongGraphs(
+  song: Song,
+  graphs: Record<string, TriggerGraph>,
+  graphNames: Record<string, string>,
+  mintKey: () => string,
+): { song: Song; graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+  const remap = new Map<string, string>();
+  const nextGraphs: Record<string, TriggerGraph> = {};
+  const nextNames: Record<string, string> = {};
+  for (const key of setlist.referencedGraphs(song)) {
+    const src = graphs[key];
+    if (!src) continue; // dangling ref: leave the key as-is (the copy is as broken as the source)
+    const newKey = mintKey();
+    remap.set(key, newKey);
+    nextGraphs[newKey] = cloneGraph(src);
+    // Keep the label verbatim — the SONG name is what distinguishes the copy; suffixing 18 graphs
+    // with " copy" would just make every duplicated setlist unreadable.
+    const name = graphNames[key];
+    if (typeof name === 'string') nextNames[newKey] = name;
+  }
+  const sections = song.sections.map((sec) => ({ ...sec, graphs: sec.graphs.map((k) => remap.get(k) ?? k) }));
+  return { song: { ...song, sections }, graphs: nextGraphs, graphNames: nextNames };
+}
+
 /** Delete a graph everywhere: drop it from `graphs` + `graphNames`, and purge its key from
     EVERY section across ALL songs (no dangling references). Returns the new triplet; the store
     assigns them and handles selection clearing. Reuses the pure setlist op per section. */
