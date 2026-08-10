@@ -200,7 +200,37 @@ infra:
 To rotate the key or re-provision, regenerate with `tauri signer generate`, update the secrets +
 `pubkey`, and re-publish.
 
-### Release flow
+### Release flow (normal route: a GitHub Release)
+
+**Publishing a GitHub Release publishes the OTA update.** `.github/workflows/release-ota.yml`
+builds both macOS architectures (`darwin-x86_64` + `darwin-aarch64`), signs each with the updater
+key, publishes them to R2 one at a time, merges them into one `latest.json`, and announces to
+Discord. The tag is the version; no laptop is involved, and anyone who can create a release can
+ship.
+
+1. Land the version bump on `main` first: on a branch, `pnpm ota prepare --patch` (or `--minor` /
+   `--major`) bumps every version file — and nothing else — then commit, PR, merge. The workflow's
+   gate (`pnpm ota ci-plan`) refuses a tag that disagrees with `tauri.conf.json`, a tag already
+   fully published, a tag older than what is live, and an unreadable manifest (fail closed).
+2. Create a GitHub Release tagged `v<version>`. The release notes you write become the update
+   prompt and the Discord post (`OTA_NOTES`).
+3. A release that fails to build publishes nothing; one that fails partway leaves the previous
+   version installable and can be **re-run** — the gate resumes with only the platforms not yet
+   live (and does not re-ping Discord).
+
+The workflow can also be run by hand (Actions → Release OTA → Run workflow), with `dry_run`
+defaulting to **true**: everything except the R2 uploads and the Discord post runs for real,
+including the build, the signature-key check, and the guard decisions against the live manifest.
+The `release:` trigger is wired only after a successful dry run (see the workflow header).
+
+Secrets live in GitHub Actions secrets (`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`,
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OTA_PUBLIC_BASE`,
+`LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK`); the workflow is reachable only from the release and manual
+triggers, never from pull requests.
+
+### Release flow (local fallback: `pnpm ota bump`)
+
+The pre-CI path stays available so a CI outage cannot block an urgent fix.
 
 Because the signing key is namespaced, the root `pnpm tauri:build` script maps it onto the canonical
 `TAURI_SIGNING_PRIVATE_KEY*` env names Tauri expects, overriding the other project's key that

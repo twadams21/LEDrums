@@ -17,6 +17,16 @@
  *   version                     print the current version (read-only)
  *   publish                     publish an already-built signed bundle (e.g. another platform's arch)
  *   doctor                      compare this tree against the published release (read-only)
+ *   prepare [--level]           bump the version files ONLY (no build, no publish) — the first step
+ *                               of a CI release: commit the bump on a branch, PR it into main, then
+ *                               publish by creating a GitHub Release tagged v<version>
+ *   ci-plan --tag <vX.Y.Z>      gate a CI release: resolve the release tag against tauri.conf.json
+ *                               and the live manifest, emit version/platforms to $GITHUB_OUTPUT
+ *                               (read-only — used by .github/workflows/release-ota.yml)
+ *
+ * NOTE: `bump` is the local FALLBACK path. The normal release route is a GitHub Release, which
+ * `.github/workflows/release-ota.yml` builds and publishes for both macOS architectures — see
+ * apps/desktop/README.md. Keep `bump` working: a CI outage must not block an urgent fix.
  *
  * VERSION AUTHORITY. The next version is derived from the local tauri.conf.json, but whether a
  * release may happen at all is decided against the LIVE MANIFEST (ota-version.mjs). A tree that is
@@ -40,7 +50,7 @@
  * wrong/rotated signing key aborts the release instead of shipping an unverifiable update.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -48,6 +58,7 @@ import {
   classifyVersionState,
   fetchPublishedManifest,
   planRelease,
+  resolveReleaseFromTag,
 } from './ota-version.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -348,9 +359,10 @@ function currentVersion() {
   return JSON.parse(readFileSync(tauriConf, 'utf8')).version;
 }
 
-/** What is actually published right now, per the live manifest — the authority on what has shipped. */
+/** What is actually published right now, per the live manifest — the authority on what has shipped.
+ *  Cache-busted so the answer is the manifest as it IS, not as the CDN last cached it. */
 async function published() {
-  return fetchPublishedManifest({ publicBase: publicBase() });
+  return fetchPublishedManifest({ publicBase: publicBase(), cacheBust: Date.now().toString(36) });
 }
 
 /**
@@ -402,6 +414,96 @@ async function doctor() {
 /** True if any `--dry-run` / `--dryrun` flag is present. */
 function hasDryRun(args) {
   return args.some((a) => a === '--dry-run' || a === '--dryrun');
+}
+
+/**
+ * The `prepare` sub-command: bump the version files for a CI release — and nothing else.
+ *
+ * The CI release flow needs the repo's version files to ALREADY carry the new version before the
+ * GitHub Release is created (the tag-vs-tauri.conf.json gate refuses otherwise), so the bump lands
+ * through an ordinary PR. Same layer-1 guard as `bump`: the live manifest decides whether a release
+ * may proceed, so a stale tree still cannot re-mint a shipped version. Building, publishing, and
+ * announcing all belong to the release workflow after the Release is created.
+ */
+async function prepare(level) {
+  const current = currentVersion();
+  const live = await published();
+  const plan = planRelease({
+    localVersion: current,
+    publishedVersion: live.version,
+    manifestReachable: live.reachable,
+    level,
+    allowUnverified: process.env.OTA_ALLOW_UNVERIFIED_VERSION === '1',
+    unreachableReason: live.reason,
+  });
+  if (!plan.ok) {
+    console.error(`error: ${plan.message}`);
+    process.exit(1);
+  }
+  console.log(`[ota] ${plan.message}`);
+  const next = bumpFiles(level);
+  console.log(
+    `\n[ota] version files now read v${next}. Nothing was built or published. Next:\n` +
+      `  1. commit these changes on a branch and open a PR into main\n` +
+      `  2. merge the PR\n` +
+      `  3. publish by creating a GitHub Release tagged v${next} — the release workflow builds,\n` +
+      `     signs, publishes to R2, and announces (see apps/desktop/README.md "Release flow")`,
+  );
+}
+
+/** The value following `--<name>` in an argv list, or undefined. */
+function flagValue(args, name) {
+  const i = args.indexOf(`--${name}`);
+  return i !== -1 ? args[i + 1] : undefined;
+}
+
+/** The macOS architectures the release workflow ships (Tauri updater platform keys). */
+const CI_PLATFORMS = ['darwin-x86_64', 'darwin-aarch64'];
+
+/**
+ * The `ci-plan` sub-command: the release workflow's gate. Read-only.
+ *
+ * Resolves a GitHub Release tag against the local tauri.conf.json and the LIVE manifest
+ * (resolveReleaseFromTag — all branching lives in the pure module; this and the workflow only
+ * orchestrate). Prints the decision; on refusal exits 1 so the workflow stops before building
+ * anything. On success, writes `version` and the space-separated `platforms` still needing a
+ * publish to $GITHUB_OUTPUT for the publish job to iterate over.
+ */
+async function ciPlan(rest) {
+  const tag = flagValue(rest, 'tag');
+  if (!tag) {
+    console.error('usage: pnpm ota ci-plan --tag <vX.Y.Z> [--platforms darwin-x86_64,darwin-aarch64]');
+    process.exit(2);
+  }
+  const platforms = (flagValue(rest, 'platforms') ?? CI_PLATFORMS.join(','))
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const live = await published();
+  const plan = resolveReleaseFromTag({
+    tag,
+    confVersion: currentVersion(),
+    manifest: live.manifest,
+    manifestReachable: live.reachable,
+    unreachableReason: live.reason,
+    platforms,
+    allowRepublish: process.env.OTA_ALLOW_REPUBLISH === '1',
+    allowRollback: process.env.OTA_ALLOW_VERSION_ROLLBACK === '1',
+    allowUnverified: process.env.OTA_ALLOW_UNVERIFIED_VERSION === '1',
+  });
+
+  if (!plan.ok) {
+    console.error(`error: ${plan.message}`);
+    process.exit(1);
+  }
+  console.log(`[ota] ${plan.message}`);
+  if (process.env.GITHUB_OUTPUT) {
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+      `version=${plan.version}\nplatforms=${plan.pendingPlatforms.join(' ')}\n`,
+    );
+  }
 }
 
 /**
@@ -482,20 +584,26 @@ async function release(level, dryRun) {
   openVersionBumpPr({ current, next, branch, originalBranch });
 }
 
-const [, , command = 'bump', ...rest] = process.argv;
+// No default sub-command: a bare `pnpm ota` prints usage. `bump` starts a full build-and-publish
+// release pipeline, which must never be the accidental outcome of an incomplete command.
+const [, , command, ...rest] = process.argv;
 
 try {
   if (command === 'bump') await release(parseLevel(rest), hasDryRun(rest));
   else if (command === 'version') console.log(currentVersion());
   else if (command === 'publish') publish();
   else if (command === 'doctor') process.exit(await doctor());
+  else if (command === 'prepare') await prepare(parseLevel(rest));
+  else if (command === 'ci-plan') await ciPlan(rest);
   else {
-    console.error('usage: pnpm ota <bump|version|publish|doctor> [--major|--minor|--patch] [--dry-run]');
+    console.error('usage: pnpm ota <bump|version|publish|doctor|prepare|ci-plan> [--major|--minor|--patch] [--dry-run]');
+    console.error('  prepare   bump the version files only (commit via PR, then publish via a GitHub Release)');
     console.error('  bump      bump + build + sign + publish + land the bump PR  (run under `infisical run --env=prod`)');
     console.error('  bump --dry-run   print the release plan without changing anything');
     console.error('  version   print the current version');
     console.error('  publish   publish an already-built signed bundle');
     console.error('  doctor    compare this tree against the published release (read-only)');
+    console.error('  ci-plan --tag <vX.Y.Z>   gate a CI release: resolve the tag against the live manifest (read-only)');
     process.exit(2);
   }
 } catch (err) {

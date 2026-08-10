@@ -28,6 +28,37 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Design system (regenerate `docs/design-system.html`): `pnpm design-system`
 - Start (prod, serves built web): `pnpm start`
 
+## Replies
+Format every user-facing reply with the `/i-have-adhd` skill, every session: lead with the next
+action, number multi-step work, restate state each turn.
+
+## Shipping and Releases
+Every feature or fix lands through a PR into `main`: branch → push → PR → merge (`main` refuses
+direct pushes). Done = PR merged, sweep green.
+
+Merging does not update anyone's app. **The desktop app updates only when a GitHub Release is
+published** — the tag triggers `.github/workflows/release-ota.yml`, which builds both macOS
+architectures, signs, publishes to R2, and announces to Discord. The live `latest.json` (not git)
+is the authority on what has shipped; the workflow's gate refuses a republish, a rollback, and a
+tag that disagrees with `tauri.conf.json`.
+
+When a merged fix should reach the drum kits, offer to ship it, then follow this flow:
+
+1. `pnpm ota doctor` — read-only; confirms what is currently live.
+2. Land the bump PR: on a fresh branch off `main`, run `pnpm ota prepare --patch` (or `--minor` /
+   `--major`) — it bumps every version file and nothing else — then commit, open a PR, merge.
+3. **Ask Trent or Tim before publishing.** Publishing = creating the GitHub Release; it ships to
+   every machine. Ask "publish v<version>?" and wait for a yes.
+4. On yes: `gh release create v<version> --title "LEDrums v<version>" --notes "<what changed>"` —
+   the notes become the update prompt and the Discord post.
+5. `gh run watch` until the Release OTA run is green. A failed run leaves the previous version
+   installable; re-running is safe (it resumes with only the unpublished platforms, no re-ping).
+
+Until the `release:` trigger is wired (pending the first dry run — see the workflow header), step
+4 is instead: Actions → "Release OTA" → Run workflow with the tag.
+Local fallback for a CI outage only: `pnpm ota bump`. Full detail: `apps/desktop/README.md` →
+"Release flow".
+
 ## Ticket Tracking (Notion + GitHub)
 Remediation/initiative tickets are tracked in two places with distinct roles:
 - **GitHub issues** (`twadams21/LEDrums`) reflect **merge status only** — close an issue when its change is merged. Blocking edges live in the issue bodies.

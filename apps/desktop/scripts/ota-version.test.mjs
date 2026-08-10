@@ -17,6 +17,7 @@ import {
   nextVersion,
   parseVersion,
   planRelease,
+  resolveReleaseFromTag,
 } from './ota-version.mjs';
 
 /** A stub `fetch` returning a canned response for the manifest URL. */
@@ -102,6 +103,15 @@ test('a network failure, a 500, or unparseable JSON is NOT reachable', async () 
 
   const noVersion = await fetchPublishedManifest({ publicBase: 'https://pub-x.r2.dev', fetchFn: stubFetch(jsonResponse({ platforms: {} })) });
   assert.equal(noVersion.reachable, false);
+});
+
+test('a cacheBust token bypasses the CDN cache via a unique query string', async () => {
+  // The serial multi-arch publish reads latest.json seconds after the previous platform wrote it;
+  // a cached stale read would silently drop that platform's entry from the merge.
+  const fetchFn = stubFetch(jsonResponse({ version: '0.2.14' }));
+  const got = await fetchPublishedManifest({ publicBase: 'https://pub-x.r2.dev', fetchFn, cacheBust: 'run 42' });
+  assert.equal(got.version, '0.2.14');
+  assert.equal(fetchFn.calls[0].url, 'https://pub-x.r2.dev/latest.json?cb=run%2042');
 });
 
 test('an unset OTA_PUBLIC_BASE is unreachable, and makes no request', async () => {
@@ -287,6 +297,118 @@ test('the very first publish of all is a release', () => {
   const got = assessPublish({ manifest: null, version: '0.1.0', target: 'darwin-aarch64' });
   assert.equal(got.ok, true);
   assert.equal(got.publishKind, 'release');
+});
+
+// ---------------------------------------------------------------- resolveReleaseFromTag: the CI release gate
+
+/** The two macOS architectures the release workflow ships. */
+const BOTH = ['darwin-x86_64', 'darwin-aarch64'];
+
+/** A resolvable baseline: tag and conf agree, the live manifest is one version behind. */
+function resolveArgs(overrides = {}) {
+  return {
+    tag: 'v0.2.14',
+    confVersion: '0.2.14',
+    manifest: { version: '0.2.13', platforms: { 'darwin-x86_64': { url: 'x' } } },
+    manifestReachable: true,
+    platforms: BOTH,
+    ...overrides,
+  };
+}
+
+test('a clean first CI release of a version proceeds for every platform', () => {
+  const got = resolveReleaseFromTag(resolveArgs());
+  assert.equal(got.ok, true);
+  assert.equal(got.state, 'release');
+  assert.equal(got.version, '0.2.14');
+  assert.deepEqual(got.pendingPlatforms, BOTH, 'both architectures still need publishing');
+});
+
+test('the tag is accepted with or without the leading v', () => {
+  for (const tag of ['v0.2.14', '0.2.14']) {
+    const got = resolveReleaseFromTag(resolveArgs({ tag }));
+    assert.equal(got.ok, true, `tag ${tag} should resolve`);
+    assert.equal(got.version, '0.2.14');
+  }
+});
+
+test('a tag that does not parse as a version is refused', () => {
+  for (const tag of ['nightly', 'v0.2', 'v0.2.14-rc1', '', 'release-0.2.14']) {
+    const got = resolveReleaseFromTag(resolveArgs({ tag }));
+    assert.equal(got.ok, false, `tag ${tag} should be refused`);
+    assert.equal(got.state, 'invalid-tag');
+    assert.equal(got.version, null);
+  }
+});
+
+test('a tag that disagrees with tauri.conf.json is refused — the build would ship a different version', () => {
+  const got = resolveReleaseFromTag(resolveArgs({ tag: 'v0.2.15' }));
+  assert.equal(got.ok, false);
+  assert.equal(got.state, 'tag-conf-mismatch');
+  assert.match(got.message, /tauri\.conf\.json/);
+  assert.match(got.message, /0\.2\.14/, 'says what the tree actually carries');
+});
+
+test('the second architecture of a half-published version is allowed, pending only the missing platform', () => {
+  // x86_64 already live for this version — the resume case after a partial failure, and the case
+  // that must NOT re-announce (the @everyone ping already fired; assessPublish derives that).
+  const got = resolveReleaseFromTag(
+    resolveArgs({ manifest: { version: '0.2.14', platforms: { 'darwin-x86_64': { url: 'x' } } } }),
+  );
+  assert.equal(got.ok, true);
+  assert.equal(got.state, 'partial');
+  assert.deepEqual(got.pendingPlatforms, ['darwin-aarch64'], 'only the missing architecture publishes');
+});
+
+test('a tag whose every platform is already live is refused', () => {
+  const manifest = {
+    version: '0.2.14',
+    platforms: { 'darwin-x86_64': { url: 'x' }, 'darwin-aarch64': { url: 'y' } },
+  };
+  const got = resolveReleaseFromTag(resolveArgs({ manifest }));
+  assert.equal(got.ok, false);
+  assert.equal(got.state, 'already-published');
+  assert.match(got.message, /OTA_ALLOW_REPUBLISH=1/);
+
+  // The override still works, and a republish re-publishes every platform.
+  const forced = resolveReleaseFromTag(resolveArgs({ manifest, allowRepublish: true }));
+  assert.equal(forced.ok, true);
+  assert.equal(forced.state, 'republish');
+  assert.deepEqual(forced.pendingPlatforms, BOTH);
+});
+
+test('a tag older than the published version is refused — a re-run must not roll clients back', () => {
+  const manifest = { version: '0.2.15', platforms: { 'darwin-x86_64': { url: 'x' } } };
+  const got = resolveReleaseFromTag(resolveArgs({ manifest }));
+  assert.equal(got.ok, false);
+  assert.equal(got.state, 'rollback');
+  assert.match(got.message, /NEWER/);
+
+  const forced = resolveReleaseFromTag(resolveArgs({ manifest, allowRollback: true }));
+  assert.equal(forced.ok, true);
+  assert.deepEqual(forced.pendingPlatforms, BOTH);
+  assert.match(forced.message, /WARNING/);
+});
+
+test('an unreadable manifest fails CLOSED, and the unverified override still works', () => {
+  const args = resolveArgs({ manifest: null, manifestReachable: false, unreachableReason: 'ECONNREFUSED' });
+  const got = resolveReleaseFromTag(args);
+  assert.equal(got.ok, false);
+  assert.equal(got.state, 'unverified');
+  assert.match(got.message, /ECONNREFUSED/);
+  assert.match(got.message, /OTA_ALLOW_UNVERIFIED_VERSION=1/);
+
+  const forced = resolveReleaseFromTag({ ...args, allowUnverified: true });
+  assert.equal(forced.ok, true);
+  assert.deepEqual(forced.pendingPlatforms, BOTH);
+  assert.match(forced.message, /WARNING/);
+});
+
+test('a 404 manifest is "nothing published yet", not a failure', () => {
+  const got = resolveReleaseFromTag(resolveArgs({ manifest: null, manifestReachable: true }));
+  assert.equal(got.ok, true);
+  assert.equal(got.state, 'release');
+  assert.deepEqual(got.pendingPlatforms, BOTH);
 });
 
 // ---------------------------------------------------------------- auto-merge fallback

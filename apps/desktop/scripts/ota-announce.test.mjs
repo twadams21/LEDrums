@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { announceRelease, buildReleaseAnnouncement } from './ota-announce.mjs';
+import { assessPublish } from './ota-version.mjs';
 
 /** A stub `fetch` that records calls and returns a canned response. */
 function stubFetch(response = { ok: true, status: 204 }) {
@@ -57,6 +58,53 @@ test('a second platform of the same version posts a quiet follow-up with no ping
 test('all platforms in the manifest are listed, not just the one just published', () => {
   const payload = buildReleaseAnnouncement({ ...base, platforms: ['darwin-aarch64', 'windows-x86_64'] });
   assert.match(payload.content, /Platforms: `darwin-aarch64`, `windows-x86_64`/);
+});
+
+test('two serial platform publishes of one version ping exactly once: one @everyone post, one quiet follow-up', async () => {
+  // The whole-release path the CI workflow drives (issue #160): each publish derives
+  // firstAnnouncement from what assessPublish says about the live manifest AT THAT MOMENT, so the
+  // second architecture — seeing the same-version manifest the first one wrote — must not re-ping.
+  const { fn, calls } = stubFetch();
+  const version = '0.2.14';
+
+  // Publish 1 (darwin-x86_64): the live manifest still carries the previous release.
+  const first = assessPublish({
+    manifest: { version: '0.2.13', platforms: { 'darwin-x86_64': { url: 'old' } } },
+    version,
+    target: 'darwin-x86_64',
+  });
+  assert.equal(first.ok, true);
+  await announceRelease({
+    webhookUrl: 'https://discord.test/hook',
+    version,
+    target: 'darwin-x86_64',
+    platforms: ['darwin-x86_64'],
+    firstAnnouncement: first.publishKind === 'release',
+    fetchFn: fn,
+  });
+
+  // Publish 2 (darwin-aarch64): the live manifest is now this version with the first platform in it.
+  const second = assessPublish({
+    manifest: { version, platforms: { 'darwin-x86_64': { url: 'new' } } },
+    version,
+    target: 'darwin-aarch64',
+  });
+  assert.equal(second.ok, true);
+  await announceRelease({
+    webhookUrl: 'https://discord.test/hook',
+    version,
+    target: 'darwin-aarch64',
+    platforms: ['darwin-x86_64', 'darwin-aarch64'],
+    firstAnnouncement: second.publishKind === 'release',
+    fetchFn: fn,
+  });
+
+  assert.equal(calls.length, 2, 'both platforms post');
+  const pinging = calls.filter((c) => c.body.content.includes('@everyone'));
+  assert.equal(pinging.length, 1, 'exactly one post pings the channel');
+  assert.equal(calls[0], pinging[0], 'and it is the first');
+  assert.match(calls[1].body.content, /also available for `darwin-aarch64`/);
+  assert.deepEqual(calls[1].body.allowed_mentions, { parse: [] });
 });
 
 test('announceRelease posts JSON to the webhook and reports success', async () => {

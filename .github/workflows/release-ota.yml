@@ -1,0 +1,212 @@
+# Publish desktop OTA updates from GitHub Actions (issue #160).
+#
+# Publishing a GitHub Release publishes the OTA update: build both macOS architectures, sign each
+# with the updater key, publish both to R2 one at a time, merge them into one latest.json, and
+# announce to Discord. No laptop involved; the tag is the version.
+#
+# DECISIONS LIVE IN THE PURE MODULE, NOT HERE. Every go/no-go branch (tag parses? tag matches
+# tauri.conf.json? already published? rollback? unreadable manifest?) is `ota.mjs ci-plan` →
+# resolveReleaseFromTag (apps/desktop/scripts/ota-version.mjs), and every per-platform upload guard
+# is publish-ota.mjs → assessPublish. This YAML only orchestrates and reports, which is what keeps
+# the release logic testable without a CI harness.
+#
+# SERIAL PUBLISHING IS STRUCTURAL. latest.json is read-modify-write, so two concurrent publishes
+# can silently drop each other's platform entry (see the !! SERIAL PUBLISHING ONLY !! warning in
+# publish-ota.mjs). The build matrix runs in parallel, but every publish happens inside the single
+# `publish` job, one platform at a time. Do not move publishing into the matrix.
+#
+# SECRETS. This workflow is reachable only via workflow_dispatch and the release trigger — never
+# from pull requests, so a fork PR cannot reach the signing key. Required Actions secrets:
+#   LEDRUMS_TAURI_SIGNING_PRIVATE_KEY            Tauri updater signing key (base64 blob)
+#   LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD   its password
+#   CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID R2 read/write
+#   OTA_PUBLIC_BASE                              the bucket public base URL (https://pub-….r2.dev)
+#   LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK          #ledrums-updates webhook (optional — warns if unset)
+#
+# ROLLOUT IS GATED. Ships manual-trigger-only, with dry_run defaulting to true (every step except
+# the R2 uploads and the Discord post, exercised against the real manifest). Wire the release
+# trigger only after a successful dry run, by uncommenting:
+#
+#   release:
+#     types: [published]
+#
+# RELEASING (once wired): land the version bump on main first (`pnpm ota prepare --patch` on a
+# branch, then PR + merge — the tag-vs-tauri.conf.json gate refuses otherwise), then create a
+# GitHub Release tagged v<version>. The release notes become the update prompt + Discord post.
+#
+# NO OVERRIDES IN CI — deliberately. The OTA_ALLOW_* escape hatches (republish / rollback /
+# unverified) are not plumbed into this workflow: CI always fails closed, and a release that needs
+# an override is an operator decision made on the local fallback path (`pnpm ota bump`/`publish`).
+
+name: Release OTA
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v0.2.14) — must match tauri.conf.json'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run: everything except the R2 uploads and the Discord post'
+        required: false
+        type: boolean
+        default: true
+      notes:
+        description: 'Release notes (release trigger uses the GitHub Release body instead)'
+        required: false
+        type: string
+  # Uncomment after a successful dry run (see header):
+  # release:
+  #   types: [published]
+
+permissions:
+  contents: read
+
+# One release run at a time, never cancelled: a superseded publish half-way through latest.json is
+# exactly the torn state the serial constraint exists to prevent.
+concurrency:
+  group: release-ota
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  # Phase 0: the gate. Refuses before anything is built; emits the version and the platforms that
+  # still need publishing (so a re-run of a half-published release resumes instead of failing).
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      platforms: ${{ steps.plan.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # ota.mjs uses only Node built-ins — no pnpm install needed here.
+      - id: plan
+        run: node apps/desktop/scripts/ota.mjs ci-plan --tag "$RELEASE_TAG"
+        env:
+          OTA_PUBLIC_BASE: ${{ secrets.OTA_PUBLIC_BASE }}
+
+  # Phase 1: build + sign each architecture in parallel and stash the artifacts. Runner labels are
+  # pinned to an explicit architecture (verified 2026-08: macos-26 is arm64, macos-26-intel is
+  # x86_64; macos-latest is migrating to macOS 26/arm64 and macos-13 is retired). If GitHub migrates
+  # images again, re-verify the label→architecture mapping before editing.
+  build:
+    needs: plan
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: darwin-x86_64
+            runner: macos-26-intel
+          - target: darwin-aarch64
+            runner: macos-26
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - run: pnpm install --frozen-lockfile
+      # The signing wrapper strips whitespace the secret store may introduce into the base64 key.
+      # tauri build's beforeBuildCommand (prepare-bundle.mjs) builds the web app + server sidecar.
+      - name: Build signed desktop bundle
+        run: node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build
+        env:
+          LEDRUMS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY }}
+          LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Upload updater artifact + signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.target }}
+          path: apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz*
+          if-no-files-found: error
+          retention-days: 7
+      # The JS bundle is identical across architectures — archive the sourcemaps from one leg only.
+      # index.html is included ONLY to pin the artifact root at dist/: upload-artifact roots the
+      # archive at the least common ancestor of its matches, and with maps living under
+      # dist/assets/ alone the assets/ prefix would be stripped — publishing sourcemap R2 keys that
+      # differ from the local flow's dist-relative layout and breaking #122 symbolication.
+      - name: Upload web sourcemaps
+        if: matrix.target == 'darwin-aarch64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sourcemaps
+          path: |
+            apps/web/dist/index.html
+            apps/web/dist/**/*.map
+          if-no-files-found: error
+          retention-days: 7
+
+  # Phase 2: publish. ONE job, platforms one at a time — the serial constraint is the job graph,
+  # not a max-parallel setting a later edit can remove. publish-ota.mjs re-guards each platform
+  # against the live manifest before uploading, verifies the signature key against the app's
+  # baked-in updater pubkey, uploads artifact + sourcemaps + merged manifest, and announces (the
+  # first platform of a version owns the @everyone ping; the second posts a quiet follow-up).
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-darwin-x86_64
+          path: ota-artifacts/darwin-x86_64/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle-darwin-aarch64
+          path: ota-artifacts/darwin-aarch64/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: sourcemaps
+          path: ota-artifacts/web-dist
+      - name: Publish pending platforms, one at a time
+        run: |
+          set -euo pipefail
+          for target in $PLATFORMS; do
+            echo "::group::publish $target"
+            OTA_TARGET="$target" \
+            OTA_BUNDLE_DIR="ota-artifacts/$target" \
+            OTA_WEB_DIST_DIR="ota-artifacts/web-dist" \
+              node apps/desktop/scripts/publish-ota.mjs
+            echo "::endgroup::"
+          done
+        env:
+          PLATFORMS: ${{ needs.plan.outputs.platforms }}
+          OTA_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}
+          OTA_NOTES: ${{ github.event_name == 'release' && github.event.release.body || inputs.notes }}
+          OTA_PUBLIC_BASE: ${{ secrets.OTA_PUBLIC_BASE }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK: ${{ secrets.LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK }}
+      # A failed publish must say what state the release is in (spec #160, story 19). Guidance
+      # only — the facts come from the guard messages in the failed step's log.
+      - name: Report release state on failure
+        if: failure()
+        run: |
+          {
+            echo "## Release did not complete"
+            echo "The previous version is still installable — publishes are guarded and latest.json"
+            echo "is only written after a platform's artifact upload succeeds."
+            echo ""
+            echo "- The failed \`publish <target>\` group above names the step and the refusal/error."
+            echo "- **Re-running this workflow is safe**: the gate re-reads the live manifest and"
+            echo "  resumes with only the platforms not yet published (and does not re-ping Discord)."
+            echo "- To inspect live state from any checkout: \`pnpm ota doctor\` (read-only)."
+          } >> "$GITHUB_STEP_SUMMARY"

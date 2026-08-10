@@ -56,13 +56,19 @@ export function nextVersion(version, level) {
  * @param {object} args
  * @param {string|undefined} args.publicBase  R2 public base URL (no trailing /latest.json)
  * @param {typeof fetch} [args.fetchFn]
+ * @param {string} [args.cacheBust]  unique token appended as a query string so the read bypasses
+ *   the r2.dev CDN cache. The PUBLISHER must pass one: serial multi-platform publishing re-reads
+ *   latest.json seconds after the previous platform wrote it, and a cached stale read would
+ *   silently drop that platform's entry from the merge (and re-ping the release announcement).
+ *   Clients reading plain /latest.json tolerate propagation delay; the publisher cannot.
  * @returns {Promise<{reachable: boolean, manifest: Manifest|null, version: string|null, reason?: string}>}
  */
-export async function fetchPublishedManifest({ publicBase, fetchFn = fetch }) {
+export async function fetchPublishedManifest({ publicBase, fetchFn = fetch, cacheBust }) {
   if (!publicBase) {
     return { reachable: false, manifest: null, version: null, reason: 'OTA_PUBLIC_BASE is not set' };
   }
-  const url = `${String(publicBase).replace(/\/+$/, '')}/latest.json`;
+  const bust = cacheBust ? `?cb=${encodeURIComponent(cacheBust)}` : '';
+  const url = `${String(publicBase).replace(/\/+$/, '')}/latest.json${bust}`;
   let res;
   try {
     res = await fetchFn(url, { redirect: 'follow' });
@@ -207,6 +213,178 @@ export function planRelease({
   }
 
   return { ok: true, next, state, message: `published v${publishedVersion} -> releasing v${next}.` };
+}
+
+/**
+ * Resolve a GitHub Release tag into a CI release plan — or a refusal with the reason. Pure.
+ *
+ * This is the gate the release workflow runs before building anything: the TAG supplies the
+ * intended version, but the live manifest still vetoes a republish or a rollback, and the version
+ * baked into the tree (tauri.conf.json) must agree with the tag or the built app would report a
+ * different version than the manifest claims. Per-platform artifact guarding stays with
+ * {@link assessPublish} at publish time — this decides whether the release AS A WHOLE may proceed,
+ * and which platforms still need publishing (so a re-run of a half-published release resumes
+ * instead of failing on the platform that already shipped).
+ *
+ * @param {object} args
+ * @param {string} args.tag                     release tag, "v0.2.14" or "0.2.14"
+ * @param {string} args.confVersion             tauri.conf.json version (baked into the build)
+ * @param {Manifest|null} args.manifest         the live manifest, or null (404 = nothing published)
+ * @param {boolean} args.manifestReachable      false => could not tell (fail closed)
+ * @param {string[]} args.platforms             every platform key this release ships
+ * @param {boolean} [args.allowRepublish]       OTA_ALLOW_REPUBLISH=1
+ * @param {boolean} [args.allowRollback]        OTA_ALLOW_VERSION_ROLLBACK=1
+ * @param {boolean} [args.allowUnverified]      OTA_ALLOW_UNVERIFIED_VERSION=1
+ * @param {string} [args.unreachableReason]
+ * @returns {{ok: boolean, version: string|null, pendingPlatforms: string[],
+ *            state: 'invalid-tag'|'tag-conf-mismatch'|'unverified'|'release'|'partial'|
+ *                   'already-published'|'republish'|'rollback',
+ *            message: string}}
+ */
+export function resolveReleaseFromTag({
+  tag,
+  confVersion,
+  manifest,
+  manifestReachable,
+  platforms,
+  allowRepublish = false,
+  allowRollback = false,
+  allowUnverified = false,
+  unreachableReason,
+}) {
+  const version = String(tag ?? '').replace(/^v/, '');
+  try {
+    parseVersion(version);
+  } catch {
+    return {
+      ok: false,
+      version: null,
+      pendingPlatforms: [],
+      state: 'invalid-tag',
+      message:
+        `release tag ${JSON.stringify(String(tag ?? ''))} does not parse as a version — expected ` +
+        `v<major>.<minor>.<patch> (e.g. v0.2.14).`,
+    };
+  }
+
+  if (version !== confVersion) {
+    return {
+      ok: false,
+      version: null,
+      pendingPlatforms: [],
+      state: 'tag-conf-mismatch',
+      message:
+        `release tag v${version} disagrees with tauri.conf.json (v${confVersion}) — the built app would ` +
+        `report a different version than the manifest claims. Cut the release from a commit whose ` +
+        `version files already carry v${version}.`,
+    };
+  }
+
+  if (!manifestReachable) {
+    const detail = unreachableReason ? ` (${unreachableReason})` : '';
+    if (!allowUnverified) {
+      return {
+        ok: false,
+        version,
+        pendingPlatforms: [],
+        state: 'unverified',
+        message:
+          `cannot verify what is already published${detail}. Releasing blind risks overwriting a live ` +
+          `release. Fix connectivity/OTA_PUBLIC_BASE, or set OTA_ALLOW_UNVERIFIED_VERSION=1 to override.`,
+      };
+    }
+    return {
+      ok: true,
+      version,
+      pendingPlatforms: [...platforms],
+      state: 'unverified',
+      message:
+        `WARNING: could not verify the published version${detail}, and OTA_ALLOW_UNVERIFIED_VERSION=1 ` +
+        `is set — releasing v${version} unverified.`,
+    };
+  }
+
+  if (!manifest) {
+    return {
+      ok: true,
+      version,
+      pendingPlatforms: [...platforms],
+      state: 'release',
+      message: `nothing published yet — releasing v${version} for ${platforms.join(', ')}.`,
+    };
+  }
+
+  const cmp = compareVersions(manifest.version, version);
+
+  if (cmp > 0) {
+    if (!allowRollback) {
+      return {
+        ok: false,
+        version,
+        pendingPlatforms: [],
+        state: 'rollback',
+        message:
+          `refusing to release v${version}: the live manifest is v${manifest.version}, which is NEWER. ` +
+          `Re-running an old release would roll every client back. Cut a new version instead, or set ` +
+          `OTA_ALLOW_VERSION_ROLLBACK=1 if you really mean to roll back.`,
+      };
+    }
+    return {
+      ok: true,
+      version,
+      pendingPlatforms: [...platforms],
+      state: 'rollback',
+      message:
+        `WARNING: rolling the manifest back from v${manifest.version} to v${version} ` +
+        `(OTA_ALLOW_VERSION_ROLLBACK=1).`,
+    };
+  }
+
+  if (cmp < 0) {
+    return {
+      ok: true,
+      version,
+      pendingPlatforms: [...platforms],
+      state: 'release',
+      message: `superseding published v${manifest.version} with v${version} for ${platforms.join(', ')}.`,
+    };
+  }
+
+  // Same version as the live manifest: publish only what is missing. Everything-already-live is a
+  // re-run of a completed release, which must not overwrite artifacts clients have downloaded.
+  const live = manifest.platforms ?? {};
+  const pending = platforms.filter((p) => !live[p]);
+  if (pending.length === 0) {
+    if (!allowRepublish) {
+      return {
+        ok: false,
+        version,
+        pendingPlatforms: [],
+        state: 'already-published',
+        message:
+          `v${version} is already fully published (${platforms.join(', ')}). A re-run must not overwrite ` +
+          `artifacts clients have already downloaded. Cut a new version, or set OTA_ALLOW_REPUBLISH=1 ` +
+          `to overwrite deliberately.`,
+      };
+    }
+    return {
+      ok: true,
+      version,
+      pendingPlatforms: [...platforms],
+      state: 'republish',
+      message: `re-publishing v${version} for ${platforms.join(', ')} (OTA_ALLOW_REPUBLISH=1).`,
+    };
+  }
+  return {
+    ok: true,
+    version,
+    pendingPlatforms: pending,
+    state: 'partial',
+    message:
+      `v${version} is partially published — resuming with ${pending.join(', ')} ` +
+      `(already live: ${platforms.filter((p) => live[p]).join(', ') || 'none'}). The release ` +
+      `announcement already fired, so this will not re-ping.`,
+  };
 }
 
 /**

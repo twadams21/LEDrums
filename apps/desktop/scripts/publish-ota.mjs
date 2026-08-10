@@ -27,7 +27,10 @@
  *
  * !! SERIAL PUBLISHING ONLY !! latest.json is read-modify-write (fetch → merge one platform → upload).
  * Two `publish-ota.mjs` runs in flight at once can read the same manifest and clobber each other's
- * platform entry. Publish each platform's build ONE AT A TIME — never concurrently.
+ * platform entry. Publish each platform's build ONE AT A TIME — never concurrently. The release
+ * workflow (.github/workflows/release-ota.yml) enforces this STRUCTURALLY: its build matrix runs in
+ * parallel but every publish happens inside one single job, one platform at a time — keep it that
+ * way if you edit the workflow.
  *
  * Tauri v2 manifest shape:
  *   { version, notes, pub_date, platforms: { "<os>-<arch>": { signature, url } } }
@@ -59,10 +62,23 @@
  *                                                 (deliberately rolling clients back)
  *   OTA_ALLOW_UNVERIFIED_VERSION (default unset)  set to "1" to publish when the live manifest
  *                                                 cannot be read at all (fails closed otherwise)
+ *   OTA_DRY_RUN  (default unset)                  set to "1" to run EVERYTHING except the R2
+ *                                                 uploads and the Discord post: the manifest fetch,
+ *                                                 the publish guards, artifact lookup, and the
+ *                                                 signature-key check all still run for real. This
+ *                                                 is how the release workflow is rehearsed before
+ *                                                 it is wired to real releases
+ *   OTA_BUNDLE_DIR (default src-tauri/target/release/bundle)   where to look for the updater
+ *                                                 artifact — CI publishes from downloaded build
+ *                                                 artifacts rather than a local tauri build
+ *   OTA_WEB_DIST_DIR (default apps/web/dist)      where to collect .js.map sourcemaps from
  *
- * This is TOOLING for the release operator — it performs network side effects and is NOT run in CI
- * or by the build. `tauri build` must already have produced signed updater artifacts (i.e. it was
- * itself run under `infisical run` so TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] were set).
+ * This is release TOOLING — it performs network side effects and is never run by the build or the
+ * test suite. It has two callers: the local operator path (`pnpm ota bump` under `infisical run`)
+ * and the release workflow's publish job (.github/workflows/release-ota.yml), which runs it once
+ * per platform with OTA_TARGET/OTA_BUNDLE_DIR pointing at downloaded build artifacts. Either way,
+ * `tauri build` must already have produced signed updater artifacts (TAURI_SIGNING_PRIVATE_KEY
+ * [_PASSWORD] were set during the build).
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
@@ -75,11 +91,16 @@ import { assessPublish, fetchPublishedManifest } from './ota-version.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
 const tauriConfPath = join(desktopDir, 'src-tauri', 'tauri.conf.json');
-const bundleDir = join(desktopDir, 'src-tauri', 'target', 'release', 'bundle');
+const bundleDir = process.env.OTA_BUNDLE_DIR
+  ? resolve(process.env.OTA_BUNDLE_DIR)
+  : join(desktopDir, 'src-tauri', 'target', 'release', 'bundle');
 /** The web build output (hidden `.js.map` sourcemaps land here — see apps/web/vite.config.ts). */
-const webDistDir = resolve(desktopDir, '..', 'web', 'dist');
+const webDistDir = process.env.OTA_WEB_DIST_DIR
+  ? resolve(process.env.OTA_WEB_DIST_DIR)
+  : resolve(desktopDir, '..', 'web', 'dist');
 
 const BUCKET = process.env.OTA_BUCKET || 'ledrums-ota';
+const DRY_RUN = process.env.OTA_DRY_RUN === '1';
 const PUBLIC_BASE = process.env.OTA_PUBLIC_BASE?.replace(/\/+$/, '');
 const NOTES = process.env.OTA_NOTES || '';
 
@@ -133,6 +154,10 @@ function findArtifact(os) {
 }
 
 function r2Put(key, filePath, contentType) {
+  if (DRY_RUN) {
+    console.log(`[ota] DRY RUN — would upload r2://${BUCKET}/${key} (${contentType})`);
+    return;
+  }
   const args = [
     '--yes',
     'wrangler@4',
@@ -216,14 +241,17 @@ function uploadSourcemaps(version) {
  * The live manifest, whatever version it carries. Unlike the old same-version-only read, this
  * returns the manifest even when its version DIFFERS from ours — {@link assessPublish} needs to see
  * a manifest that is AHEAD of us to refuse the publish, which the old shape silently reported as
- * `null` (indistinguishable from a fresh release).
+ * `null` (indistinguishable from a fresh release). Cache-busted: the second platform of a serial
+ * multi-arch publish reads latest.json SECONDS after the first wrote it, and a stale CDN read
+ * would drop the first platform's entry from the merge.
  */
 async function fetchLiveManifest() {
-  return fetchPublishedManifest({ publicBase: PUBLIC_BASE });
+  return fetchPublishedManifest({ publicBase: PUBLIC_BASE, cacheBust: Date.now().toString(36) });
 }
 
 async function main() {
-  if (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID) {
+  // Dry run never reaches wrangler, so the R2 credentials are not required for it.
+  if (!DRY_RUN && (!process.env.CLOUDFLARE_API_TOKEN || !process.env.CLOUDFLARE_ACCOUNT_ID)) {
     console.error('error: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must be set (R2 read/write).');
     process.exit(1);
   }
@@ -335,7 +363,7 @@ async function main() {
   r2Put('latest.json', manifestPath, 'application/json');
 
   console.log(
-    `\n[ota] published v${version} (${target})\n` +
+    `\n[ota] ${DRY_RUN ? 'DRY RUN — would have published' : 'published'} v${version} (${target})\n` +
       `  artifact -> r2://${BUCKET}/${key}\n` +
       `  manifest -> r2://${BUCKET}/latest.json\n` +
       `  platforms now: ${Object.keys(platforms).join(', ')}`,
@@ -347,6 +375,10 @@ async function main() {
 
 /** Post the Discord release announcement. Never fails the publish — the release already landed. */
 async function announce({ version, target, platforms, publishKind }) {
+  if (DRY_RUN) {
+    console.log('[ota] DRY RUN — skipping the Discord release announcement.');
+    return;
+  }
   if (process.env.OTA_ANNOUNCE === '0') {
     console.log('[ota] OTA_ANNOUNCE=0 — skipping the Discord release announcement.');
     return;
