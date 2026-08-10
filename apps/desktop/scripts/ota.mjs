@@ -584,7 +584,9 @@ async function release(level, dryRun) {
   openVersionBumpPr({ current, next, branch, originalBranch });
 }
 
-const [, , command = 'bump', ...rest] = process.argv;
+// No default sub-command: a bare `pnpm ota` prints usage. `bump` starts a full build-and-publish
+// release pipeline, which must never be the accidental outcome of an incomplete command.
+const [, , command, ...rest] = process.argv;
 
 try {
   if (command === 'bump') await release(parseLevel(rest), hasDryRun(rest));
