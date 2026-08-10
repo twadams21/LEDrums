@@ -221,7 +221,7 @@ ship.
 The workflow can also be run by hand (Actions → Release OTA → Run workflow), with `dry_run`
 defaulting to **true**: everything except the R2 uploads and the Discord post runs for real,
 including the build, the signature-key check, and the guard decisions against the live manifest.
-The `release:` trigger is wired only after a successful dry run (see the workflow header).
+(The `release:` trigger went live after the successful dry run on 2026-08-10.)
 
 Secrets live in GitHub Actions secrets (`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`,
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OTA_PUBLIC_BASE`,

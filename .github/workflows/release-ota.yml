@@ -23,12 +23,10 @@
 #   OTA_PUBLIC_BASE                              the bucket public base URL (https://pub-….r2.dev)
 #   LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK          #ledrums-updates webhook (optional — warns if unset)
 #
-# ROLLOUT IS GATED. Ships manual-trigger-only, with dry_run defaulting to true (every step except
-# the R2 uploads and the Discord post, exercised against the real manifest). Wire the release
-# trigger only after a successful dry run, by uncommenting:
-#
-#   release:
-#     types: [published]
+# ROLLOUT: the release trigger went live after the successful dry run of 2026-08-10 (run
+# 31389485446 — both arches built and signed, guards + signature check exercised against the real
+# manifest, uploads and Discord skipped). The manual trigger remains for rehearsals: dry_run
+# defaults to true, so a careless dispatch publishes nothing.
 #
 # RELEASING (once wired): land the version bump on main first (`pnpm ota prepare --patch` on a
 # branch, then PR + merge — the tag-vs-tauri.conf.json gate refuses otherwise), then create a
@@ -56,9 +54,8 @@ on:
         description: 'Release notes (release trigger uses the GitHub Release body instead)'
         required: false
         type: string
-  # Uncomment after a successful dry run (see header):
-  # release:
-  #   types: [published]
+  release:
+    types: [published]
 
 permissions:
   contents: read
