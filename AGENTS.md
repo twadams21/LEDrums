@@ -1,7 +1,7 @@
 ---
 name: agents
 description: Always-loaded project anchor. Read this first. Contains project identity, non-negotiables, commands, and pointer to ROUTER.md for full context.
-last_updated: 2026-07-09
+last_updated: 2026-08-10
 ---
 
 # LEDrums
@@ -40,6 +40,21 @@ After meaningful work, run GROW:
 - Record: update `.mex/ROUTER.md` and relevant `.mex/context/` files
 - Orient: create or update a `.mex/patterns/` runbook if this can recur
 - Write: bump `last_updated` on changed scaffold files and run `mex log` when rationale matters
+
+### Attribution and sourcing in ROUTER entries
+`.mex/ROUTER.md` is read as ground truth by every session, and nothing in it is checkable
+against the code. Two rules keep it honest:
+
+- **Name the person, and get the name right.** Derive it from the machine, not from a guess:
+  `scutil --get ComputerName` (macOS) — "Trent's MacBook Pro" → Trent, "Tim's ..." → Tim. Never
+  write "locked with Trent" from a session running on Tim's machine. This has happened: PR #156's
+  entries credited Tim's design decisions to Trent, and the wrong name was then treated downstream
+  as settled approval.
+- **Source the requirement, or mark it as an assumption.** Write where a stated need came from —
+  a person, an issue, a doc. If it was inferred, say "assumed". Colour invented to make a feature
+  sound concrete becomes load-bearing: #156's "footswitch" appears nowhere on `main` and in no
+  product doc, yet it justified a separate-graph design that forced a cross-graph reference and a
+  silent data defect. An unsourced requirement is a hypothesis; label it as one.
 
 ## Navigation
 At the start of every session, read `.mex/ROUTER.md` before doing anything else.
