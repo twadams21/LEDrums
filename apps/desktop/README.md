@@ -68,6 +68,15 @@ builds green, launches fine on the machine that built it, and silently runs unde
 fails outright — on the other architecture. Nothing else catches that. Run it standalone against
 any `.app` with `pnpm --filter @ledrums/desktop verify:universal [path/to/App.app]`.
 
+It also fails closed on the cases that *look* like passes: zero Mach-Os found, and a file with
+Mach-O magic that `lipo` cannot read.
+
+**Presence, not just fatness.** Arch-checking is vacuous for a binary that was never bundled — drop
+the cloudflared fetch step and every *remaining* binary is still universal, so the guard would
+report success over an incomplete bundle. `--require <basenames>` closes that: it fails if a named
+binary is absent. Release CI passes `cloudflared` via `LEDRUMS_UNIVERSAL_REQUIRE`, which
+`build:universal` forwards. It is left unset locally, where cloudflared is genuinely optional.
+
 > **You can build a universal bundle on either Mac, but you can only *run* the matching slice.**
 > The sidecar's smoke test therefore exercises the host slice only; the other slice's proof is
 > structural (`lipo -archs` + the parity guard) plus CI running the build on an arm64 runner.
@@ -187,24 +196,52 @@ hdiutil create -volname LEDrums -srcfolder "$STAGE" -ov -format UDZO LEDrums.dmg
 
 ## cloudflared
 
-`fetch:cloudflared` downloads the platform binary into `src-tauri/cloudflared/`. It is
-**optional**: downloading may be network-restricted, and the app degrades gracefully without
-it (the server already logs a friendly "is cloudflared installed?" message and keeps serving
-locally/over the LAN). The `src-tauri/cloudflared/` directory is kept in git (via `.gitkeep`)
-so the Tauri `resources` path always resolves; the binary itself is gitignored.
-
-The download is **version-pinned** (`2026.6.1` by default; override with `CLOUDFLARED_VERSION`)
-and prints the asset's SHA256. Verification is **opt-in** locally — set `CLOUDFLARED_SHA256` to
-the expected hash to enforce it. **Release/packaging CI should set `CLOUDFLARED_SHA256` per
-platform** (the hash differs by OS/arch) so bundled binaries are integrity-checked, not just
-version-pinned.
+`fetch:cloudflared` downloads the platform binary into `src-tauri/cloudflared/`. **Locally it is
+optional** — downloading may be network-restricted, and the app degrades gracefully without it
+(the server logs a friendly "is cloudflared installed?" message and keeps serving locally/over the
+LAN). **In release CI it is not:** the workflow fetches it before the build and the parity guard
+asserts it is actually in the bundle (see below). The `src-tauri/cloudflared/` directory is kept in
+git (via `.gitkeep`) so the Tauri `resources` path always resolves; the binary itself is gitignored.
 
 **Universal macOS.** `node scripts/fetch-cloudflared.mjs --universal` fetches **both** darwin
 assets and `lipo -create`s them into one fat binary, so a universal `.app` bundles a cloudflared
-that runs natively on either chip. The hash pin is **per asset**, so the universal path takes two
-of them — `CLOUDFLARED_SHA256_DARWIN_AMD64` and `CLOUDFLARED_SHA256_DARWIN_ARM64`. Plain
-`CLOUDFLARED_SHA256` would be ambiguous across two assets, so it is **ignored (with a warning)**
-in universal mode rather than silently applied to one of them.
+that runs natively on either chip.
+
+### Integrity
+
+The download is **version-pinned** (`2026.6.1`; override with `CLOUDFLARED_VERSION`) **and
+hash-pinned**. cloudflared ships no checksum file with its releases (verified 2026-08-10 — the
+2026.6.1 asset list has none), so the expected SHA256s live in `PINNED_SHA256` in
+`fetch-cloudflared.mjs`. They are not bare trust-on-first-use: each was downloaded and hashed
+locally **and** corroborated against GitHub's own server-side release-asset `digest`, computed at
+upload time —
+
+```bash
+gh api repos/cloudflare/cloudflared/releases/tags/2026.6.1 --jq '.assets[] | [.name, .digest] | @tsv'
+```
+
+Two independent sources agree, so a later tampered download is caught.
+
+**Why the hashes live in the script, not in the release workflow.** The version and its hashes are
+one fact — *which cloudflared we ship*. Split across two files, bumping `PINNED_CLOUDFLARED` would
+leave stale hashes in the workflow: CI fails closed (good) but for a confusing reason, and the fix
+is in a file the bumper wasn't editing. Co-located, a version bump and its hashes are **one change
+in one review** — and the pin protects local builds too, not just CI. **To bump:** change
+`PINNED_CLOUDFLARED`, then re-read both digests with the command above.
+
+The built-in pins apply **only** at `PINNED_CLOUDFLARED`. Checking some other version's download
+against this version's hash would fail for the wrong reason and teach people to switch the check
+off, so a different `CLOUDFLARED_VERSION` falls back to the override/unknown paths.
+
+| env | effect |
+| --- | --- |
+| `CLOUDFLARED_SHA256` | override for a single-asset fetch |
+| `CLOUDFLARED_SHA256_DARWIN_AMD64` / `_ARM64` | overrides for a universal fetch — the hash is **per asset**, so one variable could not cover both. `CLOUDFLARED_SHA256` is therefore **ignored (loudly)** in universal mode rather than applied to whichever asset came first |
+| `CLOUDFLARED_REQUIRE_SHA256=1` | refuse to install any asset whose hash is unknown. **Release CI sets this** |
+
+A **mismatch always fails closed**. An *unknown* hash fails closed only under
+`CLOUDFLARED_REQUIRE_SHA256=1`; otherwise it is a loud multi-line `WARNING: UNVERIFIED DOWNLOAD`
+block quoting the actual digest — never a passing mention among the progress lines.
 
 ## OTA auto-update (whole-bundle)
 
@@ -260,10 +297,11 @@ To rotate the key or re-provision, regenerate with `tauri signer generate`, upda
 ### Release flow (normal route: a GitHub Release)
 
 **Publishing a GitHub Release publishes the OTA update.** `.github/workflows/release-ota.yml`
-builds **one universal (x86_64 + arm64) macOS artifact**, signs it with the updater key, publishes
-it to R2 under **both** platform keys (`darwin-x86_64` + `darwin-aarch64`) one at a time, merges
-them into one `latest.json`, and announces to Discord. The tag is the version; no laptop is
-involved, and anyone who can create a release can ship.
+fetches a universal hash-pinned `cloudflared`, builds **one universal (x86_64 + arm64) macOS
+artifact**, signs it with the updater key, publishes it to R2 under **both** platform keys
+(`darwin-x86_64` + `darwin-aarch64`) one at a time, merges them into one `latest.json`, and
+announces to Discord. The tag is the version; no laptop is involved, and anyone who can create a
+release can ship.
 
 > **Why one artifact under two keys.** The Tauri updater cannot cross-grade architectures: an
 > x86_64 install stays x86_64 (i.e. under Rosetta) forever, however many arm64 releases ship, because

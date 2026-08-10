@@ -31,21 +31,61 @@ if (universal && process.platform !== 'darwin') {
 }
 
 // Pin a specific release by default (reproducible bundles) — bump as needed, or set
-// CLOUDFLARED_VERSION=latest to track the newest. cloudflared does not publish per-asset checksum
-// files reliably, so verification is opt-in: set CLOUDFLARED_SHA256 to the expected lowercase-hex
-// sha256 of the downloaded asset and the script will refuse a mismatch.
+// CLOUDFLARED_VERSION=latest to track the newest.
 //
-// The hash is PER ASSET, so a universal fetch (two assets) needs two of them:
-// CLOUDFLARED_SHA256_DARWIN_AMD64 / CLOUDFLARED_SHA256_DARWIN_ARM64. `CLOUDFLARED_SHA256` still
-// covers the single-asset case; in a universal fetch it would be ambiguous, so it is ignored
-// there (with a warning) rather than silently applied to whichever asset came first.
+// INTEGRITY. cloudflared publishes no checksum file with its releases (verified 2026-08-10: the
+// 2026.6.1 asset list has none), so the hashes below are pinned here. They are NOT bare
+// trust-on-first-use: each was downloaded and hashed locally AND independently corroborated
+// against GitHub's own server-side release-asset `digest` field
+// (`gh api repos/cloudflare/cloudflared/releases/tags/<v> --jq '.assets[].digest'`), which GitHub
+// computes at upload time. Two independent sources agree, so a later tampered download is caught.
+//
+// WHY THE HASHES LIVE HERE, NOT IN THE RELEASE WORKFLOW. The version and its hashes are ONE fact —
+// "which cloudflared we ship". Split across two files, bumping PINNED_CLOUDFLARED here would leave
+// stale hashes in the workflow: CI fails closed (good) but for a confusing reason, and the fix is
+// in a file the bumper wasn't editing. Co-located, a version bump and its hashes are one change in
+// one review, and the pin protects LOCAL builds too instead of only CI.
+//
+// Bumping: change PINNED_CLOUDFLARED, then re-read the digests from the GitHub API command above.
+//
+// Overrides (env, lowercase hex) win over the pins — for an unreleased build or a bisect:
+//   CLOUDFLARED_SHA256                single-asset fetch
+//   CLOUDFLARED_SHA256_DARWIN_AMD64   } universal fetch — the hash is PER ASSET, so one variable
+//   CLOUDFLARED_SHA256_DARWIN_ARM64   } could not cover both; CLOUDFLARED_SHA256 is ignored there
+//                                       (loudly) rather than applied to whichever asset came first
+//   CLOUDFLARED_REQUIRE_SHA256=1      refuse to install ANY asset whose hash is unknown. Release CI
+//                                       sets this: an unverified binary must never reach a bundle
 const PINNED_CLOUDFLARED = '2026.6.1';
 const VERSION = process.env.CLOUDFLARED_VERSION || PINNED_CLOUDFLARED;
+/** sha256 of each PINNED_CLOUDFLARED asset — see the INTEGRITY note. Bump with the version. */
+const PINNED_SHA256 = {
+  'cloudflared-darwin-amd64.tgz': 'd7a66b525fe76820da6e5406611b61e48b40de682368ac00454d9158f085be4b',
+  'cloudflared-darwin-arm64.tgz': 'f6d4c439c6c782b83264951d327989ce5e23373acc5942b872411601fedb020d',
+};
+const REQUIRE_SHA256 = process.env.CLOUDFLARED_REQUIRE_SHA256 === '1';
 const EXPECTED_SHA256 = process.env.CLOUDFLARED_SHA256?.trim().toLowerCase() || null;
 const PER_ARCH_SHA256 = {
   amd64: process.env.CLOUDFLARED_SHA256_DARWIN_AMD64?.trim().toLowerCase() || null,
   arm64: process.env.CLOUDFLARED_SHA256_DARWIN_ARM64?.trim().toLowerCase() || null,
 };
+
+/**
+ * The sha256 to enforce for one asset: an explicit override first, then the built-in pin — but the
+ * built-in pin applies ONLY at PINNED_CLOUDFLARED. Verifying a different version's download against
+ * this version's hash would fail for the wrong reason and teach people to switch the check off.
+ *
+ * @param {string} asset release asset filename
+ * @param {string|null} override env-supplied hash for this asset, if any
+ * @returns {{sha: string|null, source: string}}
+ */
+function expectedSha(asset, override) {
+  if (override) return { sha: override, source: 'env override' };
+  if (VERSION === PINNED_CLOUDFLARED && PINNED_SHA256[asset]) {
+    return { sha: PINNED_SHA256[asset], source: `pinned for v${PINNED_CLOUDFLARED}` };
+  }
+  return { sha: null, source: 'unknown' };
+}
+
 const base =
   VERSION === 'latest'
     ? 'https://github.com/cloudflare/cloudflared/releases/latest/download'
@@ -69,27 +109,47 @@ const exeName = process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared'
 const outFile = join(outDir, exeName);
 
 /**
- * Download one release asset, optionally enforce its sha256, and place the executable at `dest`.
- * @param {string} asset      release asset filename
- * @param {boolean} tgz       the asset is a gzipped tar wrapping the binary (the macOS assets are)
- * @param {string|null} sha   expected lowercase-hex sha256, or null to only report the digest
- * @param {string} dest       where the extracted executable should end up
- * @param {string} label      what to name in log lines / the "set X to enforce" hint
+ * Download one release asset, enforce its sha256 when one is known, and place the executable at
+ * `dest`. Fails closed on a mismatch always, and on an UNKNOWN hash when CLOUDFLARED_REQUIRE_SHA256=1.
+ *
+ * @param {string} asset          release asset filename
+ * @param {boolean} tgz           the asset is a gzipped tar wrapping the binary (the macOS ones are)
+ * @param {string|null} override  env-supplied hash for this asset, if any
+ * @param {string} dest           where the extracted executable should end up
+ * @param {string} label          the env var to name in the "how to pin this" hint
  */
-async function installAsset(asset, tgz, sha, dest, label) {
+async function installAsset(asset, tgz, override, dest, label) {
   const url = `${base}/${asset}`;
   console.log(`[cloudflared] fetching ${url}`);
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
   const buf = Buffer.from(await res.arrayBuffer());
 
-  // Optional integrity check (opt-in per asset — see the env note above).
   const digest = createHash('sha256').update(buf).digest('hex');
+  const { sha, source } = expectedSha(asset, override);
   if (sha) {
-    if (digest !== sha) throw new Error(`sha256 mismatch for ${asset}: got ${digest}, expected ${sha}`);
-    console.log(`[cloudflared] sha256 verified (${asset})`);
+    if (digest !== sha) {
+      throw new Error(`sha256 MISMATCH for ${asset}: got ${digest}, expected ${sha} (${source})`);
+    }
+    console.log(`[cloudflared] sha256 verified for ${asset} (${source})`);
+  } else if (REQUIRE_SHA256) {
+    // Fail closed: the caller declared that an unverified binary must not be installed.
+    throw new Error(
+      `no known sha256 for ${asset} (version ${VERSION}) and CLOUDFLARED_REQUIRE_SHA256=1. ` +
+        `Its actual digest is ${digest} — pin it in PINNED_SHA256 (with the version) or pass ${label}.`,
+    );
   } else {
-    console.log(`[cloudflared] sha256 ${digest} for ${asset} (set ${label} to enforce)`);
+    // NEVER silent: an unverified download is a real weakening of the bundle's integrity story, so
+    // it says so in as many words rather than as a passing mention among the progress lines.
+    console.warn(
+      `\n[cloudflared] ================ WARNING: UNVERIFIED DOWNLOAD ================\n` +
+        `[cloudflared] ${asset} (version ${VERSION}) has NO known sha256, so nothing checked what\n` +
+        `[cloudflared] was actually downloaded. Its digest is:\n` +
+        `[cloudflared]   ${digest}\n` +
+        `[cloudflared] Pin it in PINNED_SHA256 alongside the version, or pass ${label}.\n` +
+        `[cloudflared] Set CLOUDFLARED_REQUIRE_SHA256=1 to make this a hard failure (release CI does).\n` +
+        `[cloudflared] ==============================================================\n`,
+    );
   }
 
   if (tgz) {

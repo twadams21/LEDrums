@@ -11,7 +11,12 @@
 // fatness of the bundle is asserted explicitly, on every build.
 //
 // Usage:
-//   node scripts/verify-universal.mjs [path/to/App.app] [--archs x86_64,arm64]
+//   node scripts/verify-universal.mjs [path/to/App.app] [--archs x86_64,arm64] [--require a,b]
+//
+//   --require   basenames that MUST be present, e.g. `--require cloudflared`. Fatness alone is a
+//               vacuous pass for a binary that never made it into the bundle: drop the cloudflared
+//               fetch step and this guard would still report "all Mach-Os universal". Release CI
+//               therefore names what the bundle is supposed to contain.
 //
 // Default target: src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
 
@@ -19,19 +24,25 @@ import { execFileSync } from 'node:child_process';
 import { openSync, readSync, closeSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assessArchCoverage, isMachO, parseLipoArchs } from './mach-o.mjs';
+import { assessArchCoverage, assessRequiredBinaries, isMachO, parseLipoArchs } from './mach-o.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
 const DEFAULT_BUNDLE_DIR = join(desktopDir, 'src-tauri', 'target', 'universal-apple-darwin', 'release', 'bundle', 'macos');
 
 const args = process.argv.slice(2);
-const archsArg = args.includes('--archs') ? args[args.indexOf('--archs') + 1] : undefined;
-const REQUIRED = (archsArg ?? 'x86_64,arm64')
-  .split(',')
-  .map((a) => a.trim())
-  .filter(Boolean);
-const pathArg = args.find((a) => !a.startsWith('--') && a !== archsArg);
+const flagValue = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const list = (v, fallback = '') =>
+  (v ?? fallback)
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean);
+
+const archsArg = flagValue('--archs');
+const requireArg = flagValue('--require');
+const REQUIRED = list(archsArg, 'x86_64,arm64');
+const REQUIRED_BINARIES = list(requireArg);
+const pathArg = args.find((a) => !a.startsWith('--') && a !== archsArg && a !== requireArg);
 
 /** Resolve the `.app` to inspect: an explicit path, else the sole .app in the universal bundle dir. */
 function resolveApp() {
@@ -77,7 +88,10 @@ function walkFiles(dir, out = []) {
 }
 
 const app = resolveApp();
-console.log(`[universal] checking ${app} for ${REQUIRED.join(' + ')}`);
+console.log(
+  `[universal] checking ${app} for ${REQUIRED.join(' + ')}` +
+    (REQUIRED_BINARIES.length ? `; requiring ${REQUIRED_BINARIES.join(', ')} to be present` : ''),
+);
 
 const entries = [];
 const unreadable = [];
@@ -102,6 +116,16 @@ if (entries.length === 0) {
   console.error('[universal] FAILED: no Mach-O binaries found — is this really a .app bundle?');
   process.exit(1);
 }
+const presence = assessRequiredBinaries(entries, REQUIRED_BINARIES);
+if (!presence.ok) {
+  console.error(
+    `\n[universal] FAILED: ${presence.missing.join(', ')} not found in the bundle.\n` +
+      'Fatness alone cannot catch this — a binary that was never bundled passes every arch check\n' +
+      'vacuously. Something that was supposed to produce it did not run (e.g. the cloudflared\n' +
+      'fetch step) or wrote it somewhere the bundler does not pick up.\n',
+  );
+  process.exit(1);
+}
 if (unreadable.length > 0) {
   console.error(`[universal] FAILED: ${unreadable.length} file(s) look like Mach-O but lipo could not read them:`);
   for (const u of unreadable) console.error(`  - ${u.path}: ${u.reason}`);
@@ -122,4 +146,7 @@ if (!verdict.ok) {
   process.exit(1);
 }
 
-console.log(`\n[universal] OK — all ${verdict.checked} Mach-O binaries are universal (${REQUIRED.join(' + ')}).`);
+console.log(
+  `\n[universal] OK — all ${verdict.checked} Mach-O binaries are universal (${REQUIRED.join(' + ')})` +
+    (REQUIRED_BINARIES.length ? `, and ${REQUIRED_BINARIES.join(', ')} present.` : '.'),
+);

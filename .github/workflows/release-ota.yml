@@ -127,13 +127,26 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
+      # Must run BEFORE the build: the bundler only picks up what is already in src-tauri/cloudflared.
+      # Releases ship the tunnel, so unlike a dev build this is NOT optional — the script exits
+      # non-zero on a failed download and CLOUDFLARED_REQUIRE_SHA256 makes an unknown hash a hard
+      # failure too, so a release can never bundle an unverified binary. The hashes themselves are
+      # pinned next to the version in fetch-cloudflared.mjs (bump them together, in one review).
+      - name: Fetch universal cloudflared
+        run: node apps/desktop/scripts/fetch-cloudflared.mjs --universal
+        env:
+          CLOUDFLARED_REQUIRE_SHA256: '1'
       # The signing wrapper strips whitespace the secret store may introduce into the base64 key.
       # tauri build's beforeBuildCommand (prepare-bundle.mjs) builds the web app + server sidecar.
+      # LEDRUMS_UNIVERSAL_REQUIRE makes the parity guard assert cloudflared is actually IN the
+      # bundle: fatness alone passes vacuously for a binary that was never bundled at all, so
+      # deleting the step above would otherwise leave the guard reporting success.
       - name: Build signed universal desktop bundle
         run: node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build:universal
         env:
           LEDRUMS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY }}
           LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LEDRUMS_UNIVERSAL_REQUIRE: cloudflared
       - name: Upload updater artifact + signature
         uses: actions/upload-artifact@v4
         with:

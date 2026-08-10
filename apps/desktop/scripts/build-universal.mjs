@@ -12,6 +12,11 @@
 //
 // Usage: pnpm --filter @ledrums/desktop build:universal [-- extra tauri args]
 //
+// LEDRUMS_UNIVERSAL_REQUIRE=<comma-separated basenames> makes the guard also assert those binaries
+// are PRESENT in the bundle, not merely fat if present. Release CI sets `cloudflared`, because a
+// bundle missing it passes every arch check vacuously. Left unset locally, where cloudflared is
+// genuinely optional (the app degrades to local/LAN with no tunnel).
+//
 // Requires both Rust darwin targets:
 //   rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
@@ -41,4 +46,8 @@ run('pnpm', ['exec', 'tauri', 'build', '--target', 'universal-apple-darwin', ...
   LEDRUMS_SIDECAR_UNIVERSAL: '1',
 });
 
-run(process.execPath, [join(desktopDir, 'scripts', 'verify-universal.mjs')]);
+const requireBinaries = process.env.LEDRUMS_UNIVERSAL_REQUIRE?.trim();
+run(process.execPath, [
+  join(desktopDir, 'scripts', 'verify-universal.mjs'),
+  ...(requireBinaries ? ['--require', requireBinaries] : []),
+]);

@@ -68,3 +68,22 @@ export function assessArchCoverage(entries, required) {
   }
   return { ok: thin.length === 0, thin, checked: entries.length };
 }
+
+/**
+ * Which of the binaries the caller EXPECTED to find are actually in the bundle, by basename.
+ *
+ * `assessArchCoverage` can only judge what is there — a binary that never made it into the bundle
+ * passes it vacuously. That is a real hole in a release: if the cloudflared fetch step were removed
+ * or silently skipped, the guard would happily report "all Mach-Os universal" over a bundle that
+ * simply has no cloudflared in it. So a caller that knows what the bundle must contain says so, and
+ * absence becomes a failure rather than a smaller checklist.
+ *
+ * @param {{path: string}[]} entries every Mach-O found (paths relative to the bundle)
+ * @param {string[]} required basenames that must appear, e.g. ['cloudflared']
+ * @returns {{ok: boolean, missing: string[]}}
+ */
+export function assessRequiredBinaries(entries, required) {
+  const names = new Set(entries.map((e) => e.path.split('/').pop()));
+  const missing = required.filter((name) => !names.has(name));
+  return { ok: missing.length === 0, missing };
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { assessArchCoverage, isMachO, parseLipoArchs } from './mach-o.mjs';
+import { assessArchCoverage, assessRequiredBinaries, isMachO, parseLipoArchs } from './mach-o.mjs';
 
 const bytes = (...b) => Buffer.from(b);
 
@@ -74,4 +74,41 @@ test('assessArchCoverage on an empty bundle is not a pass by default', () => {
   // failure separately — this pins that the pure layer does NOT smuggle in that judgement.
   const verdict = assessArchCoverage([], ['x86_64', 'arm64']);
   assert.equal(verdict.checked, 0);
+});
+
+const BUNDLE = [
+  { path: 'Contents/MacOS/LEDrums', archs: ['x86_64', 'arm64'] },
+  { path: 'Contents/MacOS/ledrums-server', archs: ['x86_64', 'arm64'] },
+  { path: 'Contents/Resources/cloudflared/cloudflared', archs: ['x86_64', 'arm64'] },
+];
+
+test('assessRequiredBinaries finds a required binary by basename, wherever it sits', () => {
+  const verdict = assessRequiredBinaries(BUNDLE, ['cloudflared', 'ledrums-server']);
+  assert.equal(verdict.ok, true);
+  assert.deepEqual(verdict.missing, []);
+});
+
+test('assessRequiredBinaries catches the vacuous pass: an all-fat bundle with cloudflared MISSING', () => {
+  // The exact hole arch-checking cannot see — drop the fetch step and every remaining binary is
+  // still universal, so assessArchCoverage alone reports success over an incomplete bundle.
+  const withoutTunnel = BUNDLE.filter((e) => !e.path.endsWith('cloudflared'));
+  assert.equal(assessArchCoverage(withoutTunnel, ['x86_64', 'arm64']).ok, true);
+
+  const verdict = assessRequiredBinaries(withoutTunnel, ['cloudflared']);
+  assert.equal(verdict.ok, false);
+  assert.deepEqual(verdict.missing, ['cloudflared']);
+});
+
+test('assessRequiredBinaries reports every absentee, and requiring nothing passes', () => {
+  assert.deepEqual(assessRequiredBinaries([], ['cloudflared', 'ledrums-server']).missing, [
+    'cloudflared',
+    'ledrums-server',
+  ]);
+  assert.equal(assessRequiredBinaries(BUNDLE, []).ok, true);
+});
+
+test('assessRequiredBinaries matches the basename exactly, not a suffix', () => {
+  // `ledrums-server` must not be satisfied by `ledrums-server-x86_64-apple-darwin` sitting nearby.
+  const verdict = assessRequiredBinaries([{ path: 'Contents/MacOS/xx-cloudflared' }], ['cloudflared']);
+  assert.equal(verdict.ok, false);
 });
