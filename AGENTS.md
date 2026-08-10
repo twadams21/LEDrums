@@ -54,8 +54,6 @@ When a merged fix should reach the drum kits, offer to ship it, then follow this
 5. `gh run watch` until the Release OTA run is green. A failed run leaves the previous version
    installable; re-running is safe (it resumes with only the unpublished platforms, no re-ping).
 
-Until the `release:` trigger is wired (pending the first dry run — see the workflow header), step
-4 is instead: Actions → "Release OTA" → Run workflow with the tag.
 Local fallback for a CI outage only: `pnpm ota bump`. Full detail: `apps/desktop/README.md` →
 "Release flow".
 
