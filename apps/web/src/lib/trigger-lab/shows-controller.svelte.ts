@@ -51,6 +51,7 @@ import { seedSongs } from './store/seed';
 import { authoredIdsFromLibrary, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as showsLib from './store/shows';
 import * as songRefsLib from './store/song-library-refs';
+import { cloneSongGraphs } from './store/graphs';
 import { extractSongClosure, type ClosureSources } from './store/song-library';
 
 // --- persistence (show library + song pool ⇄ localStorage) --------------------------------------
@@ -531,16 +532,29 @@ export class ShowsController {
     this.songs = this.songs.map((s) => (s.id === id ? { ...s, name: trimmed } : s));
   }
 
-  /** Duplicate a song: append an independent "<name> copy" (every section deep-copied under a fresh
-      id, so the clone's arrangement edits without touching the source — graph KEYS stay shared, i.e.
-      reuse) and make it active. Returns the new id, or null if `id` is unknown. */
+  /** Duplicate a song: append a fully INDEPENDENT "<name> copy" and make it active. Every section is
+      deep-copied under a fresh id AND every graph the song references is deep-copied under a fresh
+      key ({@link cloneSongGraphs}), so authoring inside the copy never writes through into the source
+      song. Graph keys used to stay shared here — which made "duplicate the template, then edit"
+      silently edit the template instead. Matches what a clipboard Copy → Paste of the same song
+      already produced (clipdoc mints fresh graph keys), so the two paths no longer disagree.
+      Effects/presets stay show-level shared. Returns the new id, or null if `id` is unknown. */
   duplicateSong(id: string): string | null {
     if (this.host.isViewer()) return null; // read-only viewer (S2): authoring no-op
     const src = this.songs.find((s) => s.id === id);
     if (!src) return null;
     const newId = freshId('song', (k) => this.songs.some((s) => s.id === k));
     const sections = src.sections.map((sec) => setlist.cloneSection(sec, nid('section'), sec.name));
-    this.songs = [...this.songs, setlist.makeSong(newId, `${src.name} copy`, sections)];
+    const copy = cloneSongGraphs(
+      setlist.makeSong(newId, `${src.name} copy`, sections),
+      $state.snapshot(this.host.graphs()) as Record<string, TriggerGraph>,
+      $state.snapshot(this.host.graphNames()) as Record<string, string>,
+      // `nid` bumps one module-global counter, so successive mints are distinct without tracking
+      // the batch; `exists` only has to fence off keys the show already holds.
+      () => freshId('graph', (k) => k in this.host.graphs()),
+    );
+    this.host.mergeGraphModel({ graphs: copy.graphs, graphNames: copy.graphNames });
+    this.songs = [...this.songs, copy.song];
     this.setActiveSong(newId);
     return newId;
   }

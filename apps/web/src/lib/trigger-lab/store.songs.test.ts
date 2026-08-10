@@ -104,7 +104,7 @@ describe('renameSong', () => {
 });
 
 describe('duplicateSong', () => {
-  it('appends an independent "<name> copy", activates it, and reuses graph references', () => {
+  it('appends an independent "<name> copy", activates it, and gives it its OWN graphs', () => {
     const store = new TriggerLab(fakeClient);
     const newId = store.duplicateSong('set-1')!;
     const dup = store.songs.find((s) => s.id === newId)!;
@@ -115,18 +115,57 @@ describe('duplicateSong', () => {
     expect(store.activeSongId).toBe(newId); // activated
     expect(dup.sections).toHaveLength(src.sections.length);
     expect(dup.sections[0]!.id).not.toBe(src.sections[0]!.id); // fresh section id
-    expect(dup.sections[0]!.graphs).toEqual(src.sections[0]!.graphs); // same graph keys (reuse)
+    expect(dup.sections[0]!.graphs).toHaveLength(src.sections[0]!.graphs.length);
+    // Fresh graph KEYS, each registered in `graphs` and carrying the source's label — the copy
+    // is a variant you can author without editing the song you copied.
+    for (const key of dup.sections[0]!.graphs) {
+      expect(src.sections[0]!.graphs).not.toContain(key);
+      expect(store.graphs[key]).toBeDefined();
+    }
+    expect(dup.sections[0]!.graphs.map((k) => store.graphLabel(k))).toEqual(
+      src.sections[0]!.graphs.map((k) => store.graphLabel(k)),
+    );
+  });
+
+  it('preserves cross-section graph reuse inside the copy', () => {
+    const store = new TriggerLab(fakeClient);
+    // the seed song references the same pad graphs from every section — the copy must reuse its
+    // own graph in exactly the same places, not mint one clone per section.
+    const src = store.songs.find((s) => s.id === 'set-1')!;
+    const sharedKey = src.sections[0]!.graphs[0]!;
+    expect(src.sections[1]!.graphs).toContain(sharedKey); // precondition: shared in the source
+
+    const newId = store.duplicateSong('set-1')!;
+    const dup = store.songs.find((s) => s.id === newId)!;
+    expect(dup.sections[1]!.graphs).toContain(dup.sections[0]!.graphs[0]!);
+  });
+
+  it('editing a graph in the copy does not touch the source song', () => {
+    const store = new TriggerLab(fakeClient);
+    const srcKey = store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs[0]!;
+    const srcLabel = store.graphLabel(srcKey);
+    const srcNodeCount = store.graphs[srcKey]!.nodes.length;
+
+    const newId = store.duplicateSong('set-1')!;
+    const dupKey = store.songs.find((s) => s.id === newId)!.sections[0]!.graphs[0]!;
+
+    store.renameGraph(dupKey, 'EDITED IN THE COPY');
+    store.graphs[dupKey]!.nodes.pop();
+
+    expect(store.graphLabel(srcKey)).toBe(srcLabel); // source label untouched
+    expect(store.graphs[srcKey]!.nodes).toHaveLength(srcNodeCount); // source structure untouched
   });
 
   it('clones sections independently — editing the copy does not touch the source', () => {
     const store = new TriggerLab(fakeClient);
     const newId = store.duplicateSong('set-1')!;
+    const srcBefore = [...store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs];
     const dupSecId = store.songs.find((s) => s.id === newId)!.sections[0]!.id;
     const key = store.songs.find((s) => s.id === newId)!.sections[0]!.graphs[0]!;
 
     store.removeGraphFromSection(dupSecId, key); // active song is the dup → edits the copy
     expect(store.songs.find((s) => s.id === newId)!.sections[0]!.graphs).not.toContain(key);
-    expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs).toContain(key);
+    expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs).toEqual(srcBefore);
   });
 
   it('returns null for an unknown id', () => {
