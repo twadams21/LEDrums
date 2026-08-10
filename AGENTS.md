@@ -28,6 +28,15 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 - Design system (regenerate `docs/design-system.html`): `pnpm design-system`
 - Start (prod, serves built web): `pnpm start`
 
+## Desktop Releases (OTA)
+The normal release route is a **GitHub Release**: land the version bump on `main`, then create a
+release tagged `v<version>` — `.github/workflows/release-ota.yml` builds both macOS architectures,
+signs, publishes to R2, and announces to Discord. The tag is the version; the live `latest.json`
+(not git) remains the authority on what has shipped, and the workflow's gate refuses republish /
+rollback / tag-vs-`tauri.conf.json` mismatch. `pnpm ota bump` is the local fallback for a CI
+outage; `pnpm ota doctor` (read-only) reports what is live. Details:
+`apps/desktop/README.md` → "Release flow".
+
 ## Ticket Tracking (Notion + GitHub)
 Remediation/initiative tickets are tracked in two places with distinct roles:
 - **GitHub issues** (`twadams21/LEDrums`) reflect **merge status only** — close an issue when its change is merged. Blocking edges live in the issue bodies.
