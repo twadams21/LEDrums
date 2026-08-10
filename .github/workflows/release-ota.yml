@@ -1,8 +1,16 @@
 # Publish desktop OTA updates from GitHub Actions (issue #160).
 #
-# Publishing a GitHub Release publishes the OTA update: build both macOS architectures, sign each
-# with the updater key, publish both to R2 one at a time, merge them into one latest.json, and
-# announce to Discord. No laptop involved; the tag is the version.
+# Publishing a GitHub Release publishes the OTA update: build ONE universal (x86_64 + arm64) macOS
+# artifact, sign it with the updater key, publish it to R2 under both platform keys one at a time,
+# merge them into one latest.json, and announce to Discord. No laptop involved; the tag is the
+# version.
+#
+# WHY UNIVERSAL. The Tauri updater cannot cross-grade architectures — an x86_64 install would stay
+# x86_64 (under Rosetta) forever, no matter how many arm64 releases shipped. Serving ONE universal
+# artifact under BOTH platform keys sidesteps that: every existing install takes its next ordinary
+# update and lands on a bundle that runs natively on either chip. latest.json's schema is unchanged
+# and the signature is identical under both keys (it is the same file), so no updater-client change
+# is involved.
 #
 # DECISIONS LIVE IN THE PURE MODULE, NOT HERE. Every go/no-go branch (tag parses? tag matches
 # tauri.conf.json? already published? rollback? unreadable manifest?) is `ota.mjs ci-plan` →
@@ -12,8 +20,9 @@
 #
 # SERIAL PUBLISHING IS STRUCTURAL. latest.json is read-modify-write, so two concurrent publishes
 # can silently drop each other's platform entry (see the !! SERIAL PUBLISHING ONLY !! warning in
-# publish-ota.mjs). The build matrix runs in parallel, but every publish happens inside the single
-# `publish` job, one platform at a time. Do not move publishing into the matrix.
+# publish-ota.mjs). One artifact does not change that — it is still one manifest entry per platform
+# key, so still two read-modify-writes. Every publish happens inside the single `publish` job, one
+# platform at a time. Do not parallelise it.
 #
 # SECRETS. This workflow is reachable only via workflow_dispatch and the release trigger — never
 # from pull requests, so a fork PR cannot reach the signing key. Required Actions secrets:
@@ -24,9 +33,9 @@
 #   LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK          #ledrums-updates webhook (optional — warns if unset)
 #
 # ROLLOUT: the release trigger went live after the successful dry run of 2026-08-10 (run
-# 31389485446 — both arches built and signed, guards + signature check exercised against the real
-# manifest, uploads and Discord skipped). The manual trigger remains for rehearsals: dry_run
-# defaults to true, so a careless dispatch publishes nothing.
+# 31389485446 — at that point a two-arch matrix; both legs built and signed, guards + signature
+# check exercised against the real manifest, uploads and Discord skipped). The manual trigger
+# remains for rehearsals: dry_run defaults to true, so a careless dispatch publishes nothing.
 #
 # RELEASING (once wired): land the version bump on main first (`pnpm ota prepare --patch` on a
 # branch, then PR + merge — the tag-vs-tauri.conf.json gate refuses otherwise), then create a
@@ -89,22 +98,20 @@ jobs:
         env:
           OTA_PUBLIC_BASE: ${{ secrets.OTA_PUBLIC_BASE }}
 
-  # Phase 1: build + sign each architecture in parallel and stash the artifacts. Runner labels are
-  # pinned to an explicit architecture (verified 2026-08: macos-26 is arm64, macos-26-intel is
-  # x86_64; macos-latest is migrating to macOS 26/arm64 and macos-13 is retired). If GitHub migrates
-  # images again, re-verify the label→architecture mapping before editing.
+  # Phase 1: build + sign ONE universal artifact. `--target universal-apple-darwin` lipos the Rust
+  # shell, build-sidecar.mjs lipos the Node SEA sidecar, and verify-universal.mjs then REFUSES to
+  # pass a bundle containing any thin Mach-O — the guard against a "universal" app that silently
+  # runs single-architecture. That one artifact is published under BOTH platform keys below, which
+  # is what makes an existing x86_64 install update into a native arm64 app (the updater cannot
+  # cross-grade architectures on its own).
+  #
+  # The runner is macos-26 (arm64, verified 2026-08; macos-latest is migrating to macOS 26/arm64
+  # and macos-13 is retired). Architecture no longer has to match the artifact, but the label must
+  # still be a macOS runner for lipo/codesign — re-verify if GitHub migrates images again.
   build:
     needs: plan
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - target: darwin-x86_64
-            runner: macos-26-intel
-          - target: darwin-aarch64
-            runner: macos-26
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    runs-on: macos-26
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -112,32 +119,46 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Both darwin targets: cargo compiles the shell twice, then tauri lipos the pair.
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
+      # Must run BEFORE the build: the bundler only picks up what is already in src-tauri/cloudflared.
+      # Releases ship the tunnel, so unlike a dev build this is NOT optional — the script exits
+      # non-zero on a failed download and CLOUDFLARED_REQUIRE_SHA256 makes an unknown hash a hard
+      # failure too, so a release can never bundle an unverified binary. The hashes themselves are
+      # pinned next to the version in fetch-cloudflared.mjs (bump them together, in one review).
+      - name: Fetch universal cloudflared
+        run: node apps/desktop/scripts/fetch-cloudflared.mjs --universal
+        env:
+          CLOUDFLARED_REQUIRE_SHA256: '1'
       # The signing wrapper strips whitespace the secret store may introduce into the base64 key.
       # tauri build's beforeBuildCommand (prepare-bundle.mjs) builds the web app + server sidecar.
-      - name: Build signed desktop bundle
-        run: node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build
+      # LEDRUMS_UNIVERSAL_REQUIRE makes the parity guard assert cloudflared is actually IN the
+      # bundle: fatness alone passes vacuously for a binary that was never bundled at all, so
+      # deleting the step above would otherwise leave the guard reporting success.
+      - name: Build signed universal desktop bundle
+        run: node apps/desktop/scripts/with-tauri-signing-env.mjs pnpm --filter @ledrums/desktop build:universal
         env:
           LEDRUMS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY }}
           LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.LEDRUMS_TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          LEDRUMS_UNIVERSAL_REQUIRE: cloudflared
       - name: Upload updater artifact + signature
         uses: actions/upload-artifact@v4
         with:
-          name: bundle-${{ matrix.target }}
-          path: apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz*
+          name: bundle-universal
+          path: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz*
           if-no-files-found: error
           retention-days: 7
-      # The JS bundle is identical across architectures — archive the sourcemaps from one leg only.
       # index.html is included ONLY to pin the artifact root at dist/: upload-artifact roots the
       # archive at the least common ancestor of its matches, and with maps living under
       # dist/assets/ alone the assets/ prefix would be stripped — publishing sourcemap R2 keys that
       # differ from the local flow's dist-relative layout and breaking #122 symbolication.
       - name: Upload web sourcemaps
-        if: matrix.target == 'darwin-aarch64'
         uses: actions/upload-artifact@v4
         with:
           name: sourcemaps
@@ -148,10 +169,17 @@ jobs:
           retention-days: 7
 
   # Phase 2: publish. ONE job, platforms one at a time — the serial constraint is the job graph,
-  # not a max-parallel setting a later edit can remove. publish-ota.mjs re-guards each platform
-  # against the live manifest before uploading, verifies the signature key against the app's
-  # baked-in updater pubkey, uploads artifact + sourcemaps + merged manifest, and announces (the
-  # first platform of a version owns the @everyone ping; the second posts a quiet follow-up).
+  # not a max-parallel setting a later edit can remove. Publishing is still per-platform even though
+  # there is now one artifact: `latest.json` keys by platform, so darwin-x86_64 and darwin-aarch64
+  # are still two read-modify-writes of the same manifest, and the !! SERIAL PUBLISHING ONLY !!
+  # warning in publish-ota.mjs still applies verbatim. Every iteration points OTA_BUNDLE_DIR at the
+  # SAME downloaded universal bundle, so both keys carry the same url + signature — which is exactly
+  # what lets an x86_64 install pick this up and land on a native arm64 app.
+  #
+  # publish-ota.mjs re-guards each platform against the live manifest before uploading, verifies the
+  # signature key against the app's baked-in updater pubkey, uploads artifact + sourcemaps + merged
+  # manifest, and announces (the first platform of a version owns the @everyone ping; the second
+  # posts a quiet follow-up).
   publish:
     needs: [plan, build]
     runs-on: ubuntu-latest
@@ -163,12 +191,8 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@v4
         with:
-          name: bundle-darwin-x86_64
-          path: ota-artifacts/darwin-x86_64/macos
-      - uses: actions/download-artifact@v4
-        with:
-          name: bundle-darwin-aarch64
-          path: ota-artifacts/darwin-aarch64/macos
+          name: bundle-universal
+          path: ota-artifacts/universal/macos
       - uses: actions/download-artifact@v4
         with:
           name: sourcemaps
@@ -179,7 +203,7 @@ jobs:
           for target in $PLATFORMS; do
             echo "::group::publish $target"
             OTA_TARGET="$target" \
-            OTA_BUNDLE_DIR="ota-artifacts/$target" \
+            OTA_BUNDLE_DIR="ota-artifacts/universal" \
             OTA_WEB_DIST_DIR="ota-artifacts/web-dist" \
               node apps/desktop/scripts/publish-ota.mjs
             echo "::endgroup::"

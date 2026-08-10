@@ -37,8 +37,9 @@ Every feature or fix lands through a PR into `main`: branch → push → PR → 
 direct pushes). Done = PR merged, sweep green.
 
 Merging does not update anyone's app. **The desktop app updates only when a GitHub Release is
-published** — the tag triggers `.github/workflows/release-ota.yml`, which builds both macOS
-architectures, signs, publishes to R2, and announces to Discord. The live `latest.json` (not git)
+published** — the tag triggers `.github/workflows/release-ota.yml`, which builds one universal
+(x86_64 + arm64) macOS bundle, signs it, publishes it to R2 under both platform keys, and
+announces to Discord. The live `latest.json` (not git)
 is the authority on what has shipped; the workflow's gate refuses a republish, a rollback, and a
 tag that disagrees with `tauri.conf.json`.
 
