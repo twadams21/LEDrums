@@ -615,7 +615,7 @@
   }
   .action.discover {
     color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+    border-color: var(--border-accent);
   }
   .action.discover:hover:not(:disabled) {
     border-color: color-mix(in oklch, var(--accent) 60%, transparent);

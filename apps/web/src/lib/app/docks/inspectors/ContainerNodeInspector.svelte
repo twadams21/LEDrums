@@ -244,7 +244,7 @@
   }
   .addband:hover {
     color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    border-color: var(--border-accent);
   }
   .addband:active {
     scale: 0.98;

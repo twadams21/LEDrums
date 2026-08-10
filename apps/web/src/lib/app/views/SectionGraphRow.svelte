@@ -153,7 +153,7 @@
     max-width: 200px;
     padding: var(--space-1_5) var(--space-2);
     background: var(--surface-3);
-    border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
+    border: 1px solid var(--border-accent);
     border-radius: var(--radius-card);
     box-shadow: var(--shadow-2);
     color: var(--ink);

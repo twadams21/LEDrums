@@ -57,7 +57,7 @@
   .tgl :global(.tgl-btn[data-state='on']) {
     background: var(--accent-soft);
     color: var(--ink);
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    border-color: var(--border-accent);
   }
   .tgl :global(.tgl-btn:focus-visible) {
     outline: none;

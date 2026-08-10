@@ -22,6 +22,14 @@
   --border-faint: oklch(0.240 0.012 256);
   --border: oklch(0.300 0.015 256);
   --border-strong: oklch(0.430 0.022 256);
+  /* Accent-tinted border — hover/selected outline on a control. Was written inline
+     as `color-mix(in oklch, var(--accent) 50%, var(--border))` at eight call sites
+     (which had drifted to 40/45/50/55%); it is the resolved 50% blend, stated as a
+     literal so it can carry an explicit sRGB rendition. A live color-mix() cannot:
+     the engine resolves it after our media queries, so its out-of-gamut result was
+     gamut-mapped by each engine differently — the exact defect this file guards
+     against. Each [data-accent] family below restates its own blend. */
+  --border-accent: oklch(0.5725 0.1025 192);
 
   /* ---- Ink ramp (cool neutral, AA-verified against --surface) ------------- */
   --ink: oklch(0.967 0.004 256); /* headings / high emphasis                   */
@@ -165,6 +173,7 @@
   --accent-ring: oklch(0.715 0.196 300 / 0.55);
   --accent-glow: 0 0 0 1px oklch(0.715 0.196 300 / 0.4), 0 0 18px oklch(0.625 0.196 300 / 0.45);
   --on-accent: oklch(0.99 0.004 300);
+  --border-accent: oklch(0.4625 0.1055 278);
 }
 [data-accent='amber'] {
   --accent: oklch(0.800 0.150 78);
@@ -174,6 +183,7 @@
   --accent-ring: oklch(0.865 0.155 82 / 0.55);
   --accent-glow: 0 0 0 1px oklch(0.865 0.155 82 / 0.4), 0 0 18px oklch(0.800 0.150 78 / 0.45);
   --on-accent: oklch(0.205 0.03 80);
+  --border-accent: oklch(0.55 0.0825 167);
 }
 [data-accent='lime'] {
   --accent: oklch(0.845 0.190 128);
@@ -183,6 +193,7 @@
   --accent-ring: oklch(0.900 0.195 128 / 0.55);
   --accent-glow: 0 0 0 1px oklch(0.900 0.195 128 / 0.4), 0 0 18px oklch(0.845 0.190 128 / 0.45);
   --on-accent: oklch(0.210 0.05 130);
+  --border-accent: oklch(0.5725 0.1025 192);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -194,3 +205,50 @@
     --dur-320: 0ms;
   }
 }
+
+/* === BEGIN generated gamut renditions — do not edit by hand ============== */
+/* Written by `pnpm --filter @ledrums/web gamut-tokens`; checked by tokens-gamut.test.ts.
+   The authored values above are the reference (P3) rendition. Only tokens whose
+   authored value falls outside a destination gamut appear below — everything else
+   renders identically on both engines and needs no second rendition.
+
+   Chroma is reduced (L and H held, CSS Color 4 style) rather than RGB-clipped, so a
+   fallback keeps its hue and brightness and only loses the saturation it could not
+   have shown anyway.
+
+   Note the negative media query: an engine that doesn't know `color-gamut` at all
+   evaluates it false and keeps the authored value — i.e. exactly the behaviour we
+   have today, never a regression. */
+
+@media not all and (color-gamut: p3) {
+  :root {
+    --border-accent: oklch(0.5725 0.0978 192);
+    --live-bright: oklch(0.7 0.1898 25);
+  }
+  [data-accent='violet'] {
+    --accent-bright: oklch(0.715 0.1745 300);
+    --accent-ring: oklch(0.715 0.1745 300 / 0.55);
+    --accent-glow: 0 0 0 1px oklch(0.715 0.1745 300 / 0.4), 0 0 18px oklch(0.625 0.196 300 / 0.45);
+    --border-accent: oklch(0.4625 0.1055 278);
+  }
+  [data-accent='amber'] {
+    --accent-bright: oklch(0.865 0.135 82);
+    --accent-ring: oklch(0.865 0.135 82 / 0.55);
+    --accent-glow: 0 0 0 1px oklch(0.865 0.135 82 / 0.4), 0 0 18px oklch(0.800 0.150 78 / 0.45);
+    --border-accent: oklch(0.55 0.0825 167);
+  }
+  [data-accent='lime'] {
+    --border-accent: oklch(0.5725 0.0978 192);
+  }
+}
+
+/* Out of P3 as well — mapped into P3 so wide-gamut displays also get an explicit value. */
+@media (color-gamut: p3) {
+  [data-accent='violet'] {
+    --accent-bright: oklch(0.715 0.1902 300);
+    --accent-ring: oklch(0.715 0.1902 300 / 0.55);
+    --accent-glow: 0 0 0 1px oklch(0.715 0.1902 300 / 0.4), 0 0 18px oklch(0.625 0.196 300 / 0.45);
+  }
+}
+
+/* === END generated gamut renditions ====================================== */

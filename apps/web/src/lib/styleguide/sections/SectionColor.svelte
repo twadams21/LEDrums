@@ -18,6 +18,7 @@
     ['--border-faint', 'Hairlines, block outlines'],
     ['--border', 'Control borders'],
     ['--border-strong', 'Hover emphasis, wires'],
+    ['--border-accent', 'Accent-tinted: hover / selected control'],
   ] as const;
 
   const inkRamp = [
