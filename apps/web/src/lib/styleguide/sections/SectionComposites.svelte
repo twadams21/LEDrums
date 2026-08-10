@@ -92,6 +92,7 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '1/8 dotted',
+    reset: 'Kick · center · Sequence 1',
     modifier: 'Trail',
     mix: 'normal',
     scope: 'Snare',

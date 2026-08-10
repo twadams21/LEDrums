@@ -27,7 +27,7 @@ export const LFO_PRESETS = [
   { id: 'sample-hold', name: 'Sample & Hold', hint: 'stepped random' },
 ] as const;
 
-const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix'] as const satisfies readonly NodeKind[];
+const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'reset', 'scope', 'mix'] as const satisfies readonly NodeKind[];
 
 export function buildAddGroups(): AddGroup[] {
   return [

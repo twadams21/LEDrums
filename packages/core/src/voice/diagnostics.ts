@@ -1,6 +1,14 @@
 import type { InputEvent } from './engine';
 
-export type GraphResolutionPath = 'pad-section' | 'pad-fallback' | 'direct-midi' | 'direct-osc' | 'fire-graph';
+export type GraphResolutionPath =
+  | 'pad-section'
+  | 'pad-fallback'
+  | 'direct-midi'
+  | 'direct-osc'
+  /** An input matched a NODE's own source (a `reset` bound to its own MIDI note / OSC address),
+      so eval entered the graph at that node instead of at its Trigger. */
+  | 'direct-reset'
+  | 'fire-graph';
 
 export interface VoiceInputDescriptor {
   kind: InputEvent['kind'];

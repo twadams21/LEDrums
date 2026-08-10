@@ -196,6 +196,46 @@ function nodeStateKey(pad: string, nodeId: string): string {
   return `${pad}#${nodeId}`;
 }
 
+/**
+ * Does an eval-state key belong to `(graphKey, nodeId)`?
+ *
+ * One authored node runs under SEVERAL state prefixes at once, because the prefix encodes the
+ * firing path, not the graph alone (see `engine.resolveHitGraphs` / `resolveDirectGraphs`):
+ *   - pad fallback / direct MIDI-OSC binding → prefix is the bare graph key  → `<key>#<nodeId>`
+ *   - section slot position                  → prefix is `<key>#<slotIndex>` → `<key>#<slot>#<nodeId>`
+ * So "reset that sequence node" means clearing EVERY prefix it currently runs under — a sequencer
+ * layered into two slots has two independent step counters, and a reset must snap both.
+ *
+ * Matched by string surgery rather than a `RegExp` built from `graphKey`, because graph keys are
+ * user-reachable (`lib:<song>/kick:0`, renamed graphs) and would otherwise need escaping. The
+ * middle segment must be empty or all digits, so graph `kick` can never claim graph `kick:0`'s keys.
+ */
+export function isResetStateKey(stateKey: string, graphKey: string, nodeId: string): boolean {
+  const prefix = `${graphKey}#`;
+  const suffix = `#${nodeId}`;
+  if (!stateKey.startsWith(prefix) || !stateKey.endsWith(suffix)) return false;
+  const middle = stateKey.slice(prefix.length, stateKey.length - suffix.length);
+  if (middle === '') return true; // `<key>#<nodeId>` — pad fallback or a direct MIDI/OSC binding
+  return /^\d+$/.test(middle); // `<key>#<slotIndex>#<nodeId>` — one section slot position
+}
+
+/**
+ * Clear the step position of the sequence node a `reset` node targets, across every state prefix
+ * it runs under. Deleting the entry (rather than setting 0) is what "back to the first step" means
+ * here — `sequence` reads `state.seqIndex.get(sk) ?? 0`, so an absent entry IS step 0.
+ *
+ * Deliberately narrow: `lastPick` (Random's no-repeat memory) and `latched` (Toggle) are untouched.
+ * An unset or dangling target is a silent no-op — a reset pointed at a deleted node must never
+ * throw into the render loop.
+ */
+function applyReset(state: EvalState, node: GraphNode): void {
+  const { targetGraphKey, targetNodeId } = node;
+  if (!targetGraphKey || !targetNodeId) return;
+  for (const key of [...state.seqIndex.keys()]) {
+    if (isResetStateKey(key, targetGraphKey, targetNodeId)) state.seqIndex.delete(key);
+  }
+}
+
 function freezeRandomMappings(mappings: Mapping[] | undefined, prng: Prng): Mapping[] | undefined {
   if (!mappings?.length) return mappings;
   let changed = false;
@@ -253,6 +293,9 @@ function appendLabel(prefix: string, part: string): string {
   return prefix ? `${prefix} → ${part}` : part;
 }
 
+/** Shared empty set for the common case: an eval with no own-source entry points. */
+const EMPTY_ENTRY_IDS: ReadonlySet<string> = new Set<string>();
+
 function evalGraphGen3(state: EvalState, graph: TriggerGraph, pad: string, ctx: TriggerCtx): Action[] {
   const plan = compilePlan(state, graph);
   if (plan.fatal || !plan.triggerId) return [];
@@ -268,10 +311,11 @@ function evalGraphGen3From(
   viaPrefix: string,
   seen: Set<string>,
   initialDraft: PlayDraft | null,
+  ownSourceEntryIds: ReadonlySet<string> = EMPTY_ENTRY_IDS,
 ): Action[] {
   const plan = compilePlan(state, graph);
   if (plan.fatal) return [];
-  return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft);
+  return evalGraphGen3FromPlan(state, plan, pad, startIds, ctx, viaPrefix, seen, initialDraft, ownSourceEntryIds);
 }
 
 function evalGraphGen3FromPlan(
@@ -283,6 +327,7 @@ function evalGraphGen3FromPlan(
   viaPrefix: string,
   seen: Set<string>,
   initialDraft: PlayDraft | null,
+  ownSourceEntryIds: ReadonlySet<string> = EMPTY_ENTRY_IDS,
 ): Action[] {
   const graph = plan.graph;
   const byId = plan.nodesById;
@@ -524,6 +569,22 @@ function evalGraphGen3FromPlan(
         for (const entry of newEntries) push(node, kids[i]!.edge, entry.draft, entry.latchKey ?? null);
         break;
       }
+      // Mutates eval state, produces no layer of its own, then passes the trigger straight through
+      // — so a reset can sit inline in a chain, or stand alone in a MIDI-bound graph as a
+      // footswitch. The reset runs BEFORE the children fire, so a `sequence` downstream of its own
+      // reset in the same graph plays step 1 on this very hit rather than one hit later.
+      //
+      // A reset carrying its OWN `source` is an independent entry point (it can live in the same
+      // graph as the sequencer it resets and fire from its own MIDI note). Such a node clears state
+      // ONLY when the eval was entered AT it; reached by ordinary flow it is a transparent
+      // pass-through. Without that rule, putting a bound reset inline would clear the sequence on
+      // every pad hit and the sequence could never advance — the exact trap co-location invites.
+      // An UNBOUND reset (no `source`) keeps the original behaviour: it resets whenever flow
+      // reaches it.
+      case 'reset':
+        if (!node.source || ownSourceEntryIds.has(node.id)) applyReset(state, node);
+        for (const entry of newEntries) pushKids(node, entry.draft, entry.latchKey ?? null);
+        break;
       case 'switch': {
         let kids: RenderPlanChild[];
         if (node.on !== 'section' && node.on !== 'beat') {
@@ -623,6 +684,26 @@ export function evalChildren(
   draft: PlayDraft | null = null,
 ): Action[] {
   return evalGraphGen3From(state, graph, pad, childIds, ctx, viaPrefix, seen, draft);
+}
+
+/**
+ * Enter a graph AT the given nodes rather than at its Trigger — the independent-entry-point path.
+ * Used when an input matches a node's OWN `source` (today: a `reset` node bound to a MIDI note, so
+ * it can sit in the same graph as the sequencer it resets and still fire on its own).
+ *
+ * The named nodes are recorded as own-source entries, which is what licenses a bound `reset` to
+ * actually clear state — reached by ordinary flow it stays a pass-through. Distinct from
+ * {@link evalChildren}, whose ids are the CHILDREN of an already-evaluated node (the delay drain)
+ * and therefore carry no such licence.
+ */
+export function evalFromNodes(
+  state: EvalState,
+  graph: TriggerGraph,
+  pad: string,
+  entryIds: readonly string[],
+  ctx: TriggerCtx,
+): Action[] {
+  return evalGraphGen3From(state, graph, pad, entryIds, ctx, '', new Set(), null, new Set(entryIds));
 }
 
 /** Resolve which band a 0..1 value lands in against ascending cutoffs. N cutoffs →

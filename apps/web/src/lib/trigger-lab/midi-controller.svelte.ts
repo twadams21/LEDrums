@@ -25,7 +25,11 @@ const RESERVED_CC_CONTROLLER = 0;
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string }
-  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
+  | { kind: 'cc-node'; nodeId: string } // S37: bind a CC source node to the next incoming CC
+  /** Bind a self-hosted `reset` node to the next incoming NOTE — press the footswitch to assign it,
+      rather than looking the number up. Node-scoped (not graph-scoped like `trigger`) because a
+      reset carries its own source independent of the graph it lives in. */
+  | { kind: 'reset-node'; nodeId: string };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -119,6 +123,10 @@ export class MidiController {
       });
     } else if (target.kind === 'trigger') {
       this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
+    } else if (target.kind === 'reset-node') {
+      const node = this.host.selectedGraphNodes()?.find((n) => n.id === target.nodeId);
+      if (!node || node.kind !== 'reset') return; // node went away mid-learn — stay armed
+      node.source = { kind: 'midi', note };
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }

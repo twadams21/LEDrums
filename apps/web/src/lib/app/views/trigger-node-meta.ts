@@ -16,6 +16,7 @@ import Disc3 from '@lucide/svelte/icons/disc-3';
 import Activity from '@lucide/svelte/icons/activity';
 import Wand2 from '@lucide/svelte/icons/wand-2';
 import Timer from '@lucide/svelte/icons/timer';
+import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 import Blend from '@lucide/svelte/icons/blend';
 import GitMerge from '@lucide/svelte/icons/git-merge';
 import Spline from '@lucide/svelte/icons/spline';
@@ -40,6 +41,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   chance: Dices,
   toggle: Power,
   delay: Timer,
+  reset: RotateCcw,
   modifier: Blend,
   mix: GitMerge,
   scope: CircleDot,
@@ -71,6 +73,7 @@ export const tint: Record<NodeKind, string> = {
   chance: 'var(--role-mod)',
   toggle: 'var(--accent)',
   delay: 'var(--role-mod)',
+  reset: 'var(--role-output)',
   modifier: 'var(--role-mod)',
   mix: 'var(--role-effect)',
   scope: 'var(--role-output)',
@@ -95,6 +98,7 @@ export const kindLabel: Record<NodeKind, string> = {
   chance: 'Chance',
   toggle: 'Toggle',
   delay: 'Delay',
+  reset: 'Reset',
   modifier: 'Modifier',
   mix: 'Mix',
   scope: 'Scope',
@@ -131,6 +135,10 @@ export function kindSummary(node: GraphNode): string {
       return 'on · off';
     case 'delay':
       return node.delayMode === 'time' ? `${node.ms}ms` : node.division;
+    // Target-less fallback: TriggerNode overrides this with the RESOLVED target
+    // (`describeResetTarget`), which needs the other graphs to look the label up.
+    case 'reset':
+      return node.targetGraphKey && node.targetNodeId ? 'resets a sequence' : 'no target';
     case 'modifier':
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
     case 'mix':

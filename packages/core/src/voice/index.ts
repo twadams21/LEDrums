@@ -29,6 +29,8 @@ export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export {
   evalGraph,
   evalChildren,
+  evalFromNodes,
+  isResetStateKey,
   type Action,
   type EvalState,
   type PendingDescriptor,

@@ -23,6 +23,7 @@ import {
 import {
   evalGraph,
   evalChildren,
+  evalFromNodes,
   type Action,
   type PlayAction,
   type EvalState,
@@ -142,6 +143,9 @@ interface ResolvedGraph {
   graph: TriggerGraph;
   statePrefix: string;
   path: GraphResolutionPath;
+  /** Enter eval AT this node instead of the graph's Trigger — set when the input matched a NODE's
+      own source (a self-hosted `reset`). Absent = the normal whole-graph fire from the Trigger. */
+  entryNodeId?: string;
 }
 
 // ---- Production adapter ------------------------------------------------------
@@ -450,7 +454,10 @@ class VoiceBusEngine implements RenderEngine {
   private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {
     const out: ResolvedGraph[] = [];
     if (e.drumId) out.push(...this.resolveHitGraphs(e.drumId, e.zone ?? ''));
-    if (e.kind === 'noteOn' || e.kind === 'osc') out.push(...this.resolveDirectGraphs(e));
+    if (e.kind === 'noteOn' || e.kind === 'osc') {
+      out.push(...this.resolveDirectGraphs(e));
+      out.push(...this.resolveDirectResetNodes(e));
+    }
     return out;
   }
 
@@ -475,6 +482,33 @@ class VoiceBusEngine implements RenderEngine {
           ? src.kind === 'osc' && e.address !== undefined && src.address === e.address
           : src.kind === 'midi' && src.note !== undefined && src.note === e.note;
       if (match) out.push({ graphKey: key, graph, statePrefix: key, path: e.kind === 'osc' ? 'direct-osc' : 'direct-midi' });
+    }
+    return out;
+  }
+
+  /**
+   * NODE-level direct resolution: a `reset` node carrying its OWN `source` is an independent entry
+   * point into its graph, so a self-hosted reset can sit beside the sequencer it resets and still
+   * fire from its own footswitch note. Matches the same way {@link resolveDirectGraphs} does, but
+   * yields an `entryNodeId` so eval starts at the node rather than the graph's Trigger.
+   *
+   * The state prefix is the graph KEY, matching the pad-fallback path — so a reset that passes its
+   * trigger through to a sequence in the same graph advances the very counter the pad hits use.
+   * (A graph fired through a section SLOT runs under `key#slotIndex`; the reset still clears every
+   * prefix of its target — see `isResetStateKey` — only the pass-through lands in the base bucket.)
+   */
+  private resolveDirectResetNodes(e: InputEvent): ResolvedGraph[] {
+    const out: ResolvedGraph[] = [];
+    for (const [key, graph] of Object.entries(this.show.graphs)) {
+      for (const node of graph.nodes) {
+        if (node.kind !== 'reset' || !node.source) continue;
+        const src = node.source;
+        const match =
+          e.kind === 'osc'
+            ? src.kind === 'osc' && e.address !== undefined && src.address === e.address
+            : src.kind === 'midi' && src.note !== undefined && src.note === e.note;
+        if (match) out.push({ graphKey: key, graph, statePrefix: key, path: 'direct-reset', entryNodeId: node.id });
+      }
     }
     return out;
   }
@@ -615,7 +649,9 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   private fireGraph(resolved: ResolvedGraph, ctx: TriggerCtx, input: VoiceInputDescriptor): void {
-    const actions = evalGraph(this.evalState(), resolved.graph, resolved.statePrefix, ctx);
+    const actions = resolved.entryNodeId
+      ? evalFromNodes(this.evalState(), resolved.graph, resolved.statePrefix, [resolved.entryNodeId], ctx)
+      : evalGraph(this.evalState(), resolved.graph, resolved.statePrefix, ctx);
     const playEffects = actions
       .filter((a): a is PlayAction => a.kind === 'play')
       .map((a) => a.effectId);

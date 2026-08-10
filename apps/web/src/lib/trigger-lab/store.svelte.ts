@@ -37,6 +37,7 @@ import {
   type TriggerSource,
   makeNode,
   resolveGraphsForFire,
+  resolveResetNodesForFire,
   sourceMatchesPad,
   triggerSourceOf,
 } from './sim';
@@ -1645,8 +1646,12 @@ export class TriggerLab {
   }
 
   private fireRawMidiLocal(note: number, value: number): void {
-    const toFire = resolveGraphsForFire(this.resolvedView.graphs, { kind: 'midi', note, value });
-    if (toFire.length === 0) return;
+    const graphs = this.resolvedView.graphs;
+    const toFire = resolveGraphsForFire(graphs, { kind: 'midi', note, value });
+    // Node-level bindings too: a `reset` carrying its own source is an independent entry point, so
+    // a self-hosted reset fires in the preview exactly as it does on the server.
+    const resetsToFire = resolveResetNodesForFire(graphs, { kind: 'midi', note, value });
+    if (toFire.length === 0 && resetsToFire.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: Math.max(0, Math.min(1, value / 127)),
@@ -1657,12 +1662,22 @@ export class TriggerLab {
       bpm: this.bpm,
     };
     for (const { key, graph } of toFire) {
-      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
       this.addMonitor({
         type: 'effect',
         direction: 'local',
         source: `midi:${note}`,
         label: this.graphLabel(key),
+        detail: resolved.join(' | '),
+      });
+    }
+    for (const { key, graph, entryNodeId } of resetsToFire) {
+      const resolved = this.sim.triggerGraphFromNode(this.graphLabel(key), graph, entryNodeId, ctx, key);
+      this.addMonitor({
+        type: 'effect',
+        direction: 'local',
+        source: `midi:${note}`,
+        label: `${this.graphLabel(key)} · reset`,
         detail: resolved.join(' | '),
       });
     }
@@ -1728,8 +1743,8 @@ export class TriggerLab {
       sourceDrumId: pad.drumId,
       bpm: this.bpm,
     };
-    for (const { graph, label } of toFire) {
-      const resolved = this.sim.triggerGraph(label, graph, ctx);
+    for (const { graph, label, key } of toFire) {
+      const resolved = this.sim.triggerGraph(label, graph, ctx, key);
       this.addMonitor({ type: 'effect', direction: 'local', source: `${pad.drumId}:${pad.zone}`, label, detail: resolved.join(' | ') });
     }
     this.renderFrame();
@@ -1767,7 +1782,7 @@ export class TriggerLab {
       sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
     };
-    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
     this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
     this.renderFrame();
     this.snapshot();
@@ -2952,6 +2967,30 @@ export class TriggerLab {
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.division = division;
+  }
+
+  /** Point a `reset` node at the sequence node it clears, as a (graph key, node id) pair — the
+      target usually lives in a DIFFERENT graph (that is the whole point: a MIDI-bound reset graph
+      snapping a pad graph's sequencer), so it is addressed by identity, not by wiring. Passing
+      `null` for either half clears the target back to unset, which evals as a no-op. Guards
+      `node.kind === 'reset'`; persists via the authored autosave like every other node edit. */
+  setResetTarget(node: GraphNode, graphKey: string | null, nodeId: string | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'reset') return;
+    this.pushUndoSnapshot();
+    node.targetGraphKey = graphKey ?? undefined;
+    node.targetNodeId = nodeId ?? undefined;
+  }
+
+  /** Give a `reset` node its OWN input source, making it an independent entry point into its graph
+      — so it can sit beside the sequencer it resets and still fire from a footswitch. `null` clears
+      the binding, returning the node to plain flow behaviour (it then resets whenever the graph's
+      trigger reaches it). Guards `node.kind === 'reset'`; persists via the authored autosave. */
+  setResetSource(node: GraphNode, source: TriggerSource | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'reset') return;
+    this.pushUndoSnapshot();
+    node.source = source ?? undefined;
   }
 
   /** Append a band by splitting the final "rest" band (a new cutoff between the last

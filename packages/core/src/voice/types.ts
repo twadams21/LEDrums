@@ -207,6 +207,7 @@ export type CanonicalGraphNodeKind =
   | 'chance'
   | 'toggle'
   | 'delay'
+  | 'reset'
   | 'modifier'
   | 'mix'
   | 'scope'
@@ -218,7 +219,17 @@ export type CanonicalGraphNodeKind =
   | 'osc'
   | 'randomMod';
 
-export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+export type BlockKind =
+  | LegacyGraphNodeKind
+  | 'effect'
+  | 'all'
+  | 'random'
+  | 'sequence'
+  | 'switch'
+  | 'chance'
+  | 'toggle'
+  | 'delay'
+  | 'reset';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -350,6 +361,18 @@ export interface GraphNode {
   /** Musical division string (used when `delayMode === 'beats'`). Full set defined by
       `DELAY_DIVISIONS` in `delay.ts`: `'1/4'|'1/8'|'1/16'` plus dotted + triplet variants. */
   division: string;
+  // reset (only meaningful on the `reset` node)
+  /** Which graph holds the node this reset clears. A graph KEY into `Show.graphs` — the reset
+      addresses its target ACROSS graphs on purpose: the point of the node is that a separate
+      MIDI-bound graph (a footswitch) can snap a pad graph's sequencer back to its first step,
+      and those two run under different eval state prefixes. `undefined` = unset (a no-op). */
+  targetGraphKey?: string;
+  /** The node id inside {@link targetGraphKey} to reset — today always a `sequence` node, so the
+      reset clears that node's step position. Addressed by (graph key, node id) rather than the
+      raw eval-state key because one authored node runs under MANY state prefixes at once (the
+      pad fallback, one per section slot position); resetting means clearing all of them.
+      `undefined` = unset (a no-op). A target that no longer exists is a no-op too, never a throw. */
+  targetNodeId?: string;
   // trigger (only meaningful on the `trigger` node)
   /** What input fires this graph (the explicit binding). Optional + additive — graphs
       authored before the source model carry none. Resolution lives in a later slice;

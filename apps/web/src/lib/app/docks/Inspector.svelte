@@ -29,6 +29,7 @@
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
+  import ResetNodeInspector from './inspectors/ResetNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
   import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
@@ -133,6 +134,8 @@
       <PlayNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />
+    {:else if node.kind === 'reset'}
+      <ResetNodeInspector {store} {node} />
     {:else if node.kind === 'modifier'}
       <ModifierNodeInspector {store} {node} />
     {:else if node.kind === 'scope'}

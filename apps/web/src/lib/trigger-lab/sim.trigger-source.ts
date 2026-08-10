@@ -92,3 +92,30 @@ export function resolveGraphsForFire(
   }
   return out;
 }
+
+/**
+ * Offline NODE-level direct resolution: `reset` nodes whose OWN `source` matches a raw fire, so a
+ * self-hosted reset (one living in the same graph as the sequencer it resets) fires in the browser
+ * preview exactly as it does on the server. The mirror of the engine's `resolveDirectResetNodes`;
+ * `entryNodeId` is where eval must ENTER the graph, instead of at its Trigger.
+ *
+ * Deliberately separate from {@link resolveGraphsForFire}: that one answers "which graphs does this
+ * input play", this one "which nodes does it poke". A graph can appear in both lists — its Trigger
+ * and one of its reset nodes may share a note — and both should then happen.
+ */
+export function resolveResetNodesForFire(
+  graphs: Record<string, TriggerGraph>,
+  fire: RawTriggerInput,
+): Array<{ key: string; graph: TriggerGraph; entryNodeId: string; value: number }> {
+  const value = normalizeTriggerValue(
+    fire.kind === 'osc' ? { kind: 'osc', arg: fire.arg } : { kind: 'midi', value: fire.value },
+  );
+  const out: Array<{ key: string; graph: TriggerGraph; entryNodeId: string; value: number }> = [];
+  for (const [key, graph] of Object.entries(graphs)) {
+    for (const node of graph.nodes) {
+      if (node.kind !== 'reset' || !node.source) continue;
+      if (sourceMatchesFire(node.source, fire)) out.push({ key, graph, entryNodeId: node.id, value });
+    }
+  }
+  return out;
+}

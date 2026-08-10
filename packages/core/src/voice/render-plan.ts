@@ -57,6 +57,9 @@ export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory {
     case 'chance':
     case 'toggle':
     case 'delay':
+    // `reset` fires no layer of its own — it mutates eval state and passes the trigger straight
+    // through to its children, so it routes flow exactly like the other control nodes.
+    case 'reset':
       return 'route-control';
     case 'effect':
     case 'play':

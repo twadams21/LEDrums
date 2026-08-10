@@ -9,7 +9,8 @@ describe('buildAddGroups', () => {
   });
 
   it('maps the approved Route taxonomy, with Mix available as a runtime node', () => {
-    expect(ids(ROUTE_GROUP_KEY)).toEqual(['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix']);
+    // `reset` sits next to `delay`: both mutate how a route behaves rather than producing a layer.
+    expect(ids(ROUTE_GROUP_KEY)).toEqual(['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'reset', 'scope', 'mix']);
     const mix = buildAddGroups().find((g) => g.key === ROUTE_GROUP_KEY)!.items.find((i) => i.id === 'mix')!;
     expect(mix.disabled).toBeUndefined();
   });

@@ -33,6 +33,7 @@
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import { kindIcon, tint, kindLabel, kindSummary, modifierName } from './trigger-node-meta';
+  import { describeResetNode, resetTargetOptions } from './reset-target';
   import { pct } from './node-options';
   import {
   nodeHasInput,
@@ -92,6 +93,15 @@
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
     if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
+    // a reset names the sequence node it clears, which lives in ANOTHER graph as often as not —
+    // so resolve it against every graph, not just the open one.
+    if (node.kind === 'reset') {
+      return describeResetNode(
+        node,
+        resetTargetOptions(store.graphs, Object.keys(store.graphs), (k) => store.graphLabel(k)),
+        (src) => describeTriggerSource(src, store.drums).sub,
+      );
+    }
     return kindSummary(node);
   });
 
