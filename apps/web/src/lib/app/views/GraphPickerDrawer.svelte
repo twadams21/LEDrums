@@ -76,7 +76,7 @@
     color: var(--text);
   }
   .picker-item:hover:not(:disabled) {
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    border-color: var(--border-accent);
     color: var(--ink);
   }
   .picker-item:active:not(:disabled) {
@@ -92,7 +92,7 @@
     color: var(--text-muted);
   }
   .picker-item.new:hover {
-    border-color: color-mix(in oklch, var(--accent) 50%, var(--border));
+    border-color: var(--border-accent);
     color: var(--ink);
   }
   .picker-item :global(svg) {

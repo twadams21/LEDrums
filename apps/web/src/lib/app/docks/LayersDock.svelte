@@ -12,6 +12,7 @@
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Slider from '../../ui/Slider.svelte';
+  import { gamutSafeOklch } from '../../ui/oklch-gamut';
   import { busIcon } from '../views/trigger-node-meta';
   import Zap from '@lucide/svelte/icons/zap';
   import Repeat from '@lucide/svelte/icons/repeat';
@@ -33,8 +34,13 @@
   function voiceStyle(v: DockVoice): string {
     const L = v.level;
     const hue = v.hue;
-    const bg = `oklch(${(0.26 + 0.52 * L).toFixed(3)} ${(0.04 + 0.16 * L).toFixed(3)} ${hue} / ${(0.2 + 0.8 * L).toFixed(3)})`;
-    return `background:${bg}; border-color: oklch(0.75 0.15 ${hue} / ${(0.35 + 0.6 * L).toFixed(2)});`;
+    // Voice hue comes from the show, so these land anywhere on the wheel — including
+    // well outside sRGB at the top of the ramp. gamutSafeOklch clamps chroma to what
+    // the display can actually show, so WebKit and Chromium don't gamut-map it two
+    // different ways. Hue survives; only saturation gives way.
+    const bg = gamutSafeOklch(0.26 + 0.52 * L, 0.04 + 0.16 * L, hue, 0.2 + 0.8 * L);
+    const border = gamutSafeOklch(0.75, 0.15, hue, 0.35 + 0.6 * L);
+    return `background:${bg}; border-color: ${border};`;
   }
 
   /** Toggle a bus's inline settings: select it, or collapse when already open. */

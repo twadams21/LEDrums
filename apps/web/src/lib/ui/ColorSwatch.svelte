@@ -84,7 +84,7 @@
     transition: box-shadow var(--dur-120) ease;
   }
   .well:hover {
-    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 55%, var(--border)), var(--shadow-1);
+    box-shadow: inset 0 0 0 1px var(--border-accent), var(--shadow-1);
   }
   .well:focus-within {
     box-shadow: 0 0 0 3px var(--accent-soft), inset 0 0 0 1px var(--accent);

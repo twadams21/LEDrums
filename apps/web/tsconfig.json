@@ -4,7 +4,10 @@
     "moduleResolution": "Bundler",
     "types": ["svelte", "vite/client", "three"],
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    // The token tests import scripts/*.mjs. Without noEmit, allowJs makes tsc treat those
+    // as emit targets and warn that output would overwrite its own input.
+    "noEmit": true
   },
   "include": ["src"]
 }

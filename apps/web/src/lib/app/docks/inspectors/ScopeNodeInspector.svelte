@@ -156,7 +156,7 @@
   }
   .whole-drum:hover {
     color: var(--accent);
-    border-color: color-mix(in oklch, var(--accent) 55%, var(--border));
+    border-color: var(--border-accent);
   }
   .whole-drum:active {
     scale: 0.96;

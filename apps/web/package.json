@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "design-system": "vite build --config vite.design-system.config.ts",
+    "gamut-tokens": "node scripts/gamut-tokens.mjs",
+    "contrast-check": "node scripts/contrast-check.mjs && node scripts/color-mix-audit.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -28,7 +30,9 @@
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@testing-library/svelte": "^5.4.2",
+    "@types/culori": "^4.0.1",
     "@types/three": "^0.171.0",
+    "culori": "^4.0.2",
     "jsdom": "^29.1.1",
     "svelte": "^5.16.0",
     "svelte-check": "^4.1.1",
