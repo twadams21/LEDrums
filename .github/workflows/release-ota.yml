@@ -30,9 +30,9 @@
 #   release:
 #     types: [published]
 #
-# RELEASING (once wired): land the version bump on main first (the repo's version files must
-# already carry the new version — the tag-vs-tauri.conf.json gate refuses otherwise), then create
-# a GitHub Release tagged v<version>. The release notes become the update prompt + Discord post.
+# RELEASING (once wired): land the version bump on main first (`pnpm ota prepare --patch` on a
+# branch, then PR + merge — the tag-vs-tauri.conf.json gate refuses otherwise), then create a
+# GitHub Release tagged v<version>. The release notes become the update prompt + Discord post.
 #
 # NO OVERRIDES IN CI — deliberately. The OTA_ALLOW_* escape hatches (republish / rollback /
 # unverified) are not plumbed into this workflow: CI always fails closed, and a release that needs

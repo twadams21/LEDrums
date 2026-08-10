@@ -208,10 +208,10 @@ key, publishes them to R2 one at a time, merges them into one `latest.json`, and
 Discord. The tag is the version; no laptop is involved, and anyone who can create a release can
 ship.
 
-1. Land the version bump on `main` first — the repo's version files (see the list under the local
-   flow below) must already carry the new version. The workflow's gate (`pnpm ota ci-plan`) refuses
-   a tag that disagrees with `tauri.conf.json`, a tag already fully published, a tag older than
-   what is live, and an unreadable manifest (fail closed).
+1. Land the version bump on `main` first: on a branch, `pnpm ota prepare --patch` (or `--minor` /
+   `--major`) bumps every version file — and nothing else — then commit, PR, merge. The workflow's
+   gate (`pnpm ota ci-plan`) refuses a tag that disagrees with `tauri.conf.json`, a tag already
+   fully published, a tag older than what is live, and an unreadable manifest (fail closed).
 2. Create a GitHub Release tagged `v<version>`. The release notes you write become the update
    prompt and the Discord post (`OTA_NOTES`).
 3. A release that fails to build publishes nothing; one that fails partway leaves the previous

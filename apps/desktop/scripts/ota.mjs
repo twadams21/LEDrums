@@ -17,6 +17,9 @@
  *   version                     print the current version (read-only)
  *   publish                     publish an already-built signed bundle (e.g. another platform's arch)
  *   doctor                      compare this tree against the published release (read-only)
+ *   prepare [--level]           bump the version files ONLY (no build, no publish) — the first step
+ *                               of a CI release: commit the bump on a branch, PR it into main, then
+ *                               publish by creating a GitHub Release tagged v<version>
  *   ci-plan --tag <vX.Y.Z>      gate a CI release: resolve the release tag against tauri.conf.json
  *                               and the live manifest, emit version/platforms to $GITHUB_OUTPUT
  *                               (read-only — used by .github/workflows/release-ota.yml)
@@ -413,6 +416,41 @@ function hasDryRun(args) {
   return args.some((a) => a === '--dry-run' || a === '--dryrun');
 }
 
+/**
+ * The `prepare` sub-command: bump the version files for a CI release — and nothing else.
+ *
+ * The CI release flow needs the repo's version files to ALREADY carry the new version before the
+ * GitHub Release is created (the tag-vs-tauri.conf.json gate refuses otherwise), so the bump lands
+ * through an ordinary PR. Same layer-1 guard as `bump`: the live manifest decides whether a release
+ * may proceed, so a stale tree still cannot re-mint a shipped version. Building, publishing, and
+ * announcing all belong to the release workflow after the Release is created.
+ */
+async function prepare(level) {
+  const current = currentVersion();
+  const live = await published();
+  const plan = planRelease({
+    localVersion: current,
+    publishedVersion: live.version,
+    manifestReachable: live.reachable,
+    level,
+    allowUnverified: process.env.OTA_ALLOW_UNVERIFIED_VERSION === '1',
+    unreachableReason: live.reason,
+  });
+  if (!plan.ok) {
+    console.error(`error: ${plan.message}`);
+    process.exit(1);
+  }
+  console.log(`[ota] ${plan.message}`);
+  const next = bumpFiles(level);
+  console.log(
+    `\n[ota] version files now read v${next}. Nothing was built or published. Next:\n` +
+      `  1. commit these changes on a branch and open a PR into main\n` +
+      `  2. merge the PR\n` +
+      `  3. publish by creating a GitHub Release tagged v${next} — the release workflow builds,\n` +
+      `     signs, publishes to R2, and announces (see apps/desktop/README.md "Release flow")`,
+  );
+}
+
 /** The value following `--<name>` in an argv list, or undefined. */
 function flagValue(args, name) {
   const i = args.indexOf(`--${name}`);
@@ -553,9 +591,11 @@ try {
   else if (command === 'version') console.log(currentVersion());
   else if (command === 'publish') publish();
   else if (command === 'doctor') process.exit(await doctor());
+  else if (command === 'prepare') await prepare(parseLevel(rest));
   else if (command === 'ci-plan') await ciPlan(rest);
   else {
-    console.error('usage: pnpm ota <bump|version|publish|doctor|ci-plan> [--major|--minor|--patch] [--dry-run]');
+    console.error('usage: pnpm ota <bump|version|publish|doctor|prepare|ci-plan> [--major|--minor|--patch] [--dry-run]');
+    console.error('  prepare   bump the version files only (commit via PR, then publish via a GitHub Release)');
     console.error('  bump      bump + build + sign + publish + land the bump PR  (run under `infisical run --env=prod`)');
     console.error('  bump --dry-run   print the release plan without changing anything');
     console.error('  version   print the current version');
