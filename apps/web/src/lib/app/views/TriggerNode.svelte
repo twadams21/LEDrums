@@ -92,6 +92,10 @@
     if (node.kind === 'trigger') return describeTriggerSource(node.source, store.drums).sub;
     if (node.kind === 'play' || node.kind === 'effect') return store.presetById(node.presetId)?.name ?? '';
     if (node.kind === 'modifier') return node.bypass ? 'bypassed' : 'modifier';
+    // a sequence with its own reset binding names it, so the binding reads on the canvas
+    if (node.kind === 'sequence' && node.resetSource) {
+      return `in order · ↺ ${describeTriggerSource(node.resetSource, store.drums).sub}`;
+    }
     return kindSummary(node);
   });
 

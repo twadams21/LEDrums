@@ -179,6 +179,27 @@ class ShotSeamImpl implements ShotSeam {
     if (target) this.shell.select({ kind: 'node', nodeId: target.id });
   }
 
+  /** Bind the last-added (else first) sequence node's reset source to a representative value of
+      `kind`, so the bound inspector states screenshot without click choreography. The node is
+      re-resolved THROUGH the store's graph (not the `added` reference): `addNode` returns the raw
+      object, and mutating it directly would bypass the $state proxy — the write would land but
+      never re-render. */
+  private bindSequenceReset(kind: 'drum' | 'midi' | 'osc'): void {
+    const graph = this.store.selectedGraph;
+    const addedId = this.added.get('sequence')?.id;
+    const seq =
+      (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ??
+      graph?.nodes.find((n) => n.kind === 'sequence');
+    if (!seq) return;
+    const source =
+      kind === 'drum'
+        ? ({ kind: 'drum', drumId: this.store.drums[0]?.id ?? 'kick', zone: '0' } as const)
+        : kind === 'osc'
+          ? ({ kind: 'osc', address: '/reset' } as const)
+          : ({ kind: 'midi', note: 61 } as const);
+    this.store.setSequenceResetSource(seq, source);
+  }
+
   openGallery(): void {
     const graph = this.store.selectedGraph;
     if (!graph) return;
@@ -440,6 +461,11 @@ class ShotSeamImpl implements ShotSeam {
         // count (8 expanded / 4 normal). Drives kit.outputs reconcile so the patch graph's output
         // half can be captured at either count. `expanded` / `expanded:on` → on; `expanded:off` → off.
         this.store.setKitGlobal({ expanded: arg !== 'off' });
+        break;
+      case 'seq-reset':
+        // Bind the last-added sequence node's reset source (`seq-reset:drum|midi|osc`) — thin
+        // adapter over setSequenceResetSource so the bound inspector states are capturable.
+        this.bindSequenceReset(arg === 'drum' ? 'drum' : arg === 'osc' ? 'osc' : 'midi');
         break;
       case 'mix-layers':
         this.mixWithLayers();
