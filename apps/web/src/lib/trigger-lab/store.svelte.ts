@@ -1657,7 +1657,7 @@ export class TriggerLab {
       bpm: this.bpm,
     };
     for (const { key, graph } of toFire) {
-      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
       this.addMonitor({
         type: 'effect',
         direction: 'local',
@@ -1728,8 +1728,8 @@ export class TriggerLab {
       sourceDrumId: pad.drumId,
       bpm: this.bpm,
     };
-    for (const { graph, label } of toFire) {
-      const resolved = this.sim.triggerGraph(label, graph, ctx);
+    for (const { graph, label, key } of toFire) {
+      const resolved = this.sim.triggerGraph(label, graph, ctx, key);
       this.addMonitor({ type: 'effect', direction: 'local', source: `${pad.drumId}:${pad.zone}`, label, detail: resolved.join(' | ') });
     }
     this.renderFrame();
@@ -1767,7 +1767,7 @@ export class TriggerLab {
       sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
     };
-    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx);
+    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
     this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
     this.renderFrame();
     this.snapshot();
