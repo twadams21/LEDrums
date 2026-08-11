@@ -1,5 +1,7 @@
 import { mount } from 'svelte';
 import '@fontsource-variable/geist';
+// PROTOTYPE (chrome exploration branch): DM Sans trial — see tokens.css --font-sans.
+import '@fontsource-variable/dm-sans';
 import '@fontsource-variable/geist-mono';
 import './app.css';
 import App from './App.svelte';
