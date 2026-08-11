@@ -13,6 +13,11 @@ if (params.has('style')) {
   void import('./lib/styleguide/Styleguide.svelte').then(({ default: Styleguide }) => {
     mount(Styleguide, { target });
   });
+} else if (params.get('proto') === 'chrome') {
+  // PROTOTYPE (throwaway): tabbed-chrome layout exploration — see lib/app/proto-chrome/NOTES.md.
+  void import('./lib/app/proto-chrome/ChromeProtoApp.svelte').then(({ default: ChromeProto }) => {
+    mount(ChromeProto, { target });
+  });
 } else {
   mount(App, { target });
 }
