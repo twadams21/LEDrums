@@ -355,6 +355,14 @@ export interface GraphNode {
       authored before the source model carry none. Resolution lives in a later slice;
       core only mirrors the field so web graphs pass through structurally. */
   source?: TriggerSource;
+  // sequence (only meaningful on the `sequence` node)
+  /** What input snaps THIS sequence back to its first step — a drum pad, a MIDI note, or an
+      OSC address, independent of what fires the graph. Contained in the node on purpose
+      (issue #159): there is no cross-graph target to rewrite on song copy, and no flow
+      participation to licence — a matching input clears this node's step state (across every
+      state prefix it runs under, see `isResetStateKey`) and fires nothing. `undefined` = no
+      reset binding. A `cc` midi source is unreachable today, exactly as on `source`. */
+  resetSource?: TriggerSource;
 }
 
 export interface GraphEdge {

@@ -30,6 +30,7 @@ import {
   type PendingDescriptor,
   type MixInputDraft,
 } from './eval-graph';
+import { applySequenceResets } from './reset-source';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
@@ -376,7 +377,22 @@ class VoiceBusEngine implements RenderEngine {
     // the note from the patch input map.
     const toFire = this.resolveGraphsForEvent(e);
     const input = describeInputEvent(e);
+    // Sequence reset bindings apply BEFORE the fires below, so a hit that both resets and
+    // triggers a sequence plays step 1 on this very hit rather than one hit later. Resets are
+    // state surgery, not fires — nothing plays from them, whatever else the input resolves to.
+    const resets = applySequenceResets(this.seqIndex, this.show.graphs, {
+      drumId: e.drumId,
+      zone: e.zone,
+      note: e.kind === 'noteOn' ? e.note : undefined,
+      address: e.kind === 'osc' ? e.address : undefined,
+    });
+    for (const r of resets) {
+      this.onDiagnostic?.({ kind: 'sequence-reset', input, graphKey: r.graphKey, nodeId: r.nodeId });
+    }
     if (toFire.length === 0) {
+      // An input that matched a reset binding IS routed — it did its job even with no graph to
+      // fire, so neither miss diagnostic applies.
+      if (resets.length > 0) return;
       // A raw MIDI/OSC message that claimed no zone (no drumId attached by the server's
       // zone-map) AND matched no direct graph source is genuinely UNROUTED — flag it apart
       // from a routed drum hit whose section just holds no graph (`graph-missed`).

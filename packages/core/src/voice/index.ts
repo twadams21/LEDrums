@@ -26,6 +26,7 @@ export {
 } from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
+export * from './reset-source';
 export {
   evalGraph,
   evalChildren,
