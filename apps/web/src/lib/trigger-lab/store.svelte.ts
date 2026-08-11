@@ -807,6 +807,10 @@ export class TriggerLab {
     getInputMap: () => this.project?.inputMap ?? null,
     setInputMap: (inputMap) => this.setInputMap(inputMap),
     setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
+    setSequenceResetSource: (nodeId, source) => {
+      const node = this.selectedGraph?.nodes.find((n) => n.id === nodeId);
+      if (node) this.setSequenceResetSource(node, source);
+    },
     selectedGraphNodes: () => this.selectedGraph?.nodes,
   });
   /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
@@ -1645,8 +1649,22 @@ export class TriggerLab {
   }
 
   private fireRawMidiLocal(note: number, value: number): void {
-    const toFire = resolveGraphsForFire(this.resolvedView.graphs, { kind: 'midi', note, value });
-    if (toFire.length === 0) return;
+    const graphs = this.resolvedView.graphs;
+    const toFire = resolveGraphsForFire(graphs, { kind: 'midi', note, value });
+    // Sequence reset bindings apply BEFORE the fires (mirroring engine.processInput), so a note
+    // that both resets and triggers a sequence plays step 1 on this very hit. A reset-only note
+    // is still a routed input — it did its job with nothing to fire.
+    const resets = this.sim.applySequenceResets(graphs, { note });
+    for (const r of resets) {
+      this.addMonitor({
+        type: 'effect',
+        direction: 'local',
+        source: `midi:${note}`,
+        label: `${this.graphLabel(r.graphKey)} · reset`,
+        detail: '↺ sequence back to step 1',
+      });
+    }
+    if (toFire.length === 0 && resets.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: Math.max(0, Math.min(1, value / 127)),
@@ -1707,7 +1725,14 @@ export class TriggerLab {
 
   hit(pad: Pad): void {
     const toFire = this.resolveHitGraphsLocal(pad);
-    if (toFire.length === 0) return;
+    // A pad may route to a sequence RESET binding alone (a sequence node's own `resetSource`,
+    // firing nothing) — that hit still counts as routed, and connected it must still reach the
+    // server, whose engine applies the reset.
+    const resetBindings = voice.resolveSequenceResets(this.resolvedView.graphs, {
+      drumId: pad.drumId,
+      zone: String(pad.zone),
+    });
+    if (toFire.length === 0 && resetBindings.length === 0) return;
     // Mark each fired graph's UI fire-clock so its live-on-trigger node previews play (both
     // online + offline — the preview is display-only and reacts to the local intent either way).
     for (const { key } of toFire) this.markGraphFire(key);
@@ -1719,6 +1744,18 @@ export class TriggerLab {
       return;
     }
     // Offline preview: fire the local sim (it drives the lab's voice lanes + resolution log).
+    // Drum-bound sequence resets apply first (mirroring engine.processInput), so a pad that
+    // both resets and triggers a sequence plays step 1 on this very hit.
+    const resets = this.sim.applySequenceResets(this.resolvedView.graphs, { drumId: pad.drumId, zone: String(pad.zone) });
+    for (const r of resets) {
+      this.addMonitor({
+        type: 'effect',
+        direction: 'local',
+        source: `${pad.drumId}:${pad.zone}`,
+        label: `${this.graphLabel(r.graphKey)} · reset`,
+        detail: '↺ sequence back to step 1',
+      });
+    }
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
       velocity: this.velocity,
@@ -2952,6 +2989,17 @@ export class TriggerLab {
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.division = division;
+  }
+
+  /** Bind (or clear, via `null`) the input that snaps a sequence node back to its first step —
+      the node's OWN reset source (issue #159), independent of what fires its graph. Contained in
+      the node: no cross-graph target exists, so song/section copies carry their binding verbatim
+      and can never reset the original. Persists via the authored autosave like every node edit. */
+  setSequenceResetSource(node: GraphNode, source: TriggerSource | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'sequence') return;
+    this.pushUndoSnapshot();
+    node.resetSource = source ?? undefined;
   }
 
   /** Append a band by splitting the final "rest" band (a new cutoff between the last

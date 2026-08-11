@@ -385,6 +385,15 @@ export class Sim {
 
   // --- triggering ----------------------------------------------------------
 
+  /** Offline mirror of the engine's sequence-reset application — resolve this input's reset
+      bindings (a sequence node's own `resetSource`) and clear each matched node's step state in
+      the sim's buckets, via the SAME core module the engine uses. Returns the matched bindings
+      for the caller's monitor lines. Correct offline keys require callers to fire with the graph
+      key as the state prefix (see {@link triggerGraph}). */
+  applySequenceResets(graphs: Record<string, TriggerGraph>, input: voice.ResetInput): voice.ResetHit[] {
+    return voice.applySequenceResets(this.seqIndex, graphs, input);
+  }
+
   /** Fire a freeform trigger graph: evaluate from the trigger node, spawn/stop. */
   triggerGraph(padLabel: string, graph: TriggerGraph, ctx: TriggerCtx, stateKey?: string): string[] {
     this.stateKey = stateKey ?? padLabel;

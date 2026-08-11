@@ -25,7 +25,11 @@ const RESERVED_CC_CONTROLLER = 0;
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   | { kind: 'trigger'; graphKey: string }
-  | { kind: 'cc-node'; nodeId: string }; // S37: bind a CC source node to the next incoming CC
+  | { kind: 'cc-node'; nodeId: string } // S37: bind a CC source node to the next incoming CC
+  /** Bind a sequence node's own RESET source to the next incoming note — press the pedal/pad with
+      Learn armed rather than looking the number up. Node-scoped (not graph-scoped like `trigger`)
+      because the reset binding lives on the sequence node, independent of what fires its graph. */
+  | { kind: 'sequence-reset'; nodeId: string };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -38,6 +42,9 @@ export interface MidiControllerHost {
   setInputMap(inputMap: InputMap): void;
   /** Set a trigger node's source (a trigger learn binds `{ kind: 'midi', note }` through here). */
   setTriggerSource(graphKey: string, source: TriggerSource): void;
+  /** Set a sequence node's reset source (a sequence-reset learn binds through here, so the bind
+      shares the mutator's undo/viewer guards). */
+  setSequenceResetSource(nodeId: string, source: TriggerSource): void;
   /** The selected graph's nodes, for a cc-node learn to find and rebind its controller. */
   selectedGraphNodes(): readonly GraphNode[] | undefined;
 }
@@ -119,6 +126,8 @@ export class MidiController {
       });
     } else if (target.kind === 'trigger') {
       this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
+    } else if (target.kind === 'sequence-reset') {
+      this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
