@@ -73,7 +73,8 @@
   --reactive-amount: 0; /* 0..1 — how far chrome leans toward the show         */
 
   /* ---- Typography --------------------------------------------------------- */
-  --font-sans: 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* DM Sans trial (chrome-prototype branch) — Geist Variable kept installed as the fallback. */
+  --font-sans: 'DM Sans Variable', 'Geist Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
 
   /* Scale bumped +2px across every step (2026-07-10) — raise the whole UI at once. */
