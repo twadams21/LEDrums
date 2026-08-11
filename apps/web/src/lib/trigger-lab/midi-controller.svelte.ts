@@ -14,7 +14,7 @@
 
 import type { GraphNode, TriggerSource } from './sim';
 import { initMidi, type MidiDeviceInfo, type MidiEventHandler, type MidiInitResult } from '../midi/webmidi';
-import type { InputMap } from '@ledrums/core';
+import type { GlobalControlAction, GlobalControlBinding, InputMap } from '@ledrums/core';
 
 /** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
     so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
@@ -29,7 +29,9 @@ export type MidiLearnTarget =
   /** Bind a sequence node's own RESET source to the next incoming note — press the pedal/pad with
       Learn armed rather than looking the number up. Node-scoped (not graph-scoped like `trigger`)
       because the reset binding lives on the sequence node, independent of what fires its graph. */
-  | { kind: 'sequence-reset'; nodeId: string };
+  | { kind: 'sequence-reset'; nodeId: string }
+  /** An app-general control's MIDI note (Settings → Global controls). */
+  | { kind: 'global-control'; action: GlobalControlAction };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -45,6 +47,8 @@ export interface MidiControllerHost {
   /** Set a sequence node's reset source (a sequence-reset learn binds through here, so the bind
       shares the mutator's undo/viewer guards). */
   setSequenceResetSource(nodeId: string, source: TriggerSource): void;
+  /** Write one global control's binding (a global-control learn writes its note here). */
+  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): void;
   /** The selected graph's nodes, for a cc-node learn to find and rebind its controller. */
   selectedGraphNodes(): readonly GraphNode[] | undefined;
 }
@@ -128,6 +132,8 @@ export class MidiController {
       this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
     } else if (target.kind === 'sequence-reset') {
       this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
+    } else if (target.kind === 'global-control') {
+      this.host.setGlobalControlBinding(target.action, { midiNote: note });
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }

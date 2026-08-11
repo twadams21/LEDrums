@@ -51,6 +51,8 @@ import {
   type TriggerSource,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
+import { relativeNavTarget, type NavAxis } from './navigation';
+import type { GlobalControlAction } from '../model/global-controls';
 import { createRenderPlanCache } from './render-plan';
 import type {
   GraphMissReason,
@@ -62,7 +64,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -76,6 +78,11 @@ export interface InputEvent {
   /** recallSection: activate a song's section so hits fire its slot graphs. */
   songId?: string;
   sectionId?: string;
+  /** globalControl: the app-general action a bound note/address resolved to (input
+      step 0). Relative navigation resolves HERE, against the engine's live active
+      song/section, so N queued taps advance N steps rather than all reading one
+      stale position. */
+  action?: GlobalControlAction;
   /** fireGraph: the exact graph key to play — an authoritative intent, not a source to
       re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
       precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
@@ -137,6 +144,18 @@ export interface RenderEngineOptions {
 }
 
 const PRNG_SEED = 0x1a2b3c4d;
+
+/**
+ * The global control actions that are a relative setlist move, and the move each one
+ * makes. Partial by design: controls that are not navigation (blackout, brightness, …)
+ * simply have no entry and are dispatched by their own branch.
+ */
+const NAV_MOVES: Partial<Record<GlobalControlAction, { axis: NavAxis; delta: number }>> = {
+  nextSong: { axis: 'song', delta: 1 },
+  prevSong: { axis: 'song', delta: -1 },
+  nextSection: { axis: 'section', delta: 1 },
+  prevSection: { axis: 'section', delta: -1 },
+};
 
 interface ResolvedGraph {
   graphKey: string;
@@ -308,19 +327,53 @@ class VoiceBusEngine implements RenderEngine {
     for (const e of due) this.processEvent(e);
   }
 
+  /**
+   * Activate a song's section — the ONE place `activeSongId` / `activeSectionId` change
+   * during a queue drain. Both the absolute `recallSection` input and a relative
+   * global-control navigation land here, so they are indistinguishable downstream
+   * (same diagnostic, same base-look spawn).
+   */
+  private recallTo(songId: string | null, sectionId: string | null): void {
+    this.activeSongId = songId;
+    this.activeSectionId = sectionId;
+    this.onDiagnostic?.({
+      kind: 'section-recalled',
+      songId: this.activeSongId,
+      sectionId: this.activeSectionId,
+    });
+    // Spawn/release this section's base "looks" (the per-bus loop effects) so the
+    // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
+    this.spawnSectionLooks(this.activeSectionId);
+  }
+
+  /**
+   * Resolve a global control action against live engine state. Navigation actions
+   * become a relative move on the setlist (clamped at both ends — see
+   * {@link relativeNavTarget}); a move with nowhere to go is a silent no-op rather
+   * than a re-recall of the current section, which would restart its base looks.
+   */
+  private processGlobalControl(action: GlobalControlAction | undefined): void {
+    if (!action) return;
+    const move = NAV_MOVES[action];
+    if (!move) return; // a non-navigation control — handled by its own branch when added
+    const target = relativeNavTarget(
+      this.show,
+      { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId },
+      move.axis,
+      move.delta,
+    );
+    if (!target) return;
+    this.recallTo(target.songId, target.sectionId);
+  }
+
   private processEvent(e: InputEvent): void {
     if (e.kind === 'recallSection') {
       // Activate a section so subsequent hits fire its slot graphs (layered).
-      this.activeSongId = e.songId ?? null;
-      this.activeSectionId = e.sectionId ?? null;
-      this.onDiagnostic?.({
-        kind: 'section-recalled',
-        songId: this.activeSongId,
-        sectionId: this.activeSectionId,
-      });
-      // Spawn/release this section's base "looks" (the per-bus loop effects) so the
-      // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
-      this.spawnSectionLooks(this.activeSectionId);
+      this.recallTo(e.songId ?? null, e.sectionId ?? null);
+      return;
+    }
+    if (e.kind === 'globalControl') {
+      this.processGlobalControl(e.action);
       return;
     }
     if (e.kind === 'fireGraph') {

@@ -5,7 +5,10 @@ import {
   buildPixelModel,
   checkRoutingIntegrity,
   getHoopPixelRange,
+  globalControlForNote,
+  globalControlForOsc,
   materializeHoops,
+  oscArgFires,
   reconcileOutputs,
   SLOT_LABELS,
   voice,
@@ -355,6 +358,13 @@ export class VoiceEngineHost {
           timeMs,
         };
       case 'noteOn': {
+        // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
+        // action and never reaches the zone-map or a trigger-source graph (the same
+        // reservation CC #0 has for section recall). Doing this at the ONE seam every
+        // input path funnels through (WS, native MIDI, raw OSC) is what keeps the
+        // precedence from drifting between them.
+        const action = globalControlForNote(this.project.inputMap.globalControls, partial.note);
+        if (action) return { kind: 'globalControl', action, timeMs };
         // Zone-map first; a miss forwards the raw note (no pad) for direct binding.
         const pad = zoneForNote(this.project.inputMap, partial.note);
         return {
@@ -370,6 +380,11 @@ export class VoiceEngineHost {
         // No engine effect today; forward the raw note so the seam stays honest.
         return { kind: 'noteOff', note: partial.note, channel: partial.channel, timeMs };
       case 'osc': {
+        // STEP 0 — as for notes, a globally-bound address is consumed. A zero argument
+        // is the release half of a button's press/release pair: still consumed (it must
+        // not fall through to a pad), but it does not fire the action a second time.
+        const action = globalControlForOsc(this.project.inputMap.globalControls, partial.address);
+        if (action) return oscArgFires(partial.value) ? { kind: 'globalControl', action, timeMs } : null;
         // Always forward; attach a pad when the zone-map claims it, else direct binding.
         const pad = zoneForOsc(this.project.inputMap, partial.address);
         return {

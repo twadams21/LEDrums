@@ -50,8 +50,19 @@ import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTes
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
-import type { BlendMode, InputMap, NodeLayout, OutputConfig, Project, CanvasScene, PlayType } from '@ledrums/core';
-import { BUILTIN_CANVAS_SCENES } from '@ledrums/core';
+import type {
+  BlendMode,
+  CanvasScene,
+  GlobalControlAction,
+  GlobalControlBinding,
+  GlobalControls,
+  InputMap,
+  NodeLayout,
+  OutputConfig,
+  PlayType,
+  Project,
+} from '@ledrums/core';
+import { BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
 import { voice, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
@@ -70,6 +81,7 @@ import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
 import { ControllerTest } from './controller-test.svelte';
 import { MidiController, type MidiLearnTarget } from './midi-controller.svelte';
+import { OscLearnController, type OscLearnTarget } from './osc-learn.svelte';
 import {
   ShowsController,
   writeStoredLibrary,
@@ -811,12 +823,23 @@ export class TriggerLab {
       const node = this.selectedGraph?.nodes.find((n) => n.id === nodeId);
       if (node) this.setSequenceResetSource(node, source);
     },
+    setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
+  });
+  /** OSC learn — bind the next heard address (Settings → Global controls). A separate arm
+      from {@link midi}'s so a control's MIDI and OSC Learn buttons don't disarm each other. */
+  private readonly osc = new OscLearnController({
+    isViewer: () => this.isViewer,
+    setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
   });
   /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
       {@link MidiController.learnTarget}. */
   get midiLearnTarget(): MidiLearnTarget | null {
     return this.midi.learnTarget;
+  }
+  /** The armed OSC-learn target, or null when nothing is waiting to bind. */
+  get oscLearnTarget(): OscLearnTarget | null {
+    return this.osc.target;
   }
   /** The global MIDI channel filter (null = omni), from the patch input map. */
   midiChannel = $derived(this.project?.inputMap.midiChannel ?? null);
@@ -1070,7 +1093,13 @@ export class TriggerLab {
             // Preview the fire on the local sim ONLY when offline. When connected the server is the
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
             // double the hit (the echo loop). Authority principle, doc 03.
-            if (this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
+            //
+            // A note bound to a global control is CONSUMED and must not fire a pad/graph —
+            // the same precedence the server pins in `toInputEvent`, mirrored here so the two
+            // modes agree on what a bound note does NOT do. The action itself stays
+            // server-resolved (like Program Change / CC#0 recall), so offline it is inert.
+            const consumed = globalControlForNote(this.globalControls, ev.note) !== null;
+            if (!consumed && this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
           }
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
@@ -1473,6 +1502,9 @@ export class TriggerLab {
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson).
       this.recordInputActivity({ kind: 'osc', address: label, value, time });
+      // The server echo is the ONLY OSC feed the browser has (no browser OSC transport),
+      // so this is where an armed OSC learn binds.
+      this.osc.apply(label);
       // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
       // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
       this.sim.setOsc(label, value);
@@ -1965,6 +1997,33 @@ export class TriggerLab {
 
   cancelMidiLearn(): void {
     this.midi.cancelLearn();
+  }
+
+  startOscLearn(target: OscLearnTarget): void {
+    this.osc.start(target);
+  }
+
+  cancelOscLearn(): void {
+    this.osc.cancel();
+  }
+
+  /** The app-general control bindings, or an empty map before a project loads. */
+  get globalControls(): GlobalControls {
+    return this.project?.inputMap.globalControls ?? {};
+  }
+
+  /**
+   * Write one global control's binding. Routes through {@link setInputMap} — the single
+   * mutation path — so the viewer guard, the undo snapshot, and the WS resync all apply
+   * exactly as they do for a zone's note. A field set to `undefined` clears it.
+   */
+  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): void {
+    if (this.isViewer || !this.project) return;
+    const inputMap = this.project.inputMap;
+    this.setInputMap({
+      ...inputMap,
+      globalControls: withGlobalControlBinding(inputMap.globalControls, action, patch),
+    });
   }
 
   private acceptsMidiChannel(channel: number | undefined): boolean {
