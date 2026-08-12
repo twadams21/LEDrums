@@ -82,7 +82,8 @@
       </div>
     {/if}
     <IconButton icon={History} label="Backups" size={15} onclick={() => (backupsOpen = true)} />
-    <UpdateBadge onOpen={() => shell.openSettings()} />
+    <!-- The update flow lives in Settings › System — land the badge there, not the default pane. -->
+    <UpdateBadge onOpen={() => shell.openSettings('system')} />
     <IconButton icon={Settings} label="Settings" size={15} onclick={() => shell.openSettings()} />
   </div>
 </header>
