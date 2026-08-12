@@ -28,6 +28,11 @@
     <h2>Settings</h2>
   </header>
   <div class="body">
+    <!-- Updates first: the body now scrolls (the global-control list outgrows the dialog),
+         and an update prompt is the one thing here that should never need scrolling to. -->
+    <Field label="Updates" hint="desktop app">
+      <UpdateControl />
+    </Field>
     <Field label="MIDI channel" hint="input filter">
       <Select
         value={channelValue}
@@ -57,9 +62,6 @@
     </section>
     <OscInputPanel {store} />
     <GlobalControlsPanel {store} />
-    <Field label="Updates" hint="desktop app">
-      <UpdateControl />
-    </Field>
   </div>
 </Dialog>
 
