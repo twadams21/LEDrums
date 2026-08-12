@@ -10,13 +10,11 @@
   import type { Component } from 'svelte';
   import Dialog from '../../ui/Dialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
-  import GeneralPane from './panes/GeneralPane.svelte';
   import InputPane from './panes/InputPane.svelte';
   import DrumsHoopsPane from './panes/DrumsHoopsPane.svelte';
   import OutputsChainsPane from './panes/OutputsChainsPane.svelte';
   import ControllerPane from './panes/ControllerPane.svelte';
   import SystemPane from './panes/SystemPane.svelte';
-  import Settings2 from '@lucide/svelte/icons/settings-2';
   import Music from '@lucide/svelte/icons/music';
   import CircleDot from '@lucide/svelte/icons/circle-dot';
   import Cable from '@lucide/svelte/icons/cable';
@@ -29,7 +27,6 @@
   /** The section registry — order matches SETTINGS_PANES (shell-nav). Every pane
       receives `{ store }`; the S2 stubs simply ignore it until their slice lands. */
   const SECTIONS: Array<{ id: SettingsPane; label: string; icon: Component; pane: Component<{ store: TriggerLab }> }> = [
-    { id: 'general', label: 'General', icon: Settings2, pane: GeneralPane },
     { id: 'input', label: 'Input', icon: Music, pane: InputPane },
     { id: 'drums', label: 'Drums & Hoops', icon: CircleDot, pane: DrumsHoopsPane },
     { id: 'outputs', label: 'Outputs & Chains', icon: Cable, pane: OutputsChainsPane },
@@ -39,12 +36,21 @@
 
   const open = $derived(shell.settingsPane !== null);
   const active = $derived(SECTIONS.find((s) => s.id === shell.settingsPane) ?? SECTIONS[0]!);
+
+  /** Every close path (X, Esc, backdrop) disarms any pending MIDI/OSC learn — an arm
+      left live after the modal closes is invisible, and the next stray input would
+      silently bind it. Both cancels are no-ops when nothing is armed. */
+  function close(): void {
+    store.cancelMidiLearn();
+    store.cancelOscLearn();
+    shell.closeSettings();
+  }
 </script>
 
-<Dialog {open} onClose={() => shell.closeSettings()} title="Settings" class="settings-modal">
+<Dialog {open} onClose={close} title="Settings" class="settings-modal">
   <header class="head">
     <h2>Settings</h2>
-    <IconButton icon={X} label="Close settings" size={15} onclick={() => shell.closeSettings()} />
+    <IconButton icon={X} label="Close settings" size={15} onclick={close} />
   </header>
   <div class="split">
     <nav class="snav" aria-label="Settings sections">
@@ -125,7 +131,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* Keep General's selects (MIDI channel etc.) form-width in the wide pane. */
+  /* Keep the panes' selects (MIDI channel etc.) form-width in the wide pane. */
   .pane :global(.sel) {
     width: 100%;
     max-width: 240px;

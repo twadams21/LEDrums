@@ -2,9 +2,9 @@
   /* Perform view — the focused performance surface inside the unified shell. The
      shell hides the Layers/Buses drawer + right Inspector dock for this view; here
      we render the section-recall strip, an adjustable 3D|2D visualizer split, and a
-     grid of big trigger pads. Mined from the old PerformShell — the songs rail and
-     the live bar now live in the shell's LeftRail + TopBar, so this view is just the
-     center surface. */
+     grid of big trigger pads. Mined from the old PerformShell — song selection now
+     lives in the shell's SongsBar and the live/engine status in the TopBar + bottom
+     bar, so this view is just the center surface. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Pad } from '../../trigger-lab/fixtures';

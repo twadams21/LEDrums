@@ -70,6 +70,11 @@
     if (dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
     const el = e.target as HTMLElement | null;
     const editable = isEditableShortcutTarget(e.target);
+    // With the Settings modal open, the workspace shortcuts must not act on the surface
+    // BEHIND it (Backspace deleted the selected node through the modal). The Backspace
+    // preventDefault claim below still applies — the WKWebView history-back hazard is
+    // the same whichever surface has focus.
+    const settingsOpen = shell.settingsPane !== null;
     if (isDeleteKey(e.key)) {
       const selection = shell.selection;
       const node =
@@ -88,13 +93,13 @@
       // guard fell straight through). Deliberately no stopPropagation — xyflow's key handler
       // is bubble-phase on window and still needs the event to drop the selected wire.
       if (prevent) e.preventDefault();
-      if (removeNode && node) {
+      if (removeNode && node && !settingsOpen) {
         store.removeNode(node);
         shell.clearSelection();
       }
       return;
     }
-    if (editable) return;
+    if (editable || settingsOpen) return;
     if (/^[0-9]$/.test(e.key)) {
       const index = e.key === '0' ? 9 : Number(e.key) - 1;
       store.fireSectionGraph(index);

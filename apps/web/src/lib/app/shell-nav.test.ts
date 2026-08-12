@@ -72,7 +72,7 @@ describe('select', () => {
 describe('openSettings / closeSettings', () => {
   it('opens on the default pane and closes back to null', () => {
     let nav = openSettings(initialNav());
-    expect(nav.settings).toBe('general');
+    expect(nav.settings).toBe('input');
     nav = closeSettings(nav);
     expect(nav.settings).toBeNull();
   });
@@ -99,8 +99,8 @@ describe('openSettings / closeSettings', () => {
 });
 
 describe('SETTINGS_PANES', () => {
-  it('is the section order — general first, then the S4 panes', () => {
-    expect(SETTINGS_PANES).toEqual(['general', 'input', 'drums', 'outputs', 'controller', 'system']);
+  it('is the section order — the S4 panes, no general catch-all', () => {
+    expect(SETTINGS_PANES).toEqual(['input', 'drums', 'outputs', 'controller', 'system']);
   });
 });
 
@@ -124,8 +124,8 @@ describe('parseSearch', () => {
     expect(parseSearch('?view=objects')).toEqual({ view: 'objects' });
     expect(parseSearch('?view=monitor')).toEqual({ view: 'monitor' });
   });
-  it('redirects the retired patch view to the Settings modal (old URLs keep working)', () => {
-    expect(parseSearch('?view=patch')).toEqual({ settings: 'general' });
+  it('redirects the retired patch view to Settings › Outputs (old URLs keep working)', () => {
+    expect(parseSearch('?view=patch')).toEqual({ settings: 'outputs' });
   });
   it('reads the Settings-pane deep-link', () => {
     expect(parseSearch('?settings=outputs')).toEqual({ settings: 'outputs' });

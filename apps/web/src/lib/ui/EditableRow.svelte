@@ -10,7 +10,7 @@
 
      `editing` is bindable so the parent can drive edit mode externally; `onCommit(value)`
      fires once with the trimmed, changed name (CommitInput reverts blank / unchanged via
-     `onCancel`). This mirrors the hand-rolled SongRail / ShowBrowser rename rows.
+     `onCancel`). This mirrors the hand-rolled ShowBrowser / SongsBar rename rows.
 
      Usage:
        <EditableRow icon={ListMusic} label={song.name} active={song.id === activeId}

@@ -1,6 +1,6 @@
 <script lang="ts">
-  /* Selectable list row — the single most-repeated chrome pattern (LeftRail `.navitem`,
-     SongRail `.item`, ShowBrowser `.row`, Sections / Objects). A flex row of an optional
+  /* Selectable list row — the single most-repeated chrome pattern (ShowBrowser `.row`,
+     BackupsDialog, Sections / Objects, EditableRow). A flex row of an optional
      icon + a label/secondary block, with an optional hover-revealed `actions` slot on the
      trailing edge. Encapsulates the shared active / hover token styling so adoption is
      visually identical: transparent until hover (`--surface-2`), `--accent-soft` fill +
