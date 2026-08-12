@@ -36,7 +36,23 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Tabbed-chrome + settings-parity redesign — APPROVED, planned, not implemented (2026-08-13):**
+**Tabbed-chrome + settings-parity redesign — IMPLEMENTED through S5 + review, PR #176 OPEN (2026-08-13):**
+built overnight by orchestrated Fable Workflow waves (source: Trent's in-session instruction, this
+machine; ~2.7M subagent tokens, 13 agents, 4 workflow runs). On `feat/tabbed-chrome`: S2 tabbed
+shell (no Patch tab; `?view=patch` → Settings→Outputs; LeftRail/SongRail/AppSettingsDialog deleted,
+SongsBar carries the rail verbs) · S3 trigger-view left rail (fire-flash restored) · S4a parity
+spec (`docs/plans/2026-08-13-tabbed-chrome-slices/S4a-pane-spec-OUTPUT.md`) · S4b–e panes (Input ·
+Drums & Hoops · Outputs & Chains pool-model chain editor · Controller w/ reused status panels ·
+System) · S5 permanent right column (decided: NOT collapsible). Open questions 1–3 all decided by
+Trent in-session (recorded in the plan). 3-lens adversarial review: parity contract VERIFIED met;
+all findings fixed inc. a **shared delta write-gate** (`introducedBlockingIssues` in core, used by
+server `setKitOutputs` gate AND the pane commit gate — kit-shrink damage stays repairable; absolute
+gates deadlocked repair). Sweep at PR: typecheck 0, 3,313 tests green, ui-shot `--strict` clean.
+**Remaining: Trent reviews PR #176 + S4a spec sign-off items (tracker morning queue) → hardware
+drive through Settings → S6 patch-graph removal → S7 proto teardown (both HELD for explicit go).**
+Tracker: `docs/plans/2026-08-13-tabbed-chrome-slices/TRACKER.md`.
+
+**Prior state (superseded): APPROVED, planned, not implemented (2026-08-13):**
 decided by **Trent** (this machine) from the `?proto=chrome` prototype on branch
 `proto/chrome-tabbed-layout`: variant C wins — views become a top tab bar (songs + sections as
 sticky bars, transport/status bottom), the **Patch Graph is removed entirely** and the whole patch

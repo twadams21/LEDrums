@@ -70,12 +70,34 @@ GraphsDock. S5 owns the right-column mount (AuthorShell seam with S2 → S5 runs
 | S5 right column | wave2 wf_a7b9464b | (no commits) | ✅ verification-only: S2 already correct; Perform keeps full-width hide (today's behaviour) |
 | wave-2 gate | orchestrator | feat/tabbed-chrome `5240868` (pushed) | ✅ typecheck 0 (2721 files); tests green (core 1001/server 445/web 1733/io 76/proto 10/worker 31); fixups: GeneralPane trimmed to GlobalControls, backups-button aria-label, design-system regen |
 
-## Remaining (at 08:20 reset — 5h window hit 92% post-wave-2)
+## Review + fix wave (08:20–09:00)
 
-1. Adversarial review workflow (high effort, ~3 reviewers) over the full feat/tabbed-chrome diff vs main; one fix loop.
-2. ui-shot captures of: tabbed shell (each view), Settings modal (all 6 panes), trigger rail.
-3. PR feat/tabbed-chrome → main (single PR; parity contract satisfied by construction).
-4. ROUTER/GROW update + morning report to Trent.
+- Adversarial review wf_f9c2252e (3 lenses, high): verdicts all "shippable after fixes";
+  parity contract verified met (18 mutators + 9 read-outs traced). Findings: 1 blocker
+  (Settings close leaves MIDI/OSC learn armed), 4 majors (UpdateBadge → wrong pane;
+  chain-editor deadlock on pre-damaged routing; ControllerPane dead on boot deep-link;
+  Backspace-behind-modal deletes node) + GeneralPane scaffolding, 9 minors.
+- ui-shot: 30 presets + 5 ad-hoc pane captures, all --strict clean, on :5273 (old proto
+  server left alive on :5173). Key shots eyeballed: shell, outputs, drums — layout per
+  decisions. Empty default chains observation resolved: fresh worktree project, pool
+  model treats unrouted as legal.
+- Fix wave wf_abd0c211: FIX-A shell/chrome (learn-cancel, badge deep-link, modal key
+  gating, GeneralPane deletion + default pane → input + ?view=patch → outputs, SongsBar
+  verbs restored, comments, pane presets) ∥ FIX-B panes (delta validation, watch-on-open
+  effect, live-kit drums, Backups layer, Mirror label fix, dedup helpers).
+- Deferred to Trent (taste): output/drum card shows name twice (header + rename row).
+
+## DONE — PR #176 open (09:1x)
+
+Review + fix wave landed (fix/review-shell d141658, fix/review-panes 316d66f, merged 9cfd529 +
+36ba973); orchestrator gate fixups ce164fd: shared delta write-gate (core introducedBlockingIssues,
+server + pane commit both use it, +1 server test), SettingsModal close-pane memory (close was
+swapping to the first pane mid-teardown — caught by the new close-path tests), mod+z/mod+d modal
+gating. Final sweep: typecheck 0, 3,313 tests green (core 1001/server 446/web 1749/io 76/proto
+10/worker 31); ui-shot --strict clean on all presets incl. the four new pane presets.
+feat/tabbed-chrome pushed @ ce164fd → **PR #176**. Dev server for eyeballing: :5273 (integration
+branch); :5173 still serves the old proto branch (S7 tears it down). No further agent launches
+this window (Trent, ~09:05: at 70%).
 
 ## Morning queue for Trent
 
