@@ -13,12 +13,13 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { KitConfig, RgbOrder } from '@ledrums/core';
   import { outputsToPatch, patchToOutputs, pixelRanges, type HoopRef, type PatchRouting } from '../../patch-routing';
-  import { buildPixelOutputTable, perHoopPixelCount } from '../../docks/patch-inspector';
+  import { buildPixelOutputTable } from '../../docks/patch-inspector';
   import { patchLabel } from '../../docks/inspectors/forms';
   import { hoopNodeId } from '../../patch-graph';
   import { drumZoneId } from '../../patch-zones';
   import { pushToast } from '../../../ui/toast.svelte';
   import { addHoop, moveHoop, newBlockers, removeHoop, unassignedHoops } from './chain-editor';
+  import { pixelsForHoopIn } from './drums-hoops';
   import OutputChainCard from './OutputChainCard.svelte';
   import UnassignedPool from './UnassignedPool.svelte';
 
@@ -29,10 +30,8 @@
   const routing = $derived<PatchRouting | null>(kit ? outputsToPatch(kit.outputs) : null);
   const expanded = $derived(kit?.global.expanded ?? false);
 
-  function pixelsForHoop(h: HoopRef): number {
-    const d = kit?.drums.find((x) => x.id === h.drumId);
-    return d && kit ? perHoopPixelCount(d, kit, h.hoop) : 0;
-  }
+  /** Per-hoop pixel resolution — the shared drums-hoops helper, not a local fork. */
+  const pixelsForHoop = $derived<(h: HoopRef) => number>(kit ? pixelsForHoopIn(kit) : () => 0);
   const ranges = $derived(routing ? pixelRanges(routing, pixelsForHoop) : null);
   const pool = $derived(kit && routing ? unassignedHoops(kit, routing) : []);
   const pixelTable = $derived(kit && routing ? buildPixelOutputTable(routing, kit, pixelsForHoop) : []);
