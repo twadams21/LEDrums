@@ -6,13 +6,17 @@
     "state": "view:trigger",
     "target": ".top"
   },
-  "transport": {
+  "songs-bar": {
     "state": "view:trigger",
-    "target": ".xport"
+    "target": ".songs"
   },
-  "left-rail": {
+  "sections-bar": {
     "state": "view:trigger",
-    "target": ".rail"
+    "target": ".sections"
+  },
+  "bottom-bar": {
+    "state": "view:trigger",
+    "target": ".bottom"
   },
   "trigger-graph": {
     "state": "view:trigger",
@@ -55,14 +59,9 @@
     "state": "view:trigger",
     "target": "aside.col2 .buses"
   },
-  "patch-graph": {
-    "state": "view:patch",
-    "target": "main.center",
-    "settle": 1500
-  },
-  "patch-controller": {
-    "state": "view:patch",
-    "target": "node:controller",
+  "settings-controller": {
+    "state": "controller",
+    "target": "dialog:Settings",
     "settle": 1500
   },
   "objects": {
