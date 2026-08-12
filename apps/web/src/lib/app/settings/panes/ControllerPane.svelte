@@ -203,7 +203,9 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ maxPixelsPerOutput: n }))}
         />
       </Field>
-      <Field layout="row" label="Mirror" hint="geometry-only world reflection">
+      <!-- variant="group": a <label> wrapper would forward a click on "Mirror" to the
+           segmented control's FIRST button, silently resetting mirror to None. -->
+      <Field layout="row" label="Mirror" hint="geometry-only world reflection" variant="group">
         <SegmentedControl
           value={mirror}
           options={MIRROR_OPTS}

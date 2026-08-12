@@ -7,7 +7,10 @@
      `unit` is a short trailing readout that sits OUTSIDE the control, in its own
      column after it (e.g. "ms" / "Hz" / a live "50%") — the inspector idiom for a
      numeric field or slider whose unit lives beside the box, not inside it. Row
-     layout only; ignored in stack. */
+     layout only; ignored in stack.
+     `variant="group"` renders the wrapper as a div[role=group] + aria-labelledby
+     instead of a <label>: for COMPOSITE controls (SegmentedControl and kin) where
+     native label-forwarding would silently click the first inner button. */
   import type { Snippet } from 'svelte';
 
   type Props = {
@@ -16,20 +19,34 @@
     unit?: string;
     for?: string;
     layout?: 'stack' | 'row';
+    /** 'label' (default) wraps in a <label>; 'group' wraps in div[role=group] for
+        composite controls a label click would mis-activate. */
+    variant?: 'label' | 'group';
     class?: string;
     children: Snippet;
   };
 
-  let { label, hint, unit, for: forId, layout = 'stack', class: klass, children }: Props = $props();
+  let { label, hint, unit, for: forId, layout = 'stack', variant = 'label', class: klass, children }: Props = $props();
   const hasUnit = $derived(unit != null && unit !== '' && layout === 'row');
+  const group = $derived(variant === 'group');
+  const uid = $props.id();
+  const labelId = `${uid}-label`;
 </script>
 
-<label class={['field', klass]} class:row={layout === 'row'} class:has-unit={hasUnit} for={forId}>
-  <span class="flabel">{label}{#if hint && layout === 'stack'}<em class="fhint">{hint}</em>{/if}</span>
+<svelte:element
+  this={group ? 'div' : 'label'}
+  class={['field', klass]}
+  class:row={layout === 'row'}
+  class:has-unit={hasUnit}
+  for={group ? undefined : forId}
+  role={group ? 'group' : undefined}
+  aria-labelledby={group ? labelId : undefined}
+>
+  <span class="flabel" id={group ? labelId : undefined}>{label}{#if hint && layout === 'stack'}<em class="fhint">{hint}</em>{/if}</span>
   <span class="fcontrol">{@render children()}</span>
   {#if hasUnit}<span class="funit">{unit}</span>{/if}
   {#if hint && layout === 'row'}<em class="fhint under">{hint}</em>{/if}
-</label>
+</svelte:element>
 
 <style>
   .field {
