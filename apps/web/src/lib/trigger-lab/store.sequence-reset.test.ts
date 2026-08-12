@@ -153,10 +153,15 @@ function stubHost(over: Partial<MidiControllerHost> = {}): MidiControllerHost & 
     bound,
     isViewer: () => false,
     getInputMap: () => null,
-    setInputMap: () => {},
-    setTriggerSource: () => {},
-    setSequenceResetSource: (nodeId, source) => bound.push([nodeId, source]),
-    setGlobalControlBinding: () => {},
+    // The four writers report ACCEPTED — a stub that returned false would leave every
+    // learn armed and quietly invert what these tests are asserting.
+    setInputMap: () => true,
+    setTriggerSource: () => true,
+    setSequenceResetSource: (nodeId, source) => {
+      bound.push([nodeId, source]);
+      return true;
+    },
+    setGlobalControlBinding: () => true,
     selectedGraphNodes: () => undefined,
     ...over,
   };
