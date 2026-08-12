@@ -52,6 +52,7 @@
     defaultEdgeOptions,
     onBeforeConnect,
     onNodeClick,
+    onEdgeClick,
     onPaneClick,
     onNodeEnter,
     onNodeLeave,
@@ -93,6 +94,10 @@
     defaultEdgeOptions?: Record<string, unknown>;
     onBeforeConnect?: (c: Connection) => Connection | false;
     onNodeClick?: (id: string) => void;
+    /** A wire was clicked. Views use this to drop a stale NODE selection — xyflow selects the
+        edge internally without touching the shell selection, so without this a Backspace meant
+        for the wire would also delete whatever node was still selected. */
+    onEdgeClick?: (id: string) => void;
     onPaneClick?: () => void;
     onNodeEnter?: (id: string) => void;
     onNodeLeave?: () => void;
@@ -139,6 +144,7 @@
       deleteKey={deleteKey}
       onbeforeconnect={onBeforeConnect}
       onnodeclick={({ node }) => onNodeClick?.(node.id)}
+      onedgeclick={({ edge }) => onEdgeClick?.(edge.id)}
       onpaneclick={() => onPaneClick?.()}
       onnodepointerenter={({ node }) => onNodeEnter?.(node.id)}
       onnodepointerleave={() => onNodeLeave?.()}

@@ -7,7 +7,8 @@
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
-  import { platformShortcutModifier } from './lib/app/primary-shortcut';
+  import { isEditableShortcutTarget, platformShortcutModifier } from './lib/app/primary-shortcut';
+  import { decideDeleteKey, isDeleteKey } from './lib/app/delete-key';
   import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
@@ -68,19 +69,32 @@
   function onKey(e: KeyboardEvent): void {
     if (dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
     const el = e.target as HTMLElement | null;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
-    if (e.key === 'Backspace' || e.key === 'Delete') {
+    const editable = isEditableShortcutTarget(e.target);
+    if (isDeleteKey(e.key)) {
       const selection = shell.selection;
-      if (selection?.kind === 'node') {
-        const node = store.selectedGraph?.nodes.find((n) => n.id === selection.nodeId);
-        if (node && node.kind !== 'trigger') {
-          store.removeNode(node);
-          shell.clearSelection();
-          e.preventDefault();
-        }
+      const node =
+        selection?.kind === 'node'
+          ? (store.selectedGraph?.nodes.find((n) => n.id === selection.nodeId) ?? null)
+          : null;
+      const { prevent, removeNode } = decideDeleteKey({
+        key: e.key,
+        isEditableTarget: editable,
+        selection,
+        resolvedNode: node,
+      });
+      // Claim the key FIRST, whether or not anything gets deleted: an unclaimed Backspace in
+      // the packaged desktop shell's bare WKWebView runs WebKit's history-back and strands the
+      // drummer on the dead boot page (deleting a WIRE selects nothing, so the old node-only
+      // guard fell straight through). Deliberately no stopPropagation — xyflow's key handler
+      // is bubble-phase on window and still needs the event to drop the selected wire.
+      if (prevent) e.preventDefault();
+      if (removeNode && node) {
+        store.removeNode(node);
+        shell.clearSelection();
       }
       return;
     }
+    if (editable) return;
     if (/^[0-9]$/.test(e.key)) {
       const index = e.key === '0' ? 9 : Number(e.key) - 1;
       store.fireSectionGraph(index);
