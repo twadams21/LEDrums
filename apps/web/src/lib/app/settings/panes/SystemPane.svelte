@@ -28,7 +28,9 @@
   </Field>
 </div>
 
-<BackupsDialog {store} open={backupsOpen} onClose={() => (backupsOpen = false)} />
+<!-- layer 2: this dialog opens OVER the Settings modal (layer 1), so its scrim/content must
+     stack above it — the TopBar door keeps the default. -->
+<BackupsDialog {store} open={backupsOpen} onClose={() => (backupsOpen = false)} layer={2} />
 
 <style>
   .pane-body {
