@@ -30,7 +30,10 @@ the B modal. Static/inert: variant C's patch forms, a few chrome affordances.
 - B's patch modal hides the canvas-side Inspector dock (`.idock`) via CSS and re-routes
   editing to the double-click modal.
 
-## Verdict
+## Verdict (Trent, 2026-08-13)
 
-_(fill in after review — which variant won, what D/E should change, then fold into the
-real shell and delete this directory + the `?proto=chrome` mount in `main.ts`)_
+**Variant C won** — tabbed chrome, no patch graph, whole patch as Settings — plus the DM Sans
+switch, conditional on **settings parity** (everything settable before stays settable).
+Deltas: Share button stays in the top nav bar; the Project menu (ShowBrowser) returns; the Kit
+preview + Buses/Layers pane still need a home. Implementation plan:
+`docs/plans/2026-08-13-tabbed-chrome-settings.md`. This directory dies in that plan's S7.
