@@ -7,17 +7,19 @@
      Reads the AUTHORITATIVE routing (`store.project.kit.outputs` → `outputsToPatch`); every
      chain edit reduces to the next PatchRouting (chain-editor.ts), is checked by core's ONE
      routing-validation seam, and commits via `store.setRouting` — the same compile path the
-     canvas used. A blocking issue toasts and leaves the routing untouched (unreachable via
-     the pool model; backstop only). Viewer gating rides a natively-disabled fieldset. */
+     canvas used. An edit INTRODUCING a blocking issue toasts and leaves the routing
+     untouched (unreachable via the pool model; backstop only) — pre-existing damage never
+     wedges the editor. Viewer gating rides a natively-disabled fieldset. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { KitConfig, RgbOrder } from '@ledrums/core';
   import { outputsToPatch, patchToOutputs, pixelRanges, type HoopRef, type PatchRouting } from '../../patch-routing';
-  import { buildPixelOutputTable, perHoopPixelCount } from '../../docks/patch-inspector';
+  import { buildPixelOutputTable } from '../../docks/patch-inspector';
   import { patchLabel } from '../../docks/inspectors/forms';
   import { hoopNodeId } from '../../patch-graph';
   import { drumZoneId } from '../../patch-zones';
   import { pushToast } from '../../../ui/toast.svelte';
-  import { addHoop, chainBlockers, moveHoop, removeHoop, unassignedHoops } from './chain-editor';
+  import { addHoop, moveHoop, newBlockers, removeHoop, unassignedHoops } from './chain-editor';
+  import { pixelsForHoopIn } from './drums-hoops';
   import OutputChainCard from './OutputChainCard.svelte';
   import UnassignedPool from './UnassignedPool.svelte';
 
@@ -28,10 +30,8 @@
   const routing = $derived<PatchRouting | null>(kit ? outputsToPatch(kit.outputs) : null);
   const expanded = $derived(kit?.global.expanded ?? false);
 
-  function pixelsForHoop(h: HoopRef): number {
-    const d = kit?.drums.find((x) => x.id === h.drumId);
-    return d && kit ? perHoopPixelCount(d, kit, h.hoop) : 0;
-  }
+  /** Per-hoop pixel resolution — the shared drums-hoops helper, not a local fork. */
+  const pixelsForHoop = $derived<(h: HoopRef) => number>(kit ? pixelsForHoopIn(kit) : () => 0);
   const ranges = $derived(routing ? pixelRanges(routing, pixelsForHoop) : null);
   const pool = $derived(kit && routing ? unassignedHoops(kit, routing) : []);
   const pixelTable = $derived(kit && routing ? buildPixelOutputTable(routing, kit, pixelsForHoop) : []);
@@ -44,13 +44,15 @@
     return `${drumName} · ${patchLabel(store, hoopNodeId(h), `Hoop ${h.hoop}`)}`;
   }
 
-  /** Reduce → validate (core seam) → setRouting. A blocking issue toasts instead of
-      committing — the same message the server write-gate would refuse with. */
+  /** Reduce → validate (core seam) → setRouting. Validation is on the DELTA: only an edit
+      that INTRODUCES a blocker over the committed routing toasts and refuses — a routing
+      already damaged (e.g. kit hoopCount shrunk under routed hoops) stays repairable one
+      edit at a time. */
   function commitChains(next: PatchRouting): void {
-    if (!kit) return;
-    const blockers = chainBlockers(kit, next);
-    if (blockers.length) {
-      pushToast(blockers[0]!.message, { tone: 'error' });
+    if (!kit || !routing) return;
+    const introduced = newBlockers(kit, routing, next);
+    if (introduced.length) {
+      pushToast(introduced[0]!.message, { tone: 'error' });
       return;
     }
     store.setRouting(patchToOutputs(next));

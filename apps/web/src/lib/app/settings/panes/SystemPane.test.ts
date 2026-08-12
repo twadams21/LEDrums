@@ -35,4 +35,13 @@ describe('SystemPane', () => {
     expect(store.refreshBackups).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/No backups yet/)).toBeTruthy();
   });
+
+  it('stacks the backups dialog ABOVE the settings modal (layer 2)', async () => {
+    render(SystemPane, { props: { store: mockStore() } });
+    await fireEvent.click(screen.getByRole('button', { name: /Browse backups/ }));
+    // Layer 2 = z-index modal+4 (Dialog steps 4 per layer), so its scrim covers the
+    // Settings modal (layer 1, z-index modal+0) instead of fighting it in DOM order.
+    const content = document.querySelector<HTMLElement>('.dlg-backups');
+    expect(content?.style.zIndex).toBe('calc(var(--z-modal) + 4)');
+  });
 });

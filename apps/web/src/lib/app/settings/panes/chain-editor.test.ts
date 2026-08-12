@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { KitConfig } from '@ledrums/core';
 import type { HoopRef, PatchRouting } from '../../patch-routing';
-import { addHoop, chainBlockers, gapToIndex, moveHoop, removeHoop, unassignedHoops } from './chain-editor';
+import { addHoop, chainBlockers, gapToIndex, moveHoop, newBlockers, removeHoop, unassignedHoops } from './chain-editor';
 
 const h = (drumId: string, hoop: number): HoopRef => ({ drumId, hoop });
 
@@ -122,5 +122,54 @@ describe('chainBlockers — the core validation seam, not a fork', () => {
   it('blocks a reference to an unknown drum', () => {
     const issues = chainBlockers(kit(), routing([h('ghost', 1)], []));
     expect(issues.some((i) => i.code === 'unknown-drum')).toBe(true);
+  });
+});
+
+describe('newBlockers — delta validation, so pre-existing damage stays repairable', () => {
+  /** The kit SHRUNK to 1 hoop per drum while hoops 2 were still routed — both chains now
+      carry an out-of-range blocker the editor never introduced. */
+  const shrunk = (): KitConfig => {
+    const k = kit();
+    return { ...k, global: { ...k.global, hoopCount: 1 } };
+  };
+  const damaged = () => routing([h('kick', 1), h('kick', 2)], [h('snare', 1), h('snare', 2)]);
+
+  it('the damaged fixture really carries multiple blockers (old gate would wedge)', () => {
+    expect(chainBlockers(shrunk(), damaged()).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a removal that fixes ONE of several blockers introduces nothing — commit allowed', () => {
+    const next = removeHoop(damaged(), 'o1', 1); // kick chain repaired, snare still broken
+    expect(chainBlockers(shrunk(), next).length).toBeGreaterThan(0);
+    expect(newBlockers(shrunk(), damaged(), next)).toEqual([]);
+  });
+
+  it('repair converges: removing each out-of-range hoop in turn always commits, ending clean', () => {
+    const k = shrunk();
+    let current = damaged();
+    for (const [outputId, idx] of [['o1', 1], ['o2', 1]] as const) {
+      const next = removeHoop(current, outputId, idx);
+      expect(newBlockers(k, current, next)).toEqual([]);
+      current = next;
+    }
+    expect(chainBlockers(k, current)).toEqual([]);
+  });
+
+  it('a genuinely NEW fan-out still refuses, even from an already-damaged routing', () => {
+    // Snare alone shrunk to 1 hoop (per-drum override) so its chain carries the pre-existing
+    // blocker while kick stays healthy — a fanned-out kick hoop is then genuinely NEW damage.
+    // Unreachable via the reducers (pool model); construct the fan-out next directly.
+    const k = kit();
+    k.drums = [k.drums[0]!, { ...k.drums[1]!, hoopCount: 1 }];
+    const current = routing([h('kick', 1)], [h('snare', 1), h('snare', 2)]);
+    const next = routing([h('kick', 1)], [h('snare', 1), h('snare', 2), h('kick', 1)]);
+    expect(chainBlockers(k, current).some((i) => i.code === 'hoop-out-of-range')).toBe(true);
+    const introduced = newBlockers(k, current, next);
+    expect(introduced.some((i) => i.code === 'hoop-fan-out')).toBe(true);
+  });
+
+  it('is empty for a healthy edit on a healthy routing', () => {
+    const current = routing([h('kick', 1)], []);
+    expect(newBlockers(kit(), current, addHoop(current, 'o1', h('kick', 2)))).toEqual([]);
   });
 });

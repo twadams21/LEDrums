@@ -3,16 +3,15 @@
    re-homes the Patch drum/hoop/kit inspectors; the per-hoop pixel math itself stays in
    docks/patch-inspector.ts (shared, already covered). */
 
-import type { DrumConfig, KitConfig } from '@ledrums/core';
+import { drumHoopCount, type DrumConfig, type KitConfig } from '@ledrums/core';
 import { perHoopPixelCount } from '../../docks/patch-inspector';
 import type { HoopRef } from '../../patch-routing';
 
-/** The 1-based hoop indices a drum HAS: an explicit `hoops[]` wins (its length IS the
-    count), else the per-drum `hoopCount` override, else the kit global — the same
-    resolution core and the inspectors use. */
+/** The 1-based hoop indices a drum HAS — count resolution is core's `drumHoopCount`
+    (explicit `hoops[]` wins, else the per-drum override, else the kit global), not a
+    re-implementation of it. */
 export function hoopIndices(drum: DrumConfig, kit: KitConfig): number[] {
-  const n = drum.hoops?.length ?? drum.hoopCount ?? kit.global.hoopCount;
-  return Array.from({ length: n }, (_, i) => i + 1);
+  return Array.from({ length: drumHoopCount(kit, drum) }, (_, i) => i + 1);
 }
 
 /** Total pixels across ONE drum, honouring mixed per-hoop counts — the drum-card summary
