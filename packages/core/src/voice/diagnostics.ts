@@ -56,6 +56,15 @@ export type VoiceDiagnostic =
       input: VoiceInputDescriptor;
     }
   | {
+      // A sequence node's own reset binding matched this input: its step position was cleared
+      // (across every state prefix it runs under — see `isResetStateKey`). Not a graph fire;
+      // nothing plays from this. One event per matched node.
+      kind: 'sequence-reset';
+      input: VoiceInputDescriptor;
+      graphKey: string;
+      nodeId: string;
+    }
+  | {
       kind: 'section-recalled';
       songId: string | null;
       sectionId: string | null;

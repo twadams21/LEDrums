@@ -227,8 +227,9 @@ export interface Voice {
   releaseFromLevel: number;
   via: string;
   deckGain: number;
-  /** Eval state prefix this voice was spawned under (always `'preview'` in the sim) — scopes
-      origin-keyed liveness for R13 delay-overlap Mix composition. Mirrors the core Voice field. */
+  /** Eval state prefix this voice was spawned under (the firing graph's KEY, or `'preview'` for a
+      caller that supplies none) — scopes origin-keyed liveness for R13 delay-overlap Mix
+      composition. Mirrors the core Voice field. */
   pad?: string;
   /** Graph node that produced this voice's layer — read by the sim's `isLayerLive` mirror so a
       delayed branch composes with still-live Mix members. Mirrors the core Voice field. */
@@ -318,8 +319,19 @@ export class Sim {
     viaPrefix: string;
     seen: Set<string>;
     draft?: PlayDraft | null;
+    /** The state prefix in force when this fire was enqueued — restored on drain so the delayed
+        branch reads the same sequence/latch buckets (and supersedes the same voices) as the
+        immediate part of its own trigger. */
+    stateKey: string;
   }> = [];
   private pendingFireCounter = 0;
+
+  /** The eval STATE PREFIX of the fire currently being evaluated — the graph key its caller passed
+      to {@link triggerGraph}, or the prefix restored while draining a delayed fire. Ambient for the
+      duration of one fire, exactly as `pad` is in the core engine, so voice tagging + delay-overlap
+      supersession key on the same prefix the evaluator used. Defaults to the historical `'preview'`
+      so a caller that passes no key (tests, ad-hoc previews) behaves exactly as before. */
+  private stateKey = 'preview';
 
   /** Seeded PRNG for random/chance evaluation — the core Mulberry32, mirroring the
       engine's own stream (engine.ts PRNG_SEED pattern). NO ambient Math.random anywhere
@@ -373,9 +385,19 @@ export class Sim {
 
   // --- triggering ----------------------------------------------------------
 
+  /** Offline mirror of the engine's sequence-reset application — resolve this input's reset
+      bindings (a sequence node's own `resetSource`) and clear each matched node's step state in
+      the sim's buckets, via the SAME core module the engine uses. Returns the matched bindings
+      for the caller's monitor lines. Correct offline keys require callers to fire with the graph
+      key as the state prefix (see {@link triggerGraph}). */
+  applySequenceResets(graphs: Record<string, TriggerGraph>, input: voice.ResetInput): voice.ResetHit[] {
+    return voice.applySequenceResets(this.seqIndex, graphs, input);
+  }
+
   /** Fire a freeform trigger graph: evaluate from the trigger node, spawn/stop. */
-  triggerGraph(padLabel: string, graph: TriggerGraph, ctx: TriggerCtx): string[] {
-    const actions = this.evalGraph(graph, ctx);
+  triggerGraph(padLabel: string, graph: TriggerGraph, ctx: TriggerCtx, stateKey?: string): string[] {
+    this.stateKey = stateKey ?? padLabel;
+    const actions = this.evalGraph(graph, ctx, this.stateKey);
     const resolved: string[] = [];
     for (const a of actions) {
       if (a.kind === 'stop') {
@@ -397,12 +419,18 @@ export class Sim {
     return resolved;
   }
 
-  private evalGraph(graph: TriggerGraph, ctx: TriggerCtx): Action[] {
+  private evalGraph(graph: TriggerGraph, ctx: TriggerCtx, stateKey: string): Action[] {
     // ONE evaluator: delegate to the pure core Gen3 evaluator. A raw legacy graph is
     // normalized to Gen3 first, exactly as the real engine does at `setShow` — so the
     // offline preview and live output share a single evaluation path.
+    //
+    // `stateKey` is the eval STATE PREFIX, and callers pass the GRAPH KEY so it lines up with the
+    // real engine's (`engine.resolveHitGraphs` uses the graph key / `key#slotIndex`). It used to be
+    // the constant `'preview'`, which pooled every graph's sequence/random/toggle state into one
+    // bucket — two graphs' sequencers advanced each other offline. Tests that pass no key keep
+    // their own label.
     const g = graph.version === 3 ? graph : voice.normalizeTriggerGraphToGen3(graph).graph;
-    return voice.evalGraph(this.coreEvalState(), g, 'preview', ctx);
+    return voice.evalGraph(this.coreEvalState(), g, stateKey, ctx);
   }
 
   private coreEvalState(): voice.EvalState {
@@ -437,6 +465,7 @@ export class Sim {
       viaPrefix: descriptor.viaPrefix,
       seen: descriptor.seen,
       draft: descriptor.draft,
+      stateKey: this.stateKey,
     });
   }
 
@@ -462,7 +491,7 @@ export class Sim {
       let prior: Voice | null = null;
       for (const v of this.voices) {
         if (v.phase === 'release') continue;
-        if (v.pad !== 'preview' || v.originNodeId !== a.originNodeId) continue;
+        if (v.pad !== this.stateKey || v.originNodeId !== a.originNodeId) continue;
         if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
       }
       if (prior) this.release(prior);
@@ -520,7 +549,7 @@ export class Sim {
       releaseFromLevel: 1,
       via: a.via,
       deckGain: 1,
-      pad: 'preview',
+      pad: this.stateKey,
       originNodeId: a.originNodeId,
     };
     this.voices.push(voice);
@@ -592,7 +621,8 @@ export class Sim {
     due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
     for (const f of due) {
       const { graph, childIds, ctx, viaPrefix, seen, draft } = f;
-      const actions = voice.evalChildren(this.coreEvalState(), graph, 'preview', childIds, ctx, viaPrefix, seen, draft ?? null);
+      this.stateKey = f.stateKey;
+      const actions = voice.evalChildren(this.coreEvalState(), graph, this.stateKey, childIds, ctx, viaPrefix, seen, draft ?? null);
       for (const a of actions) {
         if (a.kind === 'stop') {
           const v = this.voices.find((x) => x.id === a.voiceId);

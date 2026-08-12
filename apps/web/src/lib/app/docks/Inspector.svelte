@@ -28,6 +28,7 @@
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
+  import SequenceNodeInspector from './inspectors/SequenceNodeInspector.svelte';
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
@@ -131,6 +132,8 @@
     </header>
     {#if node.kind === 'play' || node.kind === 'effect'}
       <PlayNodeInspector {store} {node} />
+    {:else if node.kind === 'sequence'}
+      <SequenceNodeInspector {store} {node} />
     {:else if node.kind === 'delay'}
       <DelayNodeInspector {store} {node} />
     {:else if node.kind === 'modifier'}

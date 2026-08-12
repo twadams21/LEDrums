@@ -612,6 +612,18 @@ export class VoiceEngineHost {
       return;
     }
 
+    if (d.kind === 'sequence-reset') {
+      this.monitorSink?.({
+        type: 'graph',
+        direction: 'local',
+        source: 'server/voice',
+        destination: `graph:${d.graphKey}`,
+        label: `Sequence reset ${d.graphKey}`,
+        detail: `input=${describeVoiceInput(d.input)}; node=${d.nodeId}; back to step 1`,
+      });
+      return;
+    }
+
     this.monitorSink?.({
       type: 'graph',
       direction: 'local',
