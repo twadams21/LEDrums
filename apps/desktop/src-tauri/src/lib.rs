@@ -11,6 +11,7 @@
 //   4. On exit, send the sidecar SIGTERM (graceful: it stops cloudflared + flushes autosaves),
 //      then guarantee it's gone — no orphaned processes.
 
+mod midi_identity;
 mod native_midi;
 #[cfg(test)]
 mod native_midi_tests;
@@ -261,8 +262,17 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     match url.parse() {
         Ok(parsed) => {
             if let Some(window) = app.get_webview_window("app") {
-                if let Err(e) = window.navigate(parsed) {
-                    eprintln!("[desktop] could not navigate app window to {url}: {e}");
+                // REPLACE the boot shell in history rather than pushing the app on top of it.
+                // A bare WKWebView still honours Backspace as history-back, so with a pushed
+                // entry one stray Backspace on the graph canvas walked the drummer back to the
+                // dead "Starting…" boot page — indistinguishable from a crash. With
+                // `location.replace` there is nothing behind the app to go back to.
+                if let Err(e) = window.eval(&replace_navigation_script(&url)) {
+                    // A history entry beats a dead window: fall back to the pushing navigation.
+                    eprintln!("[desktop] could not replace-navigate app window to {url}: {e}");
+                    if let Err(e) = window.navigate(parsed) {
+                        eprintln!("[desktop] could not navigate app window to {url}: {e}");
+                    }
                 }
             } else {
                 eprintln!("[desktop] app window missing; could not navigate to {url}");
@@ -270,6 +280,68 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
     }
+}
+
+/// JS that navigates the webview to `url` WITHOUT adding a history entry. The URL is encoded as a
+/// JSON string literal so quotes/backslashes in a host token can never break out of the literal.
+fn replace_navigation_script(url: &str) -> String {
+    format!("location.replace({})", serde_json::Value::from(url))
+}
+
+/// The persisted `kMIDIPropertyUniqueID` for the `LEDrums` endpoint, minted on first run and reused
+/// forever after so a DAW's saved routing survives an app restart (see `midi_identity`).
+///
+/// Every degraded outcome still returns a usable id — the port must come up regardless — and is
+/// reported into the Monitor stream, because "your DAW forgot the LEDrums port again" is otherwise
+/// indistinguishable from a bug in the DAW.
+fn midi_endpoint_id(app: &AppHandle, port: u16, host_token: &native_midi::HostToken) -> i32 {
+    let app_data = match app.path().app_data_dir() {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("[native-midi] no app data dir ({err}); MIDI port identity is per-run");
+            native_midi::report_host_event(
+                port,
+                host_token.clone(),
+                native_midi::HostEventLevel::Error,
+                "MIDI port identity not persisted".to_string(),
+                Some(format!(
+                    "Could not locate the app data folder ({err}), so '{}' gets a new identity each \
+                     launch and your DAW may need it re-selected.",
+                    native_midi::PORT_NAME
+                )),
+            );
+            return midi_identity::generate_unique_id();
+        }
+    };
+
+    let resolved = midi_identity::load_or_create_unique_id(&app_data);
+    if resolved.origin == midi_identity::EndpointIdOrigin::Regenerated {
+        native_midi::report_host_event(
+            port,
+            host_token.clone(),
+            native_midi::HostEventLevel::Info,
+            "MIDI port identity reset".to_string(),
+            Some(format!(
+                "The saved MIDI endpoint id was unreadable and has been regenerated; re-select \
+                 '{}' in your DAW once and it will stick.",
+                native_midi::PORT_NAME
+            )),
+        );
+    }
+    if let Some(err) = resolved.persist_error.as_deref() {
+        eprintln!("[native-midi] could not persist the MIDI endpoint id: {err}");
+        native_midi::report_host_event(
+            port,
+            host_token.clone(),
+            native_midi::HostEventLevel::Error,
+            "MIDI port identity not persisted".to_string(),
+            Some(format!(
+                "{err}. '{}' works now, but will look like a new device after a restart.",
+                native_midi::PORT_NAME
+            )),
+        );
+    }
+    resolved.id
 }
 
 /// Bring up the CoreMIDI virtual destination. Idempotent — a second call while a bridge is alive is
@@ -284,7 +356,8 @@ fn start_native_midi(app: &AppHandle, port: u16, host_token: &native_midi::HostT
     if guard.is_some() {
         return;
     }
-    match native_midi::NativeMidiBridge::start(port, host_token.clone()) {
+    let unique_id = midi_endpoint_id(app, port, host_token);
+    match native_midi::NativeMidiBridge::start(port, host_token.clone(), unique_id) {
         Ok(bridge) => {
             *guard = Some(bridge);
             native_midi::report_host_event(
@@ -638,7 +711,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_pin, parse_tunnel_url};
+    use super::{parse_pin, parse_tunnel_url, replace_navigation_script};
 
     #[test]
     fn extracts_tunnel_url_from_banner_line() {
@@ -685,5 +758,21 @@ mod tests {
     #[test]
     fn returns_none_when_no_pin_present() {
         assert_eq!(parse_pin("OSC listening on udp:57120"), None);
+    }
+
+    #[test]
+    fn replace_navigation_uses_location_replace_so_no_history_entry_is_pushed() {
+        assert_eq!(
+            replace_navigation_script("http://127.0.0.1:4178/#hostToken=abc123"),
+            r#"location.replace("http://127.0.0.1:4178/#hostToken=abc123")"#
+        );
+    }
+
+    #[test]
+    fn replace_navigation_escapes_quotes_and_backslashes() {
+        assert_eq!(
+            replace_navigation_script(r#"http://x/#t="a\b""#),
+            r#"location.replace("http://x/#t=\"a\\b\"")"#
+        );
     }
 }
