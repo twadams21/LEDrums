@@ -261,8 +261,17 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
     match url.parse() {
         Ok(parsed) => {
             if let Some(window) = app.get_webview_window("app") {
-                if let Err(e) = window.navigate(parsed) {
-                    eprintln!("[desktop] could not navigate app window to {url}: {e}");
+                // REPLACE the boot shell in history rather than pushing the app on top of it.
+                // A bare WKWebView still honours Backspace as history-back, so with a pushed
+                // entry one stray Backspace on the graph canvas walked the drummer back to the
+                // dead "Starting…" boot page — indistinguishable from a crash. With
+                // `location.replace` there is nothing behind the app to go back to.
+                if let Err(e) = window.eval(&replace_navigation_script(&url)) {
+                    // A history entry beats a dead window: fall back to the pushing navigation.
+                    eprintln!("[desktop] could not replace-navigate app window to {url}: {e}");
+                    if let Err(e) = window.navigate(parsed) {
+                        eprintln!("[desktop] could not navigate app window to {url}: {e}");
+                    }
                 }
             } else {
                 eprintln!("[desktop] app window missing; could not navigate to {url}");
@@ -270,6 +279,12 @@ fn open_app_window(app: &AppHandle, port: u16, host_token: Option<&str>) {
         }
         Err(e) => eprintln!("[desktop] bad app url {url}: {e}"),
     }
+}
+
+/// JS that navigates the webview to `url` WITHOUT adding a history entry. The URL is encoded as a
+/// JSON string literal so quotes/backslashes in a host token can never break out of the literal.
+fn replace_navigation_script(url: &str) -> String {
+    format!("location.replace({})", serde_json::Value::from(url))
 }
 
 /// Bring up the CoreMIDI virtual destination. Idempotent — a second call while a bridge is alive is
@@ -638,7 +653,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_pin, parse_tunnel_url};
+    use super::{parse_pin, parse_tunnel_url, replace_navigation_script};
 
     #[test]
     fn extracts_tunnel_url_from_banner_line() {
@@ -685,5 +700,21 @@ mod tests {
     #[test]
     fn returns_none_when_no_pin_present() {
         assert_eq!(parse_pin("OSC listening on udp:57120"), None);
+    }
+
+    #[test]
+    fn replace_navigation_uses_location_replace_so_no_history_entry_is_pushed() {
+        assert_eq!(
+            replace_navigation_script("http://127.0.0.1:4178/#hostToken=abc123"),
+            r#"location.replace("http://127.0.0.1:4178/#hostToken=abc123")"#
+        );
+    }
+
+    #[test]
+    fn replace_navigation_escapes_quotes_and_backslashes() {
+        assert_eq!(
+            replace_navigation_script(r#"http://x/#t="a\b""#),
+            r#"location.replace("http://x/#t=\"a\\b\"")"#
+        );
     }
 }

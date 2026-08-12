@@ -627,6 +627,7 @@
       swapping={!fitted}
       onFlow={(f) => (flowApi = f)}
       onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
+      onEdgeClick={() => shell.clearSelection()}
       onPaneClick={() => shell.clearSelection()}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
