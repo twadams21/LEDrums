@@ -24,6 +24,9 @@
 
   let { store }: { store: TriggerLab } = $props();
 
+  /* Zone lists follow the AUTHORITATIVE kit (project.kit.drums) — same truth source as the
+     sibling Drums & Hoops pane — falling back to the build-time fixture only offline. */
+  const drums = $derived(store.project?.kit.drums ?? store.drums);
   const channelValue = $derived(store.midiChannel === null ? 'all' : String(store.midiChannel));
   const midiEmpty = $derived(
     deviceListEmptyState(store.midiAvailable, store.midiUnavailableReason, store.midiDevices.length),
@@ -80,9 +83,9 @@
     trigger graph on that drum.
   </p>
   <fieldset class="drums" disabled={!store.canEdit}>
-    {#each store.drums as drum (drum.id)}
+    {#each drums as drum (drum.id)}
       <div class="drumcard">
-        <DrumZonesList {store} drumId={drum.id} drumLabel={patchLabel(store, drumZoneId(drum.id), drum.label)} />
+        <DrumZonesList {store} drumId={drum.id} drumLabel={patchLabel(store, drumZoneId(drum.id), drum.label || drum.id)} />
       </div>
     {/each}
   </fieldset>

@@ -26,8 +26,10 @@ const DRUMS = [
 
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   return {
-    project: { inputMap: INPUT_MAP },
-    drums: DRUMS,
+    // The zone lists must follow the AUTHORITATIVE kit, not the build-time fixture —
+    // `drums` here is deliberately stale so any fixture read is visible in a test.
+    project: { inputMap: INPUT_MAP, kit: { drums: DRUMS } },
+    drums: [{ id: 'stale', label: 'Stale Fixture' }],
     patchLabels: {},
     canEdit: true,
     midiChannel: null,
@@ -57,6 +59,17 @@ describe('InputPane', () => {
     const adds = screen.getAllByRole('button', { name: 'Add zone' });
     expect(adds).toHaveLength(DRUMS.length);
     for (const d of DRUMS) expect(screen.getByText(`· ${d.label}`)).toBeTruthy();
+  });
+
+  it('reads drums from the project kit (authoritative), not the build-time fixture', () => {
+    render(InputPane, { props: { store: mockStore() } });
+    expect(screen.queryByText('· Stale Fixture')).toBeNull();
+  });
+
+  it('falls back to the fixture drums only when offline (no project)', () => {
+    render(InputPane, { props: { store: mockStore({ project: null }) } });
+    expect(screen.getByText('· Stale Fixture')).toBeTruthy();
+    expect(screen.queryByText('· Kick')).toBeNull();
   });
 
   it('drum headers honour a drum:<id> rename override', () => {
