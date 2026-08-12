@@ -54,8 +54,8 @@
     { node: makeNode('modifier', 'sg-mod'), label: 'Modifier · transform curve' },
   ];
 
-  // Graphs-dock stub data: two doodle graphs through the real graphThumb projection.
-  const dockThumbA = graphThumb({
+  // Graphs-rail stub data: two doodle graphs through the real graphThumb projection.
+  const railThumbA = graphThumb({
     nodes: [
       { id: 't', x: 0, y: 60 }, { id: 'r', x: 120, y: 60 },
       { id: 'a', x: 240, y: 10 }, { id: 'b', x: 240, y: 110 },
@@ -64,13 +64,13 @@
       { from: 't', to: 'r' }, { from: 'r', to: 'a' }, { from: 'r', to: 'b' },
     ],
   });
-  const dockThumbB = graphThumb({
+  const railThumbB = graphThumb({
     nodes: [{ id: 't', x: 0, y: 0 }, { id: 'p', x: 200, y: 90 }],
     edges: [{ from: 't', to: 'p' }],
   });
-  const dockCards = [
-    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: dockThumbA, sel: true },
-    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: dockThumbB, sel: false },
+  const railCards = [
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false },
   ];
 
   const face = (kind: NodeKind, sub: string) => ({
@@ -266,25 +266,19 @@
   </DemoCard>
 
   <DemoCard
-    title="Graphs dock (store-free stub)"
-    src="lib/app/views/GraphsDock"
-    note="A faithful markup stub of the bottom Graphs dock — section tabs in the PanelHeader, hotkey-badged graph cards with real graphThumb mini-maps, and the dashed new-graph card. The live dock binds the TriggerLab store (fire flash rides store.lastSectionFire)."
-    wide
+    title="Graphs rail (store-free stub)"
+    src="lib/app/views/TriggerGraphsRail"
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps and the dashed new-graph card, stacked vertically. The live rail binds the TriggerLab store (fire flash rides store.lastSectionFire) and resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
-    <div class="dock-stub">
+    <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">
-        <nav class="stub-tabs" aria-label="Sections (demo)">
-          <button type="button" class="stub-tab on">Intro<span class="stub-cnt">5</span></button>
-          <button type="button" class="stub-tab">Verse<span class="stub-cnt">1</span></button>
-          <button type="button" class="stub-tab">Chorus<span class="stub-cnt">0</span></button>
-        </nav>
-        <span class="stub-hint" aria-hidden="true"><kbd>1</kbd>–<kbd>9</kbd> fire · <kbd>←</kbd><kbd>→</kbd> section</span>
+        <span class="stub-hint" aria-hidden="true"><kbd>1</kbd>–<kbd>9</kbd> fire</span>
       </PanelHeader>
       <div class="stub-cards">
-        {#each dockCards as cItem (cItem.hk)}
+        {#each railCards as cItem (cItem.hk)}
           <button type="button" class="stub-card" class:sel={cItem.sel}>
             <span class="stub-hot">{cItem.hk}</span>
-            <svg class="stub-thumb" viewBox="0 0 172 104" aria-hidden="true">
+            <svg class="stub-thumb" viewBox="0 0 172 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
               {#each cItem.thumb.paths as d (d)}<path {d} />{/each}
               {#each cItem.thumb.dots as p, di (di)}<circle cx={p.x} cy={p.y} r="3.5" />{/each}
             </svg>
@@ -383,46 +377,20 @@
   .fire-btn:active {
     scale: 0.97;
   }
-  /* graphs-dock stub — mirrors GraphsDock.svelte's chrome (see the src pointer) */
-  .dock-stub {
+  /* graphs-rail stub — mirrors TriggerGraphsRail.svelte's chrome (see the src pointer) */
+  .rail-stub {
     display: grid;
     grid-template-rows: auto auto;
+    width: 240px;
     background: var(--surface);
     border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
     overflow: hidden;
-  }
-  .stub-tabs {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-  .stub-tab {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 5px;
-    padding: 4px var(--space-3);
-    background: transparent;
-    border: none;
-    border-radius: var(--radius-2);
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-  .stub-tab.on {
-    background: var(--surface-3);
-    color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--border);
-  }
-  .stub-cnt {
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
-    font-variant-numeric: tabular-nums;
   }
   .stub-hint {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    margin-left: var(--space-3);
     font-size: var(--text-2xs);
     color: var(--text-faint);
     text-transform: none;
@@ -444,15 +412,14 @@
   }
   .stub-cards {
     display: flex;
+    flex-direction: column;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-3);
-    overflow-x: auto;
+    padding: var(--space-2);
   }
   .stub-card {
     position: relative;
     flex: none;
-    width: 172px;
-    height: 116px;
+    height: 84px;
     padding: 0;
     background: var(--surface-2);
     border: 1px solid var(--border-faint);
@@ -471,7 +438,7 @@
   .stub-hot {
     position: absolute;
     top: 8px;
-    left: 8px;
+    right: 8px;
     display: grid;
     place-items: center;
     min-width: 20px;
@@ -516,7 +483,7 @@
     gap: 1px;
   }
   .stub-name {
-    font-size: var(--text-base);
+    font-size: var(--text-sm);
     font-weight: 600;
     color: var(--ink);
   }
@@ -529,8 +496,7 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 172px;
-    height: 116px;
+    height: 40px;
     background: transparent;
     border: 1.5px dashed var(--border);
     border-radius: var(--radius-3);
