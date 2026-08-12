@@ -5,10 +5,10 @@
    the setters. */
 
 import * as nav from './shell-nav';
-import type { Selection, ShellNav, View } from './shell-nav';
+import type { Selection, SettingsPane, ShellNav, View } from './shell-nav';
 import type { PatchRouting } from './patch-routing';
 
-export type { PatchNodeId, Selection, View } from './shell-nav';
+export type { PatchNodeId, Selection, SettingsPane, View } from './shell-nav';
 
 export class ShellStore {
   private s = $state<ShellNav>(nav.initialNav());
@@ -21,7 +21,7 @@ export class ShellStore {
       (a patch node is only selectable from within it, so reads are always fresh). */
   private liveRouting = $state<PatchRouting | null>(null);
 
-  constructor(init?: Partial<Pick<ShellNav, 'view'>>) {
+  constructor(init?: Partial<Pick<ShellNav, 'view' | 'settings'>>) {
     this.s = nav.initialNav(init);
   }
 
@@ -40,8 +40,19 @@ export class ShellStore {
     this.liveRouting = routing;
   }
 
+  /** The open Settings-modal section; null = modal closed. */
+  get settingsPane(): SettingsPane | null {
+    return this.s.settings;
+  }
+
   setView(view: View): void {
     this.s = nav.setView(this.s, view);
+  }
+  openSettings(pane?: SettingsPane): void {
+    this.s = nav.openSettings(this.s, pane);
+  }
+  closeSettings(): void {
+    this.s = nav.closeSettings(this.s);
   }
   select(selection: Selection): void {
     this.s = nav.select(this.s, selection);

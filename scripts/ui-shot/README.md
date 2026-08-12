@@ -85,7 +85,7 @@ The rule is **not** "register every component." It is:
 
 `--full` (full page) · `--strict` (exit 1 on any console/page error — the clean-console gate) · `--viewport WxH` (default 1600×1000) · `--settle MS` (extra pre-capture wait) · `--name` (output basename for ad-hoc/CLI captures).
 
-Ad-hoc raw route is still supported for edge cases: `pnpm ui-shot --route "?view=patch" --target "main.center" --name my-shot`.
+Ad-hoc raw route is still supported for edge cases: `pnpm ui-shot --route "?view=sections" --target "main.center" --name my-shot`.
 
 ## Validation
 

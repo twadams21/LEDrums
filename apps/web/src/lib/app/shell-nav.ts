@@ -9,7 +9,15 @@
    node/patch in the graph views' Node Editor drawer, bus in the Buses panel,
    section in the Sections view — so there is no global dock tab to route. */
 
-export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'patch' | 'monitor';
+export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'monitor';
+
+/** Settings-modal section ids (tabbed chrome: the patch surface lives in Settings).
+    `general` hosts today's app settings; the rest are S4 panes. */
+export type SettingsPane = 'general' | 'input' | 'drums' | 'outputs' | 'controller' | 'system';
+
+export const SETTINGS_PANES: readonly SettingsPane[] = ['general', 'input', 'drums', 'outputs', 'controller', 'system'];
+
+export const DEFAULT_SETTINGS_PANE: SettingsPane = 'general';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
     minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
@@ -29,14 +37,17 @@ export type Selection =
 export interface ShellNav {
   view: View;
   selection: Selection | null;
+  /** The open Settings-modal section, or null when the modal is closed. */
+  settings: SettingsPane | null;
 }
 
-export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigger', 'patch', 'monitor'];
+export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigger', 'monitor'];
 
-export function initialNav(init: Partial<Pick<ShellNav, 'view'>> = {}): ShellNav {
+export function initialNav(init: Partial<Pick<ShellNav, 'view' | 'settings'>> = {}): ShellNav {
   return {
     view: init.view ?? 'trigger',
     selection: null,
+    settings: init.settings ?? null,
   };
 }
 
@@ -57,6 +68,18 @@ export function clearSelection(nav: ShellNav): ShellNav {
   return { ...nav, selection: null };
 }
 
+/** Open the Settings modal on `pane` (default section when unspecified). The
+    workspace view + selection are untouched — the modal overlays them. */
+export function openSettings(nav: ShellNav, pane: SettingsPane = DEFAULT_SETTINGS_PANE): ShellNav {
+  if (nav.settings === pane) return nav;
+  return { ...nav, settings: pane };
+}
+
+export function closeSettings(nav: ShellNav): ShellNav {
+  if (nav.settings === null) return nav;
+  return { ...nav, settings: null };
+}
+
 /** True when `sel` refers to the same inspectable as the current selection —
     lets views render an "active" affordance without re-deriving equality. */
 export function isSelected(nav: ShellNav, sel: Selection): boolean {
@@ -74,11 +97,16 @@ export function isSelected(nav: ShellNav, sel: Selection): boolean {
   }
 }
 
-/** Parse the view deep-link from a query string (?view=). Unknown values are dropped. */
-export function parseSearch(search: string): Partial<Pick<ShellNav, 'view'>> {
+/** Parse the deep-links from a query string: `?view=` (workspace view) and
+    `?settings=` (Settings-modal section). Unknown values are dropped. The retired
+    `?view=patch` redirects to the Settings modal — the patch surface lives there now. */
+export function parseSearch(search: string): Partial<Pick<ShellNav, 'view' | 'settings'>> {
   const p = new URLSearchParams(search);
-  const out: Partial<Pick<ShellNav, 'view'>> = {};
+  const out: Partial<Pick<ShellNav, 'view' | 'settings'>> = {};
   const v = p.get('view');
   if (v && (VIEWS as readonly string[]).includes(v)) out.view = v as View;
+  else if (v === 'patch') out.settings = DEFAULT_SETTINGS_PANE;
+  const s = p.get('settings');
+  if (s && (SETTINGS_PANES as readonly string[]).includes(s)) out.settings = s as SettingsPane;
   return out;
 }

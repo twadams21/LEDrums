@@ -14,7 +14,8 @@
    script in a preset. */
 
 import type { TriggerLab } from '../trigger-lab/store.svelte';
-import type { ShellStore, View } from './shell-store.svelte';
+import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
+import { SETTINGS_PANES } from './shell-nav';
 import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { voice } from '@ledrums/core';
@@ -34,7 +35,7 @@ function settle(): Promise<void> {
 export interface ShotSeam {
   /** Close every summoned drawer/modal and drop the inspector selection. */
   reset(): void;
-  /** Switch the workspace view (perform · objects · sections · trigger · patch · monitor). */
+  /** Switch the workspace view (perform · objects · sections · trigger · monitor). */
   setView(view: View): void;
   /** Open a trigger graph. No arg keeps the pre-selected pad graph; an arg matches a
       graph by key, key prefix (`snare` → `snare:0`), or label substring. */
@@ -51,8 +52,8 @@ export interface ShotSeam {
   selectNode(kindOrId: string): void;
   /** Open the effect gallery for the selected / last-added / first effect node. */
   openGallery(): void;
-  /** Open the app Settings dialog (clicks the stable TopBar control). */
-  openSettings(): void;
+  /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
+  openSettings(pane?: SettingsPane): void;
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
@@ -80,12 +81,13 @@ export interface ShotSeam {
       the Trigger graph and pins REAL `compileRenderPlan` issues (from a degenerate graph) so the
       capture shows genuine compiler output, not a mock. */
   previewLintIssues(): void;
-  /** Open the Patch controller inspector on a synthetic controller so ui-shot can capture the
-      controller panel (incl. the R29 admin-password field + the subnet-recommendation card), which
-      otherwise needs a live PixLite on the network. `auth` = adopted + authenticated (calm); `needs`
+  /** Inject a synthetic controller status and open Settings → Controller, so ui-shot can capture
+      the controller surface (incl. the R29 admin-password field + the subnet-recommendation card)
+      without a live PixLite on the network. `auth` = adopted + authenticated (calm); `needs`
       = adopted but lost/needs-password (warn → shows the subnet guidance under the lost alert);
-      `discover` = nothing adopted (the Discover affordance + recommendation card + Adopt-by-IP). The
-      recommendation itself is real — the panel's mount requests the dev machine's NICs. */
+      `discover` = nothing adopted (the Discover affordance + recommendation card + Adopt-by-IP).
+      The Controller pane is an S2 stub until S4d re-homes the panels; the status injection is
+      already the shape that pane will render. */
   mockController(kind?: 'auth' | 'needs' | 'discover'): void;
   /** Author a Mix with two wired layer branches and select it, so the Mix inspector shows
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
@@ -131,6 +133,7 @@ class ShotSeamImpl implements ShotSeam {
   reset(): void {
     this.store.closeGallery();
     this.store.closeSettings();
+    this.shell.closeSettings();
     this.shell.clearSelection();
     sectionsDndPreview.clear();
     wireInvalidPreview.clear();
@@ -221,12 +224,10 @@ class ShotSeamImpl implements ShotSeam {
     if (target) this.store.openGallery(target);
   }
 
-  openSettings(): void {
-    // App settings live in the TopBar's local state, not the store; click the one
-    // stable control rather than duplicate that state. Encapsulated here so presets
-    // stay declarative (`state: "settings"`) instead of carrying a click chain.
-    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Settings"]');
-    button?.click();
+  openSettings(pane?: SettingsPane): void {
+    // Settings routing lives in the shell store (deep-linkable `?settings=<pane>`),
+    // so the seam drives the same method the gear + the URL drive.
+    this.shell.openSettings(pane);
   }
 
   previewBackups(): void {
@@ -327,13 +328,12 @@ class ShotSeamImpl implements ShotSeam {
 
   mockController(kind: 'auth' | 'needs' | 'discover' = 'auth'): void {
     if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('patch');
+    this.shell.openSettings('controller');
     // Nothing adopted — the un-adopted branch (Discover + recommendation card + Adopt-by-IP). The
-    // recommendation comes from the real NIC list the inspector's mount requests, so this captures
+    // recommendation comes from the real NIC list the panel's mount requests, so this captures
     // the true "different IP addresses" guidance, not a stub.
     if (kind === 'discover') {
       this.store.controllerStatus = null;
-      this.shell.select({ kind: 'patch', nodeId: 'controller' });
       let f = 0;
       const hold = (): void => {
         this.store.controllerStatus = null; // resist the dev server's own (null) status echoes
@@ -367,9 +367,7 @@ class ShotSeamImpl implements ShotSeam {
       testPattern: null,
     };
     this.store.controllerStatus = status;
-    // Open the Patch controller node's inspector (patch selection 'controller' → PatchControllerInspector).
-    this.shell.select({ kind: 'patch', nodeId: 'controller' });
-    // The inspector's mount sends `watchController`, and a dev server with no adopted controller may
+    // The pane's mount sends `watchController`, and a dev server with no adopted controller may
     // answer with a null `controllerStatus` that would wipe the synthetic one. Re-assert across a few
     // frames so the injected status is what the panel renders when ui-shot captures. Dev-only.
     let frames = 0;
@@ -491,7 +489,8 @@ class ShotSeamImpl implements ShotSeam {
         this.openGallery();
         break;
       case 'settings':
-        this.openSettings();
+        // `settings` opens the modal on its default pane; `settings:outputs` deep-links a section.
+        this.openSettings(arg && (SETTINGS_PANES as readonly string[]).includes(arg) ? (arg as SettingsPane) : undefined);
         break;
       case 'backups':
         this.previewBackups();
@@ -519,12 +518,6 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
-        break;
-      case 'patch':
-        // Select a Patch-graph node/zone by id (e.g. `patch:kit`, `patch:hoop:kick:1`) → its
-        // inspector. `arg` already carries the full id (everything after the first ':').
-        this.shell.setView('patch');
-        if (arg) this.shell.select({ kind: 'patch', nodeId: arg });
         break;
       case 'expanded':
         // Flip the Advatek expanded/normal controller mode — the ONLY control over the output-port
