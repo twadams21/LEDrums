@@ -28,6 +28,11 @@
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
+  import OutputChainCard from '../../app/settings/panes/OutputChainCard.svelte';
+  import UnassignedPool from '../../app/settings/panes/UnassignedPool.svelte';
+  import { addHoop, moveHoop, removeHoop, unassignedHoops } from '../../app/settings/panes/chain-editor';
+  import { pixelRanges, type HoopRef, type PatchRouting } from '../../app/patch-routing';
+  import type { KitConfig, RgbOrder } from '@ledrums/core';
   import Field from '../../ui/Field.svelte';
   import Slider from '../../ui/Slider.svelte';
   import DemoCard from '../DemoCard.svelte';
@@ -207,6 +212,45 @@
     }
   }
   const renameStub = new RenameStub() as unknown as TriggerLab;
+
+  /* ---- Output chain editor (S4c) — real reducers on a stub kit + routing -------- */
+  const chainDrum = (id: string, label: string): KitConfig['drums'][number] => ({
+    id,
+    label,
+    color: '#fff',
+    diameterIn: 22,
+    hoopSpacingMm: 50,
+    localSpinDeg: 0,
+    startAngleDeg: 0,
+    origin: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+  });
+  const chainKit: KitConfig = {
+    version: 1,
+    units: 'mm',
+    global: { ledDensityPxPerM: 60, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 304, mirror: 'none', expanded: false },
+    drums: [chainDrum('kick', 'Kick'), chainDrum('snare', 'Snare')],
+    outputs: [],
+  };
+  let chainRouting = $state<PatchRouting>({
+    outputs: [
+      {
+        id: 'out-1',
+        channelsPerPixel: 3,
+        hoops: [
+          { drumId: 'kick', hoop: 1 },
+          { drumId: 'kick', hoop: 2 },
+        ],
+      },
+    ],
+  });
+  const chainPool = $derived(unassignedHoops(chainKit, chainRouting));
+  const chainRanges = $derived(pixelRanges(chainRouting, () => 108));
+  const chainLabel = (h: HoopRef): string =>
+    `${chainKit.drums.find((d) => d.id === h.drumId)?.label ?? h.drumId} · Hoop ${h.hoop}`;
+  const chainScalar = (partial: { startUniverse?: number; channelsPerPixel?: number; rgbOrder?: RgbOrder }): void => {
+    chainRouting = { outputs: chainRouting.outputs.map((o) => ({ ...o, ...partial })) };
+  };
 
   let inspectorGain = $state(0.7);
 
@@ -495,6 +539,32 @@
     </DemoCard>
 
     <DemoCard
+      title="Output chain editor"
+      src={['lib/app/settings/panes/OutputChainCard', 'lib/app/settings/panes/UnassignedPool', 'lib/app/settings/panes/chain-editor']}
+      note="Settings › Outputs & Chains (S4c): one card per physical output — transport scalars above the ordered hoop chain (drag-reorder, move up/down, remove) — with the unassigned-hoops pool beneath. The pool feeds the add picker, so a hoop sits on at most one chain by construction; removing returns it. This demo runs the real reducers."
+      wide
+    >
+      <div class="chain-demo">
+        <OutputChainCard
+          store={renameStub}
+          output={chainRouting.outputs[0]!}
+          index={0}
+          expanded={false}
+          pool={chainPool}
+          hoopLabel={chainLabel}
+          span={chainRanges.byOutput['out-1']}
+          disabled={false}
+          canEdit
+          onScalar={chainScalar}
+          onAdd={(h) => (chainRouting = addHoop(chainRouting, 'out-1', h))}
+          onRemove={(i) => (chainRouting = removeHoop(chainRouting, 'out-1', i))}
+          onMove={(from, to) => (chainRouting = moveHoop(chainRouting, 'out-1', from, to))}
+        />
+        <UnassignedPool pool={chainPool} hoopLabel={chainLabel} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Monitor"
       src={['lib/app/docks/Monitor', 'lib/app/monitor']}
       note="The routing/debug log — entries colour-code by type on the left border. The filters here are live (this demo runs the real filter code)."
@@ -588,6 +658,12 @@
     flex-direction: column;
     gap: var(--space-3);
     max-width: 300px;
+  }
+  .chain-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 360px;
   }
   /* Sit the strip on a canvas-like inset so it reads as it does over the graph surface. */
   .lint-demo {
