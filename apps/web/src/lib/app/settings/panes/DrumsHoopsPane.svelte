@@ -1,6 +1,8 @@
 <script lang="ts">
   /* STUB (S2) — S4b fills this pane. Registered in SettingsModal now so the S4
      slices only ever touch their own pane file. */
+  // Registry passes { store }; stubs ignore it until their S4 slice lands.
+  let { store: _store }: { store?: unknown } = $props();
 </script>
 
 <div class="stub">

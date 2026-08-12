@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SongsBar from './SongsBar.svelte';
 
@@ -53,7 +53,7 @@ describe('SongsBar', () => {
     expect(store.createSong).toHaveBeenCalledTimes(1);
 
     const viewer = render(SongsBar, { props: { store: mockStore({ canEdit: false }) } });
-    expect(viewer.queryByLabelText('Add song')).toBeNull();
+    expect(within(viewer.container).queryByLabelText('Add song')).toBeNull();
   });
 
   it('renders a referenced library song (resolved tail) with a Library tooltip and empty-setlist copy', () => {
