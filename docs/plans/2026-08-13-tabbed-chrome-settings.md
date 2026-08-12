@@ -19,20 +19,19 @@ status cluster). Views: Perform · Objects · Sections · Trigger Graph · Monit
 Trigger Graph hosts the Graphs list as a left pane (prototype's `ProtoGraphsRail`), Node Editor
 drawer unchanged on the right.
 
-## Open questions (Trent decides before the affected slice dispatches)
+## Open questions — ALL DECIDED (Trent, 2026-08-13, in-session)
 
-1. **Visualizer + Buses/Layers home.** Recommendation: a **collapsible right dock**
-   (Visualizer pinned top, Buses/Layers below — today's `col2` made collapsible), expand state
-   persisted per view in `paneSizes`. Collapsed = the full-width payoff; expanded = today's
-   behaviour. Alternatives if the dock feels wrong: (b) Visualizer only in Perform + Buses as a
-   Trigger-view drawer; (c) keep a permanent right column (loses the width win).
-2. **Bottom-bar allocation.** Proposal: bottom = Transport · StatusBar · OutputPill ·
-   presence/takeover; top-right = show name + SaveIndicator + project menu + **Share** + Backups +
-   UpdateBadge + Settings gear. Confirm or re-deal.
-3. **Chain-editing UX in Settings** (S4c): per-output ordered list with drag-reorder +
-   move-up/down buttons, "add hoop" picker fed by an **unassigned-hoops pool**, remove returns to
-   pool. Confirm the pool model (vs. move-only between outputs, no unassigned state — today's
-   graph allows unwired hoops, so the pool matches current semantics).
+1. **Visualizer + Buses/Layers home: permanent right column.** Keep a fixed right column
+   (today's `col2`) hosting Visualizer (top) + Buses/Layers (below). NOT the collapsible dock —
+   Trent chose zero new interaction over the full-width win. S5 re-homes the column into the
+   tabbed shell unchanged in behaviour.
+2. **Bottom-bar allocation: as proposed, except presence/takeover moves to the TOP bar.**
+   Bottom = Transport · StatusBar · OutputPill — read-only stats only, no interactive
+   presence controls. Top-right = show name + SaveIndicator + project menu + **Share** +
+   presence/takeover + Backups + UpdateBadge + Settings gear.
+3. **Chain-editing UX (S4c): unassigned-hoops pool confirmed.** Per-output ordered list with
+   drag-reorder + move-up/down buttons, "add hoop" picker fed by the unassigned pool, remove
+   returns to pool (matches current graph semantics — unwired hoops allowed).
 
 ## Parity contract (rewrite-parity: the old surface may not die until every row has a new home)
 
