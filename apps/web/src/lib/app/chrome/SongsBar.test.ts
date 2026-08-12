@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/svelte';
+import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SongsBar from './SongsBar.svelte';
 
 /* SongsBar replaces the rail's SongRail in the tabbed chrome. These lock the
-   chrome→store wiring: one chip per resolved setlist song (references badged in
-   the tooltip), the active chip marked, select/add going to the right store
-   methods, and the Add affordance hidden from viewers. */
+   chrome→store wiring: one chip per resolved setlist song (references wear a
+   visible Library badge), the active chip marked, select/add/rename going to the
+   right store methods, and the editor affordances hidden from viewers. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   const songs = [
     { id: 's1', name: 'Song One', sections: [{}, {}] },
@@ -21,6 +21,12 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     canEdit: true,
     createSong: vi.fn(),
     setActiveSong: vi.fn(),
+    renameSong: vi.fn(),
+    renameLibrarySong: vi.fn(),
+    duplicateSong: vi.fn(),
+    removeSong: vi.fn(),
+    removeSongReference: vi.fn(),
+    detachSongReference: vi.fn(),
     ...over,
   } as unknown as TriggerLab;
 }
@@ -62,12 +68,51 @@ describe('SongsBar', () => {
       songs,
       resolvedSongs: [...songs, { id: 'song-9', name: 'Shared', sections: [{}, {}] }],
     });
-    const { container } = render(SongsBar, { props: { store } });
+    const { container, getByLabelText } = render(SongsBar, { props: { store } });
     const chips = container.querySelectorAll('.chip');
     expect(chips.length).toBe(2);
     expect(chips[1]?.getAttribute('title')).toBe('Shared (Library)');
+    // The reference wears a VISIBLE Library badge, not just a tooltip.
+    expect(chips[1]?.contains(getByLabelText('Library reference'))).toBe(true);
+    expect(chips[0]?.querySelector('.ref')).toBeNull();
 
     const empty = render(SongsBar, { props: { store: mockStore({ songs: [], resolvedSongs: [] }) } });
     expect(empty.container.textContent).toContain('No songs in this show');
+  });
+
+  it('double-click renames a local song inline via the store', async () => {
+    const store = mockStore();
+    const { container, findByLabelText, queryByLabelText } = render(SongsBar, { props: { store } });
+    await fireEvent.dblClick(container.querySelectorAll('.chip')[1]!);
+    const input = (await findByLabelText('Rename song')) as HTMLInputElement;
+    expect(input.value).toBe('Song Two');
+    await fireEvent.input(input, { target: { value: 'Song 2.1' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(store.renameSong).toHaveBeenCalledWith('s2', 'Song 2.1');
+    await waitFor(() => expect(queryByLabelText('Rename song')).toBeNull());
+  });
+
+  it('renaming a library reference routes to the canonical library copy', async () => {
+    const songs = [{ id: 's1', name: 'Local', sections: [{}] }];
+    const store = mockStore({
+      songs,
+      resolvedSongs: [...songs, { id: 'song-9', name: 'Shared', sections: [{}] }],
+    });
+    const { container, findByLabelText } = render(SongsBar, { props: { store } });
+    await fireEvent.dblClick(container.querySelectorAll('.chip')[1]!);
+    const input = (await findByLabelText('Rename library song')) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: 'Shared v2' } });
+    await fireEvent.keyDown(input, { key: 'Enter' });
+    expect(store.renameLibrarySong).toHaveBeenCalledWith('song-9', 'Shared v2');
+    expect(store.renameSong).not.toHaveBeenCalled();
+  });
+
+  it('a read-only viewer cannot enter the inline rename', async () => {
+    const store = mockStore({ canEdit: false });
+    const { container, queryByLabelText } = render(SongsBar, { props: { store } });
+    await fireEvent.dblClick(container.querySelectorAll('.chip')[0]!);
+    // startRename defers a frame; give it one before asserting nothing mounted.
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    expect(queryByLabelText('Rename song')).toBeNull();
   });
 });

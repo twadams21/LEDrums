@@ -2,16 +2,77 @@
   /* Setlist songs bar (tabbed chrome row 2): the active show's setlist as a chip
      row — local songs and resolved library references (showSongRows), the active
      song raised, plus an add-song affordance for editors. Selecting a chip
-     re-points the whole shell (sections bar, workspace) at that song. */
+     re-points the whole shell (sections bar, workspace) at that song.
+
+     Per-chip verbs (mined from the retired SongRail): right-click a chip to
+     Rename (inline CommitInput; double-click too), Duplicate, or Delete a local
+     song, or Detach copy / Remove from show for a library reference. A reference
+     wears a visible LibraryBig badge; renaming one routes to the canonical
+     library copy (propagates). Chips stay chips — no row chrome. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import { showSongRows } from '../views/objects-view';
+  import { showSongRows, type ShowSongRow } from '../views/objects-view';
   import IconButton from '../../ui/IconButton.svelte';
+  import CommitInput from '../../ui/CommitInput.svelte';
+  import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
+  import LibraryBig from '@lucide/svelte/icons/library-big';
   import Plus from '@lucide/svelte/icons/plus';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Copy from '@lucide/svelte/icons/copy';
+  import Unlink from '@lucide/svelte/icons/unlink';
+  import X from '@lucide/svelte/icons/x';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
 
   let { store }: { store: TriggerLab } = $props();
 
   const songRows = $derived(showSongRows(store.songs, store.resolvedSongs));
+  // The last-song guard counts LOCAL songs only — removing a reference drops the
+  // ref, never the local setlist (SongRail's rule, unchanged).
+  const canDeleteLocal = $derived(store.songs.length > 1);
+
+  /** The chip being renamed in place, or null. */
+  let editingId = $state<string | null>(null);
+
+  // Defer past the context-menu's own close + focus-return, so the input we mount
+  // keeps focus instead of the menu yanking it back (mirrors EditableRow).
+  function startRename(id: string): void {
+    requestAnimationFrame(() => (editingId = id));
+  }
+
+  function detach(id: string): void {
+    const localId = store.detachSongReference(id);
+    if (localId) store.setActiveSong(localId);
+  }
+
+  /** Rename routes to the canonical library copy for a reference (propagates), else the local song. */
+  function commitRename(row: ShowSongRow, name: string): void {
+    editingId = null;
+    if (row.origin === 'reference') store.renameLibrarySong(row.id, name);
+    else store.renameSong(row.id, name);
+  }
+
+  /** The right-click verbs for one chip, by origin — local song CRUD vs library-reference verbs. */
+  function rowActions(row: ShowSongRow): ContextMenuAction[] {
+    const rename: ContextMenuAction = { label: 'Rename', icon: Pencil, onSelect: () => startRename(row.id) };
+    if (row.origin === 'reference') {
+      return [
+        rename,
+        { label: 'Detach copy', icon: Unlink, onSelect: () => detach(row.id) },
+        { label: 'Remove from show', icon: X, onSelect: () => store.removeSongReference(row.id) },
+      ];
+    }
+    return [
+      rename,
+      { label: 'Duplicate', icon: Copy, onSelect: () => store.duplicateSong(row.id) },
+      {
+        label: 'Delete',
+        icon: Trash2,
+        danger: true,
+        disabled: !canDeleteLocal, // the app always keeps one LOCAL song
+        onSelect: () => store.removeSong(row.id),
+      },
+    ];
+  }
 </script>
 
 <div class="bar" role="navigation" aria-label="Setlist songs">
@@ -21,16 +82,35 @@
       <span class="none">No songs in this show</span>
     {/if}
     {#each songRows as row (row.id)}
-      <button
-        type="button"
-        class="chip"
-        class:on={store.activeSongId === row.id}
-        aria-current={store.activeSongId === row.id ? 'true' : undefined}
-        onclick={() => store.setActiveSong(row.id)}
-        title={row.origin === 'reference' ? `${row.name} (Library)` : row.name}
-      >
-        {row.name}<span class="cnt">{row.sectionCount}</span>
-      </button>
+      {#if editingId === row.id}
+        <span class="chip-edit">
+          <CommitInput
+            value={row.name}
+            ariaLabel={row.origin === 'reference' ? 'Rename library song' : 'Rename song'}
+            onCommit={(name) => commitRename(row, name)}
+            onCancel={() => (editingId = null)}
+          />
+        </span>
+      {:else}
+        <ContextMenu actions={rowActions(row)} disabled={!store.canEdit}>
+          <button
+            type="button"
+            class="chip"
+            class:on={store.activeSongId === row.id}
+            aria-current={store.activeSongId === row.id ? 'true' : undefined}
+            onclick={() => store.setActiveSong(row.id)}
+            ondblclick={() => store.canEdit && startRename(row.id)}
+            title={row.origin === 'reference' ? `${row.name} (Library)` : row.name}
+          >
+            {row.name}{#if row.origin === 'reference'}<span
+                class="ref"
+                role="img"
+                aria-label="Library reference"
+                title="References a Song Library song — edits propagate"><LibraryBig size={11} aria-hidden="true" /></span
+              >{/if}<span class="cnt">{row.sectionCount}</span>
+          </button>
+        </ContextMenu>
+      {/if}
     {/each}
     {#if store.canEdit}
       <IconButton icon={Plus} label="Add song" size={13} onclick={() => store.createSong()} />
@@ -97,6 +177,18 @@
     font-size: var(--text-2xs);
     color: var(--text-faint);
     font-variant-numeric: tabular-nums;
+  }
+  /* Visible library-reference badge — icon+tooltip, aligned to the chip text. */
+  .ref {
+    display: inline-flex;
+    align-self: center;
+    color: var(--text-faint);
+  }
+  /* Keep the bar height stable while a chip swaps to its rename input. */
+  .chip-edit {
+    display: inline-flex;
+    flex: none;
+    width: 140px;
   }
   .none {
     font-size: var(--text-xs);
