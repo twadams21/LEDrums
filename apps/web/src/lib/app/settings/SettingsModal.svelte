@@ -39,12 +39,21 @@
 
   const open = $derived(shell.settingsPane !== null);
   const active = $derived(SECTIONS.find((s) => s.id === shell.settingsPane) ?? SECTIONS[0]!);
+
+  /** Every close path (X, Esc, backdrop) disarms any pending MIDI/OSC learn — an arm
+      left live after the modal closes is invisible, and the next stray input would
+      silently bind it. Both cancels are no-ops when nothing is armed. */
+  function close(): void {
+    store.cancelMidiLearn();
+    store.cancelOscLearn();
+    shell.closeSettings();
+  }
 </script>
 
-<Dialog {open} onClose={() => shell.closeSettings()} title="Settings" class="settings-modal">
+<Dialog {open} onClose={close} title="Settings" class="settings-modal">
   <header class="head">
     <h2>Settings</h2>
-    <IconButton icon={X} label="Close settings" size={15} onclick={() => shell.closeSettings()} />
+    <IconButton icon={X} label="Close settings" size={15} onclick={close} />
   </header>
   <div class="split">
     <nav class="snav" aria-label="Settings sections">
