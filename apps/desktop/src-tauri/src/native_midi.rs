@@ -7,6 +7,12 @@
 // survive the stdout/stderr line buffer intact. The token is now a shared, updatable slot
 // ({@link HostToken}) that the desktop shell fills in BEFORE the sidecar is spawned, so port
 // creation is independent of anything the server prints.
+//
+// The port is created against CoreMIDI directly rather than through midir. midir never sets
+// `kMIDIPropertyUniqueID`, so CoreMIDI minted a fresh random identity on every launch — and every
+// app that remembers MIDI endpoints by uniqueID (Sensory Percussion, Ableton) therefore saw a brand
+// new device each time LEDrums started and dropped its routing. The shell now hands the bridge a
+// persisted id (see `crate::midi_identity`) and the bridge stamps it onto the endpoint.
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -164,8 +170,7 @@ mod imp {
     use std::sync::Arc;
     use std::thread::{self, JoinHandle};
 
-    use midir::os::unix::VirtualInput;
-    use midir::{Ignore, MidiInput, MidiInputConnection};
+    use coremidi::{Client, Properties, VirtualDestination};
     use serde_json::json;
 
     use super::{post, report_host_event, HostEventLevel, HostToken};
@@ -176,7 +181,10 @@ mod imp {
     const QUEUE_DEPTH: usize = 1024;
 
     pub struct NativeMidiBridge {
-        connection: Option<MidiInputConnection<()>>,
+        /// Disposing this is what removes `LEDrums` from the system destination list.
+        destination: Option<VirtualDestination>,
+        /// The endpoint's owner; kept alive for as long as the endpoint is published.
+        _client: Client,
         sender: Option<SyncSender<String>>,
         worker: Option<JoinHandle<()>>,
         dropped: Arc<AtomicU64>,
@@ -185,13 +193,19 @@ mod imp {
     impl NativeMidiBridge {
         /// Create the virtual destination and start forwarding. `token` is read per-POST, so the
         /// port comes up whether or not the token is known to be correct yet.
-        pub fn start(port: u16, token: HostToken) -> Result<Self, String> {
-            Self::start_with_capacity(port, token, QUEUE_DEPTH)
+        ///
+        /// `unique_id` is the PERSISTED `kMIDIPropertyUniqueID` for the endpoint (see
+        /// `crate::midi_identity`). CoreMIDI would otherwise assign a random one per launch, which
+        /// is how a device that Sensory Percussion / Ableton already know turns into a stranger
+        /// after every restart.
+        pub fn start(port: u16, token: HostToken, unique_id: i32) -> Result<Self, String> {
+            Self::start_with_capacity(port, token, unique_id, QUEUE_DEPTH)
         }
 
         pub fn start_with_capacity(
             port: u16,
             token: HostToken,
+            unique_id: i32,
             capacity: usize,
         ) -> Result<Self, String> {
             let (tx, rx) = sync_channel::<String>(capacity);
@@ -208,14 +222,15 @@ mod imp {
             let callback_dropped = Arc::clone(&dropped);
             let callback_tx = tx.clone();
             let callback_token = token.clone();
-            let mut midi_in = MidiInput::new("LEDrums Native MIDI")
-                .map_err(|e| format!("create MIDI input: {e}"))?;
-            midi_in.ignore(Ignore::None);
-            let connection = midi_in
-                .create_virtual(
-                    PORT_NAME,
-                    move |_stamp, message, _| {
-                        if let Some(body) = midi_message_json(message) {
+            let client = Client::new("LEDrums Native MIDI")
+                .map_err(|status| format!("create MIDI client: OSStatus {status}"))?;
+            let destination = client
+                .virtual_destination(PORT_NAME, move |packet_list| {
+                    for packet in packet_list.iter() {
+                        for_each_message(packet.data(), |message| {
+                            let Some(body) = midi_message_json(message) else {
+                                return;
+                            };
                             // try_send, never send: this runs on CoreMIDI's delivery thread and must
                             // never block on HTTP. A full queue drops the message.
                             if callback_tx.try_send(body).is_err() {
@@ -240,19 +255,55 @@ mod imp {
                                     );
                                 }
                             }
-                        }
-                    },
-                    (),
-                )
-                .map_err(|e| format!("create virtual MIDI destination: {e}"))?;
+                        });
+                    }
+                })
+                .map_err(|status| format!("create virtual MIDI destination: OSStatus {status}"))?;
 
-            println!("[native-midi] virtual destination ready: {PORT_NAME}");
-            Ok(Self {
-                connection: Some(connection),
+            // The identity a DAW remembers. A refusal here (most plausibly kMIDIIDNotUnique, -10843,
+            // from a stale endpoint still holding the ID) is reported but never fatal: a port with a
+            // fresh identity still passes notes, a missing port passes nothing.
+            if let Err(status) = destination.set_property(&Properties::unique_id(), unique_id) {
+                eprintln!(
+                    "[native-midi] could not set the saved endpoint id {unique_id} on \
+                     '{PORT_NAME}' (OSStatus {status}); the port is live but DAWs may see it as a \
+                     new device"
+                );
+                report_host_event(
+                    port,
+                    token.clone(),
+                    HostEventLevel::Error,
+                    "MIDI port identity not persisted".to_string(),
+                    Some(format!(
+                        "CoreMIDI refused the saved endpoint id (OSStatus {status}). '{PORT_NAME}' \
+                         still works, but your DAW may need it re-selected after a restart."
+                    )),
+                );
+            }
+
+            let bridge = Self {
+                destination: Some(destination),
+                _client: client,
                 sender: Some(tx),
                 worker: Some(worker),
                 dropped,
-            })
+            };
+            // Log what CoreMIDI is ACTUALLY advertising, not what we asked for — the difference is
+            // the whole bug this identity work exists to close.
+            println!(
+                "[native-midi] virtual destination ready: {PORT_NAME} (uniqueID {:?}, wanted {unique_id})",
+                bridge.endpoint_unique_id()
+            );
+            Ok(bridge)
+        }
+
+        /// The `kMIDIPropertyUniqueID` CoreMIDI is actually advertising for the port, read back from
+        /// the endpoint. `None` once the port has been disposed, or if the property is unreadable.
+        pub fn endpoint_unique_id(&self) -> Option<i32> {
+            self.destination
+                .as_ref()
+                .and_then(|destination| destination.unique_id())
+                .map(|id| id as i32)
         }
 
         /// Messages discarded because the forward queue was full. Surfaced so a saturated bridge is
@@ -268,11 +319,49 @@ mod imp {
             if dropped > 0 {
                 println!("[native-midi] session dropped {dropped} message(s) to a full queue");
             }
-            let _ = self.connection.take();
+            // Dispose the endpoint FIRST: senders stop being able to reach a bridge whose queue is
+            // about to go away.
+            let _ = self.destination.take();
             let _ = self.sender.take();
             if let Some(worker) = self.worker.take() {
                 let _ = worker.join();
             }
+        }
+    }
+
+    /// Walk one CoreMIDI packet's bytes, handing each complete MIDI message to `on_message`.
+    ///
+    /// A single packet can carry SEVERAL messages that share a timestamp — a DAW sending a chord,
+    /// or a note-off/note-on pair — so translating only the first byte-run would silently drop
+    /// notes. midir used to do this walk on our behalf; owning the CoreMIDI callback means owning
+    /// it here. Running status is not supported (CoreMIDI packets carry complete messages), and a
+    /// packet that stops making sense is abandoned rather than guessed at, so the cursor can never
+    /// desynchronise into inventing messages.
+    pub fn for_each_message(packet: &[u8], mut on_message: impl FnMut(&[u8])) {
+        let mut cursor = 0;
+        while cursor < packet.len() {
+            let status = packet[cursor];
+            if status & 0x80 == 0 {
+                return; // Expected a status byte; the rest cannot be parsed safely.
+            }
+            let size = match status {
+                // Sysex runs to its terminator; an unterminated one owns the rest of the packet.
+                0xf0 => match packet[cursor..].iter().position(|byte| *byte == 0xf7) {
+                    Some(offset) => offset + 1,
+                    None => return,
+                },
+                0xf1 | 0xf3 => 2,    // MTC quarter frame, song select
+                0xf2 => 3,           // song position pointer
+                s if s >= 0xf4 => 1, // realtime / undefined system messages
+                s if s < 0xc0 => 3,  // note off/on, aftertouch, control change
+                s if s < 0xe0 => 2,  // program change, channel pressure
+                _ => 3,              // pitch bend
+            };
+            if cursor + size > packet.len() {
+                return; // Truncated tail — nothing trustworthy left.
+            }
+            on_message(&packet[cursor..cursor + size]);
+            cursor += size;
         }
     }
 
@@ -323,6 +412,73 @@ mod imp {
         };
         Some(value.to_string())
     }
+
+    #[cfg(test)]
+    mod packet_tests {
+        use super::*;
+
+        fn messages(packet: &[u8]) -> Vec<Vec<u8>> {
+            let mut seen = Vec::new();
+            for_each_message(packet, |message| seen.push(message.to_vec()));
+            seen
+        }
+
+        #[test]
+        fn splits_a_packet_carrying_several_messages() {
+            // What a DAW sends when a chord and its releases land on one timestamp.
+            assert_eq!(
+                messages(&[0x90, 38, 100, 0x90, 42, 90, 0x80, 38, 64]),
+                vec![vec![0x90, 38, 100], vec![0x90, 42, 90], vec![0x80, 38, 64]]
+            );
+        }
+
+        #[test]
+        fn sizes_two_byte_messages_correctly() {
+            assert_eq!(
+                messages(&[0xc0, 3, 0x90, 38, 100]),
+                vec![vec![0xc0, 3], vec![0x90, 38, 100]]
+            );
+        }
+
+        #[test]
+        fn steps_over_a_sysex_block_without_losing_what_follows() {
+            assert_eq!(
+                messages(&[0xf0, 0x7e, 0x01, 0xf7, 0x90, 38, 100]),
+                vec![vec![0xf0, 0x7e, 0x01, 0xf7], vec![0x90, 38, 100]]
+            );
+        }
+
+        #[test]
+        fn steps_over_single_byte_realtime_messages() {
+            assert_eq!(
+                messages(&[0xf8, 0x90, 38, 100]),
+                vec![vec![0xf8], vec![0x90, 38, 100]]
+            );
+        }
+
+        #[test]
+        fn abandons_a_truncated_message_rather_than_inventing_bytes() {
+            assert_eq!(messages(&[0x90, 38]), Vec::<Vec<u8>>::new());
+            assert_eq!(
+                messages(&[0x90, 38, 100, 0xb0, 7]),
+                vec![vec![0x90, 38, 100]]
+            );
+        }
+
+        #[test]
+        fn stops_at_a_byte_that_is_not_a_status_byte() {
+            // Running status is not supported; a data byte where a status byte belongs ends the walk.
+            assert_eq!(
+                messages(&[0x90, 38, 100, 40, 100]),
+                vec![vec![0x90, 38, 100]]
+            );
+        }
+
+        #[test]
+        fn handles_an_empty_packet() {
+            assert_eq!(messages(&[]), Vec::<Vec<u8>>::new());
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -334,7 +490,7 @@ mod imp {
     pub struct NativeMidiBridge;
 
     impl NativeMidiBridge {
-        pub fn start(_port: u16, _token: HostToken) -> Result<Self, String> {
+        pub fn start(_port: u16, _token: HostToken, _unique_id: i32) -> Result<Self, String> {
             Ok(Self)
         }
 
