@@ -28,6 +28,12 @@ export default defineConfig({
   },
   server: {
     port: WEB_PORT,
+    // `pnpm dev --share` (scripts/dev.mjs) sets LEDRUMS_WEB_SHARE=1: bind IPv4 loopback
+    // explicitly — tailscale serve proxies dial 127.0.0.1 (a bare `localhost` bind lands on
+    // [::1] and 502s), and a wildcard bind EADDRINUSEs against tailscaled's own root-owned
+    // listener on the same port. Strict port because a silent port hop leaves the tailnet
+    // proxy pointing at nothing.
+    ...(process.env.LEDRUMS_WEB_SHARE === '1' ? { host: '127.0.0.1', strictPort: true } : {}),
     proxy: {
       [WS_PATH]: {
         target: `ws://localhost:${WS_PORT}`,
