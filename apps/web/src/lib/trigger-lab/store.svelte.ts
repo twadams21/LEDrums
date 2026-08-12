@@ -140,6 +140,7 @@ import {
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
 import { pushToast } from '../ui/toast.svelte';
+import { bindingRejectionMessage } from '../app/binding-claim-label';
 import { EngineLinkSync } from './store/transport';
 import {
   DEFAULT_MONITOR_FILTERS,
@@ -821,7 +822,9 @@ export class TriggerLab {
     setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
     setSequenceResetSource: (nodeId, source) => {
       const node = this.selectedGraph?.nodes.find((n) => n.id === nodeId);
-      if (node) this.setSequenceResetSource(node, source);
+      // A vanished node is not a REFUSAL — nothing to keep the learn armed for, so report
+      // accepted and let the arm clear rather than leaving the user pressing pads at nothing.
+      return node ? this.setSequenceResetSource(node, source) : true;
     },
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
@@ -2000,14 +2003,47 @@ export class TriggerLab {
     this.client.send({ t: 'setKitNodeLayout', nodeLayout });
   }
 
-  /** Replace the input map (zone-node MIDI note / OSC address routing). */
-  setInputMap(inputMap: InputMap): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+  /**
+   * Replace the input map (zone-node MIDI note / OSC address routing).
+   *
+   * BINDING GUARD: the zone map and the global controls are both edited by replacing this
+   * map, so this is the gate for both. A write that would put a note/CC/address where
+   * another GROUP already has one is refused whole — see `binding-claims`. Refusing here
+   * rather than in each editor is what keeps the rule identical for typed values, MIDI
+   * Learn, and OSC Learn, all of which land on this one method.
+   *
+   * Returns whether the write was ACCEPTED. A refusal is TOTAL — no local write and no WS
+   * message — because a guard that blocked the optimistic write but still sent would leave
+   * the rig holding a binding the editor says it does not have.
+   */
+  setInputMap(inputMap: InputMap): boolean {
+    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
     if (this.project) {
+      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, this.graphs))) {
+        return false;
+      }
       this.pushUndoSnapshot();
       this.project = routing.applyInputMap(this.project, inputMap);
     }
     this.client.send({ t: 'setInputMap', inputMap });
+    return true;
+  }
+
+  /**
+   * Toast the first rejection and report whether the caller must abort. Centralised so
+   * every guarded path refuses in the same voice, and so the "no rejections" case is a
+   * single cheap `false`.
+   */
+  private refuseBindings(rejections: readonly voice.BindingRejection[]): boolean {
+    const first = rejections[0];
+    if (!first) return false;
+    pushToast(bindingRejectionMessage(first, this.drums, (key) => this.graphLabel(key)), { tone: 'error' });
+    return true;
+  }
+
+  /** The scope every binding check resolves against: this patch's input map + all graphs. */
+  private get bindingScope(): voice.BindingScope | null {
+    return this.project ? { inputMap: this.project.inputMap, graphs: this.graphs } : null;
   }
 
   setMidiChannel(channel: number | null): void {
@@ -2041,10 +2077,10 @@ export class TriggerLab {
    * mutation path — so the viewer guard, the undo snapshot, and the WS resync all apply
    * exactly as they do for a zone's note. A field set to `undefined` clears it.
    */
-  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): void {
-    if (this.isViewer || !this.project) return;
+  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean {
+    if (this.isViewer || !this.project) return false;
     const inputMap = this.project.inputMap;
-    this.setInputMap({
+    return this.setInputMap({
       ...inputMap,
       globalControls: withGlobalControlBinding(inputMap.globalControls, action, patch),
     });
@@ -2558,12 +2594,21 @@ export class TriggerLab {
       persists (the source lives on the graph's trigger node, already inside `graphs`). No
       WS message: resolving a fire from the source is a later slice. No-op if the graph or
       its trigger node is missing. */
-  setTriggerSource(graphKey: string, source: TriggerSource): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+  setTriggerSource(graphKey: string, source: TriggerSource): boolean {
+    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
     const g = this.graphs[graphKey];
-    if (!g) return;
+    if (!g) return false;
     const trig = g.nodes.find((n) => n.kind === 'trigger');
-    if (trig) trig.source = source;
+    if (!trig) return false;
+    // BINDING GUARD — a trigger source may share a note with a zone (same group) but not
+    // with a sequence reset or a global control. See `binding-claims`.
+    const scope = this.bindingScope;
+    if (scope) {
+      const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey, nodeId: trig.id };
+      if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
+    }
+    trig.source = source;
+    return true;
   }
 
   /** The explicit trigger source for a graph (what the Inspector reads). undefined when
@@ -3078,11 +3123,30 @@ export class TriggerLab {
       the node's OWN reset source (issue #159), independent of what fires its graph. Contained in
       the node: no cross-graph target exists, so song/section copies carry their binding verbatim
       and can never reset the original. Persists via the authored autosave like every node edit. */
-  setSequenceResetSource(node: GraphNode, source: TriggerSource | null): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'sequence') return;
+  setSequenceResetSource(node: GraphNode, source: TriggerSource | null): boolean {
+    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'sequence') return false;
+    // BINDING GUARD — resets share with each other but block pads/triggers and globals.
+    // A `drum` source is never refused: it lives in the pad namespace, which is what keeps
+    // "one pad hit fires the graph AND resets its sequencer" working. See `binding-claims`.
+    const scope = this.bindingScope;
+    if (scope) {
+      const graphKey = this.graphKeyForNode(node.id) ?? '';
+      const self: voice.BindingClaim = { group: 'sequence-reset', kind: 'reset', graphKey, nodeId: node.id };
+      if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
+    }
     this.pushUndoSnapshot();
     node.resetSource = source ?? undefined;
+    return true;
+  }
+
+  /** The authored graph a node id belongs to, or null. Needed because node edits are handed
+      the node itself, while a binding claim is identified by (graphKey, nodeId). */
+  private graphKeyForNode(nodeId: string): string | null {
+    for (const [key, graph] of Object.entries(this.graphs)) {
+      if (graph.nodes.some((n) => n.id === nodeId)) return key;
+    }
+    return null;
   }
 
   /** Append a band by splitting the final "rest" band (a new cutoff between the last

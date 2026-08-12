@@ -28,6 +28,7 @@ export {
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export * from './reset-source';
+export * from './binding-claims';
 export {
   evalGraph,
   evalChildren,

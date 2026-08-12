@@ -28,8 +28,10 @@ export type OscLearnTarget = { kind: 'global-control'; action: GlobalControlActi
 export interface OscLearnHost {
   /** Whether this client is a read-only viewer (S2) — arming and binding no-op then. */
   isViewer(): boolean;
-  /** Write one action's binding (routes through the single `setInputMap` path). */
-  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): void;
+  /** Write one action's binding (routes through the single `setInputMap` path). Returns
+      whether the write was ACCEPTED — `false` means the binding guard refused the address
+      because another group already owns it (see `binding-claims`). */
+  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
 }
 
 export class OscLearnController {
@@ -52,14 +54,16 @@ export class OscLearnController {
   /**
    * Bind the armed target to `address` and disarm. An empty address is ignored and
    * leaves the target ARMED — a malformed packet should not silently consume the
-   * arm and leave the user staring at an unchanged field.
+   * arm and leave the user staring at an unchanged field. An address REFUSED by the
+   * binding guard leaves it armed for the same reason: the gesture was heard, it just
+   * could not bind, and the store has already said why.
    */
   apply(address: string): void {
     const target = this.target;
     if (!target || this.host.isViewer()) return;
     const trimmed = address.trim();
     if (!trimmed) return;
-    this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed });
+    if (!this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed })) return;
     this.target = null;
   }
 }

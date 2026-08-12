@@ -43,15 +43,20 @@ export interface MidiControllerHost {
   isViewer(): boolean;
   /** The live patch input map (zone note / CC routing), or null before a project loads. */
   getInputMap(): InputMap | null;
+  /* The four binding writers all return whether the write was ACCEPTED. A `false` means the
+     binding guard refused it — the address already belongs to another group (see
+     `binding-claims`); the store has already told the user why. Learn reads this so a
+     refused note leaves the target ARMED for another try, matching how a reserved CC 0
+     keeps a cc-learn waiting instead of silently eating the gesture. */
   /** Replace the input map (a zone-note learn writes the new binding through here). */
-  setInputMap(inputMap: InputMap): void;
+  setInputMap(inputMap: InputMap): boolean;
   /** Set a trigger node's source (a trigger learn binds `{ kind: 'midi', note }` through here). */
-  setTriggerSource(graphKey: string, source: TriggerSource): void;
+  setTriggerSource(graphKey: string, source: TriggerSource): boolean;
   /** Set a sequence node's reset source (a sequence-reset learn binds through here, so the bind
       shares the mutator's undo/viewer guards). */
-  setSequenceResetSource(nodeId: string, source: TriggerSource): void;
+  setSequenceResetSource(nodeId: string, source: TriggerSource): boolean;
   /** Write one global control's binding (a global-control learn writes its note here). */
-  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): void;
+  setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
   /** The selected graph's nodes, for a cc-node learn to find and rebind its controller. */
   selectedGraphNodes(): readonly GraphNode[] | undefined;
 }
@@ -121,25 +126,29 @@ export class MidiController {
   applyNoteLearn(note: number): void {
     const target = this.learnTarget;
     if (!target || this.host.isViewer()) return;
+    let accepted: boolean;
     if (target.kind === 'zone') {
       const inputMap = this.host.getInputMap();
       if (!inputMap) return;
       const rest = inputMap.midiNotes.filter(
         (n) => !(n.drumId === target.drumId && n.slot === target.slot),
       );
-      this.host.setInputMap({
+      accepted = this.host.setInputMap({
         ...inputMap,
         midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
       });
     } else if (target.kind === 'trigger') {
-      this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
+      accepted = this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
     } else if (target.kind === 'sequence-reset') {
-      this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
+      accepted = this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
     } else if (target.kind === 'global-control') {
-      this.host.setGlobalControlBinding(target.action, { midiNote: note });
+      accepted = this.host.setGlobalControlBinding(target.action, { midiNote: note });
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
+    // Refused by the binding guard → stay armed so the next pad hit can bind instead. The
+    // store has already said why; disarming here would look like the gesture was lost.
+    if (!accepted) return;
     this.learnTarget = null;
   }
 
@@ -151,8 +160,8 @@ export class MidiController {
     if (!target || this.host.isViewer()) return;
     if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
     if (target.kind === 'global-control-cc') {
-      this.host.setGlobalControlBinding(target.action, { midiCc: controller });
-      this.learnTarget = null;
+      // Same rule as the reserved-CC guard above: a refused CC keeps the target armed.
+      if (this.host.setGlobalControlBinding(target.action, { midiCc: controller })) this.learnTarget = null;
       return;
     }
     if (target.kind !== 'cc-node') return;

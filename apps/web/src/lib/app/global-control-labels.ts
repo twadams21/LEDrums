@@ -14,6 +14,14 @@ import { describeTriggerSource, zoneLinkForSource, type DrumRef } from './trigge
  * silent-dead-pad it describes is exactly the bug a user would otherwise spend an
  * evening chasing.
  *
+ * IMPORT-ONLY SAFETY NET. The editors can no longer CREATE this state: every in-app write
+ * of a note/CC/address passes the `binding-claims` guard in `store.setInputMap`, which
+ * refuses a global that lands on a zone. What still bypasses that guard is bulk state
+ * arriving from outside the editors — `setProjectPatch` sends a pasted patch straight to
+ * the server as `setProject`, never touching `setInputMap`. So this warning survives to
+ * describe an IMPORTED collision, which is the one case where a user can be holding a
+ * dead pad they did not create. Do not delete it as unreachable; it is reachable by paste.
+ *
  * Returns null when nothing collides. Checks the MIDI note and the OSC address
  * independently and reports the first collision found (note first — it is the more
  * common binding).

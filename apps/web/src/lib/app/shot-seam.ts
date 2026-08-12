@@ -382,11 +382,21 @@ class ShotSeamImpl implements ShotSeam {
 
   previewGlobalControls(): void {
     this.claimEdit(() => {
-      // Bind against a note the patch input map ALREADY maps to a drum zone, so the capture
-      // includes the override warning — the state most worth having a picture of, since it is
-      // the one that silently kills a pad.
-      const mapped = this.store.project?.inputMap.midiNotes[0];
-      this.store.setGlobalControlBinding('nextSong', { midiNote: mapped?.note ?? 36 });
+      // The override warning still deserves a picture, but the editors can no longer PRODUCE
+      // that state — `setGlobalControlBinding` now refuses a note a drum zone already owns
+      // (`binding-claims`). The one route left is a pasted patch, which reaches the server as
+      // a bulk `setProject` and never passes the guard. So this writes the colliding binding
+      // straight onto the project, exactly as an imported patch would deliver it.
+      const project = this.store.project;
+      const mapped = project?.inputMap.midiNotes[0];
+      if (project && mapped) {
+        project.inputMap.globalControls = {
+          ...project.inputMap.globalControls,
+          nextSong: { midiNote: mapped.note },
+        };
+      } else {
+        this.store.setGlobalControlBinding('nextSong', { midiNote: 36 });
+      }
       this.store.setGlobalControlBinding('nextSection', { oscAddress: '/ledrums/next_section' });
       this.store.setGlobalControlBinding('prevSection', { midiNote: 101, oscAddress: '/ledrums/prev_section' });
       // One of each remaining kind, so the capture covers the whole catalogue's shapes:
