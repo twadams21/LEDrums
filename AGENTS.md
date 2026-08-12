@@ -21,7 +21,8 @@ A real-time, cross-platform generative lighting engine and content-authoring app
 
 ## Commands
 - Install: `pnpm install`
-- Dev (server + web): `pnpm dev`
+- Dev (server + web): `pnpm dev` — add `--share` to also expose the web app to the tailnet as
+  HTTPS (`tailscale serve`, tailnet-only; proxies removed on exit)
 - Test: `pnpm test`
 - Typecheck: `pnpm typecheck`
 - Build: `pnpm build`
