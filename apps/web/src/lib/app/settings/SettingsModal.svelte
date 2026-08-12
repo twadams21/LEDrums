@@ -6,7 +6,7 @@
      pane without touching this registry. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
-  import type { SettingsPane } from '../shell-nav';
+  import { DEFAULT_SETTINGS_PANE, type SettingsPane } from '../shell-nav';
   import type { Component } from 'svelte';
   import Dialog from '../../ui/Dialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
@@ -35,7 +35,15 @@
   ];
 
   const open = $derived(shell.settingsPane !== null);
-  const active = $derived(SECTIONS.find((s) => s.id === shell.settingsPane) ?? SECTIONS[0]!);
+  /* On close the route goes null while the Dialog is still tearing down — without the
+     memory, `active` would fall back to the first section and the modal would swap panes
+     mid-close (remounting that pane against whatever state it needs). Hold the last open
+     pane so closing never changes the visible content. */
+  let lastPane = $state<SettingsPane>(DEFAULT_SETTINGS_PANE);
+  $effect(() => {
+    if (shell.settingsPane !== null) lastPane = shell.settingsPane;
+  });
+  const active = $derived(SECTIONS.find((s) => s.id === (shell.settingsPane ?? lastPane)) ?? SECTIONS[0]!);
 
   /** Every close path (X, Esc, backdrop) disarms any pending MIDI/OSC learn — an arm
       left live after the modal closes is invisible, and the next stray input would

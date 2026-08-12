@@ -67,14 +67,15 @@
   // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
   // the selected node with them).
   function onKey(e: KeyboardEvent): void {
-    if (dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
+    // With the Settings modal open, the workspace shortcuts must not act on the surface
+    // BEHIND it (Backspace deleted the selected node through the modal) — including the
+    // registry combos: mod+d would duplicate the hidden node, and mod+z must stay native
+    // text-undo inside the modal's inputs. The Backspace preventDefault claim below still
+    // applies — the WKWebView history-back hazard is the same whichever surface has focus.
+    const settingsOpen = shell.settingsPane !== null;
+    if (!settingsOpen && dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
     const el = e.target as HTMLElement | null;
     const editable = isEditableShortcutTarget(e.target);
-    // With the Settings modal open, the workspace shortcuts must not act on the surface
-    // BEHIND it (Backspace deleted the selected node through the modal). The Backspace
-    // preventDefault claim below still applies — the WKWebView history-back hazard is
-    // the same whichever surface has focus.
-    const settingsOpen = shell.settingsPane !== null;
     if (isDeleteKey(e.key)) {
       const selection = shell.selection;
       const node =

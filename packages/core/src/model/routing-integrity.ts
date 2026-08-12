@@ -178,6 +178,30 @@ export function blockingRoutingIssues(issues: RoutingIssue[]): RoutingIssue[] {
 }
 
 /**
+ * Identity for an issue independent of its message TEXT — messages carry hoop ranges that
+ * change as a damaged chain shrinks, so the class + location is what makes two issues "the
+ * same damage".
+ */
+export const routingIssueKey = (i: RoutingIssue): string =>
+  `${i.code}|${i.outputId ?? ''}|${i.drumId ?? ''}`;
+
+/**
+ * The blocking issues `next` carries that `current` does not — the DELTA write-gate. A routing
+ * can be damaged without any routing edit (e.g. the kit's hoop count shrank while hoops were
+ * routed), and a gate that refuses while ANY blocker exists makes such damage unrepairable one
+ * edit at a time. Both enforcement surfaces (the Settings chain editor's commit gate and the
+ * server `setKitOutputs` write-gate) refuse only NEW damage through this one helper, so
+ * repair converges and the accept/reject split cannot drift between them.
+ */
+export function introducedBlockingIssues(
+  current: RoutingIssue[],
+  next: RoutingIssue[],
+): RoutingIssue[] {
+  const existing = new Set(blockingRoutingIssues(current).map(routingIssueKey));
+  return blockingRoutingIssues(next).filter((i) => !existing.has(routingIssueKey(i)));
+}
+
+/**
  * The full "define valid routing" entry: validate a RAW (untrusted) outputs payload — schema
  * FIRST (malformed shape → `schema` issues, named by their zod path), and only if it is
  * well-formed, the referential + structural checks against `kit`. Returns every named issue in

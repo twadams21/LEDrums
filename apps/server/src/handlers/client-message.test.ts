@@ -587,6 +587,37 @@ describe('setKitOutputs — schema gate (S01): validate before any state, no par
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Outputs rejected (invalid)' }));
   });
 
+  // Delta gate: a routing can be damaged without any routing edit (kit hoop-count shrink while
+  // routed). The gate refuses only INTRODUCED damage — the same `introducedBlockingIssues`
+  // predicate the Settings chain editor commits through — so repair converges one edit at a time.
+  it('applies a repair that still carries pre-existing damage; refuses newly introduced damage', () => {
+    const { handle, join } = harness();
+    const editor = join();
+    handle({ t: 'setKitOutputs', outputs: [
+      { id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 4 }] },
+      { id: 'out2', channelsPerPixel: 3, segments: [{ drumId: 'snare', hoopStart: 1, hoopEnd: 4 }] },
+    ] }, editor);
+    handle({ t: 'setKitGlobal', hoopCount: 3 }, editor); // both chains now hoop-out-of-range
+    editor.sent.length = 0;
+
+    // Repairing one chain while the other still carries its PRE-EXISTING damage applies.
+    handle({ t: 'setKitOutputs', outputs: [
+      { id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'kick', hoopStart: 1, hoopEnd: 3 }] },
+      { id: 'out2', channelsPerPixel: 3, segments: [{ drumId: 'snare', hoopStart: 1, hoopEnd: 4 }] },
+    ] }, editor);
+    expect(editor.sent.some((m) => m.t === 'error')).toBe(false);
+    expect(editor.sent.some((m) => m.t === 'state')).toBe(true);
+
+    // Damage the current routing does NOT already carry still refuses with zero apply.
+    editor.sent.length = 0;
+    handle({ t: 'setKitOutputs', outputs: [
+      { id: 'out1', channelsPerPixel: 3, segments: [{ drumId: 'nope', hoopStart: 1, hoopEnd: 3 }] },
+      { id: 'out2', channelsPerPixel: 3, segments: [{ drumId: 'snare', hoopStart: 1, hoopEnd: 4 }] },
+    ] }, editor);
+    expect(editor.sent.some((m) => m.t === 'error')).toBe(true);
+    expect(editor.sent.some((m) => m.t === 'state')).toBe(false);
+  });
+
   it('never touches voice-host routing on an invalid payload; applies a valid one', () => {
     const { handle, join, voiceHost } = voiceHarness();
     const editor = join();

@@ -15,6 +15,7 @@ import {
   blockingRoutingIssues,
   checkRoutingIntegrity,
   drumHoopCount,
+  introducedBlockingIssues,
   type KitConfig,
   type RoutingIssue,
 } from '@ledrums/core';
@@ -89,18 +90,15 @@ export function chainBlockers(kit: KitConfig, routing: PatchRouting): RoutingIss
   return blockingRoutingIssues(checkRoutingIntegrity(kit, patchToOutputs(routing)));
 }
 
-/** Identity for a blocker independent of its message TEXT (messages carry hoop ranges that
-    change as a damaged chain shrinks) — the class + location is what makes two blockers "the
-    same problem" across edits. */
-const blockerKey = (i: RoutingIssue): string => `${i.code}|${i.outputId ?? ''}|${i.drumId ?? ''}`;
-
 /** The blockers `next` would INTRODUCE over the committed `current` routing — DELTA
-    validation for the commit gate. A routing can already be damaged without any chain edit
-    (e.g. the kit's hoopCount shrunk while hoops were routed), and refusing every commit while
-    ANY blocker exists would make it unrepairable one edit at a time. So: an edit that only
-    removes or carries existing blockers is allowed (repair converges); an edit adding a NEW
-    blocker class/location is refused. */
+    validation for the commit gate, delegated to core's `introducedBlockingIssues` (the same
+    predicate the server `setKitOutputs` write-gate runs, so client and server can't drift).
+    A routing can already be damaged without any chain edit (e.g. the kit's hoopCount shrunk
+    while hoops were routed); an edit that only removes or carries existing blockers commits
+    (repair converges), an edit adding a NEW blocker class/location is refused. */
 export function newBlockers(kit: KitConfig, current: PatchRouting, next: PatchRouting): RoutingIssue[] {
-  const existing = new Set(chainBlockers(kit, current).map(blockerKey));
-  return chainBlockers(kit, next).filter((i) => !existing.has(blockerKey(i)));
+  return introducedBlockingIssues(
+    checkRoutingIntegrity(kit, patchToOutputs(current)),
+    checkRoutingIntegrity(kit, patchToOutputs(next)),
+  );
 }
