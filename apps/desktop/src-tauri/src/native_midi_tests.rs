@@ -1,11 +1,17 @@
 // Integration tests for the native CoreMIDI bridge (#139).
 //
-// These are deliberately NOT mocked. `midir::MidiOutput` enumerates the same CoreMIDI destination
-// list (`MIDIGetNumberOfDestinations`) that Ableton reads when you open its MIDI output-target
-// menu — so a second `MidiOutput` in-process that can see, open and send to `LEDrums` is exactly
-// what Ableton does. The far end is a real loopback HTTP server that records the JSON bodies the
+// These are deliberately NOT mocked. The sender below is a real CoreMIDI output port opened against
+// the real system destination list (`MIDIGetNumberOfDestinations`) — the same list Ableton reads
+// when you open its MIDI output-target menu — so "a DAW selects LEDrums and plays notes at it" is
+// literally what runs. The far end is a real loopback HTTP server that records the JSON bodies the
 // bridge POSTs, so the whole chain (virtual port → callback → translation → HTTP) is under test
 // without booting Tauri or the real sidecar.
+//
+// Endpoints are selected by kMIDIPropertyUniqueID, never by name. A real LEDrums app is very often
+// running on the developer's machine, publishing a destination with exactly the same NAME; matching
+// on the name would quietly point the tests at the drummer's live rig instead of the bridge under
+// test. Every assertion about the system list is likewise a diff or an identity lookup, never an
+// absolute count.
 
 #![cfg(all(test, target_os = "macos"))]
 
@@ -15,9 +21,17 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use midir::{MidiOutput, MidiOutputPort};
+use coremidi::{Client, Destination, Destinations, OutputPort, PacketBuffer};
 
+use crate::midi_identity::generate_unique_id;
 use crate::native_midi::{HostToken, NativeMidiBridge, PORT_NAME};
+
+/// A throwaway endpoint id for a test bridge. Derived the same way the shipped one is (clock + pid),
+/// so it cannot collide with a real LEDrums app's persisted id on this machine — CoreMIDI refuses a
+/// duplicate uniqueID, which would otherwise fail these tests for the wrong reason.
+fn test_unique_id() -> i32 {
+    generate_unique_id()
+}
 
 /// Every test here creates a virtual destination with the SAME name, so they must not overlap.
 /// (The Rust test harness runs tests in parallel threads by default.)
@@ -113,51 +127,94 @@ fn blackhole_server(stop: Arc<AtomicBool>) -> (u16, Arc<AtomicUsize>) {
     (port, accepted)
 }
 
-/// Names currently in the CoreMIDI destination list — the list Ableton shows.
-fn destination_names() -> Vec<String> {
-    let out = MidiOutput::new("ledrums-test-enumerator").expect("MidiOutput");
-    out.ports()
-        .iter()
-        .map(|p| out.port_name(p).unwrap_or_default())
+// ---------------------------------------------------------------------------
+// Looking at the system destination list the way a DAW does
+// ---------------------------------------------------------------------------
+
+/// `(display name, uniqueID)` for every destination in the system — what a DAW's output-target menu
+/// is built from. Only ever used for diffs and diagnostics.
+fn destination_summary() -> Vec<(String, Option<i32>)> {
+    Destinations
+        .into_iter()
+        .map(|destination| {
+            (
+                destination.display_name().unwrap_or_default(),
+                destination.unique_id().map(|id| id as i32),
+            )
+        })
         .collect()
 }
 
-fn ledrums_present() -> bool {
-    destination_names().iter().any(|n| n.contains(PORT_NAME))
-}
-
-/// Open the `LEDrums` destination the way a sender does.
-fn connect_to_ledrums(client: &str) -> midir::MidiOutputConnection {
-    let out = MidiOutput::new(client).expect("MidiOutput");
-    let target: MidiOutputPort = out
-        .ports()
+/// The destination carrying a specific endpoint identity, or `None` if nothing advertises it.
+fn destination_with_id(unique_id: i32) -> Option<Destination> {
+    Destinations
         .into_iter()
-        .find(|p| out.port_name(p).unwrap_or_default().contains(PORT_NAME))
-        .unwrap_or_else(|| {
-            panic!(
-                "'{PORT_NAME}' is not in the CoreMIDI destination list; saw {:?}",
-                destination_names()
-            )
-        });
-    out.connect(&target, "ledrums-test").expect("connect")
+        .find(|destination| destination.unique_id() == Some(unique_id as u32))
 }
 
-/// Poll until the port disappears (CoreMIDI teardown is not instantaneous).
-fn wait_until_absent(timeout: Duration) -> bool {
+fn is_published(unique_id: i32) -> bool {
+    destination_with_id(unique_id).is_some()
+}
+
+/// Poll until the endpoint disappears (CoreMIDI teardown is not instantaneous).
+fn wait_until_absent(unique_id: i32, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if !ledrums_present() {
+        if !is_published(unique_id) {
             return true;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    !ledrums_present()
+    !is_published(unique_id)
+}
+
+/// A sender playing Ableton's part: a real CoreMIDI output port aimed at the endpoint under test.
+struct Sender {
+    /// Owns the port; must outlive it.
+    _client: Client,
+    port: OutputPort,
+    destination: Destination,
+}
+
+impl Sender {
+    /// Open the endpoint the way a DAW does once the user picks it as an output target.
+    fn open(unique_id: i32) -> Self {
+        let destination = destination_with_id(unique_id).unwrap_or_else(|| {
+            panic!(
+                "no destination advertises uniqueID {unique_id}; saw {:?}",
+                destination_summary()
+            )
+        });
+        let client = Client::new("ableton-stand-in").expect("client");
+        let port = client.output_port("ableton-stand-in").expect("output port");
+        Self {
+            _client: client,
+            port,
+            destination,
+        }
+    }
+
+    /// Send one MIDI message immediately (timestamp 0 = now).
+    fn send(&self, message: &[u8]) {
+        let packet = PacketBuffer::new(0, message);
+        self.port
+            .send(&self.destination, &packet)
+            .expect("send to the destination under test");
+    }
 }
 
 fn next_body(stub: &StubServer) -> String {
     stub.bodies
         .recv_timeout(Duration::from_secs(5))
         .expect("stub should receive a forwarded body")
+}
+
+/// Start a bridge with a fresh identity, returning it alongside that identity.
+fn start_bridge(stub: &StubServer) -> (NativeMidiBridge, i32) {
+    let unique_id = test_unique_id();
+    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)), unique_id)
+        .expect("bridge should start");
+    (bridge, unique_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -168,24 +225,26 @@ fn next_body(stub: &StubServer) -> String {
 fn advertises_ledrums_as_a_coremidi_destination_a_sender_can_open() {
     let _g = guard();
     let stub = stub_server();
-    assert!(
-        !ledrums_present(),
-        "test started with a stale '{PORT_NAME}' port; saw {:?}",
-        destination_names()
-    );
 
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)))
-        .expect("bridge should start");
+    let (bridge, unique_id) = start_bridge(&stub);
 
+    let published = destination_with_id(unique_id).unwrap_or_else(|| {
+        panic!(
+            "the bridge's endpoint must appear in the destination list Ableton reads; saw {:?}",
+            destination_summary()
+        )
+    });
     assert!(
-        ledrums_present(),
-        "'{PORT_NAME}' must appear in the destination list Ableton reads; saw {:?}",
-        destination_names()
+        published
+            .display_name()
+            .unwrap_or_default()
+            .contains(PORT_NAME),
+        "the endpoint must be presented under the name a drummer looks for"
     );
     // Opening it is what "select it as an output target" does.
-    let _conn = connect_to_ledrums("ableton-stand-in");
+    let sender = Sender::open(unique_id);
 
-    drop(_conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -193,16 +252,94 @@ fn advertises_ledrums_as_a_coremidi_destination_a_sender_can_open() {
 fn removes_the_port_when_the_bridge_is_dropped() {
     let _g = guard();
     let stub = stub_server();
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64))).expect("start");
-    assert!(ledrums_present());
+    let (bridge, unique_id) = start_bridge(&stub);
+    assert!(is_published(unique_id));
 
     drop(bridge);
 
     assert!(
-        wait_until_absent(Duration::from_secs(3)),
-        "'{PORT_NAME}' must disappear on Drop so a dead port can never be selected; saw {:?}",
-        destination_names()
+        wait_until_absent(unique_id, Duration::from_secs(3)),
+        "the endpoint must disappear on Drop so a dead port can never be selected; saw {:?}",
+        destination_summary()
     );
+}
+
+// ---------------------------------------------------------------------------
+// Endpoint identity — the thing DAWs remember a device by
+// ---------------------------------------------------------------------------
+
+#[test]
+fn adds_exactly_one_destination_to_the_system_list() {
+    let _g = guard();
+    let stub = stub_server();
+    let unique_id = test_unique_id();
+    // Baseline taken immediately before starting, and compared as a DIFF: other apps (including a
+    // real LEDrums) publish endpoints of their own, so the absolute count means nothing.
+    let before = Destinations::count();
+
+    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)), unique_id)
+        .expect("start");
+
+    assert_eq!(
+        Destinations::count(),
+        before + 1,
+        "the bridge must publish exactly one endpoint — not zero, and not a duplicate; saw {:?}",
+        destination_summary()
+    );
+    drop(bridge);
+}
+
+#[test]
+fn publishes_the_unique_id_it_was_given() {
+    let _g = guard();
+    let stub = stub_server();
+    let unique_id = test_unique_id();
+
+    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)), unique_id)
+        .expect("start");
+
+    assert_eq!(
+        bridge.endpoint_unique_id(),
+        Some(unique_id),
+        "kMIDIPropertyUniqueID must be the caller's value, not the random one CoreMIDI assigns"
+    );
+    let published = destination_with_id(unique_id);
+    assert!(
+        published.is_some(),
+        "a DAW enumerating destinations must see that identity; saw {:?}",
+        destination_summary()
+    );
+
+    drop(bridge);
+}
+
+#[test]
+fn reuses_the_same_unique_id_after_a_restart() {
+    let _g = guard();
+    let stub = stub_server();
+    // The persisted id: the SAME value the shell loads from disk on the next launch.
+    let unique_id = test_unique_id();
+
+    let first = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)), unique_id)
+        .expect("start");
+    assert_eq!(first.endpoint_unique_id(), Some(unique_id));
+    drop(first);
+    assert!(
+        wait_until_absent(unique_id, Duration::from_secs(3)),
+        "the first port must be gone before the restart; saw {:?}",
+        destination_summary()
+    );
+
+    let second = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64)), unique_id)
+        .expect("restart");
+
+    assert_eq!(
+        second.endpoint_unique_id(),
+        Some(unique_id),
+        "a restart must present the SAME endpoint identity, or every DAW treats it as a new device \
+         and forgets its routing"
+    );
+    drop(second);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,14 +350,14 @@ fn removes_the_port_when_the_bridge_is_dropped() {
 fn forwards_every_supported_message_type_in_order() {
     let _g = guard();
     let stub = stub_server();
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64))).expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let (bridge, unique_id) = start_bridge(&stub);
+    let sender = Sender::open(unique_id);
 
     // Channel 1 (status nibble 0) throughout, matching what a DAW sends on its first channel.
-    conn.send(&[0x90, 38, 100]).unwrap(); // note on
-    conn.send(&[0x80, 38, 64]).unwrap(); // note off
-    conn.send(&[0xb0, 7, 64]).unwrap(); // control change
-    conn.send(&[0xc0, 3]).unwrap(); // program change
+    sender.send(&[0x90, 38, 100]); // note on
+    sender.send(&[0x80, 38, 64]); // note off
+    sender.send(&[0xb0, 7, 64]); // control change
+    sender.send(&[0xc0, 3]); // program change
 
     assert_eq!(
         next_body(&stub),
@@ -239,7 +376,35 @@ fn forwards_every_supported_message_type_in_order() {
         r#"{"channel":1,"t":"programChange","value":3}"#
     );
 
-    drop(conn);
+    drop(sender);
+    drop(bridge);
+}
+
+#[test]
+fn forwards_every_message_in_a_packet_that_carries_several() {
+    let _g = guard();
+    let stub = stub_server();
+    let (bridge, unique_id) = start_bridge(&stub);
+    let sender = Sender::open(unique_id);
+
+    // One packet, one timestamp, three messages — what a DAW sends for a chord. Translating only
+    // the head of the packet would silently swallow the rest.
+    sender.send(&[0x90, 38, 100, 0x90, 42, 90, 0x80, 38, 64]);
+
+    assert_eq!(
+        next_body(&stub),
+        r#"{"channel":1,"note":38,"on":true,"t":"midi","velocity":100}"#
+    );
+    assert_eq!(
+        next_body(&stub),
+        r#"{"channel":1,"note":42,"on":true,"t":"midi","velocity":90}"#
+    );
+    assert_eq!(
+        next_body(&stub),
+        r#"{"channel":1,"note":38,"on":false,"t":"midi","velocity":0}"#
+    );
+
+    drop(sender);
     drop(bridge);
 }
 
@@ -247,17 +412,17 @@ fn forwards_every_supported_message_type_in_order() {
 fn treats_a_note_on_with_velocity_zero_as_a_note_off() {
     let _g = guard();
     let stub = stub_server();
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64))).expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let (bridge, unique_id) = start_bridge(&stub);
+    let sender = Sender::open(unique_id);
 
-    conn.send(&[0x90, 38, 0]).unwrap();
+    sender.send(&[0x90, 38, 0]);
 
     assert_eq!(
         next_body(&stub),
         r#"{"channel":1,"note":38,"on":false,"t":"midi","velocity":0}"#
     );
 
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -265,15 +430,15 @@ fn treats_a_note_on_with_velocity_zero_as_a_note_off() {
 fn reports_channels_one_based_matching_the_webmidi_path() {
     let _g = guard();
     let stub = stub_server();
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64))).expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let (bridge, unique_id) = start_bridge(&stub);
+    let sender = Sender::open(unique_id);
 
     // Status nibble 0 → channel 1 ... nibble 15 → channel 16. This is the convention
     // `apps/web/src/lib/midi/webmidi.ts` uses and therefore what the server's app-wide MIDI
     // channel filter compares against; a 0-based bridge would silently drop every message.
-    conn.send(&[0x90, 36, 1]).unwrap();
-    conn.send(&[0x94, 36, 1]).unwrap();
-    conn.send(&[0x9f, 36, 1]).unwrap();
+    sender.send(&[0x90, 36, 1]);
+    sender.send(&[0x94, 36, 1]);
+    sender.send(&[0x9f, 36, 1]);
 
     for expected in [1, 5, 16] {
         let body = next_body(&stub);
@@ -283,7 +448,7 @@ fn reports_channels_one_based_matching_the_webmidi_path() {
         );
     }
 
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -292,10 +457,12 @@ fn presents_the_current_host_token_on_every_post() {
     let _g = guard();
     let stub = stub_server();
     let token = HostToken::new("a".repeat(64));
-    let bridge = NativeMidiBridge::start(stub.port, token.clone()).expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let unique_id = test_unique_id();
+    let bridge =
+        NativeMidiBridge::start(stub.port, token.clone(), unique_id).expect("bridge should start");
+    let sender = Sender::open(unique_id);
 
-    conn.send(&[0x90, 38, 100]).unwrap();
+    sender.send(&[0x90, 38, 100]);
     next_body(&stub);
     let first = stub.queries.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(
@@ -305,7 +472,7 @@ fn presents_the_current_host_token_on_every_post() {
 
     // A token correction must reach the ALREADY-RUNNING bridge — the port does not restart.
     token.set("b".repeat(64));
-    conn.send(&[0x90, 38, 100]).unwrap();
+    sender.send(&[0x90, 38, 100]);
     next_body(&stub);
     let second = stub.queries.recv_timeout(Duration::from_secs(5)).unwrap();
     assert!(
@@ -313,7 +480,7 @@ fn presents_the_current_host_token_on_every_post() {
         "got {second}"
     );
 
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -321,15 +488,15 @@ fn presents_the_current_host_token_on_every_post() {
 fn ignores_message_types_the_server_does_not_accept() {
     let _g = guard();
     let stub = stub_server();
-    let bridge = NativeMidiBridge::start(stub.port, HostToken::new("t".repeat(64))).expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let (bridge, unique_id) = start_bridge(&stub);
+    let sender = Sender::open(unique_id);
 
     // Pitch bend (0xE0) and channel pressure (0xD0) are not part of the accepted set; the server
     // would answer 400. They must be dropped at the bridge, not forwarded.
-    conn.send(&[0xe0, 0, 64]).unwrap();
-    conn.send(&[0xd0, 64]).unwrap();
+    sender.send(&[0xe0, 0, 64]);
+    sender.send(&[0xd0, 64]);
     // A message that IS forwarded, so we can prove the earlier two produced nothing.
-    conn.send(&[0x90, 38, 100]).unwrap();
+    sender.send(&[0x90, 38, 100]);
 
     assert_eq!(
         next_body(&stub),
@@ -337,7 +504,7 @@ fn ignores_message_types_the_server_does_not_accept() {
         "the first body received must be the note-on, not a pitch-bend"
     );
 
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -367,19 +534,21 @@ fn live_forwards_to_a_real_server() {
         .parse()
         .expect("LIVE_PORT must be a port number");
     let token = std::env::var("LIVE_TOKEN").expect("LIVE_TOKEN");
+    let unique_id = test_unique_id();
 
-    let bridge = NativeMidiBridge::start(port, HostToken::new(token)).expect("bridge should start");
-    assert!(ledrums_present(), "saw {:?}", destination_names());
+    let bridge = NativeMidiBridge::start(port, HostToken::new(token), unique_id)
+        .expect("bridge should start");
+    assert!(is_published(unique_id), "saw {:?}", destination_summary());
 
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let sender = Sender::open(unique_id);
     for _ in 0..4 {
-        conn.send(&[0x90, 38, 100]).unwrap();
+        sender.send(&[0x90, 38, 100]);
         std::thread::sleep(Duration::from_millis(120));
-        conn.send(&[0x80, 38, 0]).unwrap();
+        sender.send(&[0x80, 38, 0]);
         std::thread::sleep(Duration::from_millis(120));
     }
-    conn.send(&[0xb0, 7, 64]).unwrap();
-    conn.send(&[0xc0, 1]).unwrap();
+    sender.send(&[0xb0, 7, 64]);
+    sender.send(&[0xc0, 1]);
     std::thread::sleep(Duration::from_millis(800));
 
     assert_eq!(
@@ -387,7 +556,7 @@ fn live_forwards_to_a_real_server() {
         0,
         "no message should have been dropped at this rate"
     );
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }
 
@@ -400,16 +569,18 @@ fn drops_messages_instead_of_blocking_when_the_forward_queue_is_full() {
     let _g = guard();
     let stop = Arc::new(AtomicBool::new(false));
     let (port, _accepted) = blackhole_server(Arc::clone(&stop));
+    let unique_id = test_unique_id();
 
     // Capacity 1 + a server that never answers ⇒ the worker stalls on its first POST and the queue
     // backs up immediately.
-    let bridge = NativeMidiBridge::start_with_capacity(port, HostToken::new("t".repeat(64)), 1)
-        .expect("start");
-    let mut conn = connect_to_ledrums("ableton-stand-in");
+    let bridge =
+        NativeMidiBridge::start_with_capacity(port, HostToken::new("t".repeat(64)), unique_id, 1)
+            .expect("start");
+    let sender = Sender::open(unique_id);
 
     let started = Instant::now();
     for _ in 0..64 {
-        conn.send(&[0x90, 38, 100]).unwrap();
+        sender.send(&[0x90, 38, 100]);
     }
     let elapsed = started.elapsed();
 
@@ -429,6 +600,6 @@ fn drops_messages_instead_of_blocking_when_the_forward_queue_is_full() {
     );
 
     stop.store(true, Ordering::Relaxed);
-    drop(conn);
+    drop(sender);
     drop(bridge);
 }

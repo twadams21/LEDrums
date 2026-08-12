@@ -38,7 +38,10 @@ getrandom = "0.2"
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-midir = "0.11.0"
+# CoreMIDI directly rather than through midir: midir never sets kMIDIPropertyUniqueID, so the
+# virtual destination got a fresh random identity on every launch and every DAW that remembers
+# endpoints by uniqueID (Sensory Percussion, Ableton) had to be reconfigured after a restart.
+coremidi = "0.9"
 
 [features]
 # Default Tauri custom-protocol feature toggle used by the CLI for production builds.
