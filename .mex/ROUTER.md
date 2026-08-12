@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-08-10
+last_updated: 2026-08-13
 ---
 
 # Session Bootstrap
@@ -35,6 +35,17 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Tabbed-chrome + settings-parity redesign — APPROVED, planned, not implemented (2026-08-13):**
+decided by **Trent** (this machine) from the `?proto=chrome` prototype on branch
+`proto/chrome-tabbed-layout`: variant C wins — views become a top tab bar (songs + sections as
+sticky bars, transport/status bottom), the **Patch Graph is removed entirely** and the whole patch
+becomes Settings panes, **conditional on settings parity** (every mutator reachable from the patch
+surface today keeps a home — inventory table in the plan). DM Sans replaces Geist as the UI sans.
+Trent's deltas: Share stays top-bar, the ShowBrowser project menu returns, Visualizer +
+Buses/Layers still need a home (open question 1 in the plan — collapsible right dock recommended,
+not yet decided). Plan + slices S1–S7: `docs/plans/2026-08-13-tabbed-chrome-settings.md`. The
+prototype directory `apps/web/src/lib/app/proto-chrome/` is throwaway and dies in S7.
 
 **Universal macOS build — one artifact for both architectures (branch `feat/universal-macos-build`, 2026-08-10):** requested by **Trent** (this machine, `scutil --get ComputerName` = "Trent’s MacBook Pro") so that **Tim's Rosetta install goes native on its next ordinary OTA update** — the Tauri updater can never cross-grade architectures, so serving ONE universal bundle under BOTH platform keys is the way round it. `.github/workflows/release-ota.yml`'s 2-leg build matrix collapses to a single `macos-26` job running `pnpm --filter @ledrums/desktop build:universal`; the publish job downloads that one `bundle-universal` artifact and points every iteration's `OTA_BUNDLE_DIR` at it, so `latest.json` carries the same url + signature under `darwin-x86_64` and `darwin-aarch64`. **Schema unchanged, no updater-client change.** Serial publishing is still structural (still two read-modify-writes of one manifest). Three Mach-Os have to be fat and only the first is Tauri's job: the Rust shell (`--target universal-apple-darwin` lipos it), the Node SEA sidecar (`build-sidecar.mjs --universal` — the SEA blob is arch-independent because `useSnapshot`/`useCodeCache` are off, so one blob is injected by postject into BOTH pinned-LTS darwin Nodes and lipo'd; **verified from an x86 host**), and `cloudflared` (`fetch-cloudflared.mjs --universal`). **The release now actually ships cloudflared** — CI fetches it before the build (it previously never ran `fetch:cloudflared`, so releases had no tunnel/PIN at all). Its sha256s are **pinned in `fetch-cloudflared.mjs` next to the version**, not in the workflow, because version+hash are one fact and splitting them makes a version bump fail CI for a confusing reason; values were corroborated against GitHub's server-side release-asset `digest` (cloudflared publishes no checksum file). Mismatch always fails closed; an *unknown* hash fails closed under `CLOUDFLARED_REQUIRE_SHA256=1` (release CI sets it) and is otherwise a loud multi-line warning, never silent. The sidecar is emitted under **three** names because `tauri-build` resolves `externalBin` per *cargo* target while the bundler resolves it against the *build* target. **Parity guard = `verify-universal.mjs`** (+ pure `mach-o.mjs`, 9 node:test cases): walks the built `.app`, finds Mach-Os by magic number, fails the build if any lacks either arch — the one check that catches a green build that silently ships single-arch. It also fails closed on zero-binaries-found and on Mach-O magic `lipo` can't read, and `--require <basenames>` (CI passes `cloudflared` via `LEDRUMS_UNIVERSAL_REQUIRE`) closes the vacuous-pass hole where a binary that was never bundled trivially satisfies every arch check. Local fallback `pnpm ota bump` is deliberately unchanged: host-arch build, publishes only the host's platform key. Docs: `apps/desktop/README.md` → "Universal (x86_64 + arm64) builds".
 
