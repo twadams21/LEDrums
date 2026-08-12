@@ -3,9 +3,13 @@ import {
   GLOBAL_CONTROL_ACTIONS,
   GLOBAL_CONTROL_CATALOG,
   globalControlDef,
+  ccTo01,
+  globalControlForCc,
   globalControlForNote,
   globalControlForOsc,
   globalControlsSchema,
+  isHostLevelGlobalControl,
+  isMomentaryGlobalControl,
   oscArgFires,
   withGlobalControlBinding,
   type GlobalControls,
@@ -24,6 +28,72 @@ describe('global control catalogue', () => {
       expect(globalControlDef(id).id).toBe(id);
       expect(globalControlDef(id).label).not.toBe('');
     }
+  });
+});
+
+describe('catalogue shape per kind', () => {
+  it('gives every action at least one binding field', () => {
+    for (const def of GLOBAL_CONTROL_CATALOG) expect(def.fields.length).toBeGreaterThan(0);
+  });
+
+  it('binds the continuous control to a CC, never a note', () => {
+    // A note can only jump to a fixed level, which is not what a dimmer is for.
+    const brightness = globalControlDef('masterBrightness');
+    expect(brightness.kind).toBe('continuous');
+    expect(brightness.fields).toContain('cc');
+    expect(brightness.fields).not.toContain('note');
+  });
+
+  it('reserves CC for continuous controls only', () => {
+    for (const def of GLOBAL_CONTROL_CATALOG) {
+      if (def.fields.includes('cc')) expect(def.kind).toBe('continuous');
+    }
+  });
+
+  it('marks exactly the host-owned actions as host-level', () => {
+    const hostLevel = GLOBAL_CONTROL_CATALOG.filter((d) => d.hostLevel).map((d) => d.id);
+    expect(hostLevel.sort()).toEqual(['tapTempo', 'transmitToggle']);
+    for (const id of hostLevel) expect(isHostLevelGlobalControl(id)).toBe(true);
+    expect(isHostLevelGlobalControl('nextSong')).toBe(false);
+  });
+
+  it('marks only the hold-flavoured blackout as momentary', () => {
+    expect(isMomentaryGlobalControl('panicBlackoutMomentary')).toBe(true);
+    expect(isMomentaryGlobalControl('panicBlackoutLatch')).toBe(false);
+    expect(isMomentaryGlobalControl('nextSong')).toBe(false);
+  });
+});
+
+describe('globalControlForCc', () => {
+  it('finds a bound continuous control', () => {
+    expect(globalControlForCc({ masterBrightness: { midiCc: 7 } }, 7)).toBe('masterBrightness');
+  });
+
+  it('never matches the reserved section-recall controller, even if bound to it', () => {
+    // CC 0 stays the global section-recall convention; a stray binding must not steal it.
+    expect(globalControlForCc({ masterBrightness: { midiCc: 0 } }, 0)).toBeNull();
+  });
+
+  it('ignores a CC set on a non-continuous action', () => {
+    expect(globalControlForCc({ nextSong: { midiCc: 7 } }, 7)).toBeNull();
+  });
+
+  it('returns null for a free controller', () => {
+    expect(globalControlForCc({ masterBrightness: { midiCc: 7 } }, 8)).toBeNull();
+  });
+});
+
+describe('ccTo01', () => {
+  it('maps the MIDI range onto 0..1', () => {
+    expect(ccTo01(0)).toBe(0);
+    expect(ccTo01(127)).toBe(1);
+    expect(ccTo01(64)).toBeCloseTo(64 / 127, 10);
+  });
+
+  it('clamps out-of-range and refuses non-finite input', () => {
+    expect(ccTo01(200)).toBe(1);
+    expect(ccTo01(-5)).toBe(0);
+    expect(ccTo01(NaN)).toBe(0);
   });
 });
 

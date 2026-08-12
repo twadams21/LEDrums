@@ -31,7 +31,10 @@ export type MidiLearnTarget =
       because the reset binding lives on the sequence node, independent of what fires its graph. */
   | { kind: 'sequence-reset'; nodeId: string }
   /** An app-general control's MIDI note (Settings → Global controls). */
-  | { kind: 'global-control'; action: GlobalControlAction };
+  | { kind: 'global-control'; action: GlobalControlAction }
+  /** An app-general CONTINUOUS control's MIDI CC (master brightness). Separate from the
+      note variant because it binds off a CC message, not a note. */
+  | { kind: 'global-control-cc'; action: GlobalControlAction };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -145,8 +148,14 @@ export class MidiController {
       No-op unless a `cc-node` learn is armed and its node still exists. */
   applyCcLearn(controller: number): void {
     const target = this.learnTarget;
-    if (!target || target.kind !== 'cc-node' || this.host.isViewer()) return;
+    if (!target || this.host.isViewer()) return;
     if (controller === RESERVED_CC_CONTROLLER) return; // reserved → keep waiting for a real CC
+    if (target.kind === 'global-control-cc') {
+      this.host.setGlobalControlBinding(target.action, { midiCc: controller });
+      this.learnTarget = null;
+      return;
+    }
+    if (target.kind !== 'cc-node') return;
     const node = this.host.selectedGraphNodes()?.find((n) => n.id === target.nodeId);
     if (!node || node.kind !== 'cc') return;
     node.ccController = controller;

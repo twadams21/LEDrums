@@ -381,24 +381,55 @@ class ShotSeamImpl implements ShotSeam {
   }
 
   previewGlobalControls(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    // Bind against a note the patch input map ALREADY maps to a drum zone, so the capture
-    // includes the override warning — the state most worth having a picture of, since it is
-    // the one that silently kills a pad.
-    const mapped = this.store.project?.inputMap.midiNotes[0];
-    this.store.setGlobalControlBinding('nextSong', { midiNote: mapped?.note ?? 36 });
-    this.store.setGlobalControlBinding('nextSection', { oscAddress: '/ledrums/next_section' });
-    this.store.setGlobalControlBinding('prevSection', { midiNote: 101, oscAddress: '/ledrums/prev_section' });
-    // prevSong deliberately left unbound — the empty state belongs in the same frame.
+    this.claimEdit(() => {
+      // Bind against a note the patch input map ALREADY maps to a drum zone, so the capture
+      // includes the override warning — the state most worth having a picture of, since it is
+      // the one that silently kills a pad.
+      const mapped = this.store.project?.inputMap.midiNotes[0];
+      this.store.setGlobalControlBinding('nextSong', { midiNote: mapped?.note ?? 36 });
+      this.store.setGlobalControlBinding('nextSection', { oscAddress: '/ledrums/next_section' });
+      this.store.setGlobalControlBinding('prevSection', { midiNote: 101, oscAddress: '/ledrums/prev_section' });
+      // One of each remaining kind, so the capture covers the whole catalogue's shapes:
+      // a momentary hold, and the continuous CC-bound dimmer.
+      this.store.setGlobalControlBinding('panicBlackoutMomentary', { midiNote: 102 });
+      this.store.setGlobalControlBinding('masterBrightness', { midiCc: 7, oscAddress: '/ledrums/brightness' });
+      // prevSong deliberately left unbound — the empty state belongs in the same frame.
+    });
     this.openSettings();
   }
 
   previewGlobalControlLearn(which: 'midi' | 'osc' = 'midi'): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.store.setGlobalControlBinding('nextSong', { midiNote: 100 });
-    if (which === 'osc') this.store.startOscLearn({ kind: 'global-control', action: 'nextSection' });
-    else this.store.startMidiLearn({ kind: 'global-control', action: 'nextSection' });
+    this.claimEdit(() => {
+      this.store.setGlobalControlBinding('nextSong', { midiNote: 100 });
+      if (which === 'osc') this.store.startOscLearn({ kind: 'global-control', action: 'nextSection' });
+      else this.store.startMidiLearn({ kind: 'global-control', action: 'nextSection' });
+    });
     this.openSettings();
+  }
+
+  /**
+   * Run an authoring mutation once this client actually HOLDS the edit lock.
+   *
+   * `takeover()` only sends a request — `isViewer` flips when the server grants it, so a
+   * mutation called synchronously straight after is silently dropped by the viewer guard
+   * and the capture shows stale state. Retry across a few frames until it lands (the same
+   * shape `previewBackups` / `mockController` use to outlast a server echo). Dev-only.
+   */
+  private claimEdit(mutate: () => void): void {
+    if (this.store.canTakeover) this.store.takeover();
+    if (!this.store.isViewer && this.store.project) {
+      mutate();
+      return;
+    }
+    let frames = 0;
+    const attempt = (): void => {
+      if (!this.store.isViewer && this.store.project) {
+        mutate();
+        return;
+      }
+      if (frames++ < 60) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
   }
 
   previewToasts(tone?: ToastTone): void {

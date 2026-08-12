@@ -20,6 +20,7 @@
    Purity: catalogue + schema + resolvers only. No engine state, no IO.
    ============================================================================= */
 import { z } from 'zod';
+import { clamp01 } from '../math';
 
 /**
  * Every action a global control binding can drive. Ordered as it reads in Settings.
@@ -29,7 +30,19 @@ import { z } from 'zod';
  * once its resolution exists — an id with no resolution is a binding that silently
  * does nothing, which is worse than no binding at all.
  */
-export const GLOBAL_CONTROL_ACTIONS = ['nextSong', 'prevSong', 'nextSection', 'prevSection'] as const;
+export const GLOBAL_CONTROL_ACTIONS = [
+  'nextSong',
+  'prevSong',
+  'nextSection',
+  'prevSection',
+  'panicBlackoutMomentary',
+  'panicBlackoutLatch',
+  'stopAllVoices',
+  'masterBrightness',
+  'sequenceResync',
+  'tapTempo',
+  'transmitToggle',
+] as const;
 
 export type GlobalControlAction = (typeof GLOBAL_CONTROL_ACTIONS)[number];
 
@@ -38,13 +51,17 @@ export const globalControlActionSchema = z.enum(GLOBAL_CONTROL_ACTIONS);
 /**
  * How an action consumes its input.
  *
- * - `trigger` — fires once on a note-on / a nonzero OSC arg. The four navigation
- *   actions are all of this shape.
- *
- * Later kinds (`momentary` — active while held, needing note-off; `continuous` — a
- * 0..1 value from a CC or OSC arg) slot in beside it.
+ * - `trigger` — fires once on a note-on / a nonzero OSC arg. A press; the release is
+ *   consumed but inert.
+ * - `momentary` — ACTIVE WHILE HELD. Needs the note-off (and an OSC zero) to end it,
+ *   which is the one input edge the engine otherwise ignores for triggers.
+ * - `continuous` — carries a 0..1 value from a MIDI CC or an OSC argument. Zero is a
+ *   MEANINGFUL VALUE here, not a release, so the nonzero-fires rule must not apply.
  */
-export type GlobalControlKind = 'trigger';
+export type GlobalControlKind = 'trigger' | 'momentary' | 'continuous';
+
+/** Which binding fields an action can carry — drives both the editor and resolution. */
+export type GlobalControlBindingField = 'note' | 'cc' | 'osc';
 
 /** A catalogue entry — what an action IS, for the UI and for validation. */
 export interface GlobalControlDef {
@@ -54,15 +71,85 @@ export interface GlobalControlDef {
   /** One-line description of what firing it does. */
   hint: string;
   kind: GlobalControlKind;
+  /** The binding fields this action accepts. A continuous control takes a CC, not a
+      note — a note can only jump to a fixed level, which is not what it is for. */
+  fields: readonly GlobalControlBindingField[];
+  /** True when the host, not the engine, owns this action (transport bpm and the
+      output adapters live server-side; see `VoiceEngineHost`). */
+  hostLevel?: boolean;
 }
+
+const NOTE_OSC: readonly GlobalControlBindingField[] = ['note', 'osc'];
 
 /** The bindable global controls, in Settings display order. */
 export const GLOBAL_CONTROL_CATALOG: readonly GlobalControlDef[] = [
-  { id: 'nextSong', label: 'Next song', hint: 'Advance to the next song, at its first section', kind: 'trigger' },
-  { id: 'prevSong', label: 'Previous song', hint: 'Go back a song, at its first section', kind: 'trigger' },
-  { id: 'nextSection', label: 'Next section', hint: 'Advance a section within the active song', kind: 'trigger' },
-  { id: 'prevSection', label: 'Previous section', hint: 'Go back a section within the active song', kind: 'trigger' },
+  { id: 'nextSong', label: 'Next song', hint: 'Advance to the next song, at its first section', kind: 'trigger', fields: NOTE_OSC },
+  { id: 'prevSong', label: 'Previous song', hint: 'Go back a song, at its first section', kind: 'trigger', fields: NOTE_OSC },
+  { id: 'nextSection', label: 'Next section', hint: 'Advance a section within the active song', kind: 'trigger', fields: NOTE_OSC },
+  { id: 'prevSection', label: 'Previous section', hint: 'Go back a section within the active song', kind: 'trigger', fields: NOTE_OSC },
+  {
+    id: 'panicBlackoutMomentary',
+    label: 'Panic blackout (hold)',
+    hint: 'Output goes black while held — the engine keeps running, so release is instant',
+    kind: 'momentary',
+    fields: NOTE_OSC,
+  },
+  {
+    id: 'panicBlackoutLatch',
+    label: 'Panic blackout (latch)',
+    hint: 'Toggle blackout on and off — same gate, one press per state',
+    kind: 'trigger',
+    fields: NOTE_OSC,
+  },
+  {
+    id: 'stopAllVoices',
+    label: 'Stop all voices',
+    hint: 'Release every running trigger effect; base layers keep rendering',
+    kind: 'trigger',
+    fields: NOTE_OSC,
+  },
+  {
+    id: 'masterBrightness',
+    label: 'Master brightness',
+    hint: 'Global output dimmer, 0..1 — continuous, so it binds a CC rather than a note',
+    kind: 'continuous',
+    fields: ['cc', 'osc'],
+  },
+  {
+    id: 'sequenceResync',
+    label: 'Sequence re-sync',
+    hint: 'Snap every sequencer back to step 1 at once',
+    kind: 'trigger',
+    fields: NOTE_OSC,
+  },
+  {
+    id: 'tapTempo',
+    label: 'Tap tempo',
+    hint: 'Tap 3+ times to set the bpm that drives beat-synced delays and LFOs',
+    kind: 'trigger',
+    fields: NOTE_OSC,
+    hostLevel: true,
+  },
+  {
+    id: 'transmitToggle',
+    label: 'Transmit on / off',
+    hint: 'Stop sending Art-Net / sACN entirely (rehearsal mute) — distinct from blackout, which sends black',
+    kind: 'trigger',
+    fields: NOTE_OSC,
+    hostLevel: true,
+  },
 ];
+
+/** True when an action is held rather than fired — the only kind whose note-off and
+    OSC zero carry a real edge rather than being an inert release. */
+export function isMomentaryGlobalControl(action: GlobalControlAction): boolean {
+  return globalControlDef(action).kind === 'momentary';
+}
+
+/** True when the HOST owns an action (bpm, output adapters) rather than the engine. */
+export function isHostLevelGlobalControl(action: GlobalControlAction): boolean {
+  return globalControlDef(action).hostLevel === true;
+}
 
 /** Look up a catalogue entry by action id. */
 export function globalControlDef(action: GlobalControlAction): GlobalControlDef {
@@ -168,11 +255,39 @@ export function globalControlForOsc(controls: GlobalControls, address: string): 
 }
 
 /**
- * Does an OSC argument fire a `trigger` action? Senders differ: a button may send no
+ * The action a MIDI CC is bound to, or null when the controller is free. Only
+ * `continuous` actions carry a CC. Controller 0 is RESERVED for global section recall
+ * (see the server's `SECTION_RECALL_CC`) and is never matched here, so a stray CC 0
+ * binding cannot steal it.
+ */
+export function globalControlForCc(controls: GlobalControls, controller: number): GlobalControlAction | null {
+  if (controller === RESERVED_SECTION_RECALL_CC) return null;
+  for (const def of GLOBAL_CONTROL_CATALOG) {
+    if (def.kind === 'continuous' && controls[def.id]?.midiCc === controller) return def.id;
+  }
+  return null;
+}
+
+/** MIDI controller 0, reserved for global section recall — never bindable here. */
+export const RESERVED_SECTION_RECALL_CC = 0;
+
+/**
+ * Does an OSC argument FIRE a `trigger` action? Senders differ: a button may send no
  * argument (which the OSC layer normalises to 1), a 1 on press and a 0 on release, or
  * a float. Firing on a zero would double-fire every press/release pair, so a trigger
  * fires on a NONZERO value only.
+ *
+ * This rule must NOT be applied to a `continuous` action: there, zero means "fully
+ * dark", a real value, and swallowing it would make the dimmer stick just above off.
  */
 export function oscArgFires(value: number): boolean {
   return value !== 0;
+}
+
+/**
+ * Normalise a raw 0..127 MIDI CC value to 0..1 for a continuous control. A non-finite
+ * value reads as 0 rather than poisoning the output stage with NaN.
+ */
+export function ccTo01(value: number): number {
+  return Number.isFinite(value) ? clamp01(value / 127) : 0;
 }

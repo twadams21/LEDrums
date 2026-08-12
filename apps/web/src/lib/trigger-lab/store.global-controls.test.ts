@@ -200,6 +200,108 @@ describe('MIDI learn — global control', () => {
   });
 });
 
+describe('adoptServerBpm — built for tap tempo, NOT yet wired', () => {
+  /* The mechanism tap tempo needs to make a server-set tempo stick. Deliberately not
+     called from the `state` handler: the active SHOW owns bpm (see
+     store.server-library.test.ts), so adopting on every broadcast would break per-show
+     tempo. Where this hangs is an open decision — these tests pin the mechanism so
+     whichever answer lands can use it. */
+  /** The private adoption hook. */
+  function adopt(store: TriggerLab, bpm: number): void {
+    (store as unknown as { adoptServerBpm: (n: number) => void }).adoptServerBpm(bpm);
+  }
+
+  it('takes the server’s tempo into the store', () => {
+    const store = connected([]);
+    adopt(store, 150);
+    expect(store.bpm).toBe(150);
+  });
+
+  it('moves the sync baseline with it, so the client does NOT push the old tempo back', () => {
+    // Without this the client's next syncTransport sees 120-vs-150 as a local change and
+    // overwrites the tapped tempo within a tick — which is exactly what happened live.
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.link = 'open'; // syncTransport no-ops while closed — without this it proves nothing
+    adopt(store, 150);
+    (store as unknown as { syncTransport: () => void }).syncTransport();
+    expect(sent.some((m) => m.t === 'setTransport')).toBe(false);
+  });
+
+  it('ignores a no-op and implausible values', () => {
+    const store = connected([]);
+    const before = store.bpm;
+    adopt(store, before);
+    expect(store.bpm).toBe(before);
+    adopt(store, 0);
+    expect(store.bpm).toBe(before);
+    adopt(store, Number.NaN);
+    expect(store.bpm).toBe(before);
+  });
+
+  it('still lets the editor author a tempo upward afterwards', () => {
+    const sent: ClientMessage[] = [];
+    const store = connected(sent);
+    store.link = 'open';
+    adopt(store, 150);
+    store.bpm = 90; // a user edit
+    (store as unknown as { syncTransport: () => void }).syncTransport();
+    expect(sent.filter((m) => m.t === 'setTransport').at(-1)).toMatchObject({ bpm: 90 });
+  });
+});
+
+describe('CC learn — master brightness', () => {
+  /** The local WebMIDI forward path, which is where a CC learn binds. */
+  function forwardCc(store: TriggerLab, controller: number): void {
+    (store as unknown as { forwardMidi: (ev: unknown) => void }).forwardMidi({
+      kind: 'cc',
+      controller,
+      value: 64,
+      channel: 1,
+    });
+  }
+
+  it('binds the next heard controller to the armed action', () => {
+    const store = connected([]);
+    store.startMidiLearn({ kind: 'global-control-cc', action: 'masterBrightness' });
+
+    forwardCc(store, 7);
+
+    expect(store.globalControls.masterBrightness).toEqual({ midiCc: 7 });
+    expect(store.midiLearnTarget).toBeNull();
+  });
+
+  it('refuses reserved controller 0 and STAYS armed for a real CC', () => {
+    const store = connected([]);
+    store.startMidiLearn({ kind: 'global-control-cc', action: 'masterBrightness' });
+
+    forwardCc(store, 0);
+    expect(store.globalControls.masterBrightness).toBeUndefined();
+    expect(store.midiLearnTarget).not.toBeNull(); // still waiting
+
+    forwardCc(store, 7);
+    expect(store.globalControls.masterBrightness).toEqual({ midiCc: 7 });
+  });
+
+  it('a note does not satisfy a CC learn', () => {
+    const store = connected([]);
+    store.startMidiLearn({ kind: 'global-control-cc', action: 'masterBrightness' });
+    echoNote(store, 64);
+    expect(store.globalControls.masterBrightness).toBeUndefined();
+    expect(store.midiLearnTarget).not.toBeNull();
+  });
+
+  it('keeps the OSC address when learning a CC', () => {
+    const store = connected([]);
+    store.setGlobalControlBinding('masterBrightness', { oscAddress: '/dim' });
+    store.startMidiLearn({ kind: 'global-control-cc', action: 'masterBrightness' });
+
+    forwardCc(store, 7);
+
+    expect(store.globalControls.masterBrightness).toEqual({ midiCc: 7, oscAddress: '/dim' });
+  });
+});
+
 describe('OSC learn — global control (the app’s first OSC learn)', () => {
   it('binds the next heard address to the armed action, then disarms', () => {
     const store = connected([]);

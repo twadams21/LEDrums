@@ -462,6 +462,9 @@ function stateMessage(): ServerMessage {
 }
 
 if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
+// Tap tempo (global control 9) changes the transport bpm server-side; rebroadcast the
+// state so every client's transport readout follows instead of silently drifting.
+if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
 else host.onFrame = (rgb) => broadcastBinary(rgb);
 host.setOutputMonitor(monitor);
 voiceHost?.setOutputMonitor(monitor);

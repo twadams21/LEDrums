@@ -4,11 +4,17 @@ import {
   buildDmxMap,
   buildPixelModel,
   checkRoutingIntegrity,
+  ccTo01,
+  clamp01,
   getHoopPixelRange,
+  globalControlDef,
+  globalControlForCc,
   globalControlForNote,
   globalControlForOsc,
+  isMomentaryGlobalControl,
   materializeHoops,
   oscArgFires,
+  type GlobalControlAction,
   reconcileOutputs,
   SLOT_LABELS,
   voice,
@@ -58,6 +64,15 @@ const TICK_MS = 1000 / 120; // fixed-timestep target (~120fps) — the voice pat
 const MAX_DT_MS = 100; // clamp to survive GC pauses / tab throttling
 const PREVIEW_FPS = 30; // WS preview broadcast throttle
 
+// --- tap tempo (control 9) ---
+/** A gap longer than this starts a fresh tap series (2s ≈ 30bpm, below anything usable). */
+const TAP_RESET_MS = 2000;
+/** How many taps the rolling average keeps — long enough to steady, short enough to follow. */
+const TAP_WINDOW = 6;
+/** Plausible tapped-tempo range; outside it the taps are noise, not an intent. */
+const TAP_MIN_BPM = 30;
+const TAP_MAX_BPM = 300;
+
 /**
  * Voice-mode host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus
  * brain) and an {@link OutputManager}, running the SAME fixed-timestep discipline as
@@ -103,6 +118,18 @@ export class VoiceEngineHost {
 
   /** Preview frame sink (wired by `main` to broadcast over WS). */
   onFrame?: (rgb: Uint8Array) => void;
+
+  /** Transmit-toggle state (control 10). Transient operator state, deliberately NOT
+      persisted into `project.output.state` — a rehearsal mute should not survive a
+      restart as a rig that mysteriously will not light. */
+  private transmitMuted = false;
+
+  /** Wall-clock times of the recent tap-tempo taps (control 9). */
+  private readonly tapTimes: number[] = [];
+
+  /** Called after tap tempo changes the transport bpm, so the server can broadcast the
+      new state and the UI follows. Wired by `main.ts`. */
+  onTransportChanged: (() => void) | null = null;
 
   /** The live Show (retained so the global transport-recall handler can map a
    * Program Change / CC#0 / OSC index → song & section ids). null until first setShow. */
@@ -325,7 +352,91 @@ export class VoiceEngineHost {
     // last recalled — whether by the UI or by a global transport recall.
     if (partial.kind === 'recallSection' && partial.songId) this.activeSongId = partial.songId;
     const ev = this.toInputEvent(partial);
-    if (ev) this.engine.applyInput(ev);
+    if (!ev) return;
+    // Two global controls are the HOST's, not the engine's: bpm lives on this project's
+    // transport (fed to `engine.tick`, never owned by the engine) and the output
+    // adapters live here too. They are consumed before the engine ever sees them.
+    if (ev.kind === 'globalControl' && ev.action && this.applyHostGlobalControl(ev.action)) return;
+    this.engine.applyInput(ev);
+  }
+
+  /**
+   * Handle a host-level global control. Returns true when consumed.
+   *
+   * Only fires on the PRESS: a `pressed:false` release edge would otherwise toggle
+   * transmit twice per tap and add a phantom tap-tempo interval.
+   */
+  private applyHostGlobalControl(action: GlobalControlAction): boolean {
+    if (action === 'tapTempo') {
+      this.applyTapTempo();
+      return true;
+    }
+    if (action === 'transmitToggle') {
+      this.setTransmitMuted(!this.transmitMuted);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Tap tempo. Records the tap on the WALL clock (the operator is tapping in real time,
+   * not engine time) and sets the transport bpm once there are enough taps.
+   *
+   * A gap longer than {@link TAP_RESET_MS} starts a fresh series — otherwise a tap from
+   * two songs ago would drag the average toward nonsense. Needs 3 taps (2 intervals)
+   * before it commits anything, so a single stray hit can never change the tempo.
+   */
+  private applyTapTempo(): void {
+    const now = nowWall();
+    const last = this.tapTimes.at(-1);
+    if (last !== undefined && now - last > TAP_RESET_MS) this.tapTimes.length = 0;
+    this.tapTimes.push(now);
+    if (this.tapTimes.length > TAP_WINDOW) this.tapTimes.shift();
+    if (this.tapTimes.length < 3) return;
+
+    let total = 0;
+    for (let i = 1; i < this.tapTimes.length; i++) total += this.tapTimes[i]! - this.tapTimes[i - 1]!;
+    const avg = total / (this.tapTimes.length - 1);
+    if (avg <= 0) return;
+    const bpm = Math.round(60_000 / avg);
+    if (bpm < TAP_MIN_BPM || bpm > TAP_MAX_BPM) return; // implausible — ignore rather than lurch
+    if (bpm === this.project.composition.transport.bpm) return;
+    this.project.composition.transport.bpm = bpm;
+    this.monitorSink?.({
+      type: 'input',
+      direction: 'local',
+      source: 'server/voice',
+      label: 'Tap tempo',
+      detail: `bpm=${bpm}; taps=${this.tapTimes.length}`,
+    });
+    this.onTransportChanged?.();
+  }
+
+  /**
+   * Mute or unmute transmission. This STOPS SENDING — deliberately NOT a blackout,
+   * which sends black. The distinction is the point: muting hands the rig to whatever
+   * else is on the wire (a house console, a merging node) instead of fighting it with
+   * black frames.
+   *
+   * Consequence worth knowing: most Art-Net/sACN fixtures HOLD their last frame when
+   * the stream stops, so the rig freezes rather than going dark. Use panic blackout for
+   * dark.
+   */
+  setTransmitMuted(muted: boolean): void {
+    if (this.transmitMuted === muted) return;
+    this.transmitMuted = muted;
+    this.monitorSink?.({
+      type: 'output',
+      direction: 'local',
+      source: 'server/voice',
+      label: muted ? 'Transmit muted' : 'Transmit resumed',
+      detail: muted ? 'Art-Net / sACN sending stopped (rehearsal mute)' : 'Art-Net / sACN sending resumed',
+    });
+  }
+
+  /** Whether transmission is currently muted by the transmit-toggle control. */
+  isTransmitMuted(): boolean {
+    return this.transmitMuted;
   }
 
   private toInputEvent(partial: VoicePartialInput): voice.InputEvent | null {
@@ -364,7 +475,7 @@ export class VoiceEngineHost {
         // input path funnels through (WS, native MIDI, raw OSC) is what keeps the
         // precedence from drifting between them.
         const action = globalControlForNote(this.project.inputMap.globalControls, partial.note);
-        if (action) return { kind: 'globalControl', action, timeMs };
+        if (action) return { kind: 'globalControl', action, pressed: true, timeMs };
         // Zone-map first; a miss forwards the raw note (no pad) for direct binding.
         const pad = zoneForNote(this.project.inputMap, partial.note);
         return {
@@ -376,15 +487,31 @@ export class VoiceEngineHost {
           timeMs,
         };
       }
-      case 'noteOff':
+      case 'noteOff': {
+        // A note-off matters for exactly one shape: a MOMENTARY control, where the
+        // release IS the second half of the gesture. For every other bound action the
+        // release is consumed (so it can't leak to a pad) but carries no edge.
+        const action = globalControlForNote(this.project.inputMap.globalControls, partial.note);
+        if (action) {
+          if (!isMomentaryGlobalControl(action)) return null; // consumed, inert
+          return { kind: 'globalControl', action, pressed: false, timeMs };
+        }
         // No engine effect today; forward the raw note so the seam stays honest.
         return { kind: 'noteOff', note: partial.note, channel: partial.channel, timeMs };
+      }
       case 'osc': {
-        // STEP 0 — as for notes, a globally-bound address is consumed. A zero argument
-        // is the release half of a button's press/release pair: still consumed (it must
-        // not fall through to a pad), but it does not fire the action a second time.
+        // STEP 0 — as for notes, a globally-bound address is consumed. What a zero
+        // argument MEANS depends on the action's kind:
+        //   continuous → a real value (fully dark), always forwarded
+        //   momentary  → the release edge
+        //   trigger    → the release half of a press/release pair: consumed, inert
         const action = globalControlForOsc(this.project.inputMap.globalControls, partial.address);
-        if (action) return oscArgFires(partial.value) ? { kind: 'globalControl', action, timeMs } : null;
+        if (action) {
+          const kind = globalControlDef(action).kind;
+          if (kind === 'continuous') return { kind: 'globalControl', action, value: clamp01(partial.value), timeMs };
+          if (kind === 'momentary') return { kind: 'globalControl', action, pressed: oscArgFires(partial.value), timeMs };
+          return oscArgFires(partial.value) ? { kind: 'globalControl', action, pressed: true, timeMs } : null;
+        }
         // Always forward; attach a pad when the zone-map claims it, else direct binding.
         const pad = zoneForOsc(this.project.inputMap, partial.address);
         return {
@@ -395,7 +522,13 @@ export class VoiceEngineHost {
           timeMs,
         };
       }
-      case 'cc':
+      case 'cc': {
+        // STEP 0 — a CC bound to a continuous global control (master brightness) is
+        // consumed here and never also feeds the modulation CC table, same as a bound
+        // note never also fires a pad. `globalControlForCc` refuses controller 0, which
+        // stays reserved for section recall.
+        const action = globalControlForCc(this.project.inputMap.globalControls, partial.controller);
+        if (action) return { kind: 'globalControl', action, value: ccTo01(partial.value), timeMs };
         // S37: raw MIDI CC → the engine's CC value table. Value stays raw 0..127 (the engine
         // normalizes to 0..1); channel is forwarded for the per-node channel filter.
         return {
@@ -405,6 +538,7 @@ export class VoiceEngineHost {
           ...(partial.channel !== undefined ? { channel: partial.channel } : {}),
           timeMs,
         };
+      }
     }
   }
 
@@ -530,7 +664,10 @@ export class VoiceEngineHost {
     if (this.transmitAccum >= txInterval) {
       this.transmitAccum -= txInterval;
       if (this.transmitAccum > txInterval) this.transmitAccum = 0; // clamp backlog
-      this.output.sendFrame(this.engine.frame() as Float32Array, this.dmxMap);
+      // Transmit toggle (rehearsal mute): stop SENDING. The engine keeps rendering and
+      // the preview below still streams, so the operator sees the show while the wire
+      // is quiet.
+      if (!this.transmitMuted) this.output.sendFrame(this.engine.frame() as Float32Array, this.dmxMap);
       emittedFrame = true;
     }
 

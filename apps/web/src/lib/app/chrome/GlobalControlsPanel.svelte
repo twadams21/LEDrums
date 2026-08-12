@@ -12,7 +12,7 @@
      Two independent Learn arms per row (MIDI note, OSC address): arming one must not disarm
      the other, so they read from two separate store targets. The OSC one is the app's first
      — see `osc-learn.svelte.ts`. */
-  import { GLOBAL_CONTROL_CATALOG, type GlobalControlAction } from '@ledrums/core';
+  import { GLOBAL_CONTROL_CATALOG, RESERVED_SECTION_RECALL_CC, type GlobalControlAction } from '@ledrums/core';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
@@ -41,6 +41,24 @@
   /** Commit an OSC address; an emptied field clears the binding (core trims + drops it). */
   function commitOsc(action: GlobalControlAction, raw: string): void {
     store.setGlobalControlBinding(action, { oscAddress: raw.trim() || undefined });
+  }
+
+  /** Commit a CC number (continuous controls only). Controller 0 is reserved for global
+      section recall, so it is refused rather than silently stealing that convention. */
+  function commitCc(action: GlobalControlAction, raw: string): void {
+    const text = raw.trim();
+    if (!text) {
+      store.setGlobalControlBinding(action, { midiCc: undefined });
+      return;
+    }
+    const n = Number(text);
+    if (!Number.isInteger(n) || n <= RESERVED_SECTION_RECALL_CC || n > 127) return;
+    store.setGlobalControlBinding(action, { midiCc: n });
+  }
+
+  function toggleCcLearn(action: GlobalControlAction, armed: boolean): void {
+    if (armed) store.cancelMidiLearn();
+    else store.startMidiLearn({ kind: 'global-control-cc', action });
   }
 
   function toggleMidiLearn(action: GlobalControlAction, armed: boolean): void {
@@ -72,28 +90,55 @@
           <span class="rhint">{def.hint}</span>
         </div>
 
-        <Field layout="row" label="MIDI note">
-          <div class="learn-row">
-            <CommitInput
-              value={binding?.midiNote === undefined ? '' : formatMidiNote(binding.midiNote)}
-              placeholder="unbound"
-              autofocus={false}
-              allowEmpty
-              mono
-              disabled={locked}
-              ariaLabel="{def.label} MIDI note"
-              onCommit={(v) => commitNote(def.id, v)}
-            />
-            <LearnButton
-              armed={midiArmed}
-              disabled={locked}
-              ariaLabel="Learn {def.label} MIDI note"
-              onclick={() => toggleMidiLearn(def.id, midiArmed)}
-            />
-          </div>
-        </Field>
-        {#if noteHeard}
-          <div class="heard"><InputActivityBadge {...noteHeard} /></div>
+        {#if def.fields.includes('note')}
+          <Field layout="row" label="MIDI note">
+            <div class="learn-row">
+              <CommitInput
+                value={binding?.midiNote === undefined ? '' : formatMidiNote(binding.midiNote)}
+                placeholder="unbound"
+                autofocus={false}
+                allowEmpty
+                mono
+                disabled={locked}
+                ariaLabel="{def.label} MIDI note"
+                onCommit={(v) => commitNote(def.id, v)}
+              />
+              <LearnButton
+                armed={midiArmed}
+                disabled={locked}
+                ariaLabel="Learn {def.label} MIDI note"
+                onclick={() => toggleMidiLearn(def.id, midiArmed)}
+              />
+            </div>
+          </Field>
+          {#if noteHeard}
+            <div class="heard"><InputActivityBadge {...noteHeard} /></div>
+          {/if}
+        {/if}
+
+        {#if def.fields.includes('cc')}
+          {@const ccArmed = store.midiLearnTarget?.kind === 'global-control-cc' && store.midiLearnTarget.action === def.id}
+          <Field layout="row" label="MIDI CC" hint="1-127 · CC 0 reserved for section recall">
+            <div class="learn-row">
+              <CommitInput
+                type="number"
+                min={RESERVED_SECTION_RECALL_CC + 1}
+                max={127}
+                value={binding?.midiCc ?? ''}
+                placeholder="unbound"
+                autofocus={false}
+                disabled={locked}
+                ariaLabel="{def.label} MIDI CC"
+                onCommit={(v) => commitCc(def.id, v)}
+              />
+              <LearnButton
+                armed={ccArmed}
+                disabled={locked}
+                ariaLabel="Learn {def.label} MIDI CC"
+                onclick={() => toggleCcLearn(def.id, ccArmed)}
+              />
+            </div>
+          </Field>
         {/if}
 
         <Field layout="row" label="OSC address">

@@ -1583,6 +1583,30 @@ export class TriggerLab {
   // {@link showsCtl} (R23) — driven from the `state`/`showLibrary`/`songLibrary` handlers above and
   // the autosave tick. Only the engine SHOW push ({@link syncShowToServer}, resolved-in refs) stays.
 
+  /**
+   * Adopt a server-side bpm change (tap tempo, global control 9).
+   *
+   * NOT WIRED — kept because tap tempo needs it and the wiring is one line, but WHERE it
+   * hangs is an open product decision for Trent (see the PR notes).
+   *
+   * The problem: `bpm` is authored state. The active SHOW owns it — `showsCtl` adopts the
+   * show's tempo on cold load and `syncTransport` pushes it up — so tap tempo's
+   * server-side change is re-asserted away by a connected editor on the next state
+   * broadcast. Calling this from the `state` handler closes the tap-tempo loop but makes
+   * the server's project transport beat the show's tempo on EVERY broadcast, which breaks
+   * per-show tempo (6 `store.server-library` tests pin that behaviour, and they are
+   * right).
+   *
+   * The two coherent answers are "tap tempo sets the active show's tempo" (authored, needs
+   * a server→client signal) or "the server transport is authoritative while connected"
+   * (a real change to who owns tempo). That is Trent's call, not a default to guess.
+   */
+  private adoptServerBpm(bpm: number): void {
+    if (!Number.isFinite(bpm) || bpm <= 0 || bpm === this.bpm) return;
+    this.bpm = bpm;
+    this.engineSync.baselineTransport({ bpm, playing: this.playing, beatsPerBar: this.beatsPerBar });
+  }
+
   /** Send setTransport to the server iff bpm/playing/beatsPerBar changed. */
   private syncTransport(): void {
     if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
