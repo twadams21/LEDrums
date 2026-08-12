@@ -21,7 +21,7 @@
     <UpdateControl />
   </Field>
   <Field label="Backups" hint="point-in-time snapshots">
-    <button type="button" class="entry" onclick={() => (backupsOpen = true)}>
+    <button type="button" class="entry" aria-label="Browse backups" onclick={() => (backupsOpen = true)}>
       <History size={14} aria-hidden="true" />
       Browse backups
     </button>
