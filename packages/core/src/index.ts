@@ -17,6 +17,7 @@ export * from './color/blend';
 
 // Model
 export * from './model/project-schema';
+export * from './model/global-controls';
 export * from './model/integrity';
 export * from './model/routing-integrity';
 export * from './model/chain-wiring';

@@ -21,6 +21,7 @@
   import Pill from '../../ui/Pill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
   import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
+  import LearnButton from '../../ui/LearnButton.svelte';
   import CopyableValue from '../../ui/CopyableValue.svelte';
   import ListItem from '../../ui/ListItem.svelte';
   import EditableRow from '../../ui/EditableRow.svelte';
@@ -58,6 +59,7 @@
   let searchVal = $state('');
   let renameVal = $state('Kick base');
   let bpm = $state('120');
+  let learnArmed = $state(false);
   let delayMs = $state('250');
   let phase = $state(0.25);
   let protocol = $state('artnet');
@@ -206,6 +208,26 @@
             ariaLabel="Admin password"
             onCommit={(v) => (renameVal = v)}
           />
+        </Field>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Learn button"
+      src="lib/ui/LearnButton"
+      note="Arm a field to bind the next input it hears (MIDI note, OSC address). A TOGGLE, not a one-shot — pressing it while armed disarms, so a mis-armed field is escapable without binding the wrong thing. Stateless: the caller owns the arm, because independent fields can be armed at once (a global control's MIDI and OSC buttons are separate arms). Armed pulses its glyph so a listening row is findable among identical ones; aria-pressed carries the state, and the pulse respects reduced-motion."
+    >
+      <div class="comp-row">
+        <LearnButton armed={false} onclick={() => (learnArmed = !learnArmed)} ariaLabel="Learn demo, idle" />
+        <LearnButton armed={true} onclick={() => {}} ariaLabel="Learn demo, listening" />
+        <LearnButton armed={false} disabled onclick={() => {}} ariaLabel="Learn demo, disabled" />
+      </div>
+      <div class="comp-row">
+        <Field layout="row" label="MIDI note">
+          <span class="learn-demo-row">
+            <CommitInput value="C4" mono autofocus={false} ariaLabel="Demo note" onCommit={() => {}} />
+            <LearnButton armed={learnArmed} onclick={() => (learnArmed = !learnArmed)} ariaLabel="Learn demo note" />
+          </span>
         </Field>
       </div>
     </DemoCard>
@@ -497,6 +519,15 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
+  }
+  /* The real shape a Learn button ships in: an input plus its arm, on one row. */
+  .learn-demo-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+    width: 100%;
+    min-width: 0;
   }
   /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
   .ph-demo {

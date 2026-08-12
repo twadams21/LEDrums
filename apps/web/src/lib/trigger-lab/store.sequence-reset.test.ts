@@ -156,6 +156,7 @@ function stubHost(over: Partial<MidiControllerHost> = {}): MidiControllerHost & 
     setInputMap: () => {},
     setTriggerSource: () => {},
     setSequenceResetSource: (nodeId, source) => bound.push([nodeId, source]),
+    setGlobalControlBinding: () => {},
     selectedGraphNodes: () => undefined,
     ...over,
   };

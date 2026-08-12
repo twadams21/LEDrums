@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
 import { kitSchema, migrateKit, rgbOrderSchema } from '../geometry/kit-schema';
+import { globalControlsSchema } from './global-controls';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
 export const controlSourceSchema = z.discriminatedUnion('type', [
@@ -102,6 +103,9 @@ export const inputMapSchema = z.object({
   zones: z.array(declaredZoneSchema).default([]),
   /** OSC address that drives the master `volume` control. */
   volumeOscAddress: z.string().optional(),
+  /** App-general control bindings (next/prev song + section, …) — see
+      {@link globalControlsSchema}. Keyed by action id; absent = unbound. */
+  globalControls: globalControlsSchema,
 });
 
 /** A (drum, slot) trigger → the clip/layer it activates within a section. */

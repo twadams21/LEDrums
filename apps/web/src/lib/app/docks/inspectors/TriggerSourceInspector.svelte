@@ -20,7 +20,6 @@
   import { describeTriggerSource, drumLinkHint, zoneLabel } from '../../trigger-source-label';
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import Radio from '@lucide/svelte/icons/radio';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
@@ -30,6 +29,7 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import InputActivityBadge from '../../../ui/InputActivityBadge.svelte';
+  import LearnButton from '../../../ui/LearnButton.svelte';
   import ReadRow from './ReadRow.svelte';
   import DrumZonesList from './DrumZonesList.svelte';
   import { onNum } from './forms';
@@ -186,20 +186,16 @@
             ariaLabel="MIDI note"
             onCommit={(v) => gkey && commitMidiNote(gkey, v)}
           />
-          <button
-            type="button"
-            class="learn"
-            class:active={learning}
+          <LearnButton
+            armed={learning}
             disabled={!gkey}
-            onclick={(e) => {
-              e.preventDefault();
+            ariaLabel="Learn trigger MIDI note"
+            onclick={() => {
               if (!gkey) return;
-              learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'trigger', graphKey: gkey });
+              if (learning) store.cancelMidiLearn();
+              else store.startMidiLearn({ kind: 'trigger', graphKey: gkey });
             }}
-          >
-            <Radio size={13} aria-hidden="true" />
-            {learning ? 'Listening' : 'Learn'}
-          </button>
+          />
         </div>
       </Field>
       {#if heard}
@@ -291,29 +287,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-2);
     align-items: center;
-  }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .learn:hover:not(:disabled),
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
-  }
-  .learn:disabled {
-    opacity: 0.45;
   }
   .hint {
     margin: 0;

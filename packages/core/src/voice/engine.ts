@@ -51,6 +51,9 @@ import {
   type TriggerSource,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
+import { relativeNavTarget, type NavAxis } from './navigation';
+import type { GlobalControlAction } from '../model/global-controls';
+import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
 import type {
   GraphMissReason,
@@ -62,7 +65,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -76,6 +79,14 @@ export interface InputEvent {
   /** recallSection: activate a song's section so hits fire its slot graphs. */
   songId?: string;
   sectionId?: string;
+  /** globalControl: the app-general action a bound note/address resolved to (input
+      step 0). Relative navigation resolves HERE, against the engine's live active
+      song/section, so N queued taps advance N steps rather than all reading one
+      stale position. */
+  action?: GlobalControlAction;
+  /** globalControl (momentary only): the edge. `true` = pressed, `false` = released.
+      Absent for trigger/continuous actions, which have no held state. */
+  pressed?: boolean;
   /** fireGraph: the exact graph key to play — an authoritative intent, not a source to
       re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
       precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
@@ -137,6 +148,18 @@ export interface RenderEngineOptions {
 }
 
 const PRNG_SEED = 0x1a2b3c4d;
+
+/**
+ * The global control actions that are a relative setlist move, and the move each one
+ * makes. Partial by design: controls that are not navigation (blackout, brightness, …)
+ * simply have no entry and are dispatched by their own branch.
+ */
+const NAV_MOVES: Partial<Record<GlobalControlAction, { axis: NavAxis; delta: number }>> = {
+  nextSong: { axis: 'song', delta: 1 },
+  prevSong: { axis: 'song', delta: -1 },
+  nextSection: { axis: 'section', delta: 1 },
+  prevSection: { axis: 'section', delta: -1 },
+};
 
 interface ResolvedGraph {
   graphKey: string;
@@ -235,11 +258,32 @@ class VoiceBusEngine implements RenderEngine {
   private activeSongId: string | null = null;
   private activeSectionId: string | null = null;
 
+  /**
+   * Panic blackout: the output reads black while set, but NOTHING else changes —
+   * voices keep advancing, envelopes keep running, sequencers keep counting. That is
+   * the whole point: recovery is instant rather than a re-cue. Applied at the output
+   * stage in {@link frame}, never by pausing the engine.
+   *
+   * Operator state, not authored state, so `setShow` deliberately leaves it alone: a
+   * panic must survive an edit landing mid-panic.
+   */
+  private blackout = false;
+
+  /** Master brightness, 0..1 — a global output-stage dimmer multiplying the final
+      frame. Operator state, like {@link blackout}. */
+  private brightness = 1;
+
+  /** Scratch for the gained/blacked-out output frame, so the composited buffer is
+      never mutated (it is read again for stats and may be read twice per tick).
+      Allocated once per model, never on the hot path. */
+  private outFb: Float32Array | null = null;
+
   // --- lifecycle ---------------------------------------------------------
 
   setModel(model: PixelModel): void {
     this.model = model;
     this.finalFb = new Fb(model.pixelCount);
+    this.outFb = new Float32Array(model.pixelCount * 4);
   }
 
   /**
@@ -308,19 +352,98 @@ class VoiceBusEngine implements RenderEngine {
     for (const e of due) this.processEvent(e);
   }
 
+  /**
+   * Activate a song's section — the ONE place `activeSongId` / `activeSectionId` change
+   * during a queue drain. Both the absolute `recallSection` input and a relative
+   * global-control navigation land here, so they are indistinguishable downstream
+   * (same diagnostic, same base-look spawn).
+   */
+  private recallTo(songId: string | null, sectionId: string | null): void {
+    this.activeSongId = songId;
+    this.activeSectionId = sectionId;
+    this.onDiagnostic?.({
+      kind: 'section-recalled',
+      songId: this.activeSongId,
+      sectionId: this.activeSectionId,
+    });
+    // Spawn/release this section's base "looks" (the per-bus loop effects) so the
+    // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
+    this.spawnSectionLooks(this.activeSectionId);
+  }
+
+  /**
+   * Resolve a global control action against live engine state. Navigation actions
+   * become a relative move on the setlist (clamped at both ends — see
+   * {@link relativeNavTarget}); a move with nowhere to go is a silent no-op rather
+   * than a re-recall of the current section, which would restart its base looks.
+   */
+  private processGlobalControl(e: InputEvent): void {
+    const action = e.action;
+    if (!action) return;
+
+    const move = NAV_MOVES[action];
+    if (move) {
+      const target = relativeNavTarget(
+        this.show,
+        { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId },
+        move.axis,
+        move.delta,
+      );
+      if (target) this.recallTo(target.songId, target.sectionId);
+      return;
+    }
+
+    switch (action) {
+      case 'panicBlackoutMomentary':
+        // Held: the press sets, the release clears. `pressed` is the edge the host
+        // derived from note-on/note-off (or an OSC nonzero/zero).
+        this.blackout = e.pressed !== false;
+        return;
+      case 'panicBlackoutLatch':
+        this.blackout = !this.blackout;
+        return;
+      case 'stopAllVoices':
+        this.releaseTriggerVoices();
+        return;
+      case 'masterBrightness': {
+        // A malformed value must never poison the output stage — `clamp01` propagates
+        // NaN (Math.min/max do), which would blank the rig with no way back.
+        const v = e.value;
+        this.brightness = typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : 1;
+        return;
+      }
+      case 'sequenceResync':
+        // Snap every sequencer back to step 1 — state only. Voices, envelopes, and the
+        // active section are untouched; this is a re-sync, not a reset.
+        this.seqIndex.clear();
+        return;
+      default:
+        // Host-level actions (tap tempo, transmit toggle) never reach the engine — the
+        // host consumes them, because bpm and the output adapters live there.
+        return;
+    }
+  }
+
+  /**
+   * Release every running TRIGGER voice, leaving base layers alone — the softer panic.
+   * Base looks are spawned in `loop` mode by {@link spawnSectionLooks}, so sparing
+   * `loop` is what keeps the section's look rendering while the hits let go. Uses the
+   * normal release phase, so effects fade on their own envelopes rather than cutting.
+   */
+  private releaseTriggerVoices(): void {
+    for (const v of this.voices.pool) {
+      if (v.active && v.mode !== 'loop' && v.phase !== 'release') releaseVoice(v, this.timeMs);
+    }
+  }
+
   private processEvent(e: InputEvent): void {
     if (e.kind === 'recallSection') {
       // Activate a section so subsequent hits fire its slot graphs (layered).
-      this.activeSongId = e.songId ?? null;
-      this.activeSectionId = e.sectionId ?? null;
-      this.onDiagnostic?.({
-        kind: 'section-recalled',
-        songId: this.activeSongId,
-        sectionId: this.activeSectionId,
-      });
-      // Spawn/release this section's base "looks" (the per-bus loop effects) so the
-      // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
-      this.spawnSectionLooks(this.activeSectionId);
+      this.recallTo(e.songId ?? null, e.sectionId ?? null);
+      return;
+    }
+    if (e.kind === 'globalControl') {
+      this.processGlobalControl(e);
       return;
     }
     if (e.kind === 'fireGraph') {
@@ -742,9 +865,40 @@ class VoiceBusEngine implements RenderEngine {
 
   // --- outputs -----------------------------------------------------------
 
+  /**
+   * The composited frame, with the operator output stage applied: panic blackout wins
+   * outright, otherwise master brightness scales it.
+   *
+   * Both act HERE, at the very last step, and never touch voice state — which is what
+   * makes a panic instantly reversible (the show has been running underneath the whole
+   * time) and what keeps the engine deterministic (the same inputs still produce the
+   * same voices; only the emitted pixels differ).
+   *
+   * Fast path is untouched: with no blackout and unity brightness this returns the
+   * composited buffer directly, no copy. Alpha is preserved — only RGB is scaled, so a
+   * dimmed frame stays a frame rather than becoming a transparency change.
+   */
   frame(): Readonly<Float32Array> {
-    if (this.finalFb) return this.finalFb.rgba;
-    return EMPTY_FRAME;
+    if (!this.finalFb) return EMPTY_FRAME;
+    const rgba = this.finalFb.rgba;
+    if (!this.blackout && this.brightness >= 1) return rgba;
+
+    const out = this.outFb;
+    if (!out || out.length !== rgba.length) return rgba; // no scratch (no model) — pass through
+    if (this.blackout) {
+      out.fill(0);
+      // Keep alpha so downstream byte-packing sees a normal opaque frame of black.
+      for (let i = 3; i < out.length; i += 4) out[i] = rgba[i]!;
+      return out;
+    }
+    const gain = this.brightness;
+    for (let i = 0; i < rgba.length; i += 4) {
+      out[i] = rgba[i]! * gain;
+      out[i + 1] = rgba[i + 1]! * gain;
+      out[i + 2] = rgba[i + 2]! * gain;
+      out[i + 3] = rgba[i + 3]!;
+    }
+    return out;
   }
 
   stats(): EngineStats {

@@ -104,6 +104,14 @@ export interface ShotSeam {
   /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
       per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
   previewToasts(tone?: ToastTone): void;
+  /** Open Settings with the global control bindings in a representative BOUND state — one
+      control bound to a note that collides with a mapped drum zone (so the override warning
+      renders), one bound to an OSC address, one left unbound. The live states otherwise need
+      real hardware to bind against. */
+  previewGlobalControls(): void;
+  /** Open Settings with a global control's MIDI (default) or OSC Learn armed, so the
+      listening state is capturable without an input device to arm it against. */
+  previewGlobalControlLearn(which?: 'midi' | 'osc'): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -372,6 +380,58 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  previewGlobalControls(): void {
+    this.claimEdit(() => {
+      // Bind against a note the patch input map ALREADY maps to a drum zone, so the capture
+      // includes the override warning — the state most worth having a picture of, since it is
+      // the one that silently kills a pad.
+      const mapped = this.store.project?.inputMap.midiNotes[0];
+      this.store.setGlobalControlBinding('nextSong', { midiNote: mapped?.note ?? 36 });
+      this.store.setGlobalControlBinding('nextSection', { oscAddress: '/ledrums/next_section' });
+      this.store.setGlobalControlBinding('prevSection', { midiNote: 101, oscAddress: '/ledrums/prev_section' });
+      // One of each remaining kind, so the capture covers the whole catalogue's shapes:
+      // a momentary hold, and the continuous CC-bound dimmer.
+      this.store.setGlobalControlBinding('panicBlackoutMomentary', { midiNote: 102 });
+      this.store.setGlobalControlBinding('masterBrightness', { midiCc: 7, oscAddress: '/ledrums/brightness' });
+      // prevSong deliberately left unbound — the empty state belongs in the same frame.
+    });
+    this.openSettings();
+  }
+
+  previewGlobalControlLearn(which: 'midi' | 'osc' = 'midi'): void {
+    this.claimEdit(() => {
+      this.store.setGlobalControlBinding('nextSong', { midiNote: 100 });
+      if (which === 'osc') this.store.startOscLearn({ kind: 'global-control', action: 'nextSection' });
+      else this.store.startMidiLearn({ kind: 'global-control', action: 'nextSection' });
+    });
+    this.openSettings();
+  }
+
+  /**
+   * Run an authoring mutation once this client actually HOLDS the edit lock.
+   *
+   * `takeover()` only sends a request — `isViewer` flips when the server grants it, so a
+   * mutation called synchronously straight after is silently dropped by the viewer guard
+   * and the capture shows stale state. Retry across a few frames until it lands (the same
+   * shape `previewBackups` / `mockController` use to outlast a server echo). Dev-only.
+   */
+  private claimEdit(mutate: () => void): void {
+    if (this.store.canTakeover) this.store.takeover();
+    if (!this.store.isViewer && this.store.project) {
+      mutate();
+      return;
+    }
+    let frames = 0;
+    const attempt = (): void => {
+      if (!this.store.isViewer && this.store.project) {
+        mutate();
+        return;
+      }
+      if (frames++ < 60) requestAnimationFrame(attempt);
+    };
+    requestAnimationFrame(attempt);
+  }
+
   previewToasts(tone?: ToastTone): void {
     // ttl:0 keeps them pinned for the capture (no auto-dismiss race). Oldest-first so the
     // host renders info → success → error top-to-bottom when showing the full set.
@@ -475,6 +535,12 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'no-path-to-output':
         this.notReachingOutput();
+        break;
+      case 'global-controls':
+        this.previewGlobalControls();
+        break;
+      case 'global-control-learn':
+        this.previewGlobalControlLearn(arg === 'osc' ? 'osc' : 'midi');
         break;
       case 'toast':
       case 'toasts':

@@ -6,6 +6,7 @@
   import StatusPill from '../../ui/StatusPill.svelte';
   import { midiChannelOptions } from '../../midi/midi-note';
   import { deviceListEmptyState } from './midi-devices';
+  import GlobalControlsPanel from './GlobalControlsPanel.svelte';
   import OscInputPanel from './OscInputPanel.svelte';
   import UpdateControl from './UpdateControl.svelte';
 
@@ -27,6 +28,11 @@
     <h2>Settings</h2>
   </header>
   <div class="body">
+    <!-- Updates first: the body now scrolls (the global-control list outgrows the dialog),
+         and an update prompt is the one thing here that should never need scrolling to. -->
+    <Field label="Updates" hint="desktop app">
+      <UpdateControl />
+    </Field>
     <Field label="MIDI channel" hint="input filter">
       <Select
         value={channelValue}
@@ -55,17 +61,18 @@
       {/if}
     </section>
     <OscInputPanel {store} />
-    <Field label="Updates" hint="desktop app">
-      <UpdateControl />
-    </Field>
+    <GlobalControlsPanel {store} />
   </div>
 </Dialog>
 
 <style>
   :global(.settings-dialog) {
-    width: min(360px, calc(100vw - 32px));
+    /* Wider than the old 360px: the global-control rows carry a label column plus an
+       input and a Learn button, and a real OSC address has to stay readable. */
+    width: min(420px, calc(100vw - 32px));
   }
   .head {
+    flex: none;
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
   }
@@ -80,6 +87,11 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-3);
+    /* The dialog caps at 88vh and clips; the settings list now outgrows that on a short
+       viewport, so the BODY is what scrolls (the header stays put). */
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .body :global(.sel) {
     width: 100%;
