@@ -7,10 +7,11 @@
      (setKitGlobal). Offline-safe (controls disabled); viewers get a natively-disabled
      fieldset, same treatment as the dock Inspector.
 
-     Lifecycle (must-keep, per the S4a pane spec §2.4): watch-on-mount / unwatch-on-unmount
-     is the ONLY thing gating the server's controller poll loop. SettingsModal renders just
-     the active pane, so switching sections or closing the modal stops the poll. */
-  import { onMount } from 'svelte';
+     Lifecycle (must-keep, per the S4a pane spec §2.4): watch-while-mounted (re-sent each
+     time the link opens) / unwatch-on-unmount is the ONLY thing gating the server's
+     controller poll loop. SettingsModal renders just the active pane, so switching
+     sections or closing the modal stops the poll. */
+  import { onMount, untrack } from 'svelte';
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import Field from '../../../ui/Field.svelte';
   import CommitInput from '../../../ui/CommitInput.svelte';
@@ -57,14 +58,21 @@
   ];
 
   // Subscribe to controller status while this pane is open — the ONLY thing that gates the
-  // server's poll loop (no idle traffic). Watch on mount, un-watch on teardown; a link drop
-  // clears it server-side. Also ask the server to enumerate its NICs so the subnet
-  // recommendation + adapter picker have data.
-  onMount(() => {
-    store.watchController(true);
-    store.requestNetworkAdapters();
-    return () => store.watchController(false);
+  // server's poll loop (no idle traffic). Sent whenever the link (re)opens while mounted, not
+  // just at mount: on a ?settings=controller deep-link boot the WS isn't OPEN yet (WSClient.send
+  // no-ops → dead pane), and a link drop clears the watch server-side, so a reconnect must
+  // re-arm it. Also ask the server to enumerate its NICs so the subnet recommendation +
+  // adapter picker have data. The sends are untracked: the WS onSend monitor hook reads AND
+  // writes store state, which tracked here would re-run this effect forever (the BackupsDialog
+  // effect-loop lesson). Un-watch on teardown.
+  $effect(() => {
+    if (store.link !== 'open') return;
+    untrack(() => {
+      store.watchController(true);
+      store.requestNetworkAdapters();
+    });
   });
+  onMount(() => () => store.watchController(false));
 </script>
 
 <div class="pane-body">
