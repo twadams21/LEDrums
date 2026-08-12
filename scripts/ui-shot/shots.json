@@ -96,6 +96,26 @@
     "target": "dialog:Settings",
     "settle": 300
   },
+  "settings-input": {
+    "state": "view:trigger,settings:input",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-drums": {
+    "state": "view:trigger,settings:drums",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-outputs": {
+    "state": "view:trigger,settings:outputs",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-system": {
+    "state": "view:trigger,settings:system",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
   "node-editor-play": {
     "state": "view:trigger,add:effect,select:effect",
     "target": "Node editor"
