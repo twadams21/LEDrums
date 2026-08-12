@@ -13,6 +13,11 @@
   import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import ViewTabs from '../../app/chrome/ViewTabs.svelte';
+  import SongsBar from '../../app/chrome/SongsBar.svelte';
+  import SectionsBar from '../../app/chrome/SectionsBar.svelte';
+  import type { ShellStore } from '../../app/shell-store.svelte';
+  import type { View } from '../../app/shell-nav';
   import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
@@ -224,6 +229,45 @@
 
   /* ---- BootOverlay — pure props (status + active) ------------------------------ */
   const boot = (patch: Partial<BootStatus>): BootStatus => ({ ...initialBootStatus, ...patch });
+
+  /* ---- Tabbed chrome bars (S2) — reactive stubs drive the real components ------ */
+  class ShellStub {
+    view = $state<View>('trigger');
+    setView(v: View): void {
+      this.view = v;
+    }
+  }
+  const shellStub = new ShellStub() as unknown as ShellStore;
+
+  class SetlistStub {
+    songs = [
+      {
+        id: 'song-1',
+        name: 'Opener',
+        sections: [
+          { id: 'sec-1', name: 'Intro', graphs: ['g1', 'g2'] },
+          { id: 'sec-2', name: 'Verse', graphs: ['g1'] },
+          { id: 'sec-3', name: 'Chorus', graphs: ['g1', 'g2', 'g3'] },
+        ],
+      },
+      { id: 'song-2', name: 'Midnight Run', sections: [{ id: 'sec-4', name: 'Drop', graphs: ['g1'] }] },
+    ];
+    resolvedSongs = [...this.songs, { id: 'song-3', name: 'Encore', sections: [] }];
+    activeSongId = $state('song-1');
+    activeSectionId = $state('sec-1');
+    canEdit = true;
+    get activeSong() {
+      return this.songs.find((s) => s.id === this.activeSongId) ?? null;
+    }
+    setActiveSong(id: string): void {
+      this.activeSongId = id;
+    }
+    setActiveSection(id: string): void {
+      this.activeSectionId = id;
+    }
+    createSong(): void {}
+  }
+  const setlistStub = new SetlistStub() as unknown as TriggerLab;
 </script>
 
 <section class="block" id="composites">
@@ -236,6 +280,27 @@
   </div>
 
   <div class="comp-grid">
+    <DemoCard
+      title="View tabs"
+      src="lib/app/chrome/ViewTabs"
+      note="The nav bar's workspace router (tabbed chrome): Perform · Objects · Sections · Trigger Graph · Monitor — no Patch tab, the patch lives in Settings. Active tab is the surface-raised bordered pill; hover is colour + background only, no motion."
+      wide
+    >
+      <ViewTabs shell={shellStub} />
+    </DemoCard>
+
+    <DemoCard
+      title="Setlist songs bar · sections bar"
+      src={['lib/app/chrome/SongsBar', 'lib/app/chrome/SectionsBar']}
+      note="Chrome rows 2 + 3: chip rows for the show's setlist and the active song's sections. The active chip is surface-raised with an inset ring; the count trails in tabular numerals; editors get the add-song affordance. Both scroll horizontally without a visible scrollbar."
+      wide
+    >
+      <div class="bar-stack">
+        <SongsBar store={setlistStub} />
+        <SectionsBar store={setlistStub} />
+      </div>
+    </DemoCard>
+
     <DemoCard
       title="Node icon chip"
       src={['lib/app/views/NodeIconChip', 'lib/app/views/trigger-node-meta']}
@@ -467,6 +532,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+  }
+  /* the songs/sections bars fill their row height in the shell; pin it here */
+  .bar-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .bar-stack > :global(.bar) {
+    height: 38px;
   }
   .chip-row {
     display: flex;
