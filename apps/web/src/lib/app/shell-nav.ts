@@ -12,12 +12,12 @@
 export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'monitor';
 
 /** Settings-modal section ids (tabbed chrome: the patch surface lives in Settings).
-    `general` hosts today's app settings; the rest are S4 panes. */
-export type SettingsPane = 'general' | 'input' | 'drums' | 'outputs' | 'controller' | 'system';
+    No 'general' catch-all — every setting has a specific pane home (S4). */
+export type SettingsPane = 'input' | 'drums' | 'outputs' | 'controller' | 'system';
 
-export const SETTINGS_PANES: readonly SettingsPane[] = ['general', 'input', 'drums', 'outputs', 'controller', 'system'];
+export const SETTINGS_PANES: readonly SettingsPane[] = ['input', 'drums', 'outputs', 'controller', 'system'];
 
-export const DEFAULT_SETTINGS_PANE: SettingsPane = 'general';
+export const DEFAULT_SETTINGS_PANE: SettingsPane = 'input';
 
 /** A node id in the Patch Graph (device routing). These are stage-prefixed strings
     minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
@@ -105,7 +105,7 @@ export function parseSearch(search: string): Partial<Pick<ShellNav, 'view' | 'se
   const out: Partial<Pick<ShellNav, 'view' | 'settings'>> = {};
   const v = p.get('view');
   if (v && (VIEWS as readonly string[]).includes(v)) out.view = v as View;
-  else if (v === 'patch') out.settings = DEFAULT_SETTINGS_PANE;
+  else if (v === 'patch') out.settings = 'outputs'; // closest analogue of the old patch surface
   const s = p.get('settings');
   if (s && (SETTINGS_PANES as readonly string[]).includes(s)) out.settings = s as SettingsPane;
   return out;
