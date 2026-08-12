@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "ledrums-desktop"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "coremidi",
  "getrandom 0.2.17",
