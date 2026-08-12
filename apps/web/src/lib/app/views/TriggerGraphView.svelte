@@ -53,7 +53,7 @@
   import AddPalette, { type AddGroup } from './AddPalette.svelte';
   import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
   import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
-  import GraphsDock from './GraphsDock.svelte';
+  import TriggerGraphsRail from './TriggerGraphsRail.svelte';
   import Inspector from '../docks/Inspector.svelte';
   import Splitter from '../../ui/Splitter.svelte';
 
@@ -90,6 +90,13 @@
   const editorW = $derived(store.paneSizes[EDITOR_W.key] ?? EDITOR_W.def);
   const setEditorW = (v: number): void => {
     store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
+  };
+  // Graphs rail (S3): the left pane hosting the active section's graph cards —
+  // same persisted-size pattern as the Node Editor drawer opposite.
+  const RAIL_W = { key: 'triggerGraphsRailW', min: 180, max: 340, def: 240 };
+  const railW = $derived(store.paneSizes[RAIL_W.key] ?? RAIL_W.def);
+  const setRailW = (v: number): void => {
+    store.paneSizes = { ...store.paneSizes, [RAIL_W.key]: v };
   };
 
   const addGroups = $derived<AddGroup[]>(buildAddGroups());
@@ -604,8 +611,20 @@
   }
 </script>
 
-<div class="trigger-view">
-  <div class="graphrow" style:--editor-w={`${editorW}px`}>
+<div class="trigger-view" style:--rail-w={`${railW}px`} style:--editor-w={`${editorW}px`}>
+  <div class="rail-wrap">
+    <TriggerGraphsRail {store} {shell} />
+    <Splitter
+      orientation="vertical"
+      size={railW}
+      min={RAIL_W.min}
+      max={RAIL_W.max}
+      label="Resize graphs rail"
+      onResize={setRailW}
+      style="right: calc(var(--shell-gap) * -0.5); top: 0; bottom: 0;"
+    />
+  </div>
+
   <div
     class="gwrap"
     bind:this={canvasWrap}
@@ -680,25 +699,21 @@
       {/snippet}
     </NodeEditor>
   </div>
-  </div>
-
-  <GraphsDock {store} {shell} />
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) 172px;
+    grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--editor-w);
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
-  }
-  .graphrow {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) var(--editor-w);
-    gap: var(--shell-gap);
-    min-height: 0;
     position: relative;
+  }
+  .rail-wrap {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
   }
   .gwrap {
     position: relative;

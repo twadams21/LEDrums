@@ -46,9 +46,9 @@
     "state": "view:trigger,add:mix,select:mix",
     "target": "Node editor"
   },
-  "graphs-dock": {
+  "graphs-rail": {
     "state": "view:trigger",
-    "target": ".graphbar"
+    "target": ".grail"
   },
   "visualizer": {
     "state": "view:trigger",

@@ -116,7 +116,7 @@
 </div>
 
 <style>
-  /* Each graph row is a raised tile in the trigger-graph-thumbnail language (GraphsDock
+  /* Each graph row is a raised tile in the trigger-graph-thumbnail language (TriggerGraphsRail
      `.gcard`): the `--surface-2` thumb surface, a faint border, and square (`--radius-card`)
      corners matching the Objects view. Hover lifts the border like the thumbs rather than
      swapping the fill, so the inner ListItem's own hover/active states stay legible. */
