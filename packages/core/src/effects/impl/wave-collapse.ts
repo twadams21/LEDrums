@@ -1,6 +1,7 @@
 import { clamp01, distance } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 /**
  * The collapsing/exploding shell radius (mm) for a hit of the given age. The shell
@@ -31,6 +32,9 @@ export const waveCollapse: EffectGenerator = {
   name: 'Wave Collapse',
   category: 'wash',
   timebase: 'voice',
+  // Not a cutoff: the ring fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 320, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

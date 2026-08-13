@@ -36,6 +36,8 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
   id: 'confetti-burst',
   name: 'Confetti Burst',
   category: 'particle',
+  // A hard cutoff: each particle carries `life` ms and is dropped when it runs out.
+  voiceLife: { key: 'life', unit: 'ms' },
   paramSpec: [
     { key: 'count', label: 'Particles / Hit', type: 'number', default: 24, min: 1, max: 256, step: 1 },
     { key: 'spread', label: 'Spread', type: 'number', default: 1.4, min: 0.05, max: 8, step: 0.05, unit: 'mm/ms' },

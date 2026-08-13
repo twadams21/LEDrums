@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { VoicePool, type SpawnDeps } from './voice-pool';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { resolveVoiceSustainMs } from '../effects/voice-life';
+import { EXP_TAIL_FACTOR, VISIBLE_CUTOFF } from '../effects/visibility';
 import type { PlayAction } from './eval-graph';
 import type { Bus, EffectDef, Voice } from './types';
 
@@ -103,8 +104,8 @@ describe('voice life follows the effect’s own Life param', () => {
 
 describe('effects that declare no life are untouched', () => {
   it('keeps the category envelope byte-identical', () => {
-    const fx = effectDef('fx-plain', 'whole-drum'); // real effect, no voiceLife declaration
-    const v = spawn(fx, playAction('fx-plain', { decayMs: 4000 }));
+    const fx = effectDef('fx-plain', 'breathing-kit'); // real effect with no life param at all
+    const v = spawn(fx, playAction('fx-plain', { brightness: 1 }));
     expect(v.attackMs).toBe(TRIGGER_ENV.attackMs);
     expect(v.sustainMs).toBe(TRIGGER_ENV.sustainMs);
     expect(v.releaseMs).toBe(TRIGGER_ENV.releaseMs);
@@ -116,11 +117,46 @@ describe('effects that declare no life are untouched', () => {
   });
 });
 
+describe('exponential decays get their whole visible tail', () => {
+  it('the second bug, as a test: whole-drum outlives its 410ms category envelope', () => {
+    const fx = effectDef('fx-drum', 'whole-drum');
+    // decayMs is a time CONSTANT, not a cutoff: at the 220ms default the drum is still lit
+    // ~1.2s later, but the voice used to be reaped at ~410ms.
+    const v = spawn(fx, playAction('fx-drum', { decayMs: 220 }));
+    expect(v.sustainMs).toBeCloseTo(220 * EXP_TAIL_FACTOR, 5);
+    expect(aliveAt(v, 880)).toBe(true); // 4 time constants — brightness ~1.8%, still drawn
+    expect(aliveAt(v, 1600)).toBe(false); // past the tail + release
+  });
+
+  it('sizes the voice to the tail, not the time constant', () => {
+    const fx = effectDef('fx-light', 'lightning');
+    expect(spawn(fx, playAction('fx-light', { decayMs: 1000 })).sustainMs).toBeCloseTo(EXP_TAIL_FACTOR * 1000, 5);
+  });
+
+  it('derives the factor from the shared visibility cutoff rather than a magic number', () => {
+    // e^-EXP_TAIL_FACTOR is exactly the brightness every impl stops drawing at.
+    expect(Math.exp(-EXP_TAIL_FACTOR)).toBeCloseTo(VISIBLE_CUTOFF, 12);
+  });
+
+  it('still never shortens: a tiny decay keeps the category sustain', () => {
+    const fx = effectDef('fx-drum', 'whole-drum');
+    // 10ms × 5.52 = 55ms, under the 100ms category sustain.
+    expect(spawn(fx, playAction('fx-drum', { decayMs: 10 })).sustainMs).toBe(100);
+  });
+
+  it('leaves factor-less (hard-cutoff) declarations exactly as they were', () => {
+    expect(spawn(effectDef('fx-chase', 'chase-bands'), playAction('fx-chase', { lifeBeats: 8 })).sustainMs).toBe(4000);
+    expect(spawn(effectDef('fx-sonar', 'drum-sonar'), playAction('fx-sonar', { lifeMs: 3000 })).sustainMs).toBe(3000);
+    // confetti-burst's particles carry a hard remaining-life — declared, but no factor.
+    expect(spawn(effectDef('fx-conf', 'confetti-burst'), playAction('fx-conf', { life: 1200 })).sustainMs).toBe(1200);
+  });
+});
+
 describe('resolveVoiceSustainMs (the pure seam)', () => {
   it('passes the category sustain straight through for unknown or undeclared generators', () => {
     expect(resolveVoiceSustainMs(null, {}, 120, 100)).toBe(100);
     expect(resolveVoiceSustainMs('no-such-effect', {}, 120, 100)).toBe(100);
-    expect(resolveVoiceSustainMs('whole-drum', { decayMs: 4000 }, 120, 100)).toBe(100);
+    expect(resolveVoiceSustainMs('breathing-kit', {}, 120, 100)).toBe(100);
   });
 
   it('ignores a non-numeric or negative life rather than producing a nonsense envelope', () => {

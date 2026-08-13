@@ -71,16 +71,17 @@ export interface EffectGenerator<State = unknown> {
    * `'trigger'` effect dies at ~410ms) no matter what the effect's Life slider says, and the
    * effect's internal fade never reaches its end — the param appears to do nothing.
    *
-   * Declare it on effects whose life param is a HARD cutoff (the emission is gone at
-   * `age >= life`). Effects that decay exponentially toward a threshold are a different
-   * shape — their visible tail is a multiple of the time constant — and are deliberately
-   * NOT covered here.
+   * Two shapes, told apart by `factor`:
+   * - A HARD cutoff — the emission is gone at `age >= life`. No factor.
+   * - An exponential decay toward a visibility threshold, where the param is a time CONSTANT
+   *   and the visible tail is a multiple of it (`decayMs: 220` renders for ~1.2s). Declare
+   *   `factor: EXP_TAIL_FACTOR`; sustain becomes `life × factor`.
    *
    * `unit: 'beats'` converts at the voice's spawn bpm, matching how the effect itself
    * converts. Resolved from the registry at spawn ({@link resolveVoiceSustainMs}), so this
    * never has to cross the wire.
    */
-  voiceLife?: { key: string; unit: 'ms' | 'beats' };
+  voiceLife?: { key: string; unit: 'ms' | 'beats'; factor?: number };
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

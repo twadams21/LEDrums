@@ -26,7 +26,9 @@ const FALLBACK_BPM = 120;
  *
  * `params` is the instance's own param map; a life the user never touched is absent from it,
  * so the generator's spec default stands in. Beats convert at `bpm` — the same conversion the
- * effect performs internally, so the two agree.
+ * effect performs internally, so the two agree. A declared `factor` scales the result: an
+ * exponential decay's param is a time CONSTANT, and the eye keeps seeing it for
+ * {@link EXP_TAIL_FACTOR} of those.
  */
 export function resolveVoiceSustainMs(
   generatorId: string | null | undefined,
@@ -40,6 +42,7 @@ export function resolveVoiceSustainMs(
   if (!life) return categorySustainMs;
   const spec = generator.paramSpec.find((s) => s.key === life.key);
   const declared = Math.max(0, pnum(params, life.key, typeof spec?.default === 'number' ? spec.default : 0));
-  const lifeMs = life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
+  const ms = life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
+  const lifeMs = ms * Math.max(0, life.factor ?? 1);
   return Math.max(categorySustainMs, lifeMs);
 }
