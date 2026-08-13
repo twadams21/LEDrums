@@ -87,6 +87,39 @@ tear down with `tailscale serve --https=5373 off` + stopping the stack when revi
 Ops lesson persisted to memory: never pkill by pattern (a worker's `pkill -f scripts/dev.mjs`
 killed the preview once); kill by PID after checking cwd.
 
+**Second feedback wave (2026-08-14, all review-gated + merged into the preview; PRs open for
+Trent):** **C1/C1b · PR #181 → main:** Trent's colour hypothesis (oklch color-mix with
+transparent diverging in WebKit) was FALSIFIED by measurement (byte-identical both engines,
+504 cases); real mechanism = engines answer `(color-gamut: p3)` differently on one machine so
+they take opposite branches of the generated rendition block; only visible offender
+`--live-bright` — **decided by Trent:** re-authored in-sRGB (`0.230→0.1898` chroma, ΔE2000
+3.7); engine-parity + whole-app engine-diff harnesses landed (`apps/web/scripts/
+engine-color-parity.mjs`, `engine-color-diff.mjs`); `--border-accent` (Δ~1%, invisible) left
+as the one dormant dual-rendition token. Check Tim ≥ v0.2.14 before field-judging. **G4 ·
+PR #180:** settings stacked-label 2-up grids everywhere (help text → placeholder/ⓘ), one chip
+tint recipe, zones = free-named + uncapped (slot stays hidden identity; `label` is model data
+in core's InputMap — patchLabels zone family stays dead per S4a; server slotToZone ceiling
+clamp removed as a latent misfire bug), OSC learn on zones via the same setInputMap gate.
+**V1/V1b · PR #182 → main:** the "Life/decay does nothing" bug — voices died on
+`CATEGORY_ENV`'s fixed envelope (~410ms trigger / ~630ms particle), `envelope-tick` never read
+the effect's life param (diagnosed by a sonnet agent with a frame-level repro). Fix:
+`EffectGenerator.voiceLife = {key, unit, factor?}` declaration, registry-resolved at spawn
+(`resolveVoiceSustainMs`, nothing crosses the wire), sustain = max(category, life×factor);
+`effects/visibility.ts` derives `EXP_TAIL_FACTOR = ln(1/VISIBLE_CUTOFF)` for the 9
+exponential-decay effects (**Trent approved the look change** — fuller tails on the most-used
+effects); confetti-burst is a hard cutoff (evidence), factor-less; 6 hard-cutoff effects
+annotated plain. Loop voices untouched. **E1 · PR #183:** new `segments` effect (core,
+pure/seeded, 20 params: wedge segmentation / palette generators / six fire modes);
+cross-hit advancement DELIBERATELY left to graph routing (fresh per-voice genState would
+diverge sim-vs-engine) — sequential = `sequence` node → `fire:'single'` nodes, documented on
+the effect. ui-shot gained `effect:`/`fire:`/`wait:` seam ops. **G1c · PR #179:** fire
+indicator calmed per Trent — ring+glow deleted, one 3px edge marker on `--dur-150`;
+reduced-motion keeps a 150ms hold. **Drum-elevation prototype v2** (`docs/proto/
+drum-elevation.html`): + orthographic orbit view (click-select synced) and Illustrator
+transform box in every plate (resize→Ø/depth split by spindle axis, rotate about plate
+normal, ⇧/⌥ mechanics); verdict panel still blank for Trent. Review queue: #176 → #179/#180/
+#183 (stacked) · #181/#182 (off main).
+
 **Tabbed-chrome + settings-parity redesign — IMPLEMENTED through S5 + review, PR #176 OPEN (2026-08-13):**
 built overnight by orchestrated Fable Workflow waves (source: Trent's in-session instruction, this
 machine; ~2.7M subagent tokens, 13 agents, 4 workflow runs). On `feat/tabbed-chrome`: S2 tabbed
