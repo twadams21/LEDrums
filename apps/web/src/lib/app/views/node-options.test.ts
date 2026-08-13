@@ -54,13 +54,22 @@ describe('num', () => {
 
 describe('fmt', () => {
   it('rounds integer-step numbers and appends the unit', () => {
-    expect(fmt(spec({ step: 1, unit: 'px' }), 12.6)).toBe('13px');
+    expect(fmt(spec({ step: 1, unit: 'px' }), 12.6)).toBe('13 px');
     expect(fmt(spec({ unit: '°' }), 90)).toBe('90°'); // no step → integer
     expect(fmt(spec({ step: 5 }), 42.4)).toBe('42'); // step ≥ 1, no unit
   });
   it('shows 2 decimals when the step is sub-integer', () => {
     expect(fmt(spec({ step: 0.01, unit: '×' }), 0.5)).toBe('0.50×');
     expect(fmt(spec({ step: 0.1 }), 1.234)).toBe('1.23');
+  });
+  it('spaces word units off the number so a Life slider cannot be misread', () => {
+    expect(fmt(spec({ step: 0.5, unit: 'beats' }), 4)).toBe('4.00 beats');
+    expect(fmt(spec({ step: 50, unit: 'ms' }), 1500)).toBe('1500 ms');
+    expect(fmt(spec({ step: 0.05, unit: 'rev/beat' }), 0.25)).toBe('0.25 rev/beat');
+  });
+  it('keeps symbol units tight against the number', () => {
+    expect(fmt(spec({ unit: '°/hoop' }), 30)).toBe('30°/hoop');
+    expect(fmt(spec({ step: 0.01, unit: '%' }), 0.5)).toBe('0.50%');
   });
   it('renders booleans as on / off', () => {
     expect(fmt(spec({ kind: 'bool' }), true)).toBe('on');

@@ -22,6 +22,8 @@ export const gravityDrops: EffectGenerator<GravityDropsState> = {
   name: 'Gravity Drops',
   category: 'particle',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeMs`, so the host voice must live that long.
+  voiceLife: { key: 'lifeMs', unit: 'ms' },
   description:
     'Each hit releases a glowing bead that falls down the struck drum under gravity, leaving a short trail across the hoop stack.',
   tags: ['particle', 'hit', 'per-drum', 'hoop-aware', 'emission'],
