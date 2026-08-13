@@ -160,12 +160,12 @@ export const segments: EffectGenerator<SegmentsState> = {
     },
     { key: 'speed', label: 'Speed', type: 'number', default: 4, min: 0.25, max: 32, step: 0.25, unit: 'seg/beat' },
     { key: 'width', label: 'Width', type: 'number', default: 1, min: 1, max: 8, step: 1, unit: 'seg' },
-    { key: 'tail', label: 'Tail', type: 'number', default: 2, min: 0, max: 16, step: 0.5, unit: 'seg' },
+    { key: 'tail', label: 'Tail', type: 'number', default: 4, min: 0, max: 16, step: 0.5, unit: 'seg' },
     { key: 'stride', label: 'Stride', type: 'number', default: 1, min: 1, max: 8, step: 1, unit: 'seg' },
     { key: 'segmentOffset', label: 'Start Segment', type: 'number', default: 0, min: 0, max: MAX_SEGMENTS - 1, step: 1 },
     { key: 'direction', label: 'Direction', type: 'enum', default: 'cw', options: ['cw', 'ccw'] },
     // --- expression ---
-    { key: 'lifeBeats', label: 'Life', type: 'number', default: 2, min: 0.25, max: 16, step: 0.25, unit: 'beats' },
+    { key: 'lifeBeats', label: 'Life', type: 'number', default: 3, min: 0.25, max: 16, step: 0.25, unit: 'beats' },
     { key: 'stagger', label: 'Stagger', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '× life' },
     { key: 'falloff', label: 'Falloff', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
     { key: 'radial', label: 'Radial Tilt', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
@@ -198,12 +198,12 @@ export const segments: EffectGenerator<SegmentsState> = {
     const fire = pstr(params, 'fire', 'chase');
     const speed = Math.max(0.01, pnum(params, 'speed', 4));
     const width = Math.max(1, Math.min(n, Math.round(pnum(params, 'width', 1))));
-    const tail = Math.max(0, pnum(params, 'tail', 2));
+    const tail = Math.max(0, pnum(params, 'tail', 4));
     const stride = Math.max(1, Math.round(pnum(params, 'stride', 1)));
     const offset = wrap(Math.round(pnum(params, 'segmentOffset', 0)), n);
     const dirSign = pstr(params, 'direction', 'cw') === 'ccw' ? -1 : 1;
 
-    const lifeBeats = Math.max(0.05, pnum(params, 'lifeBeats', 2));
+    const lifeBeats = Math.max(0.05, pnum(params, 'lifeBeats', 3));
     const stagger = clamp01(pnum(params, 'stagger', 0));
     const falloff = pnum(params, 'falloff', 0);
     const radial = pnum(params, 'radial', 0);

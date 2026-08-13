@@ -144,5 +144,20 @@
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
     "settle": 1200
+  },
+  "segments-params": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments",
+    "target": "Node editor",
+    "settle": 800
+  },
+  "segments-gallery": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,gallery,search:segments",
+    "target": "dialog:Change effect",
+    "settle": 1500
+  },
+  "segments-fire-graph": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,fire:kick",
+    "target": "Trigger graph canvas",
+    "settle": 150
   }
 }
