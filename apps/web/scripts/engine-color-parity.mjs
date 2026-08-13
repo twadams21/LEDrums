@@ -213,9 +213,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   console.log(`  matchMedia('(color-gamut: p3)')  chromium ${r.p3.chromium}  webkit ${r.p3.webkit}`);
   console.log(`  worst token divergence once unpinned     worst Δ ${r.worstFreeBase.toFixed(1)}`);
   if (r.p3.chromium !== r.p3.webkit) {
-    const bad = r.free.filter((x) => x.base.delta > TOLERANCE).map((x) => `${x.name.replace(/ \d+%.*/, '')} Δ${x.base.delta.toFixed(0)}`);
-    console.log(`  ⚠ the engines disagree about the display gamut, so they paint different token`);
-    console.log(`    values on the SAME machine${bad.length ? `: ${[...new Set(bad)].join(', ')}` : ''}`);
+    const bad = [...new Set(r.free.filter((x) => x.base.delta > TOLERANCE).map((x) => `${x.name.replace(/ \d+%.*/, '')} Δ${x.base.delta.toFixed(0)}`))];
+    if (bad.length) {
+      console.log(`  ⚠ the engines disagree about the display gamut AND paint different token`);
+      console.log(`    values on the SAME machine: ${bad.join(', ')}`);
+      console.log(`    → re-author these inside sRGB so there is only one rendition to choose`);
+    } else {
+      console.log(`  the engines disagree about the display gamut, but no sampled token has a`);
+      console.log(`  second rendition to disagree over — nothing here renders differently.`);
+    }
   }
   if (!verbose) console.log('\n  (re-run with --verbose for per-case sampled RGB)');
   console.log(`  screenshots: .ui-shots/color-parity-{pinned,free}-{chromium,webkit}.png`);

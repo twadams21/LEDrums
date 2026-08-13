@@ -4,8 +4,9 @@
 `color-mix(in oklch, …, transparent)` renders identically in both engines. The only
 cross-engine colour difference that survives measurement is *which token rendition each
 engine picks*, because the two engines answer `color-gamut: p3` differently on the same
-machine. That one is real, is not fixed here, and needs a product decision — see
-[What is still open](#what-is-still-open).
+machine. That one was real, and it **is now fixed** — `--live-bright` was re-authored
+inside sRGB so there is only one rendition left to disagree about. See
+[The fix](#the-fix--live-bright-re-authored-inside-srgb).
 
 ## The hypothesis under test
 
@@ -111,19 +112,52 @@ cannot disagree within one engine. No double-mapping. Also verified the gamut fi
 shipped: commit `1604d21` is an ancestor of both `v0.2.14` (2026-08-10) and `v0.2.15`, so
 any machine on a current build already has it.
 
+## The fix — `--live-bright` re-authored inside sRGB
+
+Three options were put to Trent: leave it (WebKit's answer is correct on a real P3 panel),
+trust a runtime probe over the media query, or re-author the token inside sRGB. **Trent
+chose the third** (2026-08-14): one value, in gamut everywhere, nothing left for either
+engine to choose between.
+
+```
+- --live-bright: oklch(0.700 0.230  25);   sRGB excursion 0.06422  (inside P3 only)
++ --live-bright: oklch(0.700 0.1898 25);   sRGB excursion 0.00000  (inside sRGB and P3)
+```
+
+Lightness and hue are held exactly; only chroma gives way, down 17.5%. The new value is the
+one `gamut-tokens.mjs` had already computed as the sRGB rendition — the maximum chroma that
+fits at L 0.700 / H 25, with the generator's own safety margin — so it is by construction
+the closest in-gamut colour to the original intent.
+
+**Perceptual cost: ΔE2000 3.70, ΔE OKLab 0.0402.** Above the ~2.3 "just noticeable"
+threshold side by side, so on a P3 display the LIVE red is marginally less saturated than
+before; it holds its lightness and hue, which is what makes it read as the same red across a
+room. That was the trade Trent accepted, and it buys a 23/255 difference between the desktop
+app and the browser going away.
+
+The token's `:root` entry now carries the constraint in a comment, because the obvious future
+edit is someone restoring the punch and silently reintroducing the divergence.
+
+### After
+
+| measurement | before | after |
+| --- | --- | --- |
+| parity harness, Section B worst token divergence | Δ23.0/255 | **Δ0.0/255** |
+| `--live-bright` entries in the generated rendition block | 1 | **0** |
+| whole-app free-pass diverging colours | 1 (`--border-accent`) | 1 (`--border-accent`) |
+| whole-app pinned-pass diverging colours | 0 | **0** |
+| `gamut-sweep` offenders | 0 | **0** |
+| `contrast-check` `--live-bright` on surface | 6.74 | **6.74** (unchanged — it already gated on the sRGB rendition) |
+
+`--border-accent` (Δ2.9/255, ~1%) is deliberately left alone: it is below the visible
+threshold and outside what was decided here.
+
 ## What is still open
 
-`--live-bright` (chroma 0.230 vs 0.1898) is the one token whose two renditions differ enough
-to be visible if two engines disagree about the display. Options, none taken here because
-this is a product call:
-
-1. **Leave it.** On a genuinely P3 MacBook panel, WebKit's answer is correct and the vivid
-   rendition is the intended one. If Tim's colours are still wrong on a current build, this
-   is the first thing to check — and the check is now one command.
-2. **Trust a runtime probe over the media query** — serve the sRGB rendition unless P3 is
-   positively confirmed. Safe, but gives up wide-gamut punch on displays that have it.
-3. **Re-author `--live-bright`** so both renditions sit inside sRGB, removing the divergence
-   at the cost of the extra chroma on P3.
+Nothing in this repo. One field check remains: **confirm Tim's build is ≥ v0.2.14** before
+judging any of this in the field — `1604d21` (the 2026-08-10 gamut work) is an ancestor of
+v0.2.14 and v0.2.15, so an older build predates the whole colour system this document
+describes, and the `--live-bright` fix above lands in the next release after it merges.
 
 ## Running these
 

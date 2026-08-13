@@ -52,7 +52,14 @@
 
   /* ---- State colours ------------------------------------------------------ */
   --live: oklch(0.630 0.224 25); /* LIVE / armed — must read across a room     */
-  --live-bright: oklch(0.700 0.230 25);
+  /* Chroma sits ON the sRGB boundary for L 0.700 / H 25 — do not raise it back to the
+     0.230 it was authored at. That value was inside P3 but outside sRGB, so it needed a
+     second rendition, and the engines do not agree on which rendition to use: WebKit
+     answers `color-gamut: p3` true where Chromium answers false on the SAME machine, so
+     the desktop app and the browser painted visibly different reds (255,77,79) vs
+     (255,100,95), 23/255 apart. In gamut everywhere means one red everywhere.
+     Measured 2026-08-13: docs/color/2026-08-13-webkit-colour-divergence.md */
+  --live-bright: oklch(0.700 0.1898 25);
   --live-soft: oklch(0.630 0.224 25 / 0.16);
   --live-glow: 0 0 16px oklch(0.630 0.224 25 / 0.55);
   --ok: oklch(0.760 0.150 150); /* connected / success                        */
@@ -224,7 +231,6 @@
 @media not all and (color-gamut: p3) {
   :root {
     --border-accent: oklch(0.5725 0.0978 192);
-    --live-bright: oklch(0.7 0.1898 25);
   }
   [data-accent='violet'] {
     --accent-bright: oklch(0.715 0.1745 300);

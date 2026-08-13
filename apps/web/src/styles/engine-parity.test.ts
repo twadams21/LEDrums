@@ -138,7 +138,10 @@ describe('pinnedRenditions', () => {
   it('lifts the generated sRGB block out of its media query', () => {
     const pinned = pinnedRenditions(css);
     expect(pinned).not.toContain('@media');
-    expect(pinned).toContain('--live-bright');
+    // Named tokens deliberately not asserted here — which tokens need a fallback is the
+    // generator's business and shrinks as tokens are re-authored in gamut (--live-bright
+    // left this block on 2026-08-14). The next test derives the expected set instead.
+    expect(pinned).toMatch(/--[\w-]+:/);
     // Specificity must beat the authored `:root`, or pinning silently does nothing and
     // the control looks like it held when it never applied.
     expect(pinned).toContain(':root:root');
