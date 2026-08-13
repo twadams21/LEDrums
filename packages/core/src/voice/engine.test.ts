@@ -1635,3 +1635,26 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
     expect(run()).toEqual(run());
   });
 });
+
+describe('VoiceBusEngine — releaseBus input (dock stop buttons)', () => {
+  it('releases only the targeted bus; absent busId releases every voice', () => {
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(allGraph()));
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5)); // spawn both voices (base + lead)
+    e.tick(20, 15, transport(20)); // attack (10ms) complete -> sustaining at full level
+    expect(e.stats().voices.filter((v) => !v.releasing)).toHaveLength(2);
+
+    e.applyInput({ kind: 'releaseBus', busId: 'lead', timeMs: 21 });
+    e.tick(25, 5, transport(25));
+    const scoped = e.stats().voices;
+    expect(scoped.find((v) => v.busId === 'lead')?.releasing).toBe(true);
+    expect(scoped.find((v) => v.busId === 'base')?.releasing).toBe(false);
+
+    e.applyInput({ kind: 'releaseBus', timeMs: 26 });
+    e.tick(30, 5, transport(30));
+    expect(e.stats().voices.length).toBeGreaterThan(0);
+    for (const v of e.stats().voices) expect(v.releasing).toBe(true);
+  });
+});
