@@ -36,6 +36,32 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Graph-list #177 + settings-sidebar refactor — BUILT + REVIEW-PASSED, PRs #179/#180 OPEN, NOTHING MERGED (2026-08-13):**
+requested by **Trent** (this machine) in-session; two opus/high twux implementers off dispatch
+briefs `docs/plans/2026-08-13-graphlist-settings/G1-graph-list-177.md` / `G2-settings-refactor.md`,
+both stacked on `feat/tabbed-chrome` (PR #176's head). **G1 / PR #179** (`feat/graph-list-177`,
+`3215bb7`): tinted thumbnails (dots take node-kind tints from `trigger-node-meta`; wires stay
+grey per Trent's standing rule), engine fire indicators — the server's existing per-fire
+`graph` monitor event read back through a NEW shared contract module
+`packages/protocol/src/monitor-graph.ts` (no WS schema change; keyboard/local/offline-MIDI/server
+fires folded into one `store.lastGraphFire` signal; fixed a real gap: offline hardware MIDI never
+marked fires), AddGraphDialog (link vs copy vs new, filter box), linked badge
+(`graphPlacementCount` across all songs), card context menu. Accepted deviations: ui-shot gained
+generic `--click`/`--rightclick` (portaled surfaces had no capture path), SearchField gained
+`autofocus`. **G2 / PR #180** (`feat/settings-sections`, `963444a`): settings sidebar → 7
+sections in 3 groups (Input · Drum trigger zones · Global controls / Drums & Hoops · Outputs &
+Chains · Controller / System), identity in new `settings/sections.ts` registry + hues in
+`section-tints.css` (role tokens only, statically gamut-audited; System hueless), InputPane split
+with tests relocated intact; **kit globals distributed — decided by Trent (this machine),
+2026-08-13**: `expanded`+`maxPixelsPerOutput` → Outputs & Chains, `mirror` → Drums & Hoops › Kit
+defaults; Controller = status+transport only, watchController lifecycle intact; S4a parity
+verified. Both slices: independent orchestrator sweeps green at committed HEADs (G1: protocol
+13/server 446/web 1761; G2: web 1765; typecheck 0 both). **Merge order decided by Trent (this
+machine): #176 → main first, then #179/#180 retargeted+rebased onto main as separate PRs; he is
+reviewing ALL THREE PRs himself — nothing merges until he says.** Worker sessions
+`opus-high-graphlist-61c374` / `opus-high-settings-df35d3` killed-but-resumable for rework;
+worktrees `graphlist`/`settings` (twux pool) kept at their shas. GH #177 stays open until merge.
+
 **Tabbed-chrome + settings-parity redesign — IMPLEMENTED through S5 + review, PR #176 OPEN (2026-08-13):**
 built overnight by orchestrated Fable Workflow waves (source: Trent's in-session instruction, this
 machine; ~2.7M subagent tokens, 13 agents, 4 workflow runs). On `feat/tabbed-chrome`: S2 tabbed
