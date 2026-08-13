@@ -71,9 +71,12 @@
 </Dialog>
 
 <style>
+  /* 760, not 680: the Controller pane is the tallest thing Settings has to show, and it is
+     read while diagnosing a rig — the whole picture beats a scrollbar. Still clamped to the
+     viewport, so a short screen degrades to scrolling rather than clipping. */
   :global(.settings-modal) {
     width: min(980px, calc(100vw - 48px));
-    height: min(680px, calc(100vh - 48px));
+    height: min(760px, calc(100vh - 48px));
   }
   .head {
     display: flex;

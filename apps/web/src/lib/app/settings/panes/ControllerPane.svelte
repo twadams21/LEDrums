@@ -19,7 +19,6 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
-  import Separator from '../../../ui/Separator.svelte';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import OutputStatusPanel from '../../docks/inspectors/OutputStatusPanel.svelte';
   import { onNum } from '../../docks/inspectors/forms';
@@ -66,6 +65,7 @@
   onMount(() => () => store.watchController(false));
 </script>
 
+
 <div class="pane-body">
   <PaneHeader id="controller" />
   <!-- Viewer (read-only) gate: native fieldset disables every nested form control; the store
@@ -90,84 +90,87 @@
     />
 
     {#if out}
-      <Separator />
-      <Eyebrow>Transport</Eyebrow>
-      <p class="grouphint">Where pixel data is sent.</p>
-      <Field layout="row" label="Protocol">
-        <Select
-          value={out.protocol}
-          options={PROTOCOL_OPTS}
-          disabled={!project}
-          onChange={(v) => store.setOutput({ protocol: v as 'artnet' | 'sacn' })}
-          ariaLabel="Protocol"
-        />
-      </Field>
-      <Field layout="row" label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
-        <CommitInput
-          value={out.host}
-          mono
-          autofocus={false}
-          placeholder="255.255.255.255"
-          disabled={!project}
-          ariaLabel="Host / IP"
-          onCommit={(v) => v.trim() && store.setOutput({ host: v.trim() })}
-        />
-      </Field>
-      <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
-        <CommitInput
-          type="number"
-          min={1}
-          max={65535}
-          value={out.port ?? ''}
-          placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
-          disabled={!project}
-          ariaLabel="Output port"
-          onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
-        />
-      </Field>
-      <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
-        <Select
-          value={out.iface || AUTO}
-          options={ifaceOptions}
-          disabled={!project}
-          onChange={(v) => store.setOutput({ iface: v === AUTO ? '' : v })}
-          ariaLabel="Source interface (network adapter)"
-        />
-      </Field>
-      <Field layout="row" label="FPS" hint="≤ 120">
-        <CommitInput
-          type="number"
-          min={1}
-          max={120}
-          value={out.fps}
-          disabled={!project}
-          suffix="fps"
-          ariaLabel="Output FPS"
-          onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
-        />
-      </Field>
-      <label class="checkrow">
-        <Toggle
-          pressed={out.broadcast}
-          disabled={!project}
-          onChange={(v) => store.setOutput({ broadcast: v })}
-          ariaLabel={out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}
-        />
-        <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
-      </label>
-      {#if out.protocol === 'sacn'}
-        <Field layout="row" label="Priority" hint="1–200 · higher wins at a merge">
-          <CommitInput
-            type="number"
-            min={1}
-            max={200}
-            value={out.priority}
-            disabled={!project}
-            ariaLabel="sACN priority"
-            onCommit={(v) => onNum(v, (n) => store.setOutput({ priority: n }))}
-          />
-        </Field>
-      {/if}
+      <section class="transport" aria-label="Transport">
+        <Eyebrow>Transport</Eyebrow>
+        <p class="grouphint">Where pixel data is sent.</p>
+        <div class="tgrid">
+          <Field layout="row" label="Protocol">
+            <Select
+              value={out.protocol}
+              options={PROTOCOL_OPTS}
+              disabled={!project}
+              onChange={(v) => store.setOutput({ protocol: v as 'artnet' | 'sacn' })}
+              ariaLabel="Protocol"
+            />
+          </Field>
+          <Field layout="row" label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
+            <CommitInput
+              value={out.host}
+              mono
+              autofocus={false}
+              placeholder="255.255.255.255"
+              disabled={!project}
+              ariaLabel="Host / IP"
+              onCommit={(v) => v.trim() && store.setOutput({ host: v.trim() })}
+            />
+          </Field>
+          <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+            <CommitInput
+              type="number"
+              min={1}
+              max={65535}
+              value={out.port ?? ''}
+              placeholder={out.protocol === 'sacn' ? '5568' : '6454'}
+              disabled={!project}
+              ariaLabel="Output port"
+              onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
+            />
+          </Field>
+          <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
+            <Select
+              value={out.iface || AUTO}
+              options={ifaceOptions}
+              disabled={!project}
+              onChange={(v) => store.setOutput({ iface: v === AUTO ? '' : v })}
+              ariaLabel="Source interface (network adapter)"
+            />
+          </Field>
+          <Field layout="row" label="FPS" hint="≤ 120">
+            <CommitInput
+              type="number"
+              min={1}
+              max={120}
+              value={out.fps}
+              disabled={!project}
+              suffix="fps"
+              ariaLabel="Output FPS"
+              onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
+            />
+          </Field>
+          <label class="checkrow">
+            <Toggle
+              pressed={out.broadcast}
+              disabled={!project}
+              onChange={(v) => store.setOutput({ broadcast: v })}
+              ariaLabel={out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}
+            />
+            <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
+          </label>
+          {#if out.protocol === 'sacn'}
+            <Field layout="row" label="Priority" hint="1–200 · higher wins at a merge">
+              <CommitInput
+                type="number"
+                min={1}
+                max={200}
+                value={out.priority}
+                disabled={!project}
+                ariaLabel="sACN priority"
+                onCommit={(v) => onNum(v, (n) => store.setOutput({ priority: n }))}
+              />
+            </Field>
+          {/if}
+        </div>
+      </section>
     {/if}
   </fieldset>
 </div>
@@ -178,6 +181,9 @@
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
+    /* The two-column split below sizes off THIS pane, not the viewport — the modal is a
+       fixed width, so a viewport query would answer the wrong question. */
+    container-type: inline-size;
   }
   .editgate {
     /* fieldset reset — it carries the read-only gate but must lay out like a plain column */
@@ -188,6 +194,27 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+  .transport {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  /* Transport as a two-up form: seven short fields stacked was most of this pane's height,
+     and the pane has to fit the modal without scrolling (a controller you are diagnosing is
+     read at a glance). Narrow containers fall back to one column. */
+  .tgrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-4);
+    align-items: start;
+    min-width: 0;
+  }
+  @container (max-width: 560px) {
+    .tgrid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   /* Read-only viewer: dim, on top of the native fieldset[disabled] gate. */
   .editgate:disabled {

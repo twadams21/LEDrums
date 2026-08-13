@@ -26,7 +26,7 @@
   import { hoopNodeId } from '../../patch-graph';
   import { drumZoneId } from '../../patch-zones';
   import { pushToast } from '../../../ui/toast.svelte';
-  import { addHoop, moveHoop, newBlockers, removeHoop, unassignedHoops } from './chain-editor';
+  import { addHoop, dropHoop, moveHoop, newBlockers, removeHoop, unassignedHoops, type HoopDrag } from './chain-editor';
   import { pixelsForHoopIn } from './drums-hoops';
   import OutputChainCard from './OutputChainCard.svelte';
   import UnassignedPool from './UnassignedPool.svelte';
@@ -46,12 +46,14 @@
   const pool = $derived(kit && routing ? unassignedHoops(kit, routing) : []);
   const pixelTable = $derived(kit && routing ? buildPixelOutputTable(routing, kit, pixelsForHoop) : []);
 
-  /** "Kick · Hoop 2" — drum + hoop display names, honouring rename overrides on the
-      surviving `drum:<id>` / `hoop:<drumId>:<n>` node-id grammar. */
-  function hoopLabel(h: HoopRef): string {
+  /** A hoop's display names, honouring rename overrides on the surviving `drum:<id>` /
+      `hoop:<drumId>:<n>` node-id grammar. Split, because a chain row carries the drum in its
+      identity chip and the hoop as its title, while a picker entry needs both in one string. */
+  function labels(h: HoopRef): { drum: string; hoop: string; full: string } {
     const drum = kit?.drums.find((d) => d.id === h.drumId);
     const drumName = patchLabel(store, drumZoneId(h.drumId), drum?.label || h.drumId);
-    return `${drumName} · ${patchLabel(store, hoopNodeId(h), `Hoop ${h.hoop}`)}`;
+    const hoopName = patchLabel(store, hoopNodeId(h), `Hoop ${h.hoop}`);
+    return { drum: drumName, hoop: hoopName, full: `${drumName} · ${hoopName}` };
   }
 
   /** Reduce → validate (core seam) → setRouting. Validation is on the DELTA: only an edit
@@ -127,7 +129,7 @@
           index={i}
           {expanded}
           {pool}
-          {hoopLabel}
+          {labels}
           span={ranges?.byOutput[output.id]}
           disabled={!project}
           canEdit={store.canEdit}
@@ -135,11 +137,18 @@
           onAdd={(h) => routing && commitChains(addHoop(routing, output.id, h))}
           onRemove={(idx) => routing && commitChains(removeHoop(routing, output.id, idx))}
           onMove={(from, to) => routing && commitChains(moveHoop(routing, output.id, from, to))}
+          onDropHoop={(drag, gap) => routing && commitChains(dropHoop(routing, drag, { kind: 'chain', outputId: output.id, gap }))}
         />
       {/each}
     </div>
 
-    <UnassignedPool {pool} {hoopLabel} />
+    <UnassignedPool
+      {pool}
+      {labels}
+      disabled={!project}
+      canEdit={store.canEdit}
+      onDropHoop={(drag: HoopDrag) => routing && commitChains(dropHoop(routing, drag, { kind: 'pool' }))}
+    />
 
     {#if pixelTable.length}
       <div class="pxtable">

@@ -389,6 +389,12 @@
 </section>
 
 <style>
+  /* Same density pass as OutputStatusPanel: tighter rows here only, so the whole controller
+     picture fits one screen without touching ReadRow for everyone else. */
+  .controller :global(.readrow) {
+    padding: 2px 0;
+  }
+
   .controller {
     display: flex;
     flex-direction: column;
@@ -398,7 +404,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
   .readrows {
     display: flex;
@@ -843,5 +849,26 @@
   .candidate .action {
     flex: none;
     margin-left: auto;
+  }
+  /* Wide mount (the Settings pane): the read-out blocks pair up two-per-row instead of
+     stacking into a column taller than the modal. Banners and the test-pattern strip keep
+     the full width — a warning that shares a row with a table stops reading as a warning.
+
+     It is a CONTAINER query on purpose: it only fires where an ancestor declares itself a
+     container (the Settings pane does). The dock inspector and the controller monitor
+     declare none, so they keep today's single-column layout untouched. */
+  @container (min-width: 560px) {
+    .controller {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      column-gap: var(--space-4);
+    }
+    .controller > .head,
+    .controller > .takeover,
+    .controller > .alert,
+    .controller > .testpatterns {
+      grid-column: 1 / -1;
+    }
   }
 </style>

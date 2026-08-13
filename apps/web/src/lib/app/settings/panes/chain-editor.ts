@@ -83,6 +83,51 @@ export function gapToIndex(from: number, gap: number): number {
   return gap > from ? gap - 1 : gap;
 }
 
+/** Insert `hoop` into `outputId`'s chain at `index` (clamped to the ends). A hoop already on
+    ANY chain is a no-op — the same single-upstream invariant `addHoop` holds. */
+export function insertHoop(routing: PatchRouting, outputId: string, hoop: HoopRef, index: number): PatchRouting {
+  const key = hoopKey(hoop);
+  if (routing.outputs.some((o) => o.hoops.some((h) => hoopKey(h) === key))) return routing;
+  return {
+    outputs: routing.outputs.map((o) => {
+      if (o.id !== outputId) return o;
+      const at = Math.max(0, Math.min(o.hoops.length, index));
+      const hoops = [...o.hoops];
+      hoops.splice(at, 0, hoop);
+      return { ...o, hoops };
+    }),
+  };
+}
+
+/** What is being dragged: a hoop, and where it came from — a chain position, or `null` for
+    the unassigned pool. */
+export interface HoopDrag {
+  hoop: HoopRef;
+  from: { outputId: string; index: number } | null;
+}
+
+/** Where it was released: into a chain at a gap index (0..len), or back to the pool. */
+export type HoopDropTarget = { kind: 'chain'; outputId: string; gap: number } | { kind: 'pool' };
+
+/**
+ * The routing a completed hoop drag produces — the ONE reducer behind every drop, so
+ * assigning from the pool, moving between outputs, reordering within a chain and dragging
+ * back to the pool are all the same mutation path the buttons and the picker already use.
+ *
+ * A hoop leaves its old chain before it joins the new one, so the single-upstream invariant
+ * holds mid-gesture as well as after it: a drop can never fan a hoop out across two outputs.
+ */
+export function dropHoop(routing: PatchRouting, drag: HoopDrag, target: HoopDropTarget): PatchRouting {
+  if (target.kind === 'pool') {
+    return drag.from ? removeHoop(routing, drag.from.outputId, drag.from.index) : routing;
+  }
+  if (drag.from?.outputId === target.outputId) {
+    return moveHoop(routing, target.outputId, drag.from.index, gapToIndex(drag.from.index, target.gap));
+  }
+  const detached = drag.from ? removeHoop(routing, drag.from.outputId, drag.from.index) : routing;
+  return insertHoop(detached, target.outputId, drag.hoop, target.gap);
+}
+
 /** The blocking (`error`-severity) issues a routing would hit at the server write-gate —
     core's ONE validation seam, compiled through the same `patchToOutputs` the commit uses.
     Empty = safe to commit (warnings like `hoop-uncovered` ride the pool indicators instead). */

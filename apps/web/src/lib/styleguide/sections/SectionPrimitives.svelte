@@ -38,6 +38,8 @@
   import Splitter from '../../ui/Splitter.svelte';
   import MasterDetail from '../../ui/MasterDetail.svelte';
   import DemoCard from '../DemoCard.svelte';
+  import TypeChip from '../../ui/TypeChip.svelte';
+  import ListHead from '../../ui/ListHead.svelte';
   import Play from '@lucide/svelte/icons/play';
   import Plus from '@lucide/svelte/icons/plus';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -122,6 +124,21 @@
   </div>
 
   <div class="comp-grid">
+    <DemoCard
+      title="Type chip · List head"
+      src={['lib/ui/TypeChip', 'lib/ui/ListHead']}
+      note="The dense-list vocabulary. A TypeChip carries an item's KIND in its role colour — colour identity lives in the chip, never in a whole-row tint, so a long list stays readable and the eye can still group by kind. ListHead is the line above such a list: uppercase mono label, right-aligned count (the count answers 'is this complete?' before you read a row), and room for one control."
+      wide
+    >
+      <div class="listdemo">
+        <ListHead label="Zones" count="3 of 8" />
+        <div class="listdemo-row"><TypeChip label="trigger" tint="var(--role-input)" /><span>Next song</span></div>
+        <div class="listdemo-row"><TypeChip label="continuous" tint="var(--role-modulation)" /><span>Master brightness</span></div>
+        <div class="listdemo-row"><TypeChip label="kick" tint="var(--role-layer)" /><span>Hoop 2</span></div>
+        <div class="listdemo-row"><TypeChip label="untinted" /><span>Neutral label</span></div>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Buttons" src="app" note="Base &lt;button&gt; vocabulary from app.css: primary / default / ghost / danger / .active toggle / disabled.">
       <div class="comp-row">
         <button class="primary">Primary</button>
@@ -509,6 +526,28 @@
 <ToastHost />
 
 <style>
+  .listdemo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .listdemo-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 30px;
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-1);
+    font-size: var(--text-xs);
+    color: var(--text);
+  }
+  .listdemo-row + .listdemo-row {
+    box-shadow: inset 0 1px 0 color-mix(in oklch, var(--border-faint) 60%, transparent);
+  }
+  .listdemo-row:hover {
+    background: var(--surface-2);
+  }
   .comp-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));

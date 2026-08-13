@@ -94,11 +94,12 @@
 <div class="zones">
   <div class="sectionhead">
     <span class="seclabel">Zones{#if drumLabel}<span class="secdrum"> · {drumLabel}</span>{/if}</span>
+    <span class="seccount">{zoneSlots.length} of {SLOT_LABELS.length}</span>
     <IconButton icon={Plus} label="Add zone" variant="soft" size={14} disabled={!canAdd} onclick={addZone} />
   </div>
 
   {#if zoneSlots.length === 0}
-    <p class="hint">No zones wired yet — <b>Add</b> one to map a slot to a MIDI note or OSC address.</p>
+    <p class="hint empty">No zones wired yet — <b>Add</b> one to map a slot to a MIDI note or OSC address.</p>
   {:else}
     <div class="zonelist">
       {#each zoneSlots as slot (slot)}
@@ -107,7 +108,7 @@
         {@const heardNote = store.inputBadge(note !== null ? { kind: 'midi', note } : null)}
         {@const heardOsc = store.inputBadge(addr ? { kind: 'osc', address: addr } : null)}
         {@const armed = zoneLearning(slot)}
-        <div class="zone">
+        <div class="zone" class:bound={note !== null || !!addr}>
           <div class="zhead">
             <Select
               value={String(slot)}
@@ -174,9 +175,16 @@
   .sectionhead {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--space-2);
     min-height: 24px;
+  }
+  .seccount {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
   }
   .seclabel {
     font-size: var(--text-2xs);
@@ -200,14 +208,33 @@
     flex-direction: column;
     gap: var(--space-2);
   }
+  /* One zone = one dense card. Colour identity rides a 2px left bar in the zone role hue
+     (the same colour the Settings sidebar gives the section) and only once the zone is
+     actually bound — an unbound slot stays quiet, so the eye finds the live ones. */
   .zone {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-1_5);
     padding: var(--space-2);
     background: var(--surface-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
+    transition-property: border-color;
+    transition-duration: var(--dur-120);
+  }
+  .zone.bound {
+    border-color: color-mix(in oklch, var(--role-mod) 22%, var(--border-faint));
+  }
+  .zone.bound::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 0 2px 2px 0;
+    background: color-mix(in oklch, var(--role-mod) 70%, transparent);
   }
   .zhead {
     display: grid;
@@ -250,6 +277,11 @@
     color: var(--text-muted);
     line-height: var(--leading-normal);
     text-wrap: pretty;
+  }
+  .hint.empty {
+    padding: var(--space-2) var(--space-3);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-2);
   }
   .hint b {
     color: var(--text);

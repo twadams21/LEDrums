@@ -33,7 +33,7 @@
   import type { SettingsPane } from '../../app/shell-nav';
   import OutputChainCard from '../../app/settings/panes/OutputChainCard.svelte';
   import UnassignedPool from '../../app/settings/panes/UnassignedPool.svelte';
-  import { addHoop, moveHoop, removeHoop, unassignedHoops } from '../../app/settings/panes/chain-editor';
+  import { addHoop, dropHoop, moveHoop, removeHoop, unassignedHoops } from '../../app/settings/panes/chain-editor';
   import { pixelRanges, type HoopRef, type PatchRouting } from '../../app/patch-routing';
   import type { KitConfig, RgbOrder } from '@ledrums/core';
   import Field from '../../ui/Field.svelte';
@@ -249,8 +249,10 @@
   });
   const chainPool = $derived(unassignedHoops(chainKit, chainRouting));
   const chainRanges = $derived(pixelRanges(chainRouting, () => 108));
-  const chainLabel = (h: HoopRef): string =>
-    `${chainKit.drums.find((d) => d.id === h.drumId)?.label ?? h.drumId} · Hoop ${h.hoop}`;
+  const chainLabels = (h: HoopRef): { drum: string; hoop: string; full: string } => {
+    const drum = chainKit.drums.find((d) => d.id === h.drumId)?.label ?? h.drumId;
+    return { drum, hoop: `Hoop ${h.hoop}`, full: `${drum} · Hoop ${h.hoop}` };
+  };
   const chainScalar = (partial: { startUniverse?: number; channelsPerPixel?: number; rgbOrder?: RgbOrder }): void => {
     chainRouting = { outputs: chainRouting.outputs.map((o) => ({ ...o, ...partial })) };
   };
@@ -559,7 +561,7 @@
     <DemoCard
       title="Output chain editor"
       src={['lib/app/settings/panes/OutputChainCard', 'lib/app/settings/panes/UnassignedPool', 'lib/app/settings/panes/chain-editor']}
-      note="Settings › Outputs & Chains (S4c): one card per physical output — transport scalars above the ordered hoop chain (drag-reorder, move up/down, remove) — with the unassigned-hoops pool beneath. The pool feeds the add picker, so a hoop sits on at most one chain by construction; removing returns it. This demo runs the real reducers."
+      note="Settings › Outputs & Chains: one card per physical output — transport scalars above the ordered hoop chain — with the unassigned-hoops pool beneath. Hoops are dragged between the pool and any chain (and reordered within one); every drop, button and picker choice reduces through the same pure chain-editor, so a hoop sits on at most one chain by construction. Drag a chip below onto the chain — this demo runs the real reducers."
       wide
     >
       <div class="chain-demo">
@@ -569,7 +571,7 @@
           index={0}
           expanded={false}
           pool={chainPool}
-          hoopLabel={chainLabel}
+          labels={chainLabels}
           span={chainRanges.byOutput['out-1']}
           disabled={false}
           canEdit
@@ -577,8 +579,13 @@
           onAdd={(h) => (chainRouting = addHoop(chainRouting, 'out-1', h))}
           onRemove={(i) => (chainRouting = removeHoop(chainRouting, 'out-1', i))}
           onMove={(from, to) => (chainRouting = moveHoop(chainRouting, 'out-1', from, to))}
+          onDropHoop={(drag, gap) => (chainRouting = dropHoop(chainRouting, drag, { kind: 'chain', outputId: 'out-1', gap }))}
         />
-        <UnassignedPool pool={chainPool} hoopLabel={chainLabel} />
+        <UnassignedPool
+          pool={chainPool}
+          labels={chainLabels}
+          onDropHoop={(drag) => (chainRouting = dropHoop(chainRouting, drag, { kind: 'pool' }))}
+        />
       </div>
     </DemoCard>
 

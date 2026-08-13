@@ -12,6 +12,8 @@
   import Select from '../../../ui/Select.svelte';
   import Separator from '../../../ui/Separator.svelte';
   import StatusPill from '../../../ui/StatusPill.svelte';
+  import ListHead from '../../../ui/ListHead.svelte';
+  import TypeChip from '../../../ui/TypeChip.svelte';
   import { midiChannelOptions } from '../../../midi/midi-note';
   import { deviceListEmptyState } from '../../chrome/midi-devices';
   import OscInputPanel from '../../chrome/OscInputPanel.svelte';
@@ -44,14 +46,16 @@
     />
   </Field>
   <section class="devices" aria-label="MIDI input devices">
-    <span class="dlabel">MIDI devices<em class="dhint">connected inputs</em></span>
+    <ListHead label="MIDI devices" count={store.midiDevices.length} />
     {#if midiEmpty}
       <p class="empty">{midiEmpty}</p>
     {:else}
       <ul class="devlist">
         {#each store.midiDevices as device (device.id)}
           <li class="dev" class:off={device.state === 'disconnected'}>
+            <TypeChip label="midi in" tint="var(--role-input)" />
             <span class="dev-name" title={device.manufacturer ? `${device.name} — ${device.manufacturer}` : device.name}>{device.name}</span>
+            {#if device.manufacturer}<span class="dev-make">{device.manufacturer}</span>{/if}
             <StatusPill
               tone={device.state === 'connected' ? 'ok' : 'muted'}
               label={device.state === 'connected' ? 'Connected' : 'Disconnected'}
@@ -81,17 +85,14 @@
     gap: 5px;
     min-width: 0;
   }
-  .dlabel {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 6px;
+  .dev-make {
+    flex: none;
+    font-family: var(--font-mono);
     font-size: var(--text-2xs);
-    font-weight: 500;
-    color: var(--text-muted);
-  }
-  .dhint {
-    font-style: normal;
     color: var(--text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .devlist {
     list-style: none;
@@ -104,9 +105,9 @@
   .dev {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--space-2);
-    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+    min-height: 34px;
+    padding: var(--space-1) var(--space-2);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     background: var(--surface-inset);
@@ -117,6 +118,7 @@
     opacity: 0.6;
   }
   .dev-name {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

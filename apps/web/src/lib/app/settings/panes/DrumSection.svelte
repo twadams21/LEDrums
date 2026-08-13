@@ -18,6 +18,7 @@
   import type { PatchRouting } from '../../patch-routing';
   import { drumPixelTotal, hoopIndices, pixelsForHoopIn } from './drums-hoops';
   import HoopRow from './HoopRow.svelte';
+  import ListHead from '../../../ui/ListHead.svelte';
 
   let { store, drum, kit, routing }: {
     store: TriggerLab;
@@ -149,7 +150,9 @@
     </Field>
     <ReadRow label="Bound trigger" value={boundLabel ?? bound?.label ?? '—'} />
 
+    <ListHead label="Hoops" count={hoops.length} />
     <div class="hoopgrid" role="group" aria-label={`${patchLabel(store, nodeId, fallback)} hoops`}>
+      <span class="hcol right">#</span>
       <span class="hcol">Hoop</span>
       <span class="hcol">Pixels</span>
       <span class="hcol">Reverse</span>
@@ -239,7 +242,7 @@
   /* Hoop rows: one shared column template; HoopRow cells join via display:contents. */
   .hoopgrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 6.5rem max-content max-content max-content;
+    grid-template-columns: 1.6rem minmax(0, 1fr) 6.5rem max-content max-content max-content;
     align-items: center;
     column-gap: var(--space-2);
     row-gap: var(--space-1);
