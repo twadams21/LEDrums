@@ -101,6 +101,16 @@
     "target": "dialog:Settings",
     "settle": 300
   },
+  "settings-zones": {
+    "state": "view:trigger,settings:zones",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-controls": {
+    "state": "view:trigger,settings:controls",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
   "settings-drums": {
     "state": "view:trigger,settings:drums",
     "target": "dialog:Settings",

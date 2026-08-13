@@ -13,9 +13,17 @@ export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'monitor';
 
 /** Settings-modal section ids (tabbed chrome: the patch surface lives in Settings).
     No 'general' catch-all — every setting has a specific pane home (S4). */
-export type SettingsPane = 'input' | 'drums' | 'outputs' | 'controller' | 'system';
+export type SettingsPane = 'input' | 'zones' | 'controls' | 'drums' | 'outputs' | 'controller' | 'system';
 
-export const SETTINGS_PANES: readonly SettingsPane[] = ['input', 'drums', 'outputs', 'controller', 'system'];
+export const SETTINGS_PANES: readonly SettingsPane[] = [
+  'input',
+  'zones',
+  'controls',
+  'drums',
+  'outputs',
+  'controller',
+  'system',
+];
 
 export const DEFAULT_SETTINGS_PANE: SettingsPane = 'input';
 

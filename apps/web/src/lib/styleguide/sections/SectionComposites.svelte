@@ -28,6 +28,9 @@
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
+  import SettingsNav from '../../app/settings/SettingsNav.svelte';
+  import PaneHeader from '../../app/settings/PaneHeader.svelte';
+  import type { SettingsPane } from '../../app/shell-nav';
   import OutputChainCard from '../../app/settings/panes/OutputChainCard.svelte';
   import UnassignedPool from '../../app/settings/panes/UnassignedPool.svelte';
   import { addHoop, moveHoop, removeHoop, unassignedHoops } from '../../app/settings/panes/chain-editor';
@@ -283,6 +286,9 @@
   }
   const shellStub = new ShellStub() as unknown as ShellStore;
 
+  /* ---- Settings sections — the nav routes itself; the header follows the same row -- */
+  let settingsPane = $state<SettingsPane>('zones');
+
   class SetlistStub {
     songs = [
       {
@@ -331,6 +337,18 @@
       wide
     >
       <ViewTabs shell={shellStub} />
+    </DemoCard>
+
+    <DemoCard
+      title="Settings sections — nav + pane header"
+      src={['lib/app/settings/SettingsNav', 'lib/app/settings/PaneHeader', 'lib/app/settings/sections']}
+      note="How a section carries an identity: one registry row gives the sidebar entry and its pane header the same icon and hue, so arriving from the sidebar lands on the same colour. The hues are the signal-flow role colours of the objects each section edits (input · zone · drum/kit · output); System is deliberately hueless. Active = a 13% wash of that hue with a tinted border; hover is colour + background only, no motion."
+      wide
+    >
+      <div class="secnav-demo">
+        <SettingsNav active={settingsPane} onSelect={(id) => (settingsPane = id)} />
+        <div class="secnav-pane"><PaneHeader id={settingsPane} /></div>
+      </div>
     </DemoCard>
 
     <DemoCard
@@ -604,6 +622,19 @@
     gap: var(--space-3);
   }
   /* the songs/sections bars fill their row height in the shell; pin it here */
+  /* The modal's own split: a 200px section column beside the pane it opens. */
+  .secnav-demo {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .secnav-pane {
+    padding: var(--space-3);
+    min-width: 0;
+  }
   .bar-stack {
     display: flex;
     flex-direction: column;

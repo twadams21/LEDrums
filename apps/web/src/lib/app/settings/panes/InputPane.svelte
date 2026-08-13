@@ -1,13 +1,11 @@
 <script lang="ts">
-  /* Settings › Input (S4e) — everything that fires the rig, per the S4a pane spec:
-     MIDI input (channel filter + device list, from General), the OSC input panel
-     and global control bindings (reused wholesale), then the per-drum zone→input
-     wiring — DrumZonesList reused wholesale, one list per drum, the same list +
-     `setInputMap` mutation path the Trigger-graph source editor uses. The zone
-     lists carry no gating of their own (in the Inspector a fieldset gates them),
-     so the same natively-disabled-fieldset treatment wraps them here; the OSC /
-     global-controls panels stay outside it — they self-gate, and a viewer keeps
-     the copyable OSC addresses. */
+  /* Settings › Input (S4a §2.1) — the two ways sound gets in: MIDI (channel filter +
+     connected-device list, from General) and OSC (`OscInputPanel` reused wholesale, which
+     owns its listen status, fault callout and learn affordances).
+
+     The per-drum zone wiring and the global control bindings that used to stack below
+     these are their own sections now (Drum trigger zones · Global controls) — same
+     components, same mutation paths, one scroll each instead of one four-deep column. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import Field from '../../../ui/Field.svelte';
@@ -16,17 +14,11 @@
   import StatusPill from '../../../ui/StatusPill.svelte';
   import { midiChannelOptions } from '../../../midi/midi-note';
   import { deviceListEmptyState } from '../../chrome/midi-devices';
-  import GlobalControlsPanel from '../../chrome/GlobalControlsPanel.svelte';
   import OscInputPanel from '../../chrome/OscInputPanel.svelte';
-  import DrumZonesList from '../../docks/inspectors/DrumZonesList.svelte';
-  import { patchLabel } from '../../docks/inspectors/forms';
-  import { drumZoneId } from '../../patch-zones';
+  import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
-  /* Zone lists follow the AUTHORITATIVE kit (project.kit.drums) — same truth source as the
-     sibling Drums & Hoops pane — falling back to the build-time fixture only offline. */
-  const drums = $derived(store.project?.kit.drums ?? store.drums);
   const channelValue = $derived(store.midiChannel === null ? 'all' : String(store.midiChannel));
   const midiEmpty = $derived(
     deviceListEmptyState(store.midiAvailable, store.midiUnavailableReason, store.midiDevices.length),
@@ -39,7 +31,7 @@
 </script>
 
 <div class="pane-body">
-  <h3>Input</h3>
+  <PaneHeader id="input" />
 
   <Eyebrow>MIDI input</Eyebrow>
   <Field label="MIDI channel" hint="input filter">
@@ -72,23 +64,6 @@
 
   <Separator />
   <OscInputPanel {store} />
-
-  <Separator />
-  <GlobalControlsPanel {store} />
-
-  <Separator />
-  <Eyebrow>Drum zones</Eyebrow>
-  <p class="zhint">
-    Map each drum's zones to the MIDI notes / OSC addresses that fire them — shared by every
-    trigger graph on that drum.
-  </p>
-  <fieldset class="drums" disabled={!store.canEdit}>
-    {#each drums as drum (drum.id)}
-      <div class="drumcard">
-        <DrumZonesList {store} drumId={drum.id} drumLabel={patchLabel(store, drumZoneId(drum.id), drum.label || drum.id)} />
-      </div>
-    {/each}
-  </fieldset>
 </div>
 
 <style>
@@ -97,12 +72,6 @@
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--ink);
   }
 
   /* MIDI devices — a labelled, non-interactive list (matches Field's label styling). */
@@ -165,31 +134,5 @@
     line-height: 1.4;
     color: var(--text-muted);
     text-wrap: pretty;
-  }
-
-  /* Drum zones — one card per drum; the fieldset is the viewer read-only gate
-     (Inspector idiom) and must lay out like a plain column. */
-  .zhint {
-    margin: 0;
-    max-width: 60ch;
-    font-size: var(--text-xs);
-    line-height: var(--leading-normal);
-    color: var(--text-muted);
-    text-wrap: pretty;
-  }
-  .drums {
-    border: none;
-    margin: 0;
-    padding: 0;
-    min-inline-size: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .drumcard {
-    padding: var(--space-2) var(--space-3) var(--space-3);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
   }
 </style>

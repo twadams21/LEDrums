@@ -1,11 +1,13 @@
 <script lang="ts">
   /* Settings › Controller (S4d) — the box and its transport, re-homed from the retired
-     Patch-graph controller inspector. Three sections: live status (OutputStatusPanel →
+     Patch-graph controller inspector. Two sections: live status (OutputStatusPanel →
      ControllerStatusPanel with discover / adopt / auth / identify / test-pattern /
-     back-to-live, reused wholesale), the Art-Net / sACN transport form (setOutput), and
-     the controller-facing kit globals — expanded output mode, max px/output, mirror
-     (setKitGlobal). Offline-safe (controls disabled); viewers get a natively-disabled
-     fieldset, same treatment as the dock Inspector.
+     back-to-live, reused wholesale) and the Art-Net / sACN transport form (setOutput).
+     The kit globals that used to trail this pane moved to the panes that show their
+     effect — expanded / max px per output to Outputs & Chains (they define that pane's
+     output cards), mirror to Drums & Hoops › Kit defaults (it is geometry). Offline-safe
+     (controls disabled); viewers get a natively-disabled fieldset, same treatment as the
+     dock Inspector.
 
      Lifecycle (must-keep, per the S4a pane spec §2.4): watch-while-mounted (re-sent each
      time the link opens) / unwatch-on-unmount is the ONLY thing gating the server's
@@ -17,22 +19,17 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
-  import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Separator from '../../../ui/Separator.svelte';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import OutputStatusPanel from '../../docks/inspectors/OutputStatusPanel.svelte';
   import { onNum } from '../../docks/inspectors/forms';
   import { PROTOCOL_OPTS } from '../../views/node-options';
+  import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
   const project = $derived(store.project);
   const out = $derived(project?.output ?? null);
-  // Advatek expanded output mode (B2) — a kit-global, not a transport field: ON splits each of
-  // the 4 physical ports into 2 data lines → 8 logical outputs.
-  const expanded = $derived(project?.kit.global.expanded ?? false);
-  const maxPixelsPerOutput = $derived(project?.kit.global.maxPixelsPerOutput ?? null);
-  const mirror = $derived(project?.kit.global.mirror ?? 'none');
 
   // Interface options = the server's enumerated NICs (so the operator picks the adapter the
   // PixLite is plugged into) + a "Default (auto)" no-bind. A persisted iface that isn't among
@@ -50,12 +47,6 @@
     }
     return opts;
   });
-
-  const MIRROR_OPTS = [
-    { value: 'none', label: 'None' },
-    { value: 'x', label: 'X' },
-    { value: 'y', label: 'Y' },
-  ];
 
   // Subscribe to controller status while this pane is open — the ONLY thing that gates the
   // server's poll loop (no idle traffic). Sent whenever the link (re)opens while mounted, not
@@ -76,7 +67,7 @@
 </script>
 
 <div class="pane-body">
-  <h3>Controller</h3>
+  <PaneHeader id="controller" />
   <!-- Viewer (read-only) gate: native fieldset disables every nested form control; the store
        mutators already no-op for a viewer — this makes that visible. -->
   <fieldset class="editgate" disabled={!store.canEdit}>
@@ -177,43 +168,6 @@
           />
         </Field>
       {/if}
-
-      <Separator />
-      <Eyebrow>Kit globals</Eyebrow>
-      <p class="grouphint">
-        Advatek expanded output — on, each of the 4 physical ports drives 2 data lines (8 logical
-        outputs); off, the 4 ports are the outputs.
-      </p>
-      <label class="checkrow">
-        <Toggle
-          pressed={expanded}
-          disabled={!project}
-          onChange={(v) => store.setKitGlobal({ expanded: v })}
-          ariaLabel="Expanded output mode"
-        />
-        <span>Expanded output mode</span>
-      </label>
-      <Field layout="row" label="Max px / output" hint="per physical output">
-        <CommitInput
-          type="number"
-          min={1}
-          value={maxPixelsPerOutput ?? ''}
-          disabled={!project}
-          ariaLabel="Max pixels per output"
-          onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ maxPixelsPerOutput: n }))}
-        />
-      </Field>
-      <!-- variant="group": a <label> wrapper would forward a click on "Mirror" to the
-           segmented control's FIRST button, silently resetting mirror to None. -->
-      <Field layout="row" label="Mirror" hint="geometry-only world reflection" variant="group">
-        <SegmentedControl
-          value={mirror}
-          options={MIRROR_OPTS}
-          disabled={!project}
-          onChange={(v) => store.setKitGlobal({ mirror: v as 'none' | 'x' | 'y' })}
-          ariaLabel="Kit mirror axis"
-        />
-      </Field>
     {/if}
   </fieldset>
 </div>
@@ -225,12 +179,6 @@
     gap: var(--space-3);
     min-width: 0;
   }
-  h3 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--ink);
-  }
   .editgate {
     /* fieldset reset — it carries the read-only gate but must lay out like a plain column */
     margin: 0;
@@ -241,13 +189,9 @@
     flex-direction: column;
     gap: var(--space-3);
   }
-  /* Read-only viewer: dim + stop drag-based controls (segmented) the native
-     fieldset[disabled] can't reach (they're div/role-based, not form controls). */
+  /* Read-only viewer: dim, on top of the native fieldset[disabled] gate. */
   .editgate:disabled {
     opacity: 0.6;
-  }
-  .editgate:disabled :global(.seg) {
-    pointer-events: none;
   }
   .grouphint {
     margin: 0;

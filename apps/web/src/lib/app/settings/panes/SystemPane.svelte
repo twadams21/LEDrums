@@ -9,6 +9,7 @@
   import UpdateControl from '../../chrome/UpdateControl.svelte';
   import BackupsDialog from '../../chrome/BackupsDialog.svelte';
   import History from '@lucide/svelte/icons/history';
+  import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -16,7 +17,7 @@
 </script>
 
 <div class="pane-body">
-  <h3>System</h3>
+  <PaneHeader id="system" />
   <Field label="Updates" hint="desktop app">
     <UpdateControl />
   </Field>
@@ -38,12 +39,6 @@
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
-  }
-  h3 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--ink);
   }
   /* Entry button — the zones list's Learn-button idiom (bordered, inset, quiet). */
   .entry {

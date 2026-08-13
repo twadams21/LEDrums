@@ -1,8 +1,10 @@
 <script lang="ts">
-  /* Settings › Outputs & Chains (S4c) — routing without the canvas. One card per physical
-     output (fixed port set: 8 logical expanded / 4 normal) holding its ordered hoop chain +
-     transport scalars; below them the unassigned-hoops pool (the `hoop-uncovered` indicator)
-     and the whole-kit Pixel Output Map, re-homed from PatchOutputInspector.
+  /* Settings › Outputs & Chains (S4c) — routing without the canvas. The output-mode kit
+     globals first (expanded output, max px/output — they decide how many cards follow, so
+     they live where their effect is visible rather than on the Controller pane), then one
+     card per physical output (8 logical expanded / 4 normal) holding its ordered hoop chain
+     + transport scalars; below them the unassigned-hoops pool (the `hoop-uncovered`
+     indicator) and the whole-kit Pixel Output Map, re-homed from PatchOutputInspector.
 
      Reads the AUTHORITATIVE routing (`store.project.kit.outputs` → `outputsToPatch`); every
      chain edit reduces to the next PatchRouting (chain-editor.ts), is checked by core's ONE
@@ -12,6 +14,12 @@
      wedges the editor. Viewer gating rides a natively-disabled fieldset. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { KitConfig, RgbOrder } from '@ledrums/core';
+  import CommitInput from '../../../ui/CommitInput.svelte';
+  import Eyebrow from '../../../ui/Eyebrow.svelte';
+  import Field from '../../../ui/Field.svelte';
+  import Separator from '../../../ui/Separator.svelte';
+  import Toggle from '../../../ui/Toggle.svelte';
+  import { onNum } from '../../docks/inspectors/forms';
   import { outputsToPatch, patchToOutputs, pixelRanges, type HoopRef, type PatchRouting } from '../../patch-routing';
   import { buildPixelOutputTable } from '../../docks/patch-inspector';
   import { patchLabel } from '../../docks/inspectors/forms';
@@ -22,6 +30,7 @@
   import { pixelsForHoopIn } from './drums-hoops';
   import OutputChainCard from './OutputChainCard.svelte';
   import UnassignedPool from './UnassignedPool.svelte';
+  import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -29,6 +38,7 @@
   const kit = $derived<KitConfig | null>(project?.kit ?? null);
   const routing = $derived<PatchRouting | null>(kit ? outputsToPatch(kit.outputs) : null);
   const expanded = $derived(kit?.global.expanded ?? false);
+  const maxPixelsPerOutput = $derived(kit?.global.maxPixelsPerOutput ?? null);
 
   /** Per-hoop pixel resolution — the shared drums-hoops helper, not a local fork. */
   const pixelsForHoop = $derived<(h: HoopRef) => number>(kit ? pixelsForHoopIn(kit) : () => 0);
@@ -75,8 +85,35 @@
 </script>
 
 <fieldset class="pane-body" disabled={!store.canEdit}>
-  <h3>Outputs &amp; Chains</h3>
+  <PaneHeader id="outputs" />
   {#if kit && routing}
+    <Eyebrow>Output mode</Eyebrow>
+    <p class="grouphint">
+      Advatek expanded output — on, each of the 4 physical ports drives 2 data lines (8 logical
+      outputs); off, the 4 ports are the outputs. It sets the cards below.
+    </p>
+    <label class="checkrow">
+      <Toggle
+        pressed={expanded}
+        disabled={!project}
+        onChange={(v) => store.setKitGlobal({ expanded: v })}
+        ariaLabel="Expanded output mode"
+      />
+      <span>Expanded output mode</span>
+    </label>
+    <Field layout="row" label="Max px / output" hint="per physical output">
+      <CommitInput
+        type="number"
+        min={1}
+        value={maxPixelsPerOutput ?? ''}
+        disabled={!project}
+        ariaLabel="Max pixels per output"
+        onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ maxPixelsPerOutput: n }))}
+      />
+    </Field>
+
+    <Separator />
+    <Eyebrow>Chains</Eyebrow>
     <p class="grouphint">
       Each physical output drives one ordered chain of hoops — pixel transmit order, top to
       bottom. Remove a hoop and it returns to the pool below; an unrouted hoop is legal, it
@@ -139,11 +176,12 @@
     border: 0;
     min-inline-size: 0;
   }
-  h3 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--ink);
+  .checkrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text);
   }
   .grouphint {
     margin: 0;
