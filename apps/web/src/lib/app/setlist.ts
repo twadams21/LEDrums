@@ -199,6 +199,15 @@ export function isReused(song: Song, graphKey: string): boolean {
   return graphUsageCount(song, graphKey) > 1;
 }
 
+/** How many section placements a graph key has across the WHOLE setlist (every section of
+    every song; each section counts once). `> 1` is the linked state the graph card badges —
+    reuse is explicit wiring, so the count is shown, never hidden. */
+export function graphPlacementCount(songs: readonly Song[], graphKey: string): number {
+  let n = 0;
+  for (const song of songs) n += graphUsageCount(song, graphKey);
+  return n;
+}
+
 /** Distinct graph keys referenced anywhere in the song, in first-appearance order. */
 export function referencedGraphs(song: Song): string[] {
   const set = new Set<string>();

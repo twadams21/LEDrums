@@ -3,6 +3,7 @@ import {
   addGraph,
   addSection,
   cloneSection,
+  graphPlacementCount,
   graphUsageCount,
   isReused,
   makeSection,
@@ -120,6 +121,15 @@ describe('reuse-by-reference', () => {
     const s = addGraph(song(), 'intro', 'gKick');
     expect(isReused(s, 'gKick')).toBe(false);
     expect(graphUsageCount(s, 'gKick')).toBe(1);
+  });
+
+  it('graphPlacementCount counts placements across EVERY song, not just one', () => {
+    const one = addGraph(song(), 'intro', 'gSnare');
+    const two = addGraph({ ...song(), id: 'song2', name: 'Set 2' }, 'verse', 'gSnare');
+    expect(graphPlacementCount([one, two], 'gSnare')).toBe(2); // the cross-song linked case
+    expect(graphPlacementCount([one], 'gSnare')).toBe(1);
+    expect(graphPlacementCount([one, two], 'gKick')).toBe(0);
+    expect(graphPlacementCount([], 'gSnare')).toBe(0);
   });
 
   it('referencedGraphs lists every distinct key in first-appearance order', () => {
