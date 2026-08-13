@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Drum elevation editor</title>
+<!--
+  ============================================================================
+  THROWAWAY PROTOTYPE — not production code, no build step, no dependencies.
+  Design question: is a 4-view architectural-elevation editor the right way to
+  position drums in 3D space (as a REPLACEMENT for numeric origin fields in the
+  settings modal)?
+  Open with file:// — everything is inline.
+  ============================================================================
+-->
+<style>
+  :root {
+    color-scheme: dark;
+
+    /* ---- lifted from apps/web/src/styles/tokens.css (subset) -------------- */
+    --bg: oklch(0.124 0.011 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+    --accent-ring: oklch(0.900 0.195 128 / 0.55);
+    --on-accent: oklch(0.210 0.050 130);
+
+    --role-input: oklch(0.720 0.130 245);
+    --role-content: oklch(0.700 0.165 300);
+    --role-effect: oklch(0.785 0.150 68);
+    --role-layer: oklch(0.745 0.150 152);
+    --role-output: oklch(0.720 0.120 205);
+
+    --warn: oklch(0.810 0.150 80);
+
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Geist Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+    --text-lg: 1.125rem;
+
+    --tracking-label: 0.04em;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    --radius-1: 3px;
+    --radius-2: 5px;
+    --control-h: 26px;
+
+    --dur-90: 90ms;
+    --ease-control: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---- top chrome --------------------------------------------------------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 0 var(--space-4);
+    height: 44px;
+    flex: 0 0 auto;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-faint);
+  }
+
+  .title {
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.011em;
+  }
+
+  .proto-tag {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--warn);
+    border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent);
+    background: color-mix(in oklch, var(--warn) 12%, transparent);
+    padding: 2px 6px;
+    border-radius: var(--radius-1);
+  }
+
+  .question {
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+    margin-left: auto;
+    text-align: right;
+  }
+
+  /* ---- shell -------------------------------------------------------------- */
+  main {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 288px;
+    min-height: 0;
+  }
+
+  .views {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    min-height: 0;
+    min-width: 0;
+    background: var(--border-faint);
+    gap: 1px;
+  }
+
+  .view {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    background: var(--surface-inset);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .view-head {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-3);
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    pointer-events: none;
+  }
+
+  .view-name {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .view-sub {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.06em;
+    color: var(--text-disabled);
+  }
+
+  .view-axes {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-3);
+    z-index: 2;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.06em;
+    color: var(--text-disabled);
+    pointer-events: none;
+  }
+
+  svg.plate {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+  }
+
+  svg.plate text { user-select: none; }
+
+  .hit { cursor: grab; }
+  .hit.dragging { cursor: grabbing; }
+
+  /* ---- right rail --------------------------------------------------------- */
+  aside {
+    background: var(--surface);
+    border-left: 1px solid var(--border-faint);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .panel {
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border-bottom: 1px solid var(--border-faint);
+  }
+
+  .panel-title {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    margin-bottom: var(--space-3);
+  }
+
+  .selected-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-base);
+    color: var(--ink);
+    margin-bottom: var(--space-3);
+  }
+
+  .swatch {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    flex: 0 0 auto;
+  }
+
+  .selected-meta {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-disabled);
+    margin-left: auto;
+  }
+
+  .field {
+    display: grid;
+    grid-template-columns: 20px 1fr 26px;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: 6px;
+  }
+
+  .field label {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--text-faint);
+    letter-spacing: 0.04em;
+  }
+
+  .field .unit {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-disabled);
+  }
+
+  input[type='number'] {
+    height: var(--control-h);
+    width: 100%;
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    padding: 0 var(--space-2);
+    outline: none;
+    transition: border-color var(--dur-90) var(--ease-control),
+                background-color var(--dur-90) var(--ease-control);
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number']:hover { border-color: var(--border-strong); }
+  input[type='number']:focus {
+    border-color: var(--accent-dim);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+  input[type='number']:disabled {
+    color: var(--text-disabled);
+    border-color: var(--border-faint);
+  }
+
+  .axis-note {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    line-height: 1.55;
+    color: var(--text-disabled);
+    margin-top: var(--space-3);
+  }
+
+  .drum-list { display: flex; flex-direction: column; gap: 1px; }
+
+  .drum-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 6px var(--space-2);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-1);
+    color: var(--text-muted);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+    width: 100%;
+  }
+  .drum-row:hover { background: var(--surface-2); color: var(--text); }
+  .drum-row[aria-selected='true'] {
+    background: var(--accent-soft);
+    border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
+    color: var(--ink);
+  }
+  .drum-row .dims {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-disabled);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hints {
+    font-size: var(--text-xs);
+    line-height: 1.7;
+    color: var(--text-faint);
+  }
+  .hints kbd {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-1);
+    padding: 1px 5px;
+    color: var(--text-muted);
+  }
+  .hints .row { display: block; }
+
+  .verdict {
+    font-size: var(--text-xs);
+    line-height: 1.65;
+    color: var(--text-disabled);
+  }
+  .verdict strong { color: var(--text-faint); font-weight: 500; }
+
+  footer {
+    flex: 0 0 auto;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 0 var(--space-4);
+    background: var(--surface);
+    border-top: 1px solid var(--border-faint);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: 0.04em;
+    color: var(--text-disabled);
+  }
+  footer .sep { color: var(--border-strong); }
+  footer .live { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="proto-tag">Prototype</span>
+  <span class="title">Drum placement — architectural elevations</span>
+  <span class="question">Design question: do four orthographic elevations beat numeric origin fields for placing drums in 3D?</span>
+</header>
+
+<main>
+  <section class="views" id="views"></section>
+
+  <aside>
+    <div class="panel">
+      <div class="panel-title">Selection</div>
+      <div class="selected-name">
+        <span class="swatch" id="sel-swatch"></span>
+        <span id="sel-name">—</span>
+        <span class="selected-meta" id="sel-meta"></span>
+      </div>
+
+      <div class="field">
+        <label for="in-x">X</label>
+        <input type="number" id="in-x" data-axis="x" step="1" disabled />
+        <span class="unit">mm</span>
+      </div>
+      <div class="field">
+        <label for="in-y">Y</label>
+        <input type="number" id="in-y" data-axis="y" step="1" disabled />
+        <span class="unit">mm</span>
+      </div>
+      <div class="field">
+        <label for="in-z">Z</label>
+        <input type="number" id="in-z" data-axis="z" step="1" disabled />
+        <span class="unit">mm</span>
+      </div>
+
+      <div class="axis-note">
+        X lateral · Y depth (+ back) · Z height (+ up)<br />
+        origin = centre of the hoop stack
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Kit</div>
+      <div class="drum-list" id="drum-list"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Controls</div>
+      <div class="hints">
+        <span class="row">Click a drum in any view. It highlights in all four.</span>
+        <span class="row">Drag to move within that view's two axes.</span>
+        <span class="row"><kbd>⌥</kbd> while dragging: snap to 50 mm</span>
+        <span class="row">Hover a number + <kbd>scroll</kbd>: 5 mm steps</span>
+        <span class="row"><kbd>⇧</kbd> + <kbd>scroll</kbd>: 1 mm steps</span>
+      </div>
+    </div>
+
+    <div class="panel" style="border-bottom: none">
+      <div class="panel-title">Verdict</div>
+      <div class="verdict">
+        <strong>Question:</strong> replace the settings-modal origin fields with
+        this? <br /><br />
+        <strong>Answer:</strong> _______________________________<br />
+        (fill in, then delete this file or fold the decision into the real
+        inspector)
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span>1 grid = 100 mm · heavy = 500 mm</span>
+  <span class="sep">│</span>
+  <span>identical scale on all four plates</span>
+  <span class="sep">│</span>
+  <span>third-angle projection</span>
+  <span class="sep">│</span>
+  <span class="live" id="status">no selection</span>
+</footer>
+
+<script>
+'use strict';
+
+/* ===========================================================================
+   Model — mirrors packages/core kit-schema conventions:
+     origin mm {x,y,z}, rotation degrees {x,y,z} (Euler, Z then Y then X)
+     X = lateral, Y = depth (+ away from drummer), Z = height (+ up)
+   A drum is a stack of `hoops` rings of radius r spread over `depth` along the
+   drum's own axis (local +Z, rotated by `rotation`).
+   =========================================================================== */
+
+const IN = 25.4;
+
+const drums = [
+  { id: 'kick',  name: 'Kick',   diameterIn: 22, depth: 400, hoops: 4,
+    origin: { x: 0,    y: 430, z: 330 }, rotation: { x: 90, y: 0, z: 0 },
+    color: 'var(--role-effect)' },
+  { id: 'snare', name: 'Snare',  diameterIn: 14, depth: 140, hoops: 4,
+    origin: { x: -230, y: 0,   z: 650 }, rotation: { x: 4,  y: 0, z: -6 },
+    color: 'var(--role-input)' },
+  { id: 'tom1',  name: 'Tom 1',  diameterIn: 10, depth: 200, hoops: 4,
+    origin: { x: -120, y: 300, z: 840 }, rotation: { x: 18, y: 0, z: 4 },
+    color: 'var(--role-content)' },
+  { id: 'tom2',  name: 'Tom 2',  diameterIn: 12, depth: 240, hoops: 4,
+    origin: { x: 360,  y: 40,  z: 620 }, rotation: { x: -12, y: 0, z: -8 },
+    color: 'var(--role-layer)' },
+];
+
+const state = { selected: 'snare', hover: null, dragging: null };
+
+/* ===========================================================================
+   Views — four orthographic plates, third-angle-ish.
+   Screen space is measured in millimetres (SVG viewBox is mm), y down.
+     screenX = hSign * world[hAxis]      screenY = vSign * world[vAxis]
+   Both signs are their own inverse, so the same pair maps drags back to world.
+   =========================================================================== */
+
+const PLATE_W = 1900;   // mm visible across every plate — the shared scale
+const PLATE_H = 1425;   // mm visible down every plate (4:3)
+
+const views = [
+  { id: 'top',   name: 'Top',   sub: 'plan',      hAxis: 'x', hSign: 1,  vAxis: 'y', vSign: -1,
+    cx: 60, cy: -215, floor: false, hLab: 'X →', vLab: '↑ Y (back)' },
+  { id: 'front', name: 'Front', sub: 'elevation', hAxis: 'x', hSign: 1,  vAxis: 'z', vSign: -1,
+    cx: 60, cy: -540, floor: true,  hLab: 'X →', vLab: '↑ Z' },
+  { id: 'left',  name: 'Left',  sub: 'elevation', hAxis: 'y', hSign: 1,  vAxis: 'z', vSign: -1,
+    cx: 215, cy: -540, floor: true, hLab: 'Y →', vLab: '↑ Z' },
+  { id: 'right', name: 'Right', sub: 'elevation', hAxis: 'y', hSign: -1, vAxis: 'z', vSign: -1,
+    cx: -215, cy: -540, floor: true, hLab: '← Y', vLab: '↑ Z' },
+];
+
+const viewBox = (v) =>
+  `${v.cx - PLATE_W / 2} ${v.cy - PLATE_H / 2} ${PLATE_W} ${PLATE_H}`;
+
+const project = (v, p) => [v.hSign * p[v.hAxis], v.vSign * p[v.vAxis]];
+
+/* ---- geometry -------------------------------------------------------------- */
+
+const DEG = Math.PI / 180;
+
+/** Euler XYZ (apply Z, then Y, then X) — Three.js order used by the kit model. */
+function rotate(v, r) {
+  let { x, y, z } = v;
+  const cz = Math.cos(r.z * DEG), sz = Math.sin(r.z * DEG);
+  [x, y] = [x * cz - y * sz, x * sz + y * cz];
+  const cy = Math.cos(r.y * DEG), sy = Math.sin(r.y * DEG);
+  [x, z] = [x * cy + z * sy, -x * sy + z * cy];
+  const cx = Math.cos(r.x * DEG), sx = Math.sin(r.x * DEG);
+  [y, z] = [y * cx - z * sx, y * sx + z * cx];
+  return { x, y, z };
+}
+
+const SEG = 56;
+
+/** World-space rings of one drum: [[{x,y,z}...] per hoop], plus axis endpoints. */
+function drumRings(d) {
+  const r = (d.diameterIn * IN) / 2;
+  const ax = rotate({ x: 1, y: 0, z: 0 }, d.rotation); // local X
+  const ay = rotate({ x: 0, y: 1, z: 0 }, d.rotation); // local Y
+  const n  = rotate({ x: 0, y: 0, z: 1 }, d.rotation); // drum axis
+  const rings = [];
+  const half = d.depth / 2;
+  for (let i = 0; i < d.hoops; i++) {
+    const t = d.hoops === 1 ? 0 : -half + (d.depth * i) / (d.hoops - 1);
+    const c = {
+      x: d.origin.x + n.x * t, y: d.origin.y + n.y * t, z: d.origin.z + n.z * t,
+    };
+    const pts = [];
+    for (let s = 0; s < SEG; s++) {
+      const a = (s / SEG) * Math.PI * 2;
+      const ca = Math.cos(a) * r, sa = Math.sin(a) * r;
+      pts.push({
+        x: c.x + ax.x * ca + ay.x * sa,
+        y: c.y + ax.y * ca + ay.y * sa,
+        z: c.z + ax.z * ca + ay.z * sa,
+      });
+    }
+    rings.push(pts);
+  }
+  const axis = [
+    { x: d.origin.x - n.x * half, y: d.origin.y - n.y * half, z: d.origin.z - n.z * half },
+    { x: d.origin.x + n.x * half, y: d.origin.y + n.y * half, z: d.origin.z + n.z * half },
+  ];
+  return { rings, axis, radius: r };
+}
+
+/** Andrew's monotone chain — the silhouette of a convex body is the hull of its
+    projected end rims. */
+function hull(points) {
+  const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length < 3) return pts;
+  const cross = (o, a, b) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
+const poly = (pts) => pts.map((p) => `${round(p[0])},${round(p[1])}`).join(' ');
+const round = (n) => Math.round(n * 10) / 10;
+
+/* ===========================================================================
+   Static chrome — drafting frame, grid, dimension ticks
+   =========================================================================== */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const GRID_MINOR = 100;
+const GRID_MAJOR = 500;
+
+function gridMarkup(v) {
+  const x0 = v.cx - PLATE_W / 2, x1 = v.cx + PLATE_W / 2;
+  const y0 = v.cy - PLATE_H / 2, y1 = v.cy + PLATE_H / 2;
+  let out = '';
+
+  // minor + major grid
+  for (let x = Math.ceil(x0 / GRID_MINOR) * GRID_MINOR; x <= x1; x += GRID_MINOR) {
+    const major = Math.abs(x % GRID_MAJOR) < 0.5;
+    out += `<line class="${major ? 'grid-major' : 'grid-minor'}" x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/>`;
+  }
+  for (let y = Math.ceil(y0 / GRID_MINOR) * GRID_MINOR; y <= y1; y += GRID_MINOR) {
+    const major = Math.abs(y % GRID_MAJOR) < 0.5;
+    out += `<line class="${major ? 'grid-major' : 'grid-minor'}" x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/>`;
+  }
+
+  // world zero axes
+  if (0 > x0 && 0 < x1) out += `<line class="axis-zero" x1="0" y1="${y0}" x2="0" y2="${y1}"/>`;
+  if (0 > y0 && 0 < y1) out += `<line class="axis-zero" x1="${x0}" y1="0" x2="${x1}" y2="0"/>`;
+
+  // ground plane (Z = 0) on the elevations
+  if (v.floor) {
+    out += `<line class="floor" x1="${x0}" y1="0" x2="${x1}" y2="0"/>`;
+    for (let x = Math.ceil(x0 / 120) * 120; x <= x1; x += 120) {
+      out += `<line class="hatch" x1="${x}" y1="0" x2="${x - 46}" y2="46"/>`;
+    }
+    out += `<text class="tick-label floor-label" x="${x0 + 34}" y="-26">GROUND · Z 0</text>`;
+  }
+
+  // dimension ticks + labels along bottom and left edges.
+  // Labels are suppressed near a plate edge so they never clip or collide with
+  // the scale note.
+  const MARGIN = 220;
+  const bottom = y1 - 56;
+  for (let x = Math.ceil(x0 / GRID_MINOR) * GRID_MINOR; x <= x1; x += GRID_MINOR) {
+    const major = Math.abs(x % GRID_MAJOR) < 0.5;
+    out += `<line class="dim-tick" x1="${x}" y1="${bottom}" x2="${x - (major ? 26 : 13)}" y2="${bottom + (major ? 26 : 13)}"/>`;
+    if (major && x > x0 + MARGIN && x < x1 - 340) {
+      out += `<text class="tick-label mid" x="${x}" y="${bottom - 14}">${v.hSign * x}</text>`;
+    }
+  }
+  out += `<line class="dim-line" x1="${x0}" y1="${bottom}" x2="${x1}" y2="${bottom}"/>`;
+
+  const leftEdge = x0 + 56;
+  for (let y = Math.ceil(y0 / GRID_MINOR) * GRID_MINOR; y <= y1; y += GRID_MINOR) {
+    const major = Math.abs(y % GRID_MAJOR) < 0.5;
+    out += `<line class="dim-tick" x1="${leftEdge}" y1="${y}" x2="${leftEdge - (major ? 26 : 13)}" y2="${y + (major ? 26 : 13)}"/>`;
+    if (major && y > y0 + 90 && y < y1 - 120) {
+      out += `<text class="tick-label" x="${leftEdge + 14}" y="${y - 14}">${v.vSign * y}</text>`;
+    }
+  }
+  out += `<line class="dim-line" x1="${leftEdge}" y1="${y0}" x2="${leftEdge}" y2="${y1}"/>`;
+
+  // frame
+  out += `<rect class="frame" x="${x0 + 14}" y="${y0 + 14}" width="${PLATE_W - 28}" height="${PLATE_H - 28}"/>`;
+  out += `<text class="scale-note" x="${x1 - 40}" y="${bottom - 14}">mm · grid 100</text>`;
+  return out;
+}
+
+/* ===========================================================================
+   Build the DOM
+   =========================================================================== */
+
+const plateStyle = `
+  .grid-minor { stroke: oklch(0.240 0.012 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .grid-major { stroke: oklch(0.300 0.015 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .axis-zero  { stroke: oklch(0.430 0.022 256); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 14 7 3 7; }
+  .floor      { stroke: oklch(0.430 0.022 256); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .hatch      { stroke: oklch(0.300 0.015 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .dim-line   { stroke: oklch(0.300 0.015 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .dim-tick   { stroke: oklch(0.430 0.022 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .frame      { fill: none; stroke: oklch(0.240 0.012 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .tick-label { fill: oklch(0.560 0.009 256); font-family: var(--font-mono); font-size: 30px; letter-spacing: 0.04em; }
+  .tick-label.mid { text-anchor: middle; }
+  .floor-label{ fill: oklch(0.560 0.009 256); letter-spacing: 0.12em; }
+  .scale-note { fill: oklch(0.560 0.009 256); font-family: var(--font-mono); font-size: 28px; letter-spacing: 0.09em; text-anchor: end; }
+
+  .sil        { stroke-width: 1.5; vector-effect: non-scaling-stroke; fill-opacity: 0.09; }
+  .hoop       { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.45; }
+  .hoop.end   { opacity: 0.85; }
+  .spindle    { stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 18 8 4 8; opacity: 0.6; }
+  .origin-x   { stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.85; }
+  .drum-label { font-family: var(--font-mono); font-size: 30px; letter-spacing: 0.12em; }
+  .datum      { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 16 8 3 8; opacity: 0.5; }
+  .hit        { fill: transparent; stroke: transparent; stroke-width: 14; vector-effect: non-scaling-stroke; }
+
+  g.drum { transition: none; }
+  g.drum.is-hover .sil { fill-opacity: 0.17; stroke-width: 2; }
+  g.drum.is-hover .hoop { opacity: 0.75; }
+  g.drum.is-sel .sil { stroke: var(--accent) !important; stroke-width: 2.5; fill-opacity: 0.2; }
+  g.drum.is-sel .hoop { stroke: var(--accent) !important; opacity: 0.8; }
+  g.drum.is-sel .spindle, g.drum.is-sel .origin-x { stroke: var(--accent) !important; opacity: 1; }
+  g.drum.is-sel .drum-label { fill: var(--accent-bright) !important; }
+`;
+
+const viewsEl = document.getElementById('views');
+const plates = {};
+
+for (const v of views) {
+  const wrap = document.createElement('div');
+  wrap.className = 'view';
+  wrap.innerHTML = `
+    <div class="view-head">
+      <span class="view-name">${v.name}</span>
+      <span class="view-sub">${v.sub}</span>
+    </div>
+    <div class="view-axes">${v.hLab} &nbsp; ${v.vLab}</div>
+  `;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'plate');
+  svg.setAttribute('viewBox', viewBox(v));
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.innerHTML =
+    `<style>${plateStyle}</style>` +
+    `<g class="chrome">${gridMarkup(v)}</g>` +
+    `<g class="drums"></g>`;
+  wrap.appendChild(svg);
+  viewsEl.appendChild(wrap);
+  plates[v.id] = { svg, layer: svg.querySelector('.drums'), view: v };
+  wirePlate(plates[v.id]);
+}
+
+/* ===========================================================================
+   Render
+   =========================================================================== */
+
+function renderPlate(plate) {
+  const v = plate.view;
+  const x0 = v.cx - PLATE_W / 2, x1 = v.cx + PLATE_W / 2;
+  const y0 = v.cy - PLATE_H / 2, y1 = v.cy + PLATE_H / 2;
+  let out = '';
+
+  for (const d of drums) {
+    const { rings, axis } = drumRings(d);
+    const projRings = rings.map((r) => r.map((p) => project(v, p)));
+    const sil = hull(projRings[0].concat(projRings[projRings.length - 1]));
+    const o = project(v, d.origin);
+    const a0 = project(v, axis[0]);
+    const a1 = project(v, axis[1]);
+    const isSel = state.selected === d.id;
+    const isHover = state.hover === d.id;
+
+    const cls = 'drum' + (isSel ? ' is-sel' : '') + (isHover ? ' is-hover' : '');
+    out += `<g class="${cls}" data-id="${d.id}" style="--c:${d.color}">`;
+
+    if (isSel) {
+      out += `<line class="datum" x1="${x0}" y1="${round(o[1])}" x2="${x1}" y2="${round(o[1])}"/>`;
+      out += `<line class="datum" x1="${round(o[0])}" y1="${y0}" x2="${round(o[0])}" y2="${y1}"/>`;
+    }
+
+    out += `<polygon class="sil" points="${poly(sil)}" fill="${d.color}" stroke="${d.color}"/>`;
+    projRings.forEach((r, i) => {
+      const end = i === 0 || i === projRings.length - 1;
+      out += `<polygon class="hoop${end ? ' end' : ''}" points="${poly(r)}" stroke="${d.color}"/>`;
+    });
+    out += `<line class="spindle" x1="${round(a0[0])}" y1="${round(a0[1])}" x2="${round(a1[0])}" y2="${round(a1[1])}" stroke="${d.color}"/>`;
+    out += `<line class="origin-x" x1="${round(o[0] - 34)}" y1="${round(o[1])}" x2="${round(o[0] + 34)}" y2="${round(o[1])}" stroke="${d.color}"/>`;
+    out += `<line class="origin-x" x1="${round(o[0])}" y1="${round(o[1] - 34)}" x2="${round(o[0])}" y2="${round(o[1] + 34)}" stroke="${d.color}"/>`;
+
+    const labelY = Math.min(...sil.map((p) => p[1])) - 24;
+    out += `<text class="drum-label" x="${round(o[0])}" y="${round(labelY)}" text-anchor="middle" fill="${d.color}">${d.name.toUpperCase()}</text>`;
+
+    // invisible fat hit target sits last so it wins the pointer
+    out += `<polygon class="hit" points="${poly(sil)}" data-id="${d.id}"/>`;
+    out += `</g>`;
+  }
+  plate.layer.innerHTML = out;
+}
+
+function renderAll() {
+  for (const id in plates) renderPlate(plates[id]);
+  renderRail();
+}
+
+/* ===========================================================================
+   Right rail
+   =========================================================================== */
+
+const inputs = {
+  x: document.getElementById('in-x'),
+  y: document.getElementById('in-y'),
+  z: document.getElementById('in-z'),
+};
+const selName = document.getElementById('sel-name');
+const selMeta = document.getElementById('sel-meta');
+const selSwatch = document.getElementById('sel-swatch');
+const statusEl = document.getElementById('status');
+const listEl = document.getElementById('drum-list');
+
+listEl.innerHTML = drums
+  .map(
+    (d) => `<button class="drum-row" data-id="${d.id}" aria-selected="false">
+      <span class="swatch" style="background:${d.color}"></span>
+      <span>${d.name}</span>
+      <span class="dims">${d.diameterIn}"</span>
+    </button>`
+  )
+  .join('');
+
+listEl.addEventListener('click', (e) => {
+  const row = e.target.closest('.drum-row');
+  if (!row) return;
+  state.selected = row.dataset.id;
+  renderAll();
+});
+
+function selectedDrum() {
+  return drums.find((d) => d.id === state.selected) || null;
+}
+
+function renderRail() {
+  const d = selectedDrum();
+  for (const row of listEl.children) {
+    row.setAttribute('aria-selected', String(d && row.dataset.id === d.id));
+  }
+  if (!d) {
+    selName.textContent = '—';
+    selMeta.textContent = '';
+    selSwatch.style.background = 'var(--border)';
+    for (const a of ['x', 'y', 'z']) { inputs[a].value = ''; inputs[a].disabled = true; }
+    statusEl.textContent = 'no selection';
+    return;
+  }
+  selName.textContent = d.name;
+  selMeta.textContent = `${d.diameterIn}" · ${d.hoops} hoops`;
+  selSwatch.style.background = d.color;
+  for (const a of ['x', 'y', 'z']) {
+    inputs[a].disabled = false;
+    if (document.activeElement !== inputs[a] || state.dragging) {
+      inputs[a].value = Math.round(d.origin[a]);
+    }
+  }
+  statusEl.textContent =
+    `${d.name.toLowerCase()}  x ${pad(d.origin.x)}  y ${pad(d.origin.y)}  z ${pad(d.origin.z)}  mm`;
+}
+
+const pad = (n) => String(Math.round(n)).padStart(5, ' ');
+
+for (const axis of ['x', 'y', 'z']) {
+  const el = inputs[axis];
+  el.addEventListener('input', () => {
+    const d = selectedDrum();
+    if (!d) return;
+    const n = Number(el.value);
+    if (!Number.isFinite(n)) return;
+    d.origin[axis] = n;
+    renderAll();
+  });
+  el.addEventListener(
+    'wheel',
+    (e) => {
+      const d = selectedDrum();
+      if (!d) return;
+      e.preventDefault();
+      const step = e.shiftKey ? 1 : 5;
+      d.origin[axis] = Math.round(d.origin[axis] - Math.sign(e.deltaY) * step);
+      el.value = Math.round(d.origin[axis]);
+      renderAll();
+    },
+    { passive: false }
+  );
+}
+
+/* ===========================================================================
+   Pointer interaction on a plate
+   =========================================================================== */
+
+function svgPoint(svg, evt) {
+  const pt = svg.createSVGPoint();
+  pt.x = evt.clientX;
+  pt.y = evt.clientY;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x: 0, y: 0 };
+  return pt.matrixTransform(ctm.inverse());
+}
+
+function wirePlate(plate) {
+  const { svg, view } = plate;
+
+  svg.addEventListener('pointermove', (e) => {
+    if (state.dragging && state.dragging.plate === plate) {
+      const p = svgPoint(svg, e);
+      const drag = state.dragging;
+      const d = drums.find((x) => x.id === drag.id);
+      let h = drag.startH + (p.x - drag.px) * view.hSign;
+      let vv = drag.startV + (p.y - drag.py) * view.vSign;
+      if (e.altKey) {
+        h = Math.round(h / 50) * 50;
+        vv = Math.round(vv / 50) * 50;
+      } else {
+        h = Math.round(h);
+        vv = Math.round(vv);
+      }
+      d.origin[view.hAxis] = h;
+      d.origin[view.vAxis] = vv;
+      renderAll();
+      return;
+    }
+    const hit = e.target.closest('.hit');
+    const id = hit ? hit.dataset.id : null;
+    if (id !== state.hover) {
+      state.hover = id;
+      renderAll();
+    }
+  });
+
+  svg.addEventListener('pointerleave', () => {
+    if (state.hover && !state.dragging) {
+      state.hover = null;
+      renderAll();
+    }
+  });
+
+  svg.addEventListener('pointerdown', (e) => {
+    const hit = e.target.closest('.hit');
+    if (!hit) {
+      if (state.selected) { state.selected = null; renderAll(); }
+      return;
+    }
+    const id = hit.dataset.id;
+    const d = drums.find((x) => x.id === id);
+    state.selected = id;
+    const p = svgPoint(svg, e);
+    state.dragging = {
+      id, plate, px: p.x, py: p.y,
+      startH: d.origin[view.hAxis], startV: d.origin[view.vAxis],
+    };
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('is-dragging');
+    renderAll();
+  });
+
+  const end = (e) => {
+    if (!state.dragging) return;
+    state.dragging = null;
+    svg.classList.remove('is-dragging');
+    try { svg.releasePointerCapture(e.pointerId); } catch (_) {}
+    renderAll();
+  };
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+}
+
+renderAll();
+</script>
+</body>
+</html>

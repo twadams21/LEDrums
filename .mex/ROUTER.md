@@ -59,8 +59,33 @@ verified. Both slices: independent orchestrator sweeps green at committed HEADs 
 13/server 446/web 1761; G2: web 1765; typecheck 0 both). **Merge order decided by Trent (this
 machine): #176 → main first, then #179/#180 retargeted+rebased onto main as separate PRs; he is
 reviewing ALL THREE PRs himself — nothing merges until he says.** Worker sessions
-`opus-high-graphlist-61c374` / `opus-high-settings-df35d3` killed-but-resumable for rework;
+`opus-high-graphlist-61c374` / `opus-high-settings-df35d3` live-idle for rework;
 worktrees `graphlist`/`settings` (twux pool) kept at their shas. GH #177 stays open until merge.
+
+**Follow-up wave from Trent playing the live preview (same evening, both review-passed +
+merged into the preview):** **G1b** (PR #179 → `2bf9536`): the fire indicator was structurally
+invisible — the flash overlay was a child of the card and the card's `overflow: hidden` clipped
+the halo entirely; rebuilt outside the card (`.gslot`) as burst + impact ring + ~6s cooling
+edge marker, keyed per-graph off `graphFireAt` (dead `lastGraphFire` state removed);
+reduced-motion keeps information, drops motion. **G3** (PR #180 → `fb45de7`): settings cards
+restyled to the mc8pro-proto-derived language (Trent-named reference; extraction in
+`docs/plans/2026-08-13-graphlist-settings/G3-settings-cards.md`) — TypeChip/ListHead
+primitives, colour-in-chips never row-tints, ≥12px type per the 2026-07-10 floor; wheel-adjust
+on every numeric primitive (sign-only `wheel-step.ts`, commit debounced 180ms to gesture end —
+one undo/server-write per gesture); hoop DnD (pool↔chain↔reorder) through one pure `dropHoop`
+reducer + `hoop-dnd.ts` MIME contract on the same validated setRouting path; Controller pane
+densified to one screen + a ~2-row tail — **Trent accepted the tail (2026-08-13)**, option (b)
+"pair test-patterns with actions" parked. **Drum-elevation prototype** (Trent's idea, replaces
+the drums modal view eventually): `docs/proto/drum-elevation.html` — 4-plate third-angle
+elevations, axis mapping follows the real kit model (X lateral, Y depth, Z up — NOT the naive
+Y-up pairing), drums as projected hoop stacks; known finding: label collision in Left/Right
+where drums stack in depth. Verdict panel awaits Trent. **Live preview** for all of it:
+scratchpad worktree `wt-preview` (tabbed-chrome + #178 + #179 + #180 merged;
+`design-system.html` conflicts always resolved by regeneration) served at
+`https://trents-macbook-pro-1.tail568a80.ts.net:5373` (web 5373 / ws 4323 / OSC 9102) —
+tear down with `tailscale serve --https=5373 off` + stopping the stack when review ends.
+Ops lesson persisted to memory: never pkill by pattern (a worker's `pkill -f scripts/dev.mjs`
+killed the preview once); kill by PID after checking cwd.
 
 **Tabbed-chrome + settings-parity redesign — IMPLEMENTED through S5 + review, PR #176 OPEN (2026-08-13):**
 built overnight by orchestrated Fable Workflow waves (source: Trent's in-session instruction, this
