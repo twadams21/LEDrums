@@ -122,5 +122,8 @@ this window (Trent, ~09:05: at 70%).
   insets only. Edge endpoints sit at the handle's OUTER edge; anchor overlays must shift
   half a handle inward.
 - Open for Trent: modifier-in-flow vs mod-input semantics (PR #178 body) — lint candidate.
-- Preview share: `preview/tabbed-chrome-fixes` (#176+#178) on :5273 via tailscale HTTPS;
+- Preview share: `preview/tabbed-chrome-fixes` (#176+#178) on :5273 via tailscale HTTPS.
+  OPS NOTE: rebuilding the preview branch under a running `pnpm dev` wedges tsx watch
+  (reset/merge file-flood -> graceful-restart hang -> delayed force-kill takes the whole
+  run down). Rebuild flow: stop the dev server, do the git ops, restart it.
   old proto still on :5173 (S7 tears down).
