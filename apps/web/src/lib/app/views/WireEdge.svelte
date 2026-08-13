@@ -13,7 +13,7 @@
      in the wire's own colour (mod pink / modulation blue / accent); mid-drag the
      anchor drops its children and the path wears `wire-reconnecting` (hidden — the
      accent connection line IS the wire while dragging). Styling lives in GraphCanvas. */
-  import { getBezierPath, BaseEdge, EdgeReconnectAnchor, type EdgeProps } from '@xyflow/svelte';
+  import { getBezierPath, BaseEdge, EdgeReconnectAnchor, Position, type EdgeProps } from '@xyflow/svelte';
 
   let {
     id,
@@ -40,6 +40,19 @@
   const dotColor = $derived(
     data?.mod ? 'var(--role-mod)' : data?.modulation ? 'var(--role-modulation)' : 'var(--accent)',
   );
+
+  /* xyflow reports edge endpoints at the handle's OUTER edge along its Position axis (so
+     wires don't overdraw the handle disc). The anchors must sit concentric on the HANDLE —
+     shift half a handle (10px handles) back toward the node along that axis. */
+  const HANDLE_R = 5;
+  function onHandleCentre(pos: Position, x: number, y: number): { x: number; y: number } {
+    if (pos === Position.Left) return { x: x + HANDLE_R, y };
+    if (pos === Position.Right) return { x: x - HANDLE_R, y };
+    if (pos === Position.Top) return { x, y: y + HANDLE_R };
+    return { x, y: y - HANDLE_R }; // Bottom
+  }
+  const sourceAnchor = $derived(onHandleCentre(sourcePosition, sourceX, sourceY));
+  const targetAnchor = $derived(onHandleCentre(targetPosition, targetX, targetY));
 </script>
 
 <!-- interactionWidth widens the invisible hit-path so thin wires select reliably; the
@@ -54,10 +67,10 @@
   class={[reconnecting && 'wire-reconnecting']}
 />
 {#if selected}
-  <EdgeReconnectAnchor type="source" position={{ x: sourceX, y: sourceY }} bind:reconnecting>
+  <EdgeReconnectAnchor type="source" position={sourceAnchor} bind:reconnecting>
     <span class="reconnect-dot" style:--dot={dotColor} aria-hidden="true"></span>
   </EdgeReconnectAnchor>
-  <EdgeReconnectAnchor type="target" position={{ x: targetX, y: targetY }} bind:reconnecting>
+  <EdgeReconnectAnchor type="target" position={targetAnchor} bind:reconnecting>
     <span class="reconnect-dot" style:--dot={dotColor} aria-hidden="true"></span>
   </EdgeReconnectAnchor>
 {/if}

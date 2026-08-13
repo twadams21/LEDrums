@@ -453,33 +453,23 @@
   }
   /* the scoped modulation input handle rides the row's left edge */
 .modrow :global(.param-handle) {
-  /* centred exactly on the CARD's left edge: 5px (half handle) + the row→card inset
-     (1px row border + 8px footer padding + 1.5px card border). */
-  left: -15.5px;
+  /* Same base CSS as every handle (translate(-50%) centres ON `left`); the only difference
+     is the containing block — the ROW, inset from the card by 1px row border + 8px footer
+     padding + 1.5px card border. Compensate exactly that, so the centre lands on the card's
+     left edge like the normal input handles. */
+  left: -10.5px;
   background: var(--role-modulation);
   border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
 }
 
-/* the modulation OUTPUT handle mirrors the param INPUT handle's -12px role offset and sits at
-   the node's vertical centre (a mod-source node has no other handle to share the face with).
-   Its role colour is owned by GraphCanvas (`.mod-source-handle`) so it beats the grey base. */
-.tnode :global(.mod-source-handle) {
-  right: -5px; /* 10px handle → centred exactly on the card's right edge */
-  top: 50%;
-}
-
-/* the modifier-chain INPUT sits centred ON the card's bottom edge (a card-level sibling of
-   NodeCard, so a growing param footer can't strand it mid-card) — modulation wiring arrives
-   from below. Role colour (modulation blue) is owned by GraphCanvas (`.mod-handle`). */
-.tnode :global(.mod-handle) {
-  top: auto;
-  bottom: -5px; /* 10px handle → centred exactly on the edge */
-  left: 50%;
-  transform: translateX(-50%);
-}
+/* The modulation OUTPUT (right) and modifier-chain INPUT (bottom, a card-level sibling of
+   NodeCard so a growing param footer can't strand it mid-card) take NO positional overrides:
+   xyflow's base handle CSS (`right/bottom: 0` + `translate(±50%)`) centres a handle exactly
+   on its containing block's edge — the same rules the normal flow handles ride, which is why
+   those always sat right. Only role colours differ, owned by GraphCanvas. */
 
 .mixrow :global(.mix-handle) {
-  left: -12px;
+  left: -10.5px; /* same row→card inset compensation as .param-handle above */
 }
   /* small "N in chain" modify badge riding the card's top-right edge */
   .modcount {
