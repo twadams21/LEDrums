@@ -270,7 +270,7 @@
   <DemoCard
     title="Graphs rail (store-free stub)"
     src="lib/app/views/TriggerGraphsRail"
-    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store (fire flash rides store.lastGraphFire — keyboard, local hit and server-engine fires folded into one signal), right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store: the fire indicator rides store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there) and draws an unclipped burst plus a cooling edge marker that keeps a missed fire traceable for seconds; right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
     <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">

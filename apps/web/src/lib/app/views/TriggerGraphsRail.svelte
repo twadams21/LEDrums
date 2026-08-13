@@ -4,12 +4,13 @@
      graphs as cards: each wears its hotkey badge (keys 1–9 and 0 fire graphs 1–10 —
      handled globally in App.svelte), a mini-map of the real graph tinted by node kind,
      a linked badge when the graph is placed in more than one section, the graph name
-     and its trigger source. Clicking a card opens it on the canvas; firing flashes it
-     (store.lastGraphFire — keyboard, local hit and SERVER engine fires folded into one
-     signal, so a hit traces to its card in both modes). Right-click carries the card's
-     verbs; "+ Add graph" opens the library picker. Section switching lives outside the
-     rail (the shell's sections bar and the global ←/→ hotkeys), so this pane is just the
-     active section's graphs. */
+     and its trigger source. Clicking a card opens it on the canvas. Firing lights it —
+     a burst you can catch in peripheral vision plus a cooling edge marker that outlives
+     the burst by seconds, both keyed off store.graphFireAt (the one fire signal: keyboard,
+     local hit and SERVER engine fires all land there, so a hit traces to its card in both
+     modes). Right-click carries the card's verbs; "+ Add graph" opens the library picker.
+     Section switching lives outside the rail (the shell's sections bar and the global ←/→
+     hotkeys), so this pane is just the active section's graphs. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { NodeKind } from '../../trigger-lab/sim';
   import type { ShellStore } from '../shell-store.svelte';
@@ -84,16 +85,15 @@
     ];
   }
 
-  // Fire flash: markGraphFire stamps store.lastGraphFire from EVERY fire path; hold it briefly
-  // so the fired card wears a one-shot overlay ({#key seq} restarts the animation on re-fire).
-  let flash = $state<{ key: string; seq: number } | null>(null);
-  $effect(() => {
-    const f = store.lastGraphFire;
-    if (!f) return;
-    flash = f;
-    const t = window.setTimeout(() => (flash = null), 520);
-    return () => window.clearTimeout(t);
-  });
+  /** How long a card keeps its cooling "fired recently" edge marker (ms) — must match the
+      `fire-cool` animation below, since that CSS owns the decay. */
+  const FIRE_LINGER_MS = 6000;
+  /** Is this graph's last fire recent enough to still be shown? Evaluated when the card's fire
+      epoch changes, so a fire that happened while the rail was unmounted (view switch) does not
+      replay its burst on arrival — only its remaining linger, if any, is worth showing. */
+  function firedRecently(at: number | undefined): boolean {
+    return at !== undefined && performance.now() - at < FIRE_LINGER_MS;
+  }
 </script>
 
 <aside class="grail" aria-label="Graphs">
@@ -109,6 +109,8 @@
         {@const hk = hotkeyLabel(i)}
         {@const thumb = g ? graphThumb(g) : null}
         {@const links = placements(key)}
+        {@const firedAt = store.graphFireAt[key]}
+        <div class="gslot">
         {#if renaming === key}
           <div class="gcard gedit">
             <CommitInput
@@ -155,12 +157,19 @@
                 <span class="gn">{store.graphLabel(key)}</span>
                 <span class="gt">{sourceSub(key)}</span>
               </span>
-              {#if flash?.key === key}
-                {#key flash.seq}<span class="fireburst" aria-hidden="true"></span>{/key}
-              {/if}
             </button>
           </ContextMenu>
         {/if}
+        <!-- The fire overlay lives OUTSIDE the card: the card owns `overflow: hidden`, which
+             clipped the old flash's outer glow away entirely and left only a 2px inset ring —
+             the reason a fire was unmissable on paper and invisible in the room. Re-keying on
+             the fire epoch restarts every layer, so a drum roll strobes instead of sticking. -->
+        {#if firedRecently(firedAt)}
+          {#key firedAt}
+            <span class="gfire" aria-hidden="true"><span class="gburst"></span></span>
+          {/key}
+        {/if}
+        </div>
       {/each}
       {#if store.canEdit}
         <button type="button" class="newcard" onclick={() => (adding = true)}>
@@ -233,9 +242,14 @@
     padding: var(--space-2);
     overflow-y: auto;
   }
+  /* One card + its (unclipped) fire overlay. The card can keep clipping its own thumbnail. */
+  .gslot {
+    position: relative;
+    display: grid;
+    flex: none;
+  }
   .gcard {
     position: relative;
-    flex: none;
     height: 84px;
     padding: 0;
     background: var(--surface-2);
@@ -356,25 +370,81 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .fireburst {
+  /* FIRE — three layers, all restarted together by the {#key} above. They fade on SEPARATE
+     timelines, so each owns its own opacity: the burst cannot be a parent of the cooling
+     marker, or its fade-to-zero would multiply the marker away with it.
+     · .gburst        the burst: an edge-lit accent wash + a halo that spills past the card,
+                      so the hit registers in peripheral vision while you watch the canvas.
+     · .gfire::before the impact ring — the only motion, a single expand-and-go.
+     · .gfire::after  the cooling marker: a bar inside the left edge that outlives the burst by
+                      seconds, so a fire you missed live is still traceable down the rail. */
+  .gfire {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: var(--radius-3);
+    pointer-events: none;
+  }
+  .gburst {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    pointer-events: none;
-    animation: fireburst 500ms var(--ease-out-quart) forwards;
+    background: radial-gradient(115% 130% at 50% 50%, transparent 45%, var(--accent) 100%);
+    box-shadow:
+      0 0 0 2px var(--accent),
+      0 0 30px 4px var(--accent);
+    animation: fire-wash 560ms var(--ease-out-quart) forwards;
   }
-  @keyframes fireburst {
+  @keyframes fire-wash {
+    0%,
+    10% {
+      opacity: 0.55;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+  .gfire::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    animation: fire-impact 320ms var(--ease-out-quart) forwards;
+  }
+  @keyframes fire-impact {
     0% {
-      box-shadow:
-        inset 0 0 0 2px var(--accent),
-        0 0 20px var(--accent-soft);
+      scale: 0.94;
       opacity: 1;
     }
     100% {
-      box-shadow:
-        inset 0 0 0 2px var(--accent),
-        0 0 20px var(--accent-soft);
+      scale: 1.035;
       opacity: 0;
+    }
+  }
+  /* Floated INSIDE the left edge, not on it — a selected card already wears an accent border,
+     and a marker sitting on that border would read as part of the selection ring. */
+  .gfire::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    animation: fire-cool 6s linear forwards;
+  }
+  @keyframes fire-cool {
+    0%,
+    18% {
+      opacity: 1;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    100% {
+      opacity: 0;
+      box-shadow: 0 0 0 transparent;
     }
   }
   .newcard {
@@ -405,8 +475,10 @@
     color: var(--text-faint);
   }
   @media (prefers-reduced-motion: reduce) {
-    .fireburst {
-      animation-duration: 0ms;
+    /* keep the information (wash + cooling marker fade), drop the one moving layer */
+    .gfire::before {
+      animation: none;
+      opacity: 0;
     }
     .newcard:active {
       scale: 1;

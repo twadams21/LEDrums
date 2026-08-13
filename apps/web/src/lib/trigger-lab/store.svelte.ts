@@ -962,25 +962,20 @@ export class TriggerLab {
       out (it's no longer in `graphs`). */
   graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
 
-  /** The last graph that fired, whatever fired it — the keyboard performance path
-      ({@link fireSectionGraph}), a local pad/MIDI hit offline, or the SERVER's voice engine
-      connected (its `graph fired` monitor event, read back in {@link wireClient}). ONE signal, so
-      a graph card has one subscription and lights whether or not the fire came from this song's
-      section. Display-only; `seq` distinguishes repeat fires of the same key. */
-  lastGraphFire = $state<{ key: string; seq: number } | null>(null);
-  private fireSeq = 0;
-
   /** Per-graph last-fire wall-clock (`performance.now()` ms), keyed by graph key — display-only
-      state that drives live-on-trigger node previews (TouchDesigner-style: a trigger-driven node
-      face is STATIC until its graph fires, then plays live from that instant). This is a UI
-      timestamp, NOT engine/render state, so core purity + determinism are untouched. */
+      state that drives the Graphs rail's fire indicator AND live-on-trigger node previews
+      (TouchDesigner-style: a trigger-driven node face is STATIC until its graph fires, then plays
+      live from that instant). Keyed per graph rather than "the last fire", so several graphs can
+      read as recently-fired at once and a card lights whether or not the fire came from this
+      song's section. This is a UI timestamp, NOT engine/render state, so core purity +
+      determinism are untouched. */
   graphFireAt = $state<Record<string, number>>({});
-  /** Stamp a graph fire: the per-graph fire clock (node previews) AND {@link lastGraphFire}
-      (the card indicator). Every fire path — keyboard, local hit, server echo — lands here. */
+  /** Stamp a graph fire. THE one signal: every path lands here — the keyboard performance path
+      ({@link fireSectionGraph}), a local pad/MIDI hit offline, and the SERVER's voice engine
+      connected (its `graph fired` monitor event, read back in {@link wireClient}). */
   markGraphFire(key: string): void {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.graphFireAt = { ...this.graphFireAt, [key]: now };
-    this.lastGraphFire = { key, seq: ++this.fireSeq };
   }
   /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
       threaded into that graph's node previews so they animate on the graph's own fire. */

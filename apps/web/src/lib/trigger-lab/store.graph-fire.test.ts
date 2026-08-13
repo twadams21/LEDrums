@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 describe('graph fire signal', () => {
-  it('a keyboard fire stamps both the fire clock and the card signal', () => {
+  it('a keyboard fire stamps the fired graph’s epoch', () => {
     const { factory } = wiring();
     const store = new TriggerLab(factory);
     const key = store.createGraph('Strobe');
@@ -87,7 +87,6 @@ describe('graph fire signal', () => {
 
     store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
 
-    expect(store.lastGraphFire?.key).toBe(key);
     expect(store.graphFireAt[key]).toBeGreaterThanOrEqual(0);
   });
 
@@ -98,12 +97,27 @@ describe('graph fire signal', () => {
       store.start();
       // A graph key the local active section does NOT list: the "fired from another song" case.
       handlers.onMonitor!(graphEvent(graphFiredMonitorLabel('graph-elsewhere'), 'graph-elsewhere'));
-      expect(store.lastGraphFire?.key).toBe('graph-elsewhere');
+      const first = store.graphFireAt['graph-elsewhere']!;
+      expect(first).toBeGreaterThanOrEqual(0);
 
-      const first = store.lastGraphFire!.seq;
       handlers.onMonitor!(graphEvent(graphFiredMonitorLabel('graph-elsewhere'), 'graph-elsewhere'));
-      // A re-fire of the SAME key bumps seq, so the card can restart its flash.
-      expect(store.lastGraphFire!.seq).toBeGreaterThan(first);
+      // A re-fire of the SAME key moves its epoch forward, which is what restarts the card's
+      // burst — a drum roll must read as activity, not a stuck indicator.
+      expect(store.graphFireAt['graph-elsewhere']).toBeGreaterThan(first);
+      store.stop();
+    });
+  });
+
+  it('keeps a per-graph epoch, so several graphs read as recently fired at once', () => {
+    const { factory, handlers } = wiring();
+    const store = new TriggerLab(factory);
+    withRaf(() => {
+      store.start();
+      handlers.onMonitor!(graphEvent(graphFiredMonitorLabel('graph-a'), 'graph-a'));
+      handlers.onMonitor!(graphEvent(graphFiredMonitorLabel('graph-b'), 'graph-b'));
+      // Firing B must not clear A's cooling marker — the rail shows both.
+      expect(store.graphFireAt['graph-a']).toBeGreaterThanOrEqual(0);
+      expect(store.graphFireAt['graph-b']).toBeGreaterThanOrEqual(store.graphFireAt['graph-a']!);
       store.stop();
     });
   });
@@ -115,7 +129,7 @@ describe('graph fire signal', () => {
       store.start();
       handlers.onMonitor!(graphEvent('Graph resolved graph-9', 'graph-9'));
       handlers.onMonitor!(graphEvent('Sequence reset graph-9', 'graph-9'));
-      expect(store.lastGraphFire).toBeNull();
+      expect(store.graphFireAt['graph-9']).toBeUndefined();
       store.stop();
     });
   });
