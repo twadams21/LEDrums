@@ -636,6 +636,7 @@
       onConnect={guard('connect', onConnect)}
       onConnectEnd={guard('connect-end', onConnectEnd)}
       onReconnect={guard('reconnect', onReconnect)}
+      onReconnectAbandon={guard('delete', (edgeId) => onDeleteEdges([{ id: edgeId }]))}
       onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
       validateDrag={validateDrop}
       {wirePreview}

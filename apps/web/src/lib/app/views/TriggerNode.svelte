@@ -453,7 +453,9 @@
   }
   /* the scoped modulation input handle rides the row's left edge */
 .modrow :global(.param-handle) {
-  left: -12px;
+  /* centred exactly on the CARD's left edge: 5px (half handle) + the row→card inset
+     (1px row border + 8px footer padding + 1.5px card border). */
+  left: -15.5px;
   background: var(--role-modulation);
   border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
 }
@@ -462,7 +464,7 @@
    the node's vertical centre (a mod-source node has no other handle to share the face with).
    Its role colour is owned by GraphCanvas (`.mod-source-handle`) so it beats the grey base. */
 .tnode :global(.mod-source-handle) {
-  right: -12px;
+  right: -5px; /* 10px handle → centred exactly on the card's right edge */
   top: 50%;
 }
 
@@ -479,11 +481,11 @@
 .mixrow :global(.mix-handle) {
   left: -12px;
 }
-  /* small "N in chain" chip riding just right of the mod input (bottom-centre edge) */
+  /* small "N in chain" modify badge riding the card's top-right edge */
   .modcount {
     position: absolute;
-    left: calc(50% + 10px);
-    bottom: -7px;
+    right: -8px;
+    top: -7px;
     display: inline-flex;
     align-items: center;
     gap: 2px;
