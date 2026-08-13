@@ -107,3 +107,20 @@ this window (Trent, ~09:05: at 70%).
 2. S2 deviations to eyeball: AppSettingsDialog folded into Settings→General; SongRail deleted
    (unreferenced after LeftRail); mockController retargeted to Settings→Controller.
 3. ui-shot visual pass + your hardware drive through Settings → then S6 go/no-go.
+
+## Post-initiative session work (2026-08-13 daytime)
+
+- **PR #178** (off main, merges independently of #176): releaseBus end-to-end (dock Release
+  buttons never reached a connected engine — no protocol message existed); modify-role canvas
+  polish (pink bottom-edge chain input, solid pink/blue role wires, top-right modify badge,
+  exact-edge handles, selected-wire grab dots with drop-on-nothing delete). 3 feedback rounds
+  on the tailnet preview.
+- **Issue #177**: graph-list batch (thumbnails, fire indicators, Add-graph modal
+  linked/copy, sync badge, context menu).
+- Lesson worth keeping (graph work): xyflow's base handle CSS centres handles on the
+  containing block's edge — never override its position/transform, compensate container
+  insets only. Edge endpoints sit at the handle's OUTER edge; anchor overlays must shift
+  half a handle inward.
+- Open for Trent: modifier-in-flow vs mod-input semantics (PR #178 body) — lint candidate.
+- Preview share: `preview/tabbed-chrome-fixes` (#176+#178) on :5273 via tailscale HTTPS;
+  old proto still on :5173 (S7 tears down).
