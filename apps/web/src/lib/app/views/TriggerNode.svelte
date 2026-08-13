@@ -246,17 +246,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 35%' : 'top: 50%'} />
-  {/if}
-  {#if nodeHasModInput(kind)}
-    <Handle
-      type="target"
-      id="mod"
-      position={Position.Left}
-      class="mod-handle"
-      aria-label="Modifier chain in"
-      style={nodeHasInput(kind) ? 'top: 65%' : 'top: 50%'}
-    />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style="top: 50%" />
   {/if}
   {#if nodeHasOutput(kind)}
     <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'trigger' ? 'Trigger flow out' : 'Effect flow out'} />
@@ -335,6 +325,12 @@
         leadHandles={cardHandles}
         footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}
       />
+      {#if nodeHasModInput(kind)}
+        <!-- Card-level (not head-anchored): the modifier-chain input sits centred ON the
+             card's bottom edge, wherever the footer ends — modulation wiring arrives from
+             below, distinct from the left→right trigger/effect flow. -->
+        <Handle type="target" id="mod" position={Position.Bottom} class="mod-handle" aria-label="Modifier chain in" />
+      {/if}
       {@render lintBadge()}
     </div>
   {/if}
@@ -470,13 +466,23 @@
   top: 50%;
 }
 
+/* the modifier-chain INPUT sits centred ON the card's bottom edge (a card-level sibling of
+   NodeCard, so a growing param footer can't strand it mid-card) — modulation wiring arrives
+   from below. Role colour (modulation blue) is owned by GraphCanvas (`.mod-handle`). */
+.tnode :global(.mod-handle) {
+  top: auto;
+  bottom: -5px; /* 10px handle → centred exactly on the edge */
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .mixrow :global(.mix-handle) {
   left: -12px;
 }
-  /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
+  /* small "N in chain" chip riding just right of the mod input (bottom-centre edge) */
   .modcount {
     position: absolute;
-    left: -8px;
+    left: calc(50% + 10px);
     bottom: -7px;
     display: inline-flex;
     align-items: center;

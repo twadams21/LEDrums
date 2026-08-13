@@ -352,6 +352,7 @@
      grey base rule below (which the source handle's own scoped rule only tied on specificity).
      The trigger / effect / mod flow handles stay the neutral grey handle below. */
   .gcanvas :global(.svelte-flow__handle.param-handle),
+  .gcanvas :global(.svelte-flow__handle.mod-handle),
   .gcanvas :global(.svelte-flow__handle.mod-source-handle) {
     background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
     border-color: var(--role-modulation);
