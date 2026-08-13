@@ -18,10 +18,10 @@
 
 <div class="pane-body">
   <PaneHeader id="system" />
-  <Field label="Updates" hint="desktop app">
+  <Field label="Updates" info="Desktop app.">
     <UpdateControl />
   </Field>
-  <Field label="Backups" hint="point-in-time snapshots">
+  <Field label="Backups" info="Point-in-time snapshots.">
     <button type="button" class="entry" aria-label="Browse backups" onclick={() => (backupsOpen = true)}>
       <History size={14} aria-hidden="true" />
       Browse backups

@@ -1,12 +1,14 @@
 <script lang="ts">
-  /* A small typed identity badge — mono, uppercase, tinted border + text over a whisper of
-     its own colour. The chip is where an item's colour identity lives: tinting a whole row
-     turns a dense list into a paint chart, while a chip lets the eye group rows by kind at a
-     glance and leaves the text at full contrast.
+  /* A small typed identity badge — mono, uppercase.
+
+     ONE tint recipe, app-wide (2026-08-14, Trent: chips had "weird colours like the text not
+     matching the background"): the fill is a NEUTRAL surface, and the tint appears only in
+     the text and the border. Text and background can therefore never disagree — the text
+     colour is mixed toward ink over that same neutral, so contrast holds for every hue, and
+     an untinted chip is the same shape in the ink ramp rather than a different species.
 
      `tint` is a CSS colour (usually a role token, e.g. `var(--role-mod)`), passed through as
-     `--tint` — the same runtime-tint convention `NodeIconChip` uses. Untinted chips fall back
-     to the ink ramp, which is the right treatment for a neutral label. */
+     `--tint` — the same runtime-tint convention `NodeIconChip` uses. */
 
   let { label, tint, title }: { label: string; tint?: string; title?: string } = $props();
 </script>
@@ -20,10 +22,10 @@
     align-items: center;
     flex: none;
     padding: 0 5px;
-    border: 1px solid color-mix(in oklch, var(--tint) 32%, transparent);
+    border: 1px solid color-mix(in oklch, var(--tint) 28%, var(--border-faint));
     border-radius: var(--radius-1);
-    background: color-mix(in oklch, var(--tint) 10%, transparent);
-    color: color-mix(in oklch, var(--tint) 70%, var(--text));
+    background: var(--surface-inset);
+    color: color-mix(in oklch, var(--tint) 55%, var(--text));
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
     font-weight: 600;

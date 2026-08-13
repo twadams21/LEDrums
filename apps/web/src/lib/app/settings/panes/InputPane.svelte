@@ -36,7 +36,7 @@
   <PaneHeader id="input" />
 
   <Eyebrow>MIDI input</Eyebrow>
-  <Field label="MIDI channel" hint="input filter">
+  <Field label="MIDI channel" info="Only accept MIDI on this channel.">
     <Select
       value={channelValue}
       options={CHANNEL_OPTS}

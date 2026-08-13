@@ -163,6 +163,22 @@
       </div>
     </DemoCard>
 
+    <DemoCard
+      title="Field — the Settings form rhythm"
+      src={['lib/ui/Field', 'lib/app/settings/forms.css']}
+      note="Label ABOVE the control, fields in columns, and NO help text under a field (2026-08-14, Trent). A rule you only need while filling the field rides an ⓘ on the label instead, and a default that changes behaviour goes in the placeholder — 'dense / auto' says more than a grey line under the box ever did. `.set-grid` is the shared 2-up wrapper; a wide field opts out with `.set-wide`."
+      wide
+    >
+      <div class="set-grid">
+        <Field label="Start universe" info="Leave blank for dense / automatic packing.">
+          <CommitInput type="number" value="" placeholder="dense / auto" ariaLabel="Start universe demo" onCommit={() => {}} />
+        </Field>
+        <Field label="Channels / pixel" info="3 = RGB · 4 = RGBW">
+          <CommitInput type="number" value={3} ariaLabel="Channels per pixel demo" onCommit={() => {}} />
+        </Field>
+      </div>
+    </DemoCard>
+
     <DemoCard title="Text fields" src={['lib/ui/TextField', 'lib/ui/SearchField', 'lib/ui/Field']}>
       <div class="comp-stack">
         <Field label="Show name" hint="Plain bindable input">

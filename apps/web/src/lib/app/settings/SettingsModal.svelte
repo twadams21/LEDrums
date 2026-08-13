@@ -106,6 +106,9 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* The panes' field grids size off THIS box, not the viewport — the modal is a fixed
+       width, so a viewport query would answer the wrong question. */
+    container-type: inline-size;
   }
   /* Keep the panes' selects (MIDI channel etc.) form-width in the wide pane. */
   .pane :global(.sel) {

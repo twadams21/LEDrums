@@ -5,6 +5,7 @@
 
    Holds no pane components — panes import PaneHeader, which imports this. */
 import './section-tints.css';
+import './forms.css';
 import type { Component } from 'svelte';
 import { SETTINGS_PANES, type SettingsPane } from '../shell-nav';
 import Music from '@lucide/svelte/icons/music';

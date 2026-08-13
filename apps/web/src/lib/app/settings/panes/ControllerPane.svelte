@@ -92,9 +92,8 @@
     {#if out}
       <section class="transport" aria-label="Transport">
         <Eyebrow>Transport</Eyebrow>
-        <p class="grouphint">Where pixel data is sent.</p>
-        <div class="tgrid">
-          <Field layout="row" label="Protocol">
+        <div class="set-grid">
+          <Field label="Protocol">
             <Select
               value={out.protocol}
               options={PROTOCOL_OPTS}
@@ -103,7 +102,7 @@
               ariaLabel="Protocol"
             />
           </Field>
-          <Field layout="row" label="Host / IP" hint={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
+          <Field label="Host / IP" info={out.broadcast ? 'broadcast / multicast target' : 'unicast target'}>
             <CommitInput
               value={out.host}
               mono
@@ -114,7 +113,7 @@
               onCommit={(v) => v.trim() && store.setOutput({ host: v.trim() })}
             />
           </Field>
-          <Field layout="row" label="Port" hint={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
+          <Field label="Port" info={out.protocol === 'sacn' ? 'default 5568' : 'default 6454'}>
             <CommitInput
               type="number"
               min={1}
@@ -126,7 +125,7 @@
               onCommit={(v) => onNum(v, (n) => store.setOutput({ port: n }))}
             />
           </Field>
-          <Field layout="row" label="Interface" hint="the NIC the PixLite is on">
+          <Field label="Interface" info="The NIC the PixLite is on.">
             <Select
               value={out.iface || AUTO}
               options={ifaceOptions}
@@ -135,7 +134,7 @@
               ariaLabel="Source interface (network adapter)"
             />
           </Field>
-          <Field layout="row" label="FPS" hint="≤ 120">
+          <Field label="FPS" info="≤ 120.">
             <CommitInput
               type="number"
               min={1}
@@ -147,17 +146,16 @@
               onCommit={(v) => onNum(v, (n) => store.setOutput({ fps: n }))}
             />
           </Field>
-          <label class="checkrow">
+          <Field label={out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'} variant="group">
             <Toggle
               pressed={out.broadcast}
               disabled={!project}
               onChange={(v) => store.setOutput({ broadcast: v })}
               ariaLabel={out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}
             />
-            <span>{out.protocol === 'sacn' ? 'Multicast' : 'Broadcast'}</span>
-          </label>
+          </Field>
           {#if out.protocol === 'sacn'}
-            <Field layout="row" label="Priority" hint="1–200 · higher wins at a merge">
+            <Field label="Priority" info="1–200 · higher wins at a merge.">
               <CommitInput
                 type="number"
                 min={1}
@@ -201,36 +199,9 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  /* Transport as a two-up form: seven short fields stacked was most of this pane's height,
-     and the pane has to fit the modal without scrolling (a controller you are diagnosing is
-     read at a glance). Narrow containers fall back to one column. */
-  .tgrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-1) var(--space-4);
-    align-items: start;
-    min-width: 0;
-  }
-  @container (max-width: 560px) {
-    .tgrid {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
+
   /* Read-only viewer: dim, on top of the native fieldset[disabled] gate. */
   .editgate:disabled {
     opacity: 0.6;
-  }
-  .grouphint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: var(--leading-normal);
-  }
-  .checkrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text);
   }
 </style>

@@ -38,6 +38,8 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     setInputMap: vi.fn(),
     startMidiLearn: vi.fn(),
     cancelMidiLearn: vi.fn(),
+    startOscLearn: vi.fn(),
+    cancelOscLearn: vi.fn(),
     ...over,
   } as unknown as TriggerLab;
 }
@@ -68,14 +70,72 @@ describe('DrumZonesPane', () => {
     expect(screen.queryByText('· Kick')).toBeNull();
   });
 
-  it('adding a zone goes through store.setInputMap with the declared slot', async () => {
+  it('adding a zone goes through store.setInputMap with the declared slot and an empty name', async () => {
     const store = mockStore();
     render(DrumZonesPane, { props: { store } });
     await fireEvent.click(screen.getAllByRole('button', { name: 'Add zone' })[0]!);
     expect(store.setInputMap).toHaveBeenCalledWith({
       ...INPUT_MAP,
-      zones: [{ drumId: 'kick', slot: 0 }],
+      zones: [{ drumId: 'kick', slot: 0, label: '' }],
     });
+  });
+
+  it('keeps adding past the old 8-zone cap — the next add takes the next free slot', async () => {
+    const zones = Array.from({ length: 9 }, (_, slot) => ({ drumId: 'kick', slot, label: '' }));
+    const store = mockStore({ project: { inputMap: { ...INPUT_MAP, zones }, kit: { drums: DRUMS } } });
+    render(DrumZonesPane, { props: { store } });
+
+    await fireEvent.click(screen.getAllByRole('button', { name: 'Add zone' })[0]!);
+
+    const written = (store.setInputMap as unknown as { mock: { calls: Array<[{ zones: Array<{ slot: number }> }]> } }).mock.calls[0]![0];
+    expect(written.zones).toHaveLength(10);
+    expect(written.zones.at(-1)).toEqual({ drumId: 'kick', slot: 9, label: '' });
+  });
+
+  it('shows a zone name, and its binding on one line while collapsed', () => {
+    const store = mockStore({
+      project: {
+        inputMap: {
+          ...INPUT_MAP,
+          zones: [{ drumId: 'kick', slot: 0, label: 'Beater' }],
+          midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
+        },
+        kit: { drums: DRUMS },
+      },
+    });
+    render(DrumZonesPane, { props: { store } });
+
+    expect(screen.getByText('Beater')).toBeTruthy();
+    expect(screen.getByText('C2')).toBeTruthy(); // the collapsed summary — no field is open
+    expect(screen.queryByLabelText('Zone name')).toBeNull();
+  });
+
+  it('expands a zone to its fields, and renames through setInputMap', async () => {
+    const store = mockStore({
+      project: { inputMap: { ...INPUT_MAP, zones: [{ drumId: 'kick', slot: 0, label: '' }] }, kit: { drums: DRUMS } },
+    });
+    render(DrumZonesPane, { props: { store } });
+
+    await fireEvent.click(screen.getByRole('button', { name: /center/ }));
+    const name = screen.getByLabelText('Zone name') as HTMLInputElement;
+    await fireEvent.input(name, { target: { value: 'Beater' } });
+    await fireEvent.blur(name);
+
+    expect(store.setInputMap).toHaveBeenCalledWith(
+      expect.objectContaining({ zones: [{ drumId: 'kick', slot: 0, label: 'Beater' }] }),
+    );
+  });
+
+  it('arms an OSC learn on a zone — the address no longer has to be typed', async () => {
+    const store = mockStore({
+      project: { inputMap: { ...INPUT_MAP, zones: [{ drumId: 'kick', slot: 0, label: '' }] }, kit: { drums: DRUMS } },
+    });
+    render(DrumZonesPane, { props: { store } });
+
+    await fireEvent.click(screen.getByRole('button', { name: /center/ }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Learn zone OSC address' }));
+
+    expect(store.startOscLearn).toHaveBeenCalledWith({ kind: 'zone', drumId: 'kick', slot: 0 });
   });
 
   it('a viewer gets natively-disabled zone controls (fieldset gate)', () => {

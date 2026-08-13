@@ -50,6 +50,9 @@ import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTes
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
+// The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
+// SAME shape the zones editor does (one mutation path, mutation parity), not a second one.
+import { setZoneOscAddress } from '../app/docks/patch-inspector';
 import type {
   BlendMode,
   CanvasScene,
@@ -834,6 +837,11 @@ export class TriggerLab {
   private readonly osc = new OscLearnController({
     isViewer: () => this.isViewer,
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
+    setZoneOscAddress: (drumId, slot, address) => {
+      if (this.isViewer || !this.project) return false;
+      this.setInputMap(setZoneOscAddress(this.project.inputMap, drumId, slot, address));
+      return true;
+    },
   });
   /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
       {@link MidiController.learnTarget}. */

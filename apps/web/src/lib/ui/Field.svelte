@@ -8,14 +8,22 @@
      column after it (e.g. "ms" / "Hz" / a live "50%") — the inspector idiom for a
      numeric field or slider whose unit lives beside the box, not inside it. Row
      layout only; ignored in stack.
+     `info` puts an ⓘ on the LABEL carrying an explanation on hover/focus. Settings
+     uses it instead of `hint` (2026-08-14, Trent: no help text under fields) — a rule
+     that only matters while you are filling the field belongs on demand, not as a line
+     of permanent grey text under every input.
      `variant="group"` renders the wrapper as a div[role=group] + aria-labelledby
      instead of a <label>: for COMPOSITE controls (SegmentedControl and kin) where
      native label-forwarding would silently click the first inner button. */
   import type { Snippet } from 'svelte';
+  import Info from '@lucide/svelte/icons/info';
+  import Tooltip from './Tooltip.svelte';
 
   type Props = {
     label: string;
     hint?: string;
+    /** Explanation shown on an ⓘ beside the label, on hover/focus. */
+    info?: string;
     unit?: string;
     for?: string;
     layout?: 'stack' | 'row';
@@ -26,7 +34,17 @@
     children: Snippet;
   };
 
-  let { label, hint, unit, for: forId, layout = 'stack', variant = 'label', class: klass, children }: Props = $props();
+  let {
+    label,
+    hint,
+    info,
+    unit,
+    for: forId,
+    layout = 'stack',
+    variant = 'label',
+    class: klass,
+    children,
+  }: Props = $props();
   const hasUnit = $derived(unit != null && unit !== '' && layout === 'row');
   const group = $derived(variant === 'group');
   const uid = $props.id();
@@ -42,7 +60,13 @@
   role={group ? 'group' : undefined}
   aria-labelledby={group ? labelId : undefined}
 >
-  <span class="flabel" id={group ? labelId : undefined}>{label}{#if hint && layout === 'stack'}<em class="fhint">{hint}</em>{/if}</span>
+  <span class="flabel" id={group ? labelId : undefined}>
+    {label}
+    {#if info}
+      <Tooltip text={info} class="finfo"><Info size={12} aria-label={`About ${label}`} /></Tooltip>
+    {/if}
+    {#if hint && layout === 'stack'}<em class="fhint">{hint}</em>{/if}
+  </span>
   <span class="fcontrol">{@render children()}</span>
   {#if hasUnit}<span class="funit">{unit}</span>{/if}
   {#if hint && layout === 'row'}<em class="fhint under">{hint}</em>{/if}
@@ -97,6 +121,13 @@
   .fhint {
     font-style: normal;
     color: var(--text-faint);
+  }
+  .flabel :global(.finfo) {
+    color: var(--text-faint);
+    cursor: help;
+  }
+  .flabel :global(.finfo:hover) {
+    color: var(--text-muted);
   }
   .fhint.under {
     grid-column: 2;

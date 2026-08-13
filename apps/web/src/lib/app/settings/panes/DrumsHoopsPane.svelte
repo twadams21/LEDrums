@@ -39,8 +39,8 @@
     {@const g = kit.global}
     <section class="defaults" aria-label="Kit defaults">
       <Eyebrow>Kit defaults</Eyebrow>
-      <p class="grouphint">Kit-wide geometry defaults. Per-drum geometry lives on each drum below.</p>
-      <Field layout="row" label="LED density" hint="px / m">
+      <div class="set-grid">
+      <Field label="LED density" info="Pixels per metre of LED tape.">
         <CommitInput
           type="number"
           min={0}
@@ -50,7 +50,7 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ ledDensityPxPerM: n }))}
         />
       </Field>
-      <Field layout="row" label="Hoops / drum" hint="kit default">
+      <Field label="Hoops / drum" info="Kit-wide default; a drum may override it.">
         <CommitInput
           type="number"
           min={1}
@@ -60,7 +60,7 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ hoopCount: n }))}
         />
       </Field>
-      <Field layout="row" label="Hoop spacing" hint="mm between hoops">
+      <Field label="Hoop spacing" info="Millimetres between hoops.">
         <CommitInput
           type="number"
           min={0}
@@ -72,7 +72,7 @@
       </Field>
       <!-- variant="group": a <label> wrapper would forward a click on "Mirror" to the
            segmented control's FIRST button, silently resetting mirror to None. -->
-      <Field layout="row" label="Mirror" hint="geometry-only world reflection" variant="group">
+      <Field label="Mirror" info="Geometry-only world reflection." variant="group">
         <SegmentedControl
           value={mirror}
           options={MIRROR_OPTS}
@@ -81,8 +81,11 @@
           ariaLabel="Kit mirror axis"
         />
       </Field>
-      <ReadRow label="Drums" value={String(kit.drums.length)} />
-      <ReadRow label="Total pixels" value={`${totalKitPixelCount(kit)} px`} />
+      </div>
+      <div class="kitreads">
+        <ReadRow label="Drums" value={String(kit.drums.length)} />
+        <ReadRow label="Total pixels" value={`${totalKitPixelCount(kit)} px`} />
+      </div>
     </section>
 
     <section class="drums" aria-label="Drums">
@@ -120,11 +123,10 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  .grouphint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: var(--leading-normal);
+  .kitreads {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-1);
   }
   .hint {
     margin: 0;

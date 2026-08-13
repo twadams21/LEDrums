@@ -118,23 +118,27 @@
 <section class="card" aria-label={title}>
   <header class="chead">
     <span class="cname">{title}</span>
-    <TypeChip label={`Port ${port.port} · Line ${port.line}`} tint="var(--role-output)" />
+    <!-- Neutral by design: this page carries ONE accent family (drum identity on the chain
+         rows). A second hue on every card header made it read as a fruit salad. -->
+    <TypeChip label={`Port ${port.port} · Line ${port.line}`} />
   </header>
 
-  <RenameField {store} {nodeId} {fallback} />
-  <div class="scalars">
-    <Field layout="row" label="Start universe" hint="blank = dense / auto">
+  <div class="set-grid">
+    <Field label="Name">
+      <RenameField {store} {nodeId} {fallback} bare />
+    </Field>
+    <Field label="Start universe" info="Leave blank for dense / automatic packing.">
       <CommitInput
         type="number"
         min={0}
         value={output.startUniverse ?? ''}
-        placeholder="dense"
+        placeholder="dense / auto"
         {disabled}
         ariaLabel={`${title} start universe`}
         onCommit={(v) => (v === '' ? onScalar({ startUniverse: undefined }) : onNum(v, (n) => onScalar({ startUniverse: n })))}
       />
     </Field>
-    <Field layout="row" label="Channels / pixel" hint="3 = RGB · 4 = RGBW">
+    <Field label="Channels / pixel" info="3 = RGB · 4 = RGBW">
       <CommitInput
         type="number"
         min={1}
@@ -145,7 +149,7 @@
         onCommit={(v) => onNum(v, (n) => onScalar({ channelsPerPixel: n }))}
       />
     </Field>
-    <Field layout="row" label="RGB order" hint="blank inherits controller">
+    <Field label="RGB order" info="Blank inherits the controller's wiring order.">
       <Select
         value={output.rgbOrder ?? RGB_INHERIT}
         options={rgbOptions}
@@ -235,7 +239,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .scalars,
   .spans {
     display: flex;
     flex-direction: column;

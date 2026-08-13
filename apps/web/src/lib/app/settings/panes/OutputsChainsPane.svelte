@@ -90,20 +90,20 @@
   <PaneHeader id="outputs" />
   {#if kit && routing}
     <Eyebrow>Output mode</Eyebrow>
-    <p class="grouphint">
-      Advatek expanded output — on, each of the 4 physical ports drives 2 data lines (8 logical
-      outputs); off, the 4 ports are the outputs. It sets the cards below.
-    </p>
-    <label class="checkrow">
+    <div class="set-grid">
+    <Field
+      label="Expanded output"
+      variant="group"
+      info="On, each of the 4 physical ports drives 2 data lines (8 logical outputs); off, the 4 ports are the outputs. It sets the cards below."
+    >
       <Toggle
         pressed={expanded}
         disabled={!project}
         onChange={(v) => store.setKitGlobal({ expanded: v })}
         ariaLabel="Expanded output mode"
       />
-      <span>Expanded output mode</span>
-    </label>
-    <Field layout="row" label="Max px / output" hint="per physical output">
+    </Field>
+    <Field label="Max px / output" info="Pixel ceiling per physical output.">
       <CommitInput
         type="number"
         min={1}
@@ -113,13 +113,13 @@
         onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ maxPixelsPerOutput: n }))}
       />
     </Field>
+    </div>
 
     <Separator />
     <Eyebrow>Chains</Eyebrow>
     <p class="grouphint">
-      Each physical output drives one ordered chain of hoops — pixel transmit order, top to
-      bottom. Remove a hoop and it returns to the pool below; an unrouted hoop is legal, it
-      just stays dark.
+      Each output drives one ordered chain of hoops — transmit order, top to bottom. Drag a
+      hoop between chains or back to the pool; an unrouted hoop is legal, it just stays dark.
     </p>
     <div class="cards">
       {#each routing.outputs as output, i (output.id)}
@@ -184,13 +184,6 @@
     padding: 0;
     border: 0;
     min-inline-size: 0;
-  }
-  .checkrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-xs);
-    color: var(--text);
   }
   .grouphint {
     margin: 0;

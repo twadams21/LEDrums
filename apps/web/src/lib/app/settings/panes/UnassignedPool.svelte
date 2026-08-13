@@ -107,28 +107,30 @@
     flex-wrap: wrap;
     gap: var(--space-1);
   }
+  /* Neutral chips: the dashed pool frame is what says "unrouted", so the chips inside it
+     don't need to shout it a second time in amber. Only the drum chip carries colour. */
   .chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 2px var(--space-2) 2px var(--space-1);
-    border: 1px solid color-mix(in oklch, var(--warn) 30%, transparent);
+    border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
-    background: color-mix(in oklch, var(--warn) 7%, transparent);
+    background: var(--surface-2);
     white-space: nowrap;
     cursor: grab;
     transition-property: border-color, background-color;
     transition-duration: var(--dur-120);
   }
   .chip:hover {
-    border-color: color-mix(in oklch, var(--warn) 50%, transparent);
-    background: color-mix(in oklch, var(--warn) 12%, transparent);
+    border-color: var(--border);
+    background: var(--surface-3);
   }
   .chip:active {
     cursor: grabbing;
   }
   .cname {
     font-size: var(--text-xs);
-    color: color-mix(in oklch, var(--warn) 55%, var(--text));
+    color: var(--text);
   }
 </style>
