@@ -4,13 +4,12 @@
      graphs as cards: each wears its hotkey badge (keys 1–9 and 0 fire graphs 1–10 —
      handled globally in App.svelte), a mini-map of the real graph tinted by node kind,
      a linked badge when the graph is placed in more than one section, the graph name
-     and its trigger source. Clicking a card opens it on the canvas. Firing lights it —
-     a burst you can catch in peripheral vision plus a cooling edge marker that outlives
-     the burst by seconds, both keyed off store.graphFireAt (the one fire signal: keyboard,
-     local hit and SERVER engine fires all land there, so a hit traces to its card in both
-     modes). Right-click carries the card's verbs; "+ Add graph" opens the library picker.
-     Section switching lives outside the rail (the shell's sections bar and the global ←/→
-     hotkeys), so this pane is just the active section's graphs. */
+     and its trigger source. Clicking a card opens it on the canvas. Firing ticks a quiet
+     accent marker in the card's left edge, keyed off store.graphFireAt (the one fire signal:
+     keyboard, local hit and SERVER engine fires all land there, so a hit traces to its card
+     in both modes). Right-click carries the card's verbs; "+ Add graph" opens the library
+     picker. Section switching lives outside the rail (the shell's sections bar and the global
+     ←/→ hotkeys), so this pane is just the active section's graphs. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { NodeKind } from '../../trigger-lab/sim';
   import type { ShellStore } from '../shell-store.svelte';
@@ -85,14 +84,14 @@
     ];
   }
 
-  /** How long a card keeps its cooling "fired recently" edge marker (ms) — must match the
-      `fire-cool` animation below, since that CSS owns the decay. */
-  const FIRE_LINGER_MS = 6000;
+  /** How long a card shows its fire marker (ms) — matches `--dur-150`, which the `fire-decay`
+      animation below uses; that CSS owns the decay, this only decides whether to mount at all. */
+  const FIRE_MARKER_MS = 150;
   /** Is this graph's last fire recent enough to still be shown? Evaluated when the card's fire
       epoch changes, so a fire that happened while the rail was unmounted (view switch) does not
-      replay its burst on arrival — only its remaining linger, if any, is worth showing. */
+      replay on arrival. */
   function firedRecently(at: number | undefined): boolean {
-    return at !== undefined && performance.now() - at < FIRE_LINGER_MS;
+    return at !== undefined && performance.now() - at < FIRE_MARKER_MS;
   }
 </script>
 
@@ -110,7 +109,6 @@
         {@const thumb = g ? graphThumb(g) : null}
         {@const links = placements(key)}
         {@const firedAt = store.graphFireAt[key]}
-        <div class="gslot">
         {#if renaming === key}
           <div class="gcard gedit">
             <CommitInput
@@ -157,19 +155,15 @@
                 <span class="gn">{store.graphLabel(key)}</span>
                 <span class="gt">{sourceSub(key)}</span>
               </span>
+              <!-- Fire marker. Re-keying on the fire epoch restarts it, so a drum roll reads as
+                   repeated hits rather than one stuck bar. It sits well inside the card, so the
+                   card's own `overflow: hidden` never clips it. -->
+              {#if firedRecently(firedAt)}
+                {#key firedAt}<span class="gfire" aria-hidden="true"></span>{/key}
+              {/if}
             </button>
           </ContextMenu>
         {/if}
-        <!-- The fire overlay lives OUTSIDE the card: the card owns `overflow: hidden`, which
-             clipped the old flash's outer glow away entirely and left only a 2px inset ring —
-             the reason a fire was unmissable on paper and invisible in the room. Re-keying on
-             the fire epoch restarts every layer, so a drum roll strobes instead of sticking. -->
-        {#if firedRecently(firedAt)}
-          {#key firedAt}
-            <span class="gfire" aria-hidden="true"><span class="gburst"></span></span>
-          {/key}
-        {/if}
-        </div>
       {/each}
       {#if store.canEdit}
         <button type="button" class="newcard" onclick={() => (adding = true)}>
@@ -242,14 +236,9 @@
     padding: var(--space-2);
     overflow-y: auto;
   }
-  /* One card + its (unclipped) fire overlay. The card can keep clipping its own thumbnail. */
-  .gslot {
-    position: relative;
-    display: grid;
-    flex: none;
-  }
   .gcard {
     position: relative;
+    flex: none;
     height: 84px;
     padding: 0;
     background: var(--surface-2);
@@ -370,81 +359,28 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* FIRE — three layers, all restarted together by the {#key} above. They fade on SEPARATE
-     timelines, so each owns its own opacity: the burst cannot be a parent of the cooling
-     marker, or its fade-to-zero would multiply the marker away with it.
-     · .gburst        the burst: an edge-lit accent wash + a halo that spills past the card,
-                      so the hit registers in peripheral vision while you watch the canvas.
-     · .gfire::before the impact ring — the only motion, a single expand-and-go.
-     · .gfire::after  the cooling marker: a bar inside the left edge that outlives the burst by
-                      seconds, so a fire you missed live is still traceable down the rail. */
+  /* FIRE — one quiet marker, no wash, no halo, no ring (Trent, live preview: the burst read as
+     too intense). A bar floated INSIDE the card's left edge, never on it: a selected card
+     already wears an accent border, and a marker sitting on that border would read as part of
+     the selection ring. Decays over `--dur-150`. */
   .gfire {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    border-radius: var(--radius-3);
-    pointer-events: none;
-  }
-  .gburst {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: radial-gradient(115% 130% at 50% 50%, transparent 45%, var(--accent) 100%);
-    box-shadow:
-      0 0 0 2px var(--accent),
-      0 0 30px 4px var(--accent);
-    animation: fire-wash 560ms var(--ease-out-quart) forwards;
-  }
-  @keyframes fire-wash {
-    0%,
-    10% {
-      opacity: 0.55;
-    }
-    100% {
-      opacity: 0;
-    }
-  }
-  .gfire::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border: 2px solid var(--accent);
-    border-radius: inherit;
-    animation: fire-impact 320ms var(--ease-out-quart) forwards;
-  }
-  @keyframes fire-impact {
-    0% {
-      scale: 0.94;
-      opacity: 1;
-    }
-    100% {
-      scale: 1.035;
-      opacity: 0;
-    }
-  }
-  /* Floated INSIDE the left edge, not on it — a selected card already wears an accent border,
-     and a marker sitting on that border would read as part of the selection ring. */
-  .gfire::after {
-    content: '';
     position: absolute;
     left: 5px;
     top: 12px;
     bottom: 12px;
+    z-index: 2;
     width: 3px;
     border-radius: 3px;
     background: var(--accent);
-    box-shadow: 0 0 8px var(--accent);
-    animation: fire-cool 6s linear forwards;
+    pointer-events: none;
+    animation: fire-decay var(--dur-150) linear forwards;
   }
-  @keyframes fire-cool {
-    0%,
-    18% {
+  @keyframes fire-decay {
+    from {
       opacity: 1;
-      box-shadow: 0 0 8px var(--accent);
     }
-    100% {
+    to {
       opacity: 0;
-      box-shadow: 0 0 0 transparent;
     }
   }
   .newcard {
@@ -475,10 +411,11 @@
     color: var(--text-faint);
   }
   @media (prefers-reduced-motion: reduce) {
-    /* keep the information (wash + cooling marker fade), drop the one moving layer */
-    .gfire::before {
-      animation: none;
-      opacity: 0;
+    /* Nothing here moves any more — the marker only fades. But tokens.css zeroes every --dur-*
+       under this query, and a zero-length decay would DELETE the indicator rather than calm it,
+       so hold the marker for the same beat and cut it without the fade. */
+    .gfire {
+      animation: fire-decay 150ms step-end forwards;
     }
     .newcard:active {
       scale: 1;
