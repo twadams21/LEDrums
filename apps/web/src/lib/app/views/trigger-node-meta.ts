@@ -22,10 +22,11 @@ import Spline from '@lucide/svelte/icons/spline';
 import Waves from '@lucide/svelte/icons/waves'; // S36
 import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
 import CircleDot from '@lucide/svelte/icons/circle-dot';
+import PieChart from '@lucide/svelte/icons/pie-chart';
 import Dice5 from '@lucide/svelte/icons/dice-5';
 import Music2 from '@lucide/svelte/icons/music-2';
 import RadioTower from '@lucide/svelte/icons/radio-tower';
-import { listModifiers } from '@ledrums/core';
+import { listModifiers, voice } from '@ledrums/core';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
 
 /** Icon per node kind (add palette, node card chip, kind selector). */
@@ -33,6 +34,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   trigger: Zap,
   play: Sparkles,
   effect: Sparkles,
+  splice: PieChart,
   all: Layers,
   random: Shuffle,
   sequence: ListOrdered,
@@ -64,6 +66,7 @@ export const tint: Record<NodeKind, string> = {
   trigger: 'var(--accent)',
   play: 'var(--role-content)',
   effect: 'var(--role-content)',
+  splice: 'var(--role-content)',
   all: 'var(--role-layer)',
   random: 'var(--role-effect)',
   sequence: 'var(--role-output)',
@@ -88,6 +91,7 @@ export const kindLabel: Record<NodeKind, string> = {
   trigger: 'Trigger',
   play: 'Play',
   effect: 'Effect',
+  splice: 'Splice',
   all: 'All',
   random: 'Random',
   sequence: 'Sequence',
@@ -135,6 +139,17 @@ export function kindSummary(node: GraphNode): string {
       return node.bypass ? `${modifierName(node.modifierId)} · bypassed` : modifierName(node.modifierId);
     case 'mix':
       return node.mixBlendMode ?? 'normal';
+    // The two things that decide what a splice node LOOKS like on the kit: how finely it
+    // cuts, and whether it is moving. What is inside each splice is the Inspector's job.
+    case 'splice': {
+      const count = node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT;
+      const per = node.splicePartition ?? 'hoop';
+      const chase = node.spliceChase ?? 'off';
+      if (chase === 'off') return `${count} per ${per}`;
+      const rate = node.spliceRateMode === 'time' ? `${node.spliceRateMs ?? voice.DEFAULT_SPLICE_RATE_MS}ms` : node.spliceDivision ?? voice.DEFAULT_SPLICE_DIVISION;
+      if (chase === 'stagger') return `${count} per ${per} · ${node.spliceIncrementPx ?? voice.DEFAULT_SPLICE_INCREMENT_PX}px / ${rate}`;
+      return `${count} per ${per} · ${chase === 'smooth' ? 'spin' : 'chase'} ${rate}`;
+    }
     case 'scope':
       return node.scope === 'kit' ? 'whole kit' : node.targetId || node.scope;
     case 'envelope':

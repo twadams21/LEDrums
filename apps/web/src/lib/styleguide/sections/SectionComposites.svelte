@@ -98,6 +98,7 @@
     trigger: 'kick · center',
     play: 'Soft strike',
     effect: 'Soft strike',
+    splice: '4 per hoop · chase 1/8',
     all: 'all at once',
     random: 'no-repeat',
     sequence: 'in order',

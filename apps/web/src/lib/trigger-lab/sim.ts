@@ -215,6 +215,10 @@ export interface Voice {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: voice.MixInput[];
+  /** Splice members — one per non-blank splice slot; mirrors the core Voice field. */
+  spliceInputs?: voice.MixInput[];
+  /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. */
+  splice?: voice.SpliceConfig;
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
@@ -353,6 +357,10 @@ export class Sim {
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
     for (const e of effects) this.effectsById.set(e.id, e);
+    // Reserved fill effect for colour-only splices — registered here exactly as the core
+    // engine registers it at `setShow`, so a splice colour previews without the authored
+    // effect list carrying a def for it (see core `voice/splice.ts`).
+    this.effectsById.set(voice.SPLICE_FILL_EFFECT_ID, voice.spliceFillEffectDef(buses[0]?.id ?? ''));
     this.presets = presets;
     for (const p of presets) this.presetsById.set(p.id, p);
   }
@@ -501,6 +509,43 @@ export class Sim {
     // generator effects differ per fire yet replay exactly given the same inputs.
     // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
     const seed = deriveSeedFromCounter(this.voiceSeq + 1);
+    /** Realise a composite member (Mix branch or splice) into a sub-voice — the offline
+        mirror of core `VoicePool.spawn`'s `toMember`. */
+    const toMember = (input: voice.MixInputDraft, index: number): voice.MixInput | null => {
+      const inputEffect = this.effect(input.effectId);
+      if (!inputEffect?.generatorId) return null;
+      return {
+        generatorId: inputEffect.generatorId,
+        scope: input.scope,
+        targetId: input.targetId,
+        sourceDrumId,
+        velocity,
+        seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
+        params: { ...input.params },
+        liveParams: {},
+        specs: inputEffect.params,
+        modulations: input.modulations,
+        genState: null,
+        modifiers: input.modifiers,
+        modState: undefined,
+        opacity: input.opacity,
+        originNodeId: input.originNodeId,
+      };
+    };
+    // Splice members stay index-aligned with `splice.inputBySlot`; a dropped member would
+    // slide every later slot's content onto the wrong splice, so remap the slot table.
+    const spliceMembers: voice.MixInput[] = [];
+    const spliceRemap = new Map<number, number>();
+    a.spliceInputs?.forEach((input, index) => {
+      const member = toMember(input, index);
+      if (!member) return;
+      spliceRemap.set(index, spliceMembers.length);
+      spliceMembers.push(member);
+    });
+    const spliceConfig =
+      a.splice && spliceMembers.length
+        ? { ...a.splice, inputBySlot: a.splice.inputBySlot.map((i) => (i < 0 ? -1 : spliceRemap.get(i) ?? -1)) }
+        : undefined;
     const voice: Voice = {
       id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
@@ -513,27 +558,9 @@ export class Sim {
       seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
-      mixInputs: a.mixInputs?.map((input, index): voice.MixInput | null => {
-        const inputEffect = this.effect(input.effectId);
-        if (!inputEffect?.generatorId) return null;
-        return {
-          generatorId: inputEffect.generatorId,
-          scope: input.scope,
-          targetId: input.targetId,
-          sourceDrumId,
-          velocity,
-          seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
-          params: { ...input.params },
-          liveParams: {},
-          specs: inputEffect.params,
-          modulations: input.modulations,
-          genState: null,
-          modifiers: input.modifiers,
-          modState: undefined,
-          opacity: input.opacity,
-          originNodeId: input.originNodeId,
-        };
-      }).filter((input): input is voice.MixInput => input !== null),
+      mixInputs: a.mixInputs?.map(toMember).filter((input): input is voice.MixInput => input !== null),
+      spliceInputs: spliceConfig ? spliceMembers : undefined,
+      splice: spliceConfig,
       modifiers: a.modifiers,
       modState: undefined,
       modulations: a.modulations,

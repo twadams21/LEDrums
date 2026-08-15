@@ -12,6 +12,7 @@
   import Switch from '../../ui/Switch.svelte';
   import Slider from '../../ui/Slider.svelte';
   import ColorSwatch from '../../ui/ColorSwatch.svelte';
+  import ColorField from '../../ui/ColorField.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
@@ -75,6 +76,8 @@
   let swHue = $state(30);
   let swSat = $state(1);
   let swBri = $state(1);
+  // Colour field demo — a single hex value that may also be null ("no colour").
+  let cfColour = $state<string | null>('#ff2d55');
   let layerName = $state('Kick layer');
   let rowEditing = $state(false);
   let dialogOpen = $state(false);
@@ -313,6 +316,14 @@
         <Slider bind:value={swBri} min={0} max={1} step={0.01} ariaLabel="Brightness" format={(v) => v.toFixed(2)} />
       </div>
       <ColorSwatch hue={swHue} saturation={swSat} brightness={swBri} modulated ariaLabel="Demo colour (modulated)" />
+    </DemoCard>
+
+    <DemoCard title="Colour field" src="lib/ui/ColorField" note="A single hex colour that may legitimately be UNSET — used where “no colour” is its own authored decision (a splice with no colour renders its effect untinted). None shows the checker through the well; a colour fills it. Distinct from Colour swatch, which views three numeric params and can never be unset.">
+      <div class="sw-sliders">
+        <ColorField value={cfColour} onChange={(v) => (cfColour = v)} ariaLabel="Demo colour field" />
+        <ColorField value={null} ariaLabel="Demo colour field (none)" />
+        <ColorField value="#b6ff00" clearable={false} ariaLabel="Demo colour field (required)" />
+      </div>
     </DemoCard>
 
     <DemoCard title="Status" src={['lib/ui/StatusPill', 'lib/ui/StatusDot']}>

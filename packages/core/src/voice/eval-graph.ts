@@ -17,9 +17,11 @@ import type {
   Preset,
   ResolvedModifier,
   Scope,
+  SpliceConfig,
   SwitchOn,
   TriggerGraph,
 } from './types';
+import { resolveSplices } from './splice';
 import type { Mapping } from './modulation';
 import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
@@ -63,6 +65,11 @@ export interface PlayAction {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: MixInputDraft[];
+  /** Resolved splice layout (bands + chase + tints) when this action came from a `splice`
+      node. Carried verbatim to the voice; the compositor reads it with no graph access. */
+  splice?: SpliceConfig;
+  /** One draft per NON-BLANK splice slot, index-aligned with `splice.inputBySlot`. */
+  spliceInputs?: MixInputDraft[];
   /** Origin graph node this action's layer was produced by (a play/effect node, or the
       Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
       origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
@@ -249,6 +256,52 @@ function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): 
   };
 }
 
+/**
+ * Build the play draft for a `splice` node. The node seeds its own layer, so unlike Mix it
+ * takes no upstream members: its content is the splices themselves, each resolved into a
+ * generator sub-voice (`solid-colour` for a colour-only splice) by {@link resolveSplices}.
+ *
+ * The HOST effect — which supplies the composite voice's bus and its attack/sustain/release
+ * — is the first non-blank splice's effect, the same rule the Mix collector uses for its
+ * first input. Every splice's own params ride on its member draft, so the host's params are
+ * deliberately empty: nothing renders through the host generator itself.
+ *
+ * Returns `null` when every splice is blank, so a splice node with nothing authored emits no
+ * voice at all (again mirroring an empty Mix).
+ */
+function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): PlayDraft | null {
+  const resolved = resolveSplices(node, ctx.bpm);
+  if (!resolved) return null;
+  const mods = resolveModifierChain(graph, node);
+  const modulations = resolveNodeModulations(graph, node);
+  const host = resolved.members[0]!;
+  const spliceInputs: MixInputDraft[] = resolved.members.map((member) => ({
+    effectId: member.effectId,
+    canvasScene: member.def.canvasScene,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: member.params,
+    opacity: 1,
+    originNodeId: node.id,
+  }));
+  return {
+    effectId: host.effectId,
+    playType: node.playType,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: {},
+    modifiers: mods.length ? mods : undefined,
+    modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+    splice: resolved.config,
+    spliceInputs,
+    originNodeId: node.id,
+  };
+}
+
 function appendLabel(prefix: string, part: string): string {
   return prefix ? `${prefix} → ${part}` : part;
 }
@@ -405,6 +458,19 @@ function evalGraphGen3FromPlan(
         // N2 — one voice ⇒ one latch: only the first latched edge's key registers; any secondary
         // per-edge latch keys from other converging edges are intentionally dropped (mirrors the
         // Mix collector). Two distinct toggle paths into one Effect thus share a single latch.
+        const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        pushKids(node, { kind: 'play', play: draft }, latchKey);
+        break;
+      }
+      // A splice seeds its own layer, so it behaves exactly like an Effect in the walk:
+      // one firing per trigger however many flow edges converge on it (R14), and the draft
+      // travels downstream through Scope/Modifier/Mix/Output like any other layer.
+      case 'splice': {
+        const draft = makeSpliceDraft(state, graph, node, ctx);
+        if (!draft) break;
+        via.set(node.id, labelFor(node, 'Splice'));
+        if (firedEffects.has(node.id)) break;
+        firedEffects.add(node.id);
         const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
         pushKids(node, { kind: 'play', play: draft }, latchKey);
         break;

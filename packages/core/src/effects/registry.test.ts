@@ -24,6 +24,8 @@ describe('effect registry', () => {
       'orbit-comet', 'scan-plane', 'drum-sonar', 'gravity-drops',
       // angular wedges (E1)
       'segments',
+      // flat colour fill (also the host generator for a colour-only splice)
+      'solid-colour',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }

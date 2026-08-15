@@ -2772,6 +2772,10 @@ export class TriggerLab {
       node = makeNode('note', nodeId, x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
     } else if (kind === 'osc') {
       node = makeNode('osc', nodeId, x, y, { oscAddress: '' });
+    } else if (kind === 'splice') {
+      // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
+      // splice node renders nothing at all (every slot blank), which would read as broken.
+      node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit());
     } else if (kind === 'randomMod') {
       node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
@@ -2781,7 +2785,8 @@ export class TriggerLab {
     // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
     // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
     // both), announced with a toast. Only the light-making Effect node auto-wires.
-    if (node.kind === 'effect') this.autoWireEffectToOutput(node);
+    // A Splice makes light of its own, so it auto-wires for the same reason an Effect does.
+    if (node.kind === 'effect' || node.kind === 'splice') this.autoWireEffectToOutput(node);
     return node;
   }
 
@@ -2797,7 +2802,7 @@ export class TriggerLab {
     if (!output) return;
     const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
     if (rejection === null) {
-      pushToast('Effect wired to the Output anchor — it lights on the next hit.', { tone: 'info' });
+      pushToast(`${node.kind === 'splice' ? 'Splice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
     }
   }
 
@@ -3138,6 +3143,79 @@ export class TriggerLab {
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.division = division;
+  }
+
+  // --- splice node mutators ------------------------------------------------
+  //
+  // A splice node carries a dozen settings and a variable-length list of splices, so these are
+  // PATCH-based rather than the one-setter-per-field style the older single-value nodes use —
+  // fifteen near-identical setters would be noise, and every one of them would repeat the same
+  // viewer guard, kind guard and undo checkpoint. The guards live here once instead.
+
+  /** Patch a splice node's own settings (count excepted — see {@link setSpliceCount}, which also
+      keeps the authored rows in step). Guards `node.kind === 'splice'`. */
+  setSpliceSetting(
+    node: GraphNode,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceTint'>>,
+  ): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    this.pushUndoSnapshot();
+    Object.assign(node, patch);
+  }
+
+  /** Set how many splices each hoop / drum / scope is cut into, growing or shrinking the authored
+      rows to match. New rows CYCLE the existing colours (2 rows → 4 gives red, blue, red, blue)
+      rather than arriving blank, so raising the count reads as "cut finer", not "add gaps".
+      Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
+  setSpliceCount(node: GraphNode, count: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
+    if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
+    this.pushUndoSnapshot();
+    const rows = node.splices ?? [];
+    const grown = rows.length
+      ? Array.from({ length: next }, (_, i) => (i < rows.length ? rows[i]! : { ...rows[i % rows.length]! }))
+      : Array.from({ length: next }, () => ({}) as voice.SpliceDef);
+    node.splices = grown;
+    node.spliceCount = next;
+  }
+
+  /** Patch ONE splice row — its colour (`null` clears it), effect (`null` clears it) or mute.
+      Pads the authored rows out to `index` so the inspector can edit a slot that is currently
+      being filled by the cycling fallback. Guards `node.kind === 'splice'`. */
+  setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice' || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
+    this.pushUndoSnapshot();
+    const rows = [...(node.splices ?? [])];
+    while (rows.length <= index) rows.push({});
+    rows[index] = { ...rows[index]!, ...patch };
+    node.splices = rows;
+  }
+
+  /** Append a splice, keeping the band count in step with the authored rows. */
+  addSplice(node: GraphNode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const rows = node.splices ?? [];
+    if (rows.length >= voice.MAX_SPLICE_COUNT) return;
+    this.pushUndoSnapshot();
+    node.splices = [...rows, rows.length ? { ...rows[rows.length - 1]! } : {}];
+    node.spliceCount = node.splices.length;
+  }
+
+  /** Remove a splice, keeping the band count in step. The last row cannot be removed — a splice
+      node with no splices renders nothing, which is a deletion, not an edit. */
+  removeSplice(node: GraphNode, index: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const rows = node.splices ?? [];
+    if (index < 0 || index >= rows.length || rows.length <= 1) return;
+    this.pushUndoSnapshot();
+    node.splices = rows.filter((_, i) => i !== index);
+    node.spliceCount = node.splices.length;
   }
 
   /** Bind (or clear, via `null`) the input that snaps a sequence node back to its first step —

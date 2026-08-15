@@ -77,6 +77,24 @@ export function modifierNodeInit(): Pick<GraphNode, 'modifierId' | 'params'> {
   return { modifierId: first.id, params: modifierParamsFor(first.id) };
 }
 
+/**
+ * Four colour splices around every hoop — what a freshly added Splice node starts as.
+ *
+ * It is seeded with CONTENT rather than left empty on purpose: a splice node with every slot
+ * blank renders nothing at all, so an empty default would look like a broken node instead of
+ * an unconfigured one. Four distinct hues make the cut (and any chase) legible immediately.
+ */
+export function spliceNodeInit(): Pick<GraphNode, 'splices' | 'spliceCount' | 'splicePartition' | 'spliceChase' | 'spliceRateMode' | 'spliceDivision'> {
+  return {
+    splices: [{ color: '#ff2d55' }, { color: '#00e5ff' }, { color: '#b6ff00' }, { color: '#ffb020' }],
+    spliceCount: 4,
+    splicePartition: 'hoop',
+    spliceChase: 'off',
+    spliceRateMode: 'beats',
+    spliceDivision: '1/8',
+  };
+}
+
 /** Human label for a graph key: the stored display name (`graphNames`, populated for every
     graph incl. pad keys at hydrate), else a kit-derived pad label, else the raw key. */
 export function graphLabelOf(graphNames: Record<string, string>, key: string, pads: readonly Pad[]): string {

@@ -30,6 +30,33 @@ export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
 export * from './reset-source';
 export * from './binding-claims';
 export {
+  DEFAULT_SPLICE_COUNT,
+  DEFAULT_SPLICE_DIVISION,
+  DEFAULT_SPLICE_INCREMENT_PX,
+  DEFAULT_SPLICE_RATE_MS,
+  MAX_SPLICE_COUNT,
+  MAX_SPLICE_INCREMENT_PX,
+  MIN_SPLICE_COUNT,
+  SPLICE_FILL_EFFECT_ID,
+  SPLICE_FILL_GENERATOR_ID,
+  spliceFillEffectDef,
+  chasePixelShift,
+  chaseStaggerShift,
+  chaseStepOffset,
+  computeSpliceBands,
+  forEachPartitionUnit,
+  forEachSpliceBand,
+  isBlankSplice,
+  resolveSplices,
+  spliceDefAt,
+  spliceTintColour,
+  tintPixel,
+  wrapIndex,
+  type ResolvedSpliceMember,
+  type ResolvedSplices,
+  type SpliceBand,
+} from './splice';
+export {
   evalGraph,
   evalChildren,
   type Action,

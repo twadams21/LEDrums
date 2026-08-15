@@ -100,6 +100,64 @@ function syncMixInputState(input: voice.MixInput, rendered: Voice): void {
 
 let mixScratch: Framebuffer | null = null;
 let mixInputBytes: Uint8Array | null = null;
+/** One byte buffer per splice member, reused across voices + frames (mirrors the core
+    compositor's per-member framebuffers). */
+let spliceBytes: Uint8Array[] = [];
+
+/**
+ * Composite one splice voice into `buf` — the offline mirror of the core compositor's
+ * splice branch. Each member renders once over the voice's whole range, then every band is
+ * revealed from its member's buffer, tinted by that splice's colour. Kept structurally
+ * parallel to core so the preview and real output can't drift on where a splice starts.
+ */
+function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, lab: LabModel): void {
+  const cfg = v.splice;
+  const members = v.spliceInputs;
+  if (!cfg || !members?.length) return;
+  const { model } = lab;
+  const ranges = pixelRangesFor(v, lab);
+  if (!ranges.length) return;
+
+  if (spliceBytes.length && spliceBytes[0]!.length !== model.count * 3) spliceBytes = [];
+  while (spliceBytes.length < members.length) spliceBytes.push(new Uint8Array(model.count * 3));
+
+  for (let i = 0; i < members.length; i++) {
+    const member = members[i]!;
+    const bytes = spliceBytes[i]!;
+    bytes.fill(0);
+    const memberVoice = mixInputVoice(member, v);
+    for (const range of ranges) renderGeneratorVoice(bytes, memberVoice, 1, sim, lab, range.start, range.end);
+    syncMixInputState(member, memberVoice);
+  }
+
+  const age = sim.timeMs - v.bornAtMs;
+  const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(age, cfg.chaseMs, cfg.direction) : 0;
+  // Authored in pixels, so it is the same on every run regardless of length — hoisted, mirroring core.
+  const staggerShift = cfg.chase === 'stagger' ? voice.chaseStaggerShift(age, cfg.chaseMs, cfg.direction, cfg.incrementPx) : 0;
+  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex) => {
+    const len = unitEnd - unitStart;
+    const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
+    const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
+    const shift = cfg.chase === 'smooth' ? voice.chasePixelShift(age, cfg.chaseMs, cfg.direction, len) : staggerShift;
+    voice.forEachSpliceBand(bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
+      const inputIndex = cfg.inputBySlot[slot] ?? -1;
+      if (inputIndex < 0) return; // a blank splice shows nothing
+      const src = spliceBytes[inputIndex]!;
+      const colour = voice.spliceTintColour(cfg.colors[slot]);
+      for (let p = unitStart + bandStart; p < unitStart + bandEnd; p++) {
+        const j3 = p * 3;
+        let r = src[j3]! / 255;
+        let g = src[j3 + 1]! / 255;
+        let b = src[j3 + 2]! / 255;
+        if (r <= 0 && g <= 0 && b <= 0) continue;
+        if (colour) ({ r, g, b } = voice.tintPixel(r, g, b, colour, cfg.tint));
+        buf[j3] = Math.min(255, buf[j3]! + Math.round(r * level * 255));
+        buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * level * 255));
+        buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * level * 255));
+      }
+    });
+  });
+}
 
 /** Composite every live voice into `buf` (RGB triples), additive over black. */
 export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
@@ -109,6 +167,13 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   for (const v of sim.voices) {
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
+
+    // Splice: members rendered whole, then shown through moving bands. Ahead of the Mix
+    // branch because the two are mutually exclusive (a splice's content is its own splices).
+    if (v.spliceInputs?.length && v.splice) {
+      renderSpliceVoice(buf, v, level, sim, lab);
+      continue;
+    }
 
     if (v.mixInputs?.length) {
       if (!mixScratch || mixScratch.pixelCount !== lab.pm.pixelCount) mixScratch = new Framebuffer(lab.pm.pixelCount);

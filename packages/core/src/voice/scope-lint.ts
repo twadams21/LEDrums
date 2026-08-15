@@ -124,7 +124,7 @@ export function detectEmptyScopes(
   };
 
   for (const node of nodesById.values()) {
-    if (node.kind === 'effect' || node.kind === 'play') {
+    if (node.kind === 'effect' || node.kind === 'play' || node.kind === 'splice') {
       walk(node.id, staticScope(node.scope, node.targetId), new Set([node.id]));
     }
   }

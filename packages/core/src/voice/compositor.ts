@@ -25,7 +25,18 @@ import { applyModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
 import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
-import type { MixInput, ParamValues, Voice } from './types';
+import {
+  chasePixelShift,
+  chaseStaggerShift,
+  chaseStepOffset,
+  computeSpliceBands,
+  forEachPartitionUnit,
+  forEachSpliceBand,
+  spliceTintColour,
+  tintPixel,
+  type SpliceBand,
+} from './splice';
+import type { MixInput, ParamValues, SpliceConfig, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
@@ -129,6 +140,39 @@ function syncMixInputState(input: MixInput, rendered: Voice): void {
   input.modState = rendered.modState;
 }
 
+/**
+ * Identity of a splice voice's band LAYOUT — everything {@link computeSpliceBands} and
+ * {@link forEachPartitionUnit} read, but nothing that moves. The chase is deliberately
+ * excluded: it shifts which band shows what, never where the bands are cut, so a chasing
+ * splice reuses one cached layout for the whole voice instead of re-cutting 60×/second.
+ */
+function spliceLayoutKey(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): string {
+  let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${model.pixelCount}`;
+  for (const range of ranges) key += `|${range.start}-${range.end}`;
+  return key;
+}
+
+/** One partition unit's absolute pixel run plus how it is cut. */
+interface SpliceUnit {
+  start: number;
+  end: number;
+  bands: SpliceBand[];
+}
+
+/**
+ * Cut every partition unit of a splice voice. Jitter is decorrelated per unit (each hoop
+ * gets its own seeded pattern) so "random splice lengths" reads as genuinely irregular
+ * around the kit rather than the same stencil repeated on every ring.
+ */
+function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): SpliceUnit[] {
+  const units: SpliceUnit[] = [];
+  forEachPartitionUnit(model, ranges, cfg.partition, (start, end, unitIndex) => {
+    const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
+    units.push({ start, end, bands: computeSpliceBands(end - start, cfg.count, cfg.jitter, seed) });
+  });
+  return units;
+}
+
 function pixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
   if (v.scope === 'drum') {
     const drumId = v.targetId ?? v.sourceDrumId;
@@ -187,6 +231,12 @@ export function createDefaultCompositor(): Compositor {
   const generators = createGeneratorBridge();
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
+  /** One buffer per splice member, grown on demand and reused across voices + frames. */
+  let spliceBuffers: Framebuffer[] = [];
+  /** Band layouts by {@link spliceLayoutKey} — bounded, cleared wholesale when it fills
+      (layouts are cheap to rebuild; an unbounded cache would leak across shows). */
+  const spliceLayouts = new Map<string, SpliceUnit[]>();
+  const SPLICE_LAYOUT_CACHE_CAP = 64;
 
   return {
     render(voices, model, frame, dst): void {
@@ -209,10 +259,116 @@ export function createDefaultCompositor(): Compositor {
         return { mix: mixScratch, input: mixInputScratch };
       };
 
+      const ensureSpliceBuffers = (n: number): Framebuffer[] => {
+        if (spliceBuffers.length && spliceBuffers[0]!.pixelCount !== model.pixelCount) spliceBuffers = [];
+        while (spliceBuffers.length < n) spliceBuffers.push(new Framebuffer(model.pixelCount));
+        return spliceBuffers;
+      };
+
       for (const v of voices) {
         if (!v.active) continue;
         const level = v.level * v.deckGain;
         if (level <= 0.003) continue;
+
+        // Splice: several members rendered whole, then shown through moving bands. Kept ahead
+        // of the Mix branch because the two are mutually exclusive — a splice voice's content
+        // is its own splices, never upstream branches.
+        if (v.spliceInputs?.length && v.splice) {
+          const cfg = v.splice;
+          const ranges = pixelRangesFor(v, model);
+          if (!ranges.length) continue;
+          const buffers = ensureSpliceBuffers(v.spliceInputs.length);
+
+          // 1. Render each member ONCE over the voice's whole range. Bands are windows onto
+          //    these renders, so an effect keeps its real geometry (a comet still travels the
+          //    hoop) and is merely revealed inside the splices showing it.
+          for (let i = 0; i < v.spliceInputs.length; i++) {
+            const member = v.spliceInputs[i]!;
+            const buf = buffers[i]!;
+            buf.clear();
+            for (const key of Object.keys(member.liveParams)) delete member.liveParams[key];
+            for (const key of Object.keys(member.params)) member.liveParams[key] = member.params[key]!;
+            if (member.modulations?.length) {
+              applyModulations(member.params, member.liveParams, member.modulations, member.specs, modCtxFor(v, frameCtx));
+            }
+            const memberVoice = mixInputVoice(member, v);
+            const memberCtx = modCtxFor(memberVoice, frameCtx);
+            for (const range of ranges) {
+              generators.renderVoice(memberVoice, model, timeMs, 1, range.start, range.end, buffers[i]!, memberCtx);
+            }
+            syncMixInputState(member, memberVoice);
+          }
+
+          // 2. Cut the bands (cached — the cut never moves; only what shows in it does).
+          const layoutKey = spliceLayoutKey(cfg, model, ranges);
+          let units = spliceLayouts.get(layoutKey);
+          if (!units) {
+            if (spliceLayouts.size >= SPLICE_LAYOUT_CACHE_CAP) spliceLayouts.clear();
+            units = buildSpliceUnits(cfg, model, ranges);
+            spliceLayouts.set(layoutKey, units);
+          }
+
+          // 3. Reveal each band from its member's buffer, tinted by that splice's colour.
+          const { mix } = ensureScratch();
+          mix.clear();
+          const age = timeMs - v.bornAtMs;
+          const stepOffset = cfg.chase === 'step' ? chaseStepOffset(age, cfg.chaseMs, cfg.direction) : 0;
+          // A stagger's jump is authored in pixels, so unlike a smooth lap it does not depend on
+          // the run's length — hoist it out of the per-unit loop, where it is also the proof that
+          // every hoop staggers by the same amount however long it is.
+          const staggerShift = cfg.chase === 'stagger' ? chaseStaggerShift(age, cfg.chaseMs, cfg.direction, cfg.incrementPx) : 0;
+          const dstRgba = mix.rgba;
+          for (const unit of units) {
+            const len = unit.end - unit.start;
+            const shift = cfg.chase === 'smooth' ? chasePixelShift(age, cfg.chaseMs, cfg.direction, len) : staggerShift;
+            forEachSpliceBand(unit.bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
+              const inputIndex = cfg.inputBySlot[slot] ?? -1;
+              if (inputIndex < 0) return; // a blank splice shows nothing
+              const src = buffers[inputIndex]!.rgba;
+              const colour = spliceTintColour(cfg.colors[slot]);
+              for (let p = unit.start + bandStart; p < unit.start + bandEnd; p++) {
+                const j = p * 4;
+                const r = src[j]!;
+                const g = src[j + 1]!;
+                const b = src[j + 2]!;
+                const a = src[j + 3]!;
+                if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+                if (colour) {
+                  const t = tintPixel(r, g, b, colour, cfg.tint);
+                  dstRgba[j] = t.r;
+                  dstRgba[j + 1] = t.g;
+                  dstRgba[j + 2] = t.b;
+                } else {
+                  dstRgba[j] = r;
+                  dstRgba[j + 1] = g;
+                  dstRgba[j + 2] = b;
+                }
+                dstRgba[j + 3] = a;
+              }
+            });
+          }
+
+          // 4. Downstream modifiers see the assembled splice frame, then it lands in `dst`
+          //    scaled by the voice envelope — the same tail as the Mix branch.
+          const spliceMods = v.modifiers;
+          if (spliceMods && spliceMods.length) {
+            if (!v.modState) v.modState = [];
+            const modCtx = modCtxFor(v, frameCtx);
+            for (const range of ranges) applyModifierChain(spliceMods, v.modState, mix, range, model, age, frame.dt, modCtx);
+          }
+          for (const range of ranges) {
+            for (let i = range.start; i < range.end; i++) {
+              const j = i * 4;
+              const r = dstRgba[j]!;
+              const g = dstRgba[j + 1]!;
+              const b = dstRgba[j + 2]!;
+              const a = dstRgba[j + 3]!;
+              if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+              dst.add(i, r * level, g * level, b * level, a * level);
+            }
+          }
+          continue;
+        }
 
         if (v.mixInputs?.length) {
           const { mix, input } = ensureScratch();

@@ -9,7 +9,8 @@ describe('buildAddGroups', () => {
   });
 
   it('maps the approved Route taxonomy, with Mix available as a runtime node', () => {
-    expect(ids(ROUTE_GROUP_KEY)).toEqual(['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix']);
+    // `splice` sits next to `scope`: both are spatial (scope narrows the pixels, splice cuts them).
+    expect(ids(ROUTE_GROUP_KEY)).toEqual(['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'splice', 'mix']);
     const mix = buildAddGroups().find((g) => g.key === ROUTE_GROUP_KEY)!.items.find((i) => i.id === 'mix')!;
     expect(mix.disabled).toBeUndefined();
   });

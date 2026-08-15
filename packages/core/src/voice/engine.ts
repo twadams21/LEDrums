@@ -55,6 +55,7 @@ import { relativeNavTarget, type NavAxis } from './navigation';
 import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
+import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -319,6 +320,10 @@ class VoiceBusEngine implements RenderEngine {
     };
     this.busById = new Map(this.show.buses.map((b) => [b.id, b] as const));
     this.effectsById = new Map(this.show.effects.map((e) => [e.id, e] as const));
+    // Reserved fill effect for colour-only splices (see `splice.ts`). Registered here rather
+    // than authored, so a splice colour renders without the show having to carry a def for it.
+    // An authored def under the reserved id would be a graph the engine can't trust; ours wins.
+    this.effectsById.set(SPLICE_FILL_EFFECT_ID, spliceFillEffectDef(this.show.buses[0]?.id ?? ''));
     this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
     this.voices.reset();

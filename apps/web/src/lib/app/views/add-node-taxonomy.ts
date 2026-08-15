@@ -27,7 +27,9 @@ export const LFO_PRESETS = [
   { id: 'sample-hold', name: 'Sample & Hold', hint: 'stepped random' },
 ] as const;
 
-const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'mix'] as const satisfies readonly NodeKind[];
+// Splice sits beside Scope: both are spatial — Scope narrows WHICH pixels a route reaches,
+// Splice cuts those pixels into bands and gives each its own content.
+const ROUTE_KINDS = ['random', 'sequence', 'switch', 'chance', 'toggle', 'delay', 'scope', 'splice', 'mix'] as const satisfies readonly NodeKind[];
 
 export function buildAddGroups(): AddGroup[] {
   return [
@@ -55,7 +57,7 @@ export function buildAddGroups(): AddGroup[] {
           name: kindLabel[kind],
           icon: kindIcon[kind],
           tint: tint[kind],
-          hint: kind === 'scope' ? 'pixel filter' : undefined,
+          hint: kind === 'scope' ? 'pixel filter' : kind === 'splice' ? 'cut into bands' : undefined,
           preview: 'route' as const,
           previewKind: kind,
         })),

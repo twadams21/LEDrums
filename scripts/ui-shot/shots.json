@@ -169,5 +169,13 @@
     "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,fire:kick",
     "target": "Trigger graph canvas",
     "settle": 150
+  },
+  "splice-node": {
+    "state": "view:trigger,new-graph,add:splice",
+    "target": "node:Splice"
+  },
+  "splice-inspector": {
+    "state": "view:trigger,new-graph,add:splice,select:splice",
+    "target": "Node editor"
   }
 }

@@ -1,0 +1,135 @@
+import { describe, expect, it } from 'vitest';
+import { BUSES, EFFECTS, PRESETS } from './fixtures';
+import { Sim, makeNode, type GraphNode, type TriggerCtx, type TriggerGraph } from './sim';
+import { buildLabModel } from './kit';
+import { renderFrame } from './render';
+
+/* Splice through the OFFLINE preview path (sim spawn → render.ts), the mirror of core's
+   compositor branch. Core's own tests prove the engine; these prove the browser preview an
+   author actually looks at while building shows renders the same bands, in the same places,
+   with the same blanks — the drift this mirror exists to prevent. */
+
+function freshSim(): Sim {
+  return new Sim(
+    BUSES.map((b) => ({ ...b })),
+    [...EFFECTS],
+    [...PRESETS],
+  );
+}
+
+const ctx = (drumId = 'kick'): TriggerCtx => ({
+  velocity: 1,
+  sectionIndex: 0,
+  sectionCount: 0,
+  beatPhase: 0,
+  sourceDrumId: drumId,
+  bpm: 120,
+});
+
+function spliceGraph(over: Partial<GraphNode>): TriggerGraph {
+  return {
+    version: 3,
+    nodes: [
+      makeNode('trigger', 'trigger', 0, 0),
+      makeNode('splice', 's1', 200, 0, { mode: 'loop', scope: 'kit', splicePartition: 'hoop', ...over }),
+      makeNode('output', 'output', 400, 0),
+    ],
+    edges: [
+      { id: 'e0', from: 'trigger', to: 's1' },
+      { id: 'e1', from: 's1', to: 'output' },
+    ],
+  };
+}
+
+/** Fire the graph and render one preview frame; returns the RGB buffer + the lab model. */
+function render(graph: TriggerGraph, atMs = 80): { rgb: (i: number) => [number, number, number]; hoopLen: number } {
+  const lab = buildLabModel();
+  const sim = freshSim();
+  sim.triggerGraph('test', graph, ctx());
+  sim.tick(40);
+  sim.tick(atMs - 40);
+  const buf = new Uint8Array(lab.model.count * 3);
+  renderFrame(buf, sim, lab);
+  const kick = lab.pm.drums[0]!;
+  return {
+    rgb: (i) => [buf[i * 3]!, buf[i * 3 + 1]!, buf[i * 3 + 2]!],
+    hoopLen: kick.hoopPixelCounts[0]!,
+  };
+}
+
+const isRed = ([r, g, b]: [number, number, number]) => r > 200 && g < 40 && b < 40;
+const isBlue = ([r, g, b]: [number, number, number]) => b > 200 && r < 40 && g < 40;
+const isDark = ([r, g, b]: [number, number, number]) => r + g + b === 0;
+
+describe('splice — offline preview', () => {
+  it('renders colour splices as bands across the first hoop', () => {
+    const { rgb, hoopLen } = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2 }));
+    const half = Math.round(hoopLen / 2);
+    expect(isRed(rgb(0)), 'first band red').toBe(true);
+    expect(isRed(rgb(half - 1)), 'end of the first band still red').toBe(true);
+    expect(isBlue(rgb(half)), 'second band blue').toBe(true);
+    expect(isBlue(rgb(hoopLen - 1)), 'end of the second band still blue').toBe(true);
+  });
+
+  it('cuts every hoop, not only the first', () => {
+    const { rgb, hoopLen } = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2 }));
+    expect(isRed(rgb(hoopLen)), 'second hoop starts red again').toBe(true);
+    expect(isBlue(rgb(hoopLen + Math.round(hoopLen / 2))), 'second hoop second band blue').toBe(true);
+  });
+
+  it('leaves blank and muted splices dark', () => {
+    const blank = render(spliceGraph({ splices: [{ color: '#ff0000' }, {}], spliceCount: 2 }));
+    expect(isRed(blank.rgb(0))).toBe(true);
+    expect(isDark(blank.rgb(blank.hoopLen - 1)), 'blank splice renders nothing').toBe(true);
+
+    const muted = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff', muted: true }], spliceCount: 2 }));
+    expect(isDark(muted.rgb(muted.hoopLen - 1)), 'muted splice renders nothing').toBe(true);
+  });
+
+  it('renders nothing at all when every splice is blank', () => {
+    const lab = buildLabModel();
+    const sim = freshSim();
+    sim.triggerGraph('test', spliceGraph({ splices: [{}, { muted: true }], spliceCount: 2 }), ctx());
+    sim.tick(40);
+    expect(sim.voices).toHaveLength(0);
+  });
+
+  it('moves the content on a step chase', () => {
+    const graph = spliceGraph({
+      splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+      spliceCount: 2,
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+    });
+    expect(isRed(render(graph, 80).rgb(0)), 'before the first step').toBe(true);
+    expect(isBlue(render(graph, 160).rgb(0)), 'after one step the first band shows the other splice').toBe(true);
+  });
+
+  it('jumps the cut by the authored increment on a stagger', () => {
+    const graph = spliceGraph({
+      splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+      spliceCount: 2,
+      spliceChase: 'stagger',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceIncrementPx: 2,
+    });
+    const before = render(graph, 80);
+    expect(isRed(before.rgb(0)), 'before the first jump').toBe(true);
+    expect(isRed(before.rgb(1)), 'before the first jump').toBe(true);
+    const after = render(graph, 160);
+    expect(isRed(after.rgb(2)), 'the red band has jumped two pixels along').toBe(true);
+    expect(isRed(after.rgb(0)), 'and is no longer where it started').toBe(false);
+  });
+
+  it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
+    const fx = EFFECTS.find((e) => e.generatorId === 'breathing-kit')!.id;
+    const { rgb, hoopLen } = render(spliceGraph({ splices: [{ effectId: fx, color: '#ff0000' }, { effectId: fx }], spliceCount: 2 }));
+    const [tr, tg, tb] = rgb(0);
+    const untinted = rgb(hoopLen - 1);
+    expect(tr, 'tinted splice is lit').toBeGreaterThan(0);
+    expect(tg + tb, 'tinted splice has lost everything but red').toBeLessThanOrEqual(2);
+    expect(untinted[1] + untinted[2], 'untinted splice keeps the effect colour').toBeGreaterThan(0);
+  });
+});

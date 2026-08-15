@@ -32,6 +32,7 @@
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
+  import SpliceNodeInspector from './inspectors/SpliceNodeInspector.svelte';
   import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
@@ -140,6 +141,8 @@
       <ModifierNodeInspector {store} {node} />
     {:else if node.kind === 'scope'}
       <ScopeNodeInspector {store} {node} />
+    {:else if node.kind === 'splice'}
+      <SpliceNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}
