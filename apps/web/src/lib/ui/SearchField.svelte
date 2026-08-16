@@ -8,10 +8,19 @@
     placeholder?: string;
     onChange?: (v: string) => void;
     ariaLabel?: string;
+    /** Take focus on mount — for a search-first surface (a picker dialog opens ready to type). */
+    autofocus?: boolean;
     class?: string;
   };
 
-  let { value = $bindable(''), placeholder = 'Search…', onChange, ariaLabel = 'Search', class: klass }: Props = $props();
+  let {
+    value = $bindable(''),
+    placeholder = 'Search…',
+    onChange,
+    ariaLabel = 'Search',
+    autofocus = false,
+    class: klass,
+  }: Props = $props();
 
   function clear(): void {
     value = '';
@@ -21,10 +30,12 @@
 
 <div class={['search', klass]}>
   <Search size={14} class="search-icon" aria-hidden="true" />
+  <!-- svelte-ignore a11y_autofocus -->
   <input
     class="search-input"
     type="text"
     {placeholder}
+    {autofocus}
     aria-label={ariaLabel}
     bind:value
     oninput={(e) => onChange?.(e.currentTarget.value)}

@@ -32,6 +32,7 @@ import {
   type Transport,
   type TransportState,
 } from '@ledrums/core';
+import { graphFiredMonitorLabel, graphMonitorDestination } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
@@ -722,7 +723,7 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
         label: `Graph resolved ${d.graphKey}`,
         detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}`,
       });
@@ -735,8 +736,8 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
-        label: `Graph fired ${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
+        label: graphFiredMonitorLabel(d.graphKey),
         detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}; actions=${d.actionCount}; effects=${effectLabels.join(', ') || 'none'}`,
       });
       return;
@@ -769,7 +770,7 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
         label: `Sequence reset ${d.graphKey}`,
         detail: `input=${describeVoiceInput(d.input)}; node=${d.nodeId}; back to step 1`,
       });

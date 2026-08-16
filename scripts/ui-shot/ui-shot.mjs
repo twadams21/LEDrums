@@ -45,7 +45,8 @@ Target resolution (bare string walks the chain; prefix forces a resolver):
   node:controller   button:Add Scope
 
 Options: --full (full page), --strict (exit 1 on any console/page error), --viewport WxH,
-         --settle MS (extra wait before capture — for animated canvases: visualizer, patch, gallery)
+         --settle MS (extra wait before capture — for animated canvases: visualizer, patch, gallery),
+         --click TARGET / --rightclick TARGET (open it first, then capture — dialogs, context menus)
 Output: .ui-shots/<name>.png (gitignored); --discover also writes .ui-shots/discover-<view>.html`);
 }
 
@@ -55,7 +56,7 @@ const opt = (f) => {
   const i = args.indexOf(f);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const OPTS_WITH_VALUE = ['--route', '--name', '--select', '--target', '--state', '--view', '--viewport', '--settle'];
+const OPTS_WITH_VALUE = ['--route', '--name', '--select', '--target', '--state', '--view', '--viewport', '--settle', '--click', '--rightclick'];
 
 if (args.length === 0 || flag('--help')) {
   usage();
@@ -95,6 +96,8 @@ if (discovering) {
       route: opt('--route') ?? routeForView(opt('--view')),
       state: opt('--state'),
       target: opt('--target') ?? opt('--select'),
+      click: opt('--click'),
+      rightclick: opt('--rightclick'),
       viewport: cliViewport,
       settle: cliSettle,
     },
@@ -118,6 +121,8 @@ function shotFromPreset(name, preset) {
     route: preset.route,
     state: preset.state,
     target: preset.target,
+    click: preset.click,
+    rightclick: preset.rightclick,
     viewport: parseViewport(preset.viewport) ?? cliViewport,
     settle: preset.settle ?? cliSettle,
   };
@@ -336,6 +341,18 @@ for (const shot of shots) {
     await page.goto(`${BASE}/${shot.route ?? ''}`, { waitUntil: 'networkidle', timeout: 20000 });
     await page.waitForTimeout(700);
     await applyState(page, shot.state);
+    // Surfaces with no store state to summon them (a dialog behind a button, a right-click
+    // menu) are opened the way a user opens them, then captured.
+    for (const [target, button] of [
+      [shot.click, 'left'],
+      [shot.rightclick, 'right'],
+    ]) {
+      if (!target) continue;
+      const hit = await resolveTarget(page, target);
+      if (!hit) throw new Error(`${button}-click target not found: ${target}`);
+      await hit.locator.click({ button });
+      await page.waitForTimeout(300);
+    }
     if (shot.settle) await page.waitForTimeout(shot.settle);
 
     if (discovering) {
