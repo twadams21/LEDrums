@@ -166,6 +166,52 @@ describe('addSplice / removeSplice', () => {
   });
 });
 
+describe('scope', () => {
+  // The shipped bug: setScope/setTargetId guard on node kind and did not list 'splice', so
+  // the inspector's control was a silent no-op and every splice lit the whole kit.
+  it('aims a splice at one drum', () => {
+    const { store, node } = withSplice();
+    expect(node.scope, 'a fresh splice is kit-wide').toBe('kit');
+    store.setScope(node, 'drum');
+    store.setTargetId(node, 'snare');
+    expect(node.scope).toBe('drum');
+    expect(node.targetId).toBe('snare');
+  });
+
+  it('aims a splice at one hoop', () => {
+    const { store, node } = withSplice();
+    store.setScope(node, 'hoop');
+    store.setTargetId(node, 'tom1#2');
+    expect(node.scope).toBe('hoop');
+    expect(node.targetId).toBe('tom1#2');
+  });
+
+  it('clears a stale target when the scope changes', () => {
+    const { store, node } = withSplice();
+    store.setScope(node, 'drum');
+    store.setTargetId(node, 'snare');
+    store.setScope(node, 'kit');
+    expect(node.targetId).toBeUndefined();
+  });
+});
+
+describe('envelope + motion mode', () => {
+  it('sets how long the lights stay up after a hit', () => {
+    const { store, node } = withSplice();
+    store.setSpliceSetting(node, { spliceAttackMs: 5, spliceHoldMs: 2500, spliceReleaseMs: 800 });
+    expect(node.spliceAttackMs).toBe(5);
+    expect(node.spliceHoldMs).toBe(2500);
+    expect(node.spliceReleaseMs).toBe(800);
+  });
+
+  it('switches between restart and continuous', () => {
+    const { store, node } = withSplice();
+    expect(node.spliceMotionMode, 'restart is the default').toBeUndefined();
+    store.setSpliceSetting(node, { spliceMotionMode: 'continuous' });
+    expect(node.spliceMotionMode).toBe('continuous');
+  });
+});
+
 describe('setSpliceSetting', () => {
   it('patches motion settings and leaves the rest alone', () => {
     const { store, node } = withSplice();

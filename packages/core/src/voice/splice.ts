@@ -36,6 +36,16 @@ export const DEFAULT_SPLICE_DIVISION = '1/8';
 export const DEFAULT_SPLICE_INCREMENT_PX = 4;
 export const MAX_SPLICE_INCREMENT_PX = 512;
 /**
+ * Default splice envelope: a fast rise, a visible hold, a gentle fade. A splice node owns
+ * these outright rather than inheriting the first splice's effect — so "how long the lights
+ * stay up after a hit" is one authorable number, and reordering the splices cannot silently
+ * change the envelope.
+ */
+export const DEFAULT_SPLICE_ATTACK_MS = 10;
+export const DEFAULT_SPLICE_HOLD_MS = 400;
+export const DEFAULT_SPLICE_RELEASE_MS = 300;
+export const MAX_SPLICE_ENVELOPE_MS = 120000;
+/**
  * The reserved effect a colour-only splice hosts. It is an ENGINE-REGISTERED def, not an
  * authored one: `effectId`s in a graph are `EffectDef` ids (the web mints them as
  * `gen:<generatorId>`), and core cannot know that convention — so rather than guess an id
@@ -355,6 +365,8 @@ export interface ResolvedSpliceMember {
 export interface ResolvedSplices {
   config: SpliceConfig;
   members: ResolvedSpliceMember[];
+  /** The voice envelope this splice node owns (see {@link DEFAULT_SPLICE_HOLD_MS}). */
+  envelope: { attackMs: number; sustainMs: number; releaseMs: number };
 }
 
 /**
@@ -421,6 +433,11 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
   if (members.length === 0) return null;
 
   return {
+    envelope: {
+      attackMs: clampInt(node.spliceAttackMs ?? DEFAULT_SPLICE_ATTACK_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+      sustainMs: clampInt(node.spliceHoldMs ?? DEFAULT_SPLICE_HOLD_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+      releaseMs: clampInt(node.spliceReleaseMs ?? DEFAULT_SPLICE_RELEASE_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+    },
     config: {
       count,
       partition: node.splicePartition ?? 'hoop',
@@ -432,6 +449,7 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
       incrementPx: clampInt(node.spliceIncrementPx ?? DEFAULT_SPLICE_INCREMENT_PX, 0, MAX_SPLICE_INCREMENT_PX),
       offsetMs,
       order: node.spliceOrder ?? 'up',
+      motionMode: node.spliceMotionMode ?? 'restart',
       tint: clamp01(node.spliceTint ?? 1),
       colors,
       inputBySlot,

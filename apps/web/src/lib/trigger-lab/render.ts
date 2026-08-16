@@ -131,12 +131,15 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
   }
 
   const age = sim.timeMs - v.bornAtMs;
+  // `continuous` free-runs off the shared clock so a hit resumes where the last stopped;
+  // `restart` uses the voice's own age. Mirrors core's compositor.
+  const motionClock = cfg.motionMode === 'continuous' ? sim.timeMs : age;
   voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex, ordinal, ordinalCount) => {
     const len = unitEnd - unitStart;
     const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
     const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
     // Per-unit motion clock, mirroring core: an offset cascade starts hoop after hoop.
-    const unitAge = voice.unitMotionAge(age, voice.spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed), cfg.offsetMs);
+    const unitAge = voice.unitMotionAge(motionClock, voice.spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed), cfg.offsetMs);
     const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
     const shift =
       cfg.chase === 'smooth'

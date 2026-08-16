@@ -566,9 +566,10 @@ export class Sim {
       modulations: a.modulations,
       mixBlendMode: a.mixBlendMode,
       params: { ...a.params },
-      attackMs: effect.attackMs,
-      sustainMs: effect.sustainMs,
-      releaseMs: effect.releaseMs,
+      // A node-owned envelope wins over the hosting effect's, mirroring core's VoicePool.
+      attackMs: a.attackMs ?? effect.attackMs,
+      sustainMs: a.sustainMs ?? effect.sustainMs,
+      releaseMs: a.releaseMs ?? effect.releaseMs,
       phase: 'attack',
       level: 0,
       bornAtMs: this.timeMs,

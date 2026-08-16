@@ -216,9 +216,10 @@ export class VoicePool {
     slot.params = { ...a.params };
     slot.mixBlendMode = a.mixBlendMode;
     slot.specs = effect.params;
-    slot.attackMs = effect.attackMs;
-    slot.sustainMs = effect.sustainMs;
-    slot.releaseMs = effect.releaseMs;
+    // A node-owned envelope wins over the hosting effect's — see `PlayAction.attackMs`.
+    slot.attackMs = a.attackMs ?? effect.attackMs;
+    slot.sustainMs = a.sustainMs ?? effect.sustainMs;
+    slot.releaseMs = a.releaseMs ?? effect.releaseMs;
     slot.phase = 'attack';
     slot.level = 0;
     slot.bornAtMs = deps.timeMs;

@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel } from '../geometry/pixel-model';
 import {
+  DEFAULT_SPLICE_ATTACK_MS,
   DEFAULT_SPLICE_COUNT,
+  DEFAULT_SPLICE_HOLD_MS,
   DEFAULT_SPLICE_INCREMENT_PX,
+  DEFAULT_SPLICE_RELEASE_MS,
   MAX_SPLICE_COUNT,
   MAX_SPLICE_INCREMENT_PX,
   SPLICE_FILL_EFFECT_ID,
@@ -449,6 +452,20 @@ describe('resolveSplices', () => {
       120,
     )!.config;
     expect(cfg.offsetMs).toBe(0);
+  });
+
+  it('owns its envelope, defaulted and clamped — not inherited from the first splice', () => {
+    const env = (over: Partial<GraphNode>) => resolveSplices(spliceNode({ splices: [{ color: '#fff' }], ...over }), 120)!.envelope;
+    expect(env({})).toEqual({ attackMs: DEFAULT_SPLICE_ATTACK_MS, sustainMs: DEFAULT_SPLICE_HOLD_MS, releaseMs: DEFAULT_SPLICE_RELEASE_MS });
+    expect(env({ spliceHoldMs: 2500 }).sustainMs).toBe(2500);
+    expect(env({ spliceAttackMs: -50 }).attackMs).toBe(0);
+    expect(env({ spliceReleaseMs: 9e9 }).releaseMs).toBe(120000);
+  });
+
+  it('defaults the motion to restart, and carries continuous through', () => {
+    const mode = (over: Partial<GraphNode>) => resolveSplices(spliceNode({ splices: [{ color: '#fff' }], ...over }), 120)!.config.motionMode;
+    expect(mode({})).toBe('restart');
+    expect(mode({ spliceMotionMode: 'continuous' })).toBe('continuous');
   });
 
   it('fills every default, so a splice node authored with nothing but content still resolves', () => {

@@ -84,6 +84,13 @@ const transport = (now: number, beat = 0, bpm = 120): TransportState => ({
 
 const hit = (timeMs = 0): InputEvent => ({ kind: 'noteOn', drumId: 'kick', zone: '', velocity: 1, timeMs });
 
+/** Advance the engine to `toMs` in small steps, starting from `fromMs`. */
+function runTo(engine: ReturnType<typeof createVoiceBusEngine>, toMs: number, fromMs = 0): void {
+  const STEP = 5;
+  for (let t = fromMs + STEP; t < toMs; t += STEP) engine.tick(t, STEP, transport(t, (t / 60000) * 120));
+  engine.tick(toMs, STEP, transport(toMs, (toMs / 60000) * 120));
+}
+
 /** Fire the graph and sample the frame at `atMs` (past the 10ms attack, so level is 1). */
 function render(graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
   const model = testModel();
@@ -91,8 +98,9 @@ function render(graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rg
   engine.setModel(model);
   engine.setShow(show(graph, effects));
   engine.applyInput(hit(0));
-  engine.tick(5, 5, transport(5));
-  engine.tick(atMs, atMs - 5, transport(atMs, (atMs / 60000) * 120));
+  // Tick in small steps rather than one giant dt: the envelope advance integrates against dt,
+  // so a single 300ms jump overshoots the hold and reports a voice that is really still lit.
+  runTo(engine, atMs);
   const frame = engine.frame();
   return { model, rgb: (i) => [frame[i * 4]!, frame[i * 4 + 1]!, frame[i * 4 + 2]!] };
 }
@@ -144,8 +152,7 @@ describe('splice — colour splices', () => {
     engine.setModel(model);
     engine.setShow(show(spliceGraph([{}, { muted: true }])));
     engine.applyInput(hit(0));
-    engine.tick(5, 5, transport(5));
-    engine.tick(40, 35, transport(40));
+    runTo(engine, 40);
     expect(engine.stats().voices).toHaveLength(0);
   });
 
@@ -308,6 +315,77 @@ describe('splice — scope', () => {
     expectRgb(rgb(8), DARK, 'snare hoop 1 untouched');
     expectRgb(rgb(12), RED, 'snare hoop 2 cut');
     expectRgb(rgb(14), BLUE, 'and cut into its splices');
+  });
+});
+
+describe('splice — envelope', () => {
+  /** Total lit brightness of the frame — a proxy for "are the lights still up". */
+  const litSum = (rgb: (i: number) => [number, number, number]) => {
+    let sum = 0;
+    for (let i = 0; i < 16; i++) sum += rgb(i)[0] + rgb(i)[1] + rgb(i)[2];
+    return sum;
+  };
+
+  it('holds the lights up for the authored time, then fades', () => {
+    const graph = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 600, spliceReleaseMs: 200 });
+    expect(litSum(render(graph, [], 300).rgb), 'inside the hold').toBeGreaterThan(0);
+    expect(litSum(render(graph, [], 600).rgb), 'still inside the hold').toBeGreaterThan(0);
+    expect(litSum(render(graph, [], 1200).rgb), 'past hold + fade').toBe(0);
+  });
+
+  it('a longer hold keeps them up past the point a short one has gone dark', () => {
+    const short = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 });
+    const long = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 4000, spliceReleaseMs: 20 });
+    expect(litSum(render(short, [], 500).rgb), 'short one is done').toBe(0);
+    expect(litSum(render(long, [], 500).rgb), 'long one is still up').toBeGreaterThan(0);
+  });
+});
+
+describe('splice — restart vs continuous', () => {
+  const motion = (mode: 'restart' | 'continuous', over: Partial<GraphNode> = {}) =>
+    spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceHoldMs: 60000,
+      spliceMotionMode: mode,
+      ...over,
+    });
+
+  /** Fire once at t=0, again at `secondHitMs`, and sample `atMs`. */
+  function reHit(graph: TriggerGraph, secondHitMs: number, atMs: number): (i: number) => [number, number, number] {
+    const model = testModel();
+    const engine = createVoiceBusEngine();
+    engine.setModel(model);
+    engine.setShow(show(graph, []));
+    engine.applyInput(hit(0));
+    runTo(engine, secondHitMs);
+    engine.applyInput(hit(secondHitMs));
+    runTo(engine, atMs, secondHitMs);
+    const frame = engine.frame();
+    return (i) => [frame[i * 4]!, frame[i * 4 + 1]!, frame[i * 4 + 2]!];
+  }
+
+  it('restart puts the movement back to its starting position on every hit', () => {
+    // Second hit at 1050ms, sampled 50ms later: a restarted chase has taken no step yet.
+    expectRgb(reHit(motion('restart'), 1050, 1100)(0), RED, 'back at step 0');
+  });
+
+  it('continuous picks up where the last hit left off instead of resetting', () => {
+    // Same instant, same graph — only the mode differs. The free clock is 1100ms in (11 steps,
+    // odd → the other splice), while a restarted one is 50ms in (0 steps).
+    expectRgb(reHit(motion('continuous'), 1050, 1100)(0), BLUE, 'eleven steps in, unbroken by the hit');
+    expectRgb(reHit(motion('restart'), 1050, 1100)(0), RED, 'and the same moment restarted');
+  });
+
+  it('restart is the default, so an un-authored splice behaves as it always did', () => {
+    const graph = spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceHoldMs: 60000,
+    });
+    expectRgb(reHit(graph, 1050, 1100)(0), RED, 'no step taken since the hit');
   });
 });
 

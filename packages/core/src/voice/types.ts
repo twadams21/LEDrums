@@ -274,6 +274,17 @@ export type SpliceChaseMode = 'off' | 'step' | 'smooth' | 'stagger';
 export type SpliceOrder = 'up' | 'down' | 'outside-in' | 'random';
 
 /**
+ * What a new hit does to a splice's motion.
+ * - `'restart'`    — the hit puts the chase/spin/stagger back to its starting position, so
+ *                    every hit reads as a fresh gesture. (The original behaviour.)
+ * - `'continuous'` — the motion runs off a free clock, so a hit picks up wherever the last
+ *                    one left off and the movement never visibly resets. Every voice from
+ *                    this node shares that clock, which is what keeps successive hits in
+ *                    phase with each other rather than each starting its own timeline.
+ */
+export type SpliceMotionMode = 'restart' | 'continuous';
+
+/**
  * One splice — what renders inside one band of the partition. Every field is optional
  * because "blank" is a legitimate, authorable state:
  *   effect + colour → the effect, tinted toward the colour
@@ -323,6 +334,8 @@ export interface SpliceConfig {
   offsetMs: number;
   /** The order units start moving in when {@link offsetMs} is non-zero. */
   order: SpliceOrder;
+  /** Whether a hit restarts the motion or it free-runs across hits. */
+  motionMode: SpliceMotionMode;
   /** 0..1 strength of the colour tint applied to an effect splice. */
   tint: number;
   /** Per-slot authored colour (null = none), index-aligned with the splice slots. */
@@ -428,6 +441,18 @@ export interface GraphNode {
   spliceOffsetDivision?: string;
   /** The order units start moving in when an offset is set. Absent → `'up'`. */
   spliceOrder?: SpliceOrder;
+  /** Whether a hit restarts this splice's motion or it free-runs. Absent → `'restart'`. */
+  spliceMotionMode?: SpliceMotionMode;
+  // Splice envelope. A splice node owns its own attack/hold/fade rather than inheriting the
+  // first splice's effect, so how long the lights stay up after a hit is authorable — and so
+  // reordering the splices cannot silently change the envelope. Absent → the defaults in
+  // `splice.ts`.
+  /** Rise time in ms. */
+  spliceAttackMs?: number;
+  /** How long it stays at full after the attack, in ms — the "stays on for" control. */
+  spliceHoldMs?: number;
+  /** Fade-out time in ms. */
+  spliceReleaseMs?: number;
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes

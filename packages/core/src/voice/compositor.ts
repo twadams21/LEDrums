@@ -321,12 +321,17 @@ export function createDefaultCompositor(): Compositor {
           const { mix } = ensureScratch();
           mix.clear();
           const age = timeMs - v.bornAtMs;
+          // Motion clock: `restart` runs off the voice's own age, so each hit starts the
+          // movement over; `continuous` runs off the engine clock every voice shares, so a
+          // hit picks up exactly where the last one left off. Only the MOTION reads this —
+          // the envelope and the modifier chain stay voice-relative either way.
+          const motionClock = cfg.motionMode === 'continuous' ? timeMs : age;
           const dstRgba = mix.rgba;
           for (const unit of units) {
             const len = unit.end - unit.start;
             // Each unit runs on its own clock, so an offset cascade starts hoop after hoop.
             // With no offset every unit gets `age` and this is the previous behaviour exactly.
-            const unitAge = unitMotionAge(age, unit.orderIndex, cfg.offsetMs);
+            const unitAge = unitMotionAge(motionClock, unit.orderIndex, cfg.offsetMs);
             const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
             const shift =
               cfg.chase === 'smooth'

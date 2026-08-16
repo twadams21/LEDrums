@@ -70,6 +70,15 @@ export interface PlayAction {
   splice?: SpliceConfig;
   /** One draft per NON-BLANK splice slot, index-aligned with `splice.inputBySlot`. */
   spliceInputs?: MixInputDraft[];
+  /**
+   * Per-node envelope override, in milliseconds. When present the voice takes these instead
+   * of the hosting effect's attack/sustain/release — the seam that lets a node own how long
+   * its light stays up. Absent (every node but `splice` today) → the effect's own envelope,
+   * unchanged.
+   */
+  attackMs?: number;
+  sustainMs?: number;
+  releaseMs?: number;
   /** Origin graph node this action's layer was produced by (a play/effect node, or the
       Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
       origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
@@ -294,6 +303,9 @@ function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode,
     targetId: node.targetId,
     busId: node.busId,
     params: {},
+    attackMs: resolved.envelope.attackMs,
+    sustainMs: resolved.envelope.sustainMs,
+    releaseMs: resolved.envelope.releaseMs,
     modifiers: mods.length ? mods : undefined,
     modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
     splice: resolved.config,

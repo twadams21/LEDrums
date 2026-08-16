@@ -23,6 +23,8 @@
   import {
     SPLICE_CHASE_HINTS,
     SPLICE_CHASE_OPTS,
+    SPLICE_MOTION_MODE_HINTS,
+    SPLICE_MOTION_MODE_OPTS,
     SPLICE_OFFSET_MODE_OPTS,
     SPLICE_ORDER_OPTS,
     SPLICE_DIRECTION_OPTS,
@@ -34,7 +36,7 @@
     spliceRows,
     spliceUnitNoun,
   } from '../../views/splice-options';
-  import { SCOPE_OPTS } from '../../views/node-options';
+  import { MODE_OPTS, SCOPE_OPTS } from '../../views/node-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -51,6 +53,7 @@
   // The cascade offsets ACROSS units, so it means nothing when the whole scope is one unit.
   const canCascade = $derived(partition !== 'scope');
   const unitNoun = $derived(spliceUnitNoun(partition));
+  const motionMode = $derived(node.spliceMotionMode ?? 'restart');
 
   /** Scope-target options, derived from the current scope — same shape the play inspector uses. */
   const targetOptions = $derived.by(() => {
@@ -152,6 +155,16 @@
       </Field>
 
       {#if chase !== 'off'}
+        <Field label="On each hit">
+          <SegmentedControl
+            value={motionMode}
+            options={SPLICE_MOTION_MODE_OPTS}
+            onChange={(v) => store.setSpliceSetting(node, { spliceMotionMode: v as voice.SpliceMotionMode })}
+            ariaLabel="Splice motion mode"
+          />
+        </Field>
+        <p class="hint">{SPLICE_MOTION_MODE_HINTS[motionMode]}</p>
+
         <Field label="Rate">
           <SegmentedControl
             value={rateMode}
@@ -261,6 +274,60 @@
           </p>
         {/if}
       {/if}
+    </section>
+
+    <section class="group">
+      <h4 class="grouptitle">Hold</h4>
+
+      <Field layout="row" label="Play">
+        <SegmentedControl
+          value={node.mode}
+          options={MODE_OPTS}
+          onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')}
+          ariaLabel="Splice play mode"
+        />
+      </Field>
+
+      <Field layout="row" label="Attack" unit="ms">
+        <CommitInput
+          type="number"
+          value={node.spliceAttackMs ?? voice.DEFAULT_SPLICE_ATTACK_MS}
+          min={0}
+          max={voice.MAX_SPLICE_ENVELOPE_MS}
+          step={1}
+          onCommit={(v) => store.setSpliceSetting(node, { spliceAttackMs: Number(v) })}
+          ariaLabel="Splice attack milliseconds"
+        />
+      </Field>
+
+      <Field layout="row" label="Hold" unit="ms">
+        <CommitInput
+          type="number"
+          value={node.spliceHoldMs ?? voice.DEFAULT_SPLICE_HOLD_MS}
+          min={0}
+          max={voice.MAX_SPLICE_ENVELOPE_MS}
+          step={10}
+          onCommit={(v) => store.setSpliceSetting(node, { spliceHoldMs: Number(v) })}
+          ariaLabel="Splice hold milliseconds"
+        />
+      </Field>
+
+      <Field layout="row" label="Fade" unit="ms">
+        <CommitInput
+          type="number"
+          value={node.spliceReleaseMs ?? voice.DEFAULT_SPLICE_RELEASE_MS}
+          min={0}
+          max={voice.MAX_SPLICE_ENVELOPE_MS}
+          step={10}
+          onCommit={(v) => store.setSpliceSetting(node, { spliceReleaseMs: Number(v) })}
+          ariaLabel="Splice fade milliseconds"
+        />
+      </Field>
+
+      <p class="hint">
+        How long the lights stay up after a hit: rise, hold at full, then fade. A One-shot runs the
+        whole shape; Loop and Hold stay up until the voice is stopped.
+      </p>
     </section>
 
     <section class="group">

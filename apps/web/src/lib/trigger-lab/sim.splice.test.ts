@@ -47,8 +47,9 @@ function render(graph: TriggerGraph, atMs = 80): { rgb: (i: number) => [number, 
   const lab = buildLabModel();
   const sim = freshSim();
   sim.triggerGraph('test', graph, ctx());
-  sim.tick(40);
-  sim.tick(atMs - 40);
+  // Step the clock rather than jumping it: the envelope integrates dt, so one big tick
+  // overshoots the hold (the same trap the core render helper hit).
+  for (let t = 5; t <= atMs; t += 5) sim.tick(5);
   const buf = new Uint8Array(lab.model.count * 3);
   renderFrame(buf, sim, lab);
   const kick = lab.pm.drums[0]!;
@@ -147,6 +148,15 @@ describe('splice — offline preview', () => {
     expect(isDark(rgb(0)), 'kick untouched').toBe(true);
     expect(isRed(rgb(snare.pixelStart)), 'the snare is lit').toBe(true);
     expect(isRed(rgb(snare.pixelStart + snare.pixelCount - 1)), 'all the way through').toBe(true);
+  });
+
+  it('holds the lights up for the authored time in the preview too', () => {
+    // One-shot, not the fixture's default loop: a loop never releases, so it could never
+    // show the hold running out.
+    const graph = spliceGraph({ mode: 'oneshot', splices: [{ color: '#ff0000' }], spliceCount: 1, spliceAttackMs: 10, spliceHoldMs: 2000, spliceReleaseMs: 100 });
+    expect(isRed(render(graph, 900).rgb(0)), 'still inside the hold').toBe(true);
+    const short = spliceGraph({ mode: 'oneshot', splices: [{ color: '#ff0000' }], spliceCount: 1, spliceAttackMs: 10, spliceHoldMs: 40, spliceReleaseMs: 20 });
+    expect(isDark(render(short, 900).rgb(0)), 'a short hold is long gone').toBe(true);
   });
 
   it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
