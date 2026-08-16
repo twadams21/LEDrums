@@ -343,7 +343,13 @@ export function createDefaultCompositor(): Compositor {
             // Each unit runs on its own clock, so an offset cascade starts hoop after hoop —
             // and, on a kit-wide splice, drum after drum. With no offsets every unit gets the
             // shared clock and this is the previous behaviour exactly.
-            const unitAge = unitMotionAge(motionClock, unitCascadeDelayMs(unit.orderIndex, unit.drumOrderIndex, cfg));
+            const delay = unitCascadeDelayMs(unit.orderIndex, unit.drumOrderIndex, cfg);
+            // `dark` holds a unit black until its turn, so the LIGHT travels across the kit
+            // rather than the movement travelling through already-lit hoops. Measured against
+            // the voice's own age, not the motion clock — `continuous` has no zero to count a
+            // delay from, and a hit should always cascade from the moment it was struck.
+            if (cfg.waitMode === 'dark' && delay > 0 && age < delay) continue;
+            const unitAge = unitMotionAge(motionClock, delay);
             const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
             const shift =
               cfg.chase === 'smooth'

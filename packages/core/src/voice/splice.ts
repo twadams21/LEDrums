@@ -552,6 +552,7 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
       drumOrder: node.spliceDrumOrder ?? 'up',
       smudge: clamp01(node.spliceSmudge ?? 0),
       motionMode: node.spliceMotionMode ?? 'restart',
+      waitMode: node.spliceWaitMode ?? 'lit',
       tint: clamp01(node.spliceTint ?? 1),
       colors,
       inputBySlot,

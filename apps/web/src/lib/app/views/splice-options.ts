@@ -71,6 +71,18 @@ export function spliceLayerOptions(buses: readonly Bus[]): Array<{ value: string
   return buses.map((b) => ({ value: b.id, label: `${b.name} · ${b.polyphony === 'mono' ? 'cuts' : 'sustains'}` }));
 }
 
+export const SPLICE_WAIT_MODE_OPTS: Array<{ value: voice.SpliceWaitMode; label: string }> = [
+  { value: 'lit', label: 'Lit' },
+  { value: 'dark', label: 'Dark' },
+];
+
+/** What a unit does before the cascade reaches it — the difference is whether the LIGHT travels
+    or only the movement does. */
+export const SPLICE_WAIT_MODE_HINTS: Record<voice.SpliceWaitMode, string> = {
+  lit: 'Everything lights at once and holds still until the movement reaches it.',
+  dark: 'Nothing lights until its turn comes, so the light itself travels across the kit.',
+};
+
 /** What one partition unit IS, for labelling the cascade controls — the offset runs across
     hoops under the hoop partition and across drums under the drum partition, so the controls
     say which rather than making the author infer it. */

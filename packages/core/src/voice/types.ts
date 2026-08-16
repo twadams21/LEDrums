@@ -291,6 +291,19 @@ export type SpliceOrder = 'up' | 'down' | 'outside-in' | 'random';
 export type SpliceMotionMode = 'restart' | 'continuous' | 'latched';
 
 /**
+ * What a partition unit does while it waits for its turn in a cascade offset.
+ * - `'lit'`  — it shows its resting cut, standing still until the movement reaches it. The
+ *              kit is fully lit from the first frame and the cascade reads as motion.
+ * - `'dark'` — it emits nothing at all until its turn comes, so the light itself travels
+ *              across the hoops (or drums) rather than the movement travelling through
+ *              already-lit ones.
+ * Timed against the VOICE's age, not the motion clock, so it means the same thing under all
+ * three {@link SpliceMotionMode}s — including `continuous`, whose clock has no zero to
+ * measure a delay from.
+ */
+export type SpliceWaitMode = 'lit' | 'dark';
+
+/**
  * One splice — what renders inside one band of the partition. Every field is optional
  * because "blank" is a legitimate, authorable state:
  *   effect + colour → the effect, tinted toward the colour
@@ -352,6 +365,8 @@ export interface SpliceConfig {
   smudge: number;
   /** Whether a hit restarts the motion or it free-runs across hits. */
   motionMode: SpliceMotionMode;
+  /** Whether a unit waiting its turn in the cascade is lit and still, or dark. */
+  waitMode: SpliceWaitMode;
   /** 0..1 strength of the colour tint applied to an effect splice. */
   tint: number;
   /** Per-slot authored colour (null = none), index-aligned with the splice slots. */
@@ -468,6 +483,9 @@ export interface GraphNode {
   spliceSmudge?: number;
   /** Whether a hit restarts this splice's motion or it free-runs. Absent → `'restart'`. */
   spliceMotionMode?: SpliceMotionMode;
+  /** What a unit does before its cascade turn arrives. Absent → `'lit'` (the original
+      behaviour: the whole kit lights at once and only the MOVEMENT cascades). */
+  spliceWaitMode?: SpliceWaitMode;
   // Splice envelope. A splice node owns its own attack/hold/fade rather than inheriting the
   // first splice's effect, so how long the lights stay up after a hit is authorable — and so
   // reordering the splices cannot silently change the envelope. Absent → the defaults in

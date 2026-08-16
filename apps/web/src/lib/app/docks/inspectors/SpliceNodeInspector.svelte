@@ -26,6 +26,8 @@
     SPLICE_MOTION_MODE_HINTS,
     SPLICE_MOTION_MODE_OPTS,
     SPLICE_OFFSET_MODE_OPTS,
+    SPLICE_WAIT_MODE_HINTS,
+    SPLICE_WAIT_MODE_OPTS,
     SPLICE_ORDER_OPTS,
     SPLICE_DIRECTION_OPTS,
     SPLICE_NO_EFFECT,
@@ -54,6 +56,7 @@
   // The cascade offsets ACROSS units, so it means nothing when the whole scope is one unit.
   const canCascade = $derived(partition !== 'scope');
   const drumOffsetMode = $derived(node.spliceDrumOffsetMode ?? 'beats');
+  const waitMode = $derived(node.spliceWaitMode ?? 'lit');
   // The drum axis is only separate from the primary one when cutting per HOOP — cutting per
   // drum already cascades drum by drum, and per scope there is a single unit.
   const canCascadeDrums = $derived(partition === 'hoop' && node.scope !== 'drum' && node.scope !== 'hoop');
@@ -284,6 +287,18 @@
           </Field>
         {/if}
 
+        {#if canCascade}
+          <Field layout="row" label="Before its turn">
+            <SegmentedControl
+              value={waitMode}
+              options={SPLICE_WAIT_MODE_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceWaitMode: v as voice.SpliceWaitMode })}
+              ariaLabel="Splice wait mode"
+            />
+          </Field>
+          <p class="hint">{SPLICE_WAIT_MODE_HINTS[waitMode]}</p>
+        {/if}
+
         {#if canCascadeDrums}
           <Field layout="row" label="Drum offset">
             <SegmentedControl
@@ -337,7 +352,7 @@
           <p class="hint">
             An offset starts each {unitNoun.toLowerCase()} later than the one before it, in the order above —
             so the motion travels {partition === 'drum' ? 'across the kit' : 'up the drum'} instead of every
-            {unitNoun.toLowerCase()} moving together. A {unitNoun.toLowerCase()} waiting its turn holds still rather than going dark.
+            {unitNoun.toLowerCase()} moving together.
           </p>
         {/if}
       {/if}

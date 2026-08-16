@@ -282,6 +282,32 @@ describe('splice — cascade offset across units', () => {
     expectRgb(rgb(12), RED, 'snare hoop 2 waits exactly like the kick’s');
   });
 
+  it('holds a waiting unit DARK when asked, so the light itself travels', () => {
+    const dark = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceWaitMode: 'dark' }, 150);
+    expectRgb(dark.rgb(0), BLUE, 'hoop 1 is lit and has stepped');
+    expectRgb(dark.rgb(4), DARK, 'hoop 2 emits nothing until its turn');
+    expectRgb(dark.rgb(6), DARK, 'none of it — not just the moving splice');
+  });
+
+  it('lights a dark-waiting unit the moment its turn arrives', () => {
+    const before = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceWaitMode: 'dark' }, 150);
+    const after = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceWaitMode: 'dark' }, 260);
+    expectRgb(before.rgb(4), DARK, 'still waiting at 150ms');
+    const [r, g, b] = after.rgb(4);
+    expect(r + g + b, 'lit once past its 200ms turn').toBeGreaterThan(0);
+  });
+
+  it('defaults to lit, so an un-authored cascade behaves as it always did', () => {
+    const lit = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200 }, 150);
+    expectRgb(lit.rgb(4), RED, 'hoop 2 shows its resting cut rather than going dark');
+  });
+
+  it('never darkens anything when there is no offset to wait for', () => {
+    const { rgb } = cascading({ spliceWaitMode: 'dark' }, 150);
+    expectRgb(rgb(0), BLUE, 'hoop 1');
+    expectRgb(rgb(4), BLUE, 'hoop 2 — nothing to wait for, so nothing is hidden');
+  });
+
   it('moves every unit together when no offset is set — the previous behaviour', () => {
     const together = cascading({ spliceOrder: 'down' }, 150);
     expectRgb(together.rgb(0), BLUE, 'hoop 1');

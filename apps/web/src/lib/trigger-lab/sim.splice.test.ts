@@ -188,6 +188,22 @@ describe('splice — offline preview', () => {
     expect(twoHits(500)).toEqual(twoHits(3000));
   });
 
+  it('keeps a waiting hoop dark in the preview when asked', () => {
+    const graph = spliceGraph({
+      splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+      spliceCount: 2,
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceOffsetMode: 'time',
+      spliceOffsetMs: 3000,
+      spliceWaitMode: 'dark',
+    });
+    const { rgb, hoopLen } = render(graph, 150);
+    expect(isRed(rgb(0)) || isBlue(rgb(0)), 'hoop 1 is lit').toBe(true);
+    expect(isDark(rgb(hoopLen)), 'hoop 2 emits nothing until its turn').toBe(true);
+  });
+
   it('smudges the boundary in the preview too', () => {
     const hard = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2 }));
     const soft = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2, spliceSmudge: 1 }));

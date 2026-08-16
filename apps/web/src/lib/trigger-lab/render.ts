@@ -149,6 +149,8 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       voice.spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
       cfg,
     );
+    // `dark`: nothing until this unit's turn — measured on the voice's age, mirroring core.
+    if (cfg.waitMode === 'dark' && delay > 0 && age < delay) return;
     const unitAge = voice.unitMotionAge(motionClock, delay);
     const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
     const shift =

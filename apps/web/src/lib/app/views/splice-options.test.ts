@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
 import { DIVISION_OPTS } from './node-options';
-import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
+import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_WAIT_MODE_HINTS, SPLICE_WAIT_MODE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
 
 /* The Splice inspector's row derivation. The rows are what an author actually edits, so the
    thing worth pinning is that they show what will RENDER — including the slots currently
@@ -117,6 +117,13 @@ describe('divisions', () => {
     expect(label('2-bars')).toBe('2 bars');
     expect(label('4-bars')).toBe('4 bars');
     expect(label('dotted-1/2')).toBe('1/2 dotted');
+  });
+});
+
+describe('wait mode options', () => {
+  it('offers lit and dark, and explains the difference', () => {
+    expect(SPLICE_WAIT_MODE_OPTS.map((o) => o.value)).toEqual(['lit', 'dark']);
+    for (const opt of SPLICE_WAIT_MODE_OPTS) expect(SPLICE_WAIT_MODE_HINTS[opt.value], opt.value).not.toBe('');
   });
 });
 
