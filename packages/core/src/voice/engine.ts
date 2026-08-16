@@ -244,6 +244,8 @@ class VoiceBusEngine implements RenderEngine {
   private timeMs = 0;
   private beat = 0;
   private bpm = 120;
+  /** Beats per bar from the transport — read only by the bar-length musical divisions. */
+  private beatsPerBar = 4;
   private sectionIndex = 0;
   private perf: EnginePerfStats = emptyPerfStats();
 
@@ -587,6 +589,7 @@ class VoiceBusEngine implements RenderEngine {
       beatPhase: this.beatPhase(),
       sourceDrumId: e.drumId ?? '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const resolved of toFire) {
       this.onDiagnostic?.({
@@ -627,6 +630,7 @@ class VoiceBusEngine implements RenderEngine {
       beatPhase: this.beatPhase(),
       sourceDrumId: src?.kind === 'drum' ? src.drumId : '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     const resolved: ResolvedGraph = { graphKey: key, graph, statePrefix: key, path: 'fire-graph' };
     this.onDiagnostic?.({
@@ -888,6 +892,7 @@ class VoiceBusEngine implements RenderEngine {
     this.timeMs = now;
     this.beat = transport.beat;
     this.bpm = transport.bpm;
+    this.beatsPerBar = transport.beatsPerBar;
     this.sectionIndex = this.show.sections.length > 0 ? transport.bar % this.show.sections.length : 0;
 
     this.drainQueue();

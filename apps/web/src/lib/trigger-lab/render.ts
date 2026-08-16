@@ -139,12 +139,17 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       : cfg.motionMode === 'latched'
         ? (v.spliceMotionMs ?? 0) // only ran while lit
         : age;
-  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex, ordinal, ordinalCount) => {
-    const len = unitEnd - unitStart;
-    const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
+  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unit) => {
+    const len = unit.end - unit.start;
+    const seed = cfg.jitter > 0 ? (cfg.seed + unit.index * 0x9e3779b1) >>> 0 : cfg.seed;
     const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
-    // Per-unit motion clock, mirroring core: an offset cascade starts hoop after hoop.
-    const unitAge = voice.unitMotionAge(motionClock, voice.spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed), cfg.offsetMs);
+    // Per-unit motion clock on both cascade axes, mirroring core.
+    const delay = voice.unitCascadeDelayMs(
+      voice.spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed),
+      voice.spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
+      cfg,
+    );
+    const unitAge = voice.unitMotionAge(motionClock, delay);
     const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
     const shift =
       cfg.chase === 'smooth'
@@ -152,21 +157,27 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
         : cfg.chase === 'stagger'
           ? voice.chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
           : 0;
-    voice.forEachSpliceBand(bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
+    const feather = voice.spliceFeatherPx(cfg.smudge, bands, len);
+    voice.forEachSpliceSegment(bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
       const inputIndex = cfg.inputBySlot[slot] ?? -1;
       if (inputIndex < 0) return; // a blank splice shows nothing
       const src = spliceBytes[inputIndex]!;
       const colour = voice.spliceTintColour(cfg.colors[slot]);
-      for (let p = unitStart + bandStart; p < unitStart + bandEnd; p++) {
+      const span = bandEnd - bandStart;
+      for (let i = 0; i < span; i++) {
+        const p = unit.start + bandStart + i;
         const j3 = p * 3;
         let r = src[j3]! / 255;
         let g = src[j3 + 1]! / 255;
         let b = src[j3 + 2]! / 255;
         if (r <= 0 && g <= 0 && b <= 0) continue;
+        const w = span <= 1 ? w0 : w0 + (w1 - w0) * (i / span);
+        if (w <= 0) continue;
         if (colour) ({ r, g, b } = voice.tintPixel(r, g, b, colour, cfg.tint));
-        buf[j3] = Math.min(255, buf[j3]! + Math.round(r * level * 255));
-        buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * level * 255));
-        buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * level * 255));
+        // Accumulate: across a smudge two splices write the same pixel with weights summing to 1.
+        buf[j3] = Math.min(255, buf[j3]! + Math.round(r * w * level * 255));
+        buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * w * level * 255));
+        buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * w * level * 255));
       }
     });
   });

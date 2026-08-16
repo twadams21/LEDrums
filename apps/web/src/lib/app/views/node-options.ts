@@ -89,6 +89,8 @@ export const DELAY_MODE_OPTS: Array<{ value: 'time' | 'beats'; label: string }> 
 
 /** Friendly label for a musical division string (e.g. `'dotted-1/8'` → `'1/8 dotted'`). */
 function divisionLabel(d: string): string {
+  if (d === '1-bar') return '1 bar';
+  if (d.endsWith('-bars')) return d.replace('-bars', ' bars');
   if (d.startsWith('dotted-')) return d.replace('dotted-', '') + ' dotted';
   if (d.startsWith('triplet-')) return d.replace('triplet-', '') + ' triplet';
   return d;

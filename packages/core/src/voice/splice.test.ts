@@ -16,9 +16,11 @@ import {
   computeSpliceBands,
   forEachPartitionUnit,
   forEachSpliceBand,
+  forEachSpliceSegment,
   isBlankSplice,
   resolveSplices,
   spliceDefAt,
+  spliceFeatherPx,
   spliceOrderIndex,
   tintPixel,
   unitMotionAge,
@@ -241,6 +243,56 @@ describe('forEachSpliceBand', () => {
   });
 });
 
+describe('smudge', () => {
+  const bands = (len: number, count: number) => computeSpliceBands(len, count, 0, 1);
+
+  it('is a fraction of the average band width, so it reads the same on any run length', () => {
+    expect(spliceFeatherPx(0.5, bands(32, 4), 32)).toBe(4); // half of 32/4
+    expect(spliceFeatherPx(0.5, bands(160, 4), 160)).toBe(20);
+    expect(spliceFeatherPx(0, bands(32, 4), 32)).toBe(0);
+  });
+
+  it('never exceeds the narrowest band — a wider feather would dip, not smudge', () => {
+    const uneven = computeSpliceBands(64, 6, 0.9, 3);
+    const narrowest = Math.min(...uneven.filter((b) => b.width > 0).map((b) => b.width));
+    expect(spliceFeatherPx(1, uneven, 64)).toBeLessThanOrEqual(narrowest);
+  });
+
+  it('weights sum to 1 across every pixel of the run — no seam, no dip', () => {
+    const len = 48;
+    const b = bands(len, 4);
+    for (const smudge of [0, 0.25, 0.5, 1]) {
+      const total = new Array<number>(len).fill(0);
+      forEachSpliceSegment(b, len, 0, 0, spliceFeatherPx(smudge, b, len), (_slot, start, end, w0, w1) => {
+        const span = end - start;
+        for (let i = 0; i < span; i++) total[start + i]! += span <= 1 ? w0 : w0 + (w1 - w0) * (i / span);
+      });
+      for (let p = 0; p < len; p++) expect(total[p], `smudge ${smudge} pixel ${p}`).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('with no smudge every pixel belongs to exactly ONE splice', () => {
+    const len = 32;
+    const b = bands(len, 4);
+    const owners = new Array<number>(len).fill(0);
+    forEachSpliceSegment(b, len, 0, 0, 0, (_slot, start, end) => {
+      for (let p = start; p < end; p++) owners[p]! += 1;
+    });
+    expect(owners.every((n) => n === 1)).toBe(true);
+  });
+
+  it('blends across the wrap point too', () => {
+    const len = 32;
+    const b = bands(len, 4);
+    const slots = new Map<number, Set<number>>();
+    forEachSpliceSegment(b, len, 0, 0, spliceFeatherPx(1, b, len), (slot, start, end) => {
+      for (let p = start; p < end; p++) (slots.get(p) ?? slots.set(p, new Set()).get(p)!).add(slot);
+    });
+    // Pixel 0 sits on the seam between the last splice and the first, so both reach it.
+    expect(slots.get(0)!.size).toBe(2);
+  });
+});
+
 describe('forEachPartitionUnit', () => {
   const model = buildPixelModel(
     parseKit({
@@ -254,12 +306,12 @@ describe('forEachPartitionUnit', () => {
   const whole = [{ start: 0, end: model.pixelCount }];
   const collect = (partition: 'hoop' | 'drum' | 'scope', ranges = whole) => {
     const out: [number, number][] = [];
-    forEachPartitionUnit(model, ranges, partition, (start, end) => out.push([start, end]));
+    forEachPartitionUnit(model, ranges, partition, (u) => out.push([u.start, u.end]));
     return out;
   };
   const ordinals = (partition: 'hoop' | 'drum' | 'scope') => {
     const out: [number, number][] = [];
-    forEachPartitionUnit(model, whole, partition, (_s, _e, _i, ordinal, count) => out.push([ordinal, count]));
+    forEachPartitionUnit(model, whole, partition, (u) => out.push([u.ordinal, u.ordinalCount]));
     return out;
   };
 
@@ -268,6 +320,12 @@ describe('forEachPartitionUnit', () => {
     expect(collect('scope')).toEqual([[0, 24]]);
     expect(collect('drum')).toEqual([[0, 16], [16, 24]]);
     expect(collect('hoop')).toEqual([[0, 8], [8, 16], [16, 20], [20, 24]]);
+  });
+
+  it('reports the drum axis alongside the hoop axis, so a kit-wide splice can travel drum to drum', () => {
+    const out: [number, number][] = [];
+    forEachPartitionUnit(model, whole, 'hoop', (u) => out.push([u.drumOrdinal, u.drumCount]));
+    expect(out).toEqual([[0, 2], [0, 2], [1, 2], [1, 2]]); // kick's two hoops, then the snare's
   });
 
   it('numbers a hoop WITHIN ITS DRUM, so a kit-wide cascade climbs every drum in parallel', () => {
@@ -321,16 +379,16 @@ describe('spliceOrderIndex', () => {
 
 describe('unitMotionAge', () => {
   it('holds a unit at a standstill until its turn, then runs it on its own clock', () => {
-    expect(unitMotionAge(500, 0, 200), 'the first unit is never delayed').toBe(500);
-    expect(unitMotionAge(100, 1, 200), 'not started yet → frozen at 0, not dark').toBe(0);
-    expect(unitMotionAge(200, 1, 200), 'exactly at its start').toBe(0);
-    expect(unitMotionAge(500, 1, 200)).toBe(300);
-    expect(unitMotionAge(500, 2, 200)).toBe(100);
+    expect(unitMotionAge(500, 0), 'the first unit is never delayed').toBe(500);
+    expect(unitMotionAge(100, 200), 'not started yet → frozen at 0, not dark').toBe(0);
+    expect(unitMotionAge(200, 200), 'exactly at its start').toBe(0);
+    expect(unitMotionAge(500, 200)).toBe(300);
+    expect(unitMotionAge(500, 400)).toBe(100);
   });
 
   it('is the identity with no offset — the previous behaviour, byte for byte', () => {
-    for (const order of [0, 1, 5]) expect(unitMotionAge(750, order, 0)).toBe(750);
-    expect(unitMotionAge(750, 3, -5)).toBe(750);
+    expect(unitMotionAge(750, 0)).toBe(750);
+    expect(unitMotionAge(750, -5)).toBe(750);
   });
 });
 
@@ -420,6 +478,36 @@ describe('resolveSplices', () => {
     expect(cfg({ spliceChase: 'off', spliceRateMode: 'time', spliceRateMs: 900 }).chaseMs).toBe(0);
   });
 
+  it('resolves the drum cascade independently of the hoop one', () => {
+    const cfg = (over: Partial<GraphNode>) =>
+      resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', ...over }), 120)!.config;
+    const both = cfg({
+      spliceOffsetMode: 'time',
+      spliceOffsetMs: 40,
+      spliceDrumOffsetMode: 'time',
+      spliceDrumOffsetMs: 250,
+      spliceDrumOrder: 'down',
+    });
+    expect(both.offsetMs).toBe(40);
+    expect(both.drumOffsetMs).toBe(250);
+    expect(both.drumOrder).toBe('down');
+    expect(cfg({}).drumOffsetMs, 'no drum cascade unless asked for').toBe(0);
+  });
+
+  it('resolves bar-length divisions against the time signature', () => {
+    const bars = (division: string, beatsPerBar?: number) =>
+      resolveSplices(
+        spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', spliceRateMode: 'beats', spliceDivision: division }),
+        120,
+        beatsPerBar,
+      )!.config.chaseMs;
+    expect(bars('1/2')).toBe(1000);
+    expect(bars('1-bar')).toBe(2000); // 4 beats at 120bpm
+    expect(bars('2-bars')).toBe(4000);
+    expect(bars('4-bars')).toBe(8000);
+    expect(bars('1-bar', 3), 'a bar is shorter in 3/4').toBe(1500);
+  });
+
   it('resolves the stagger increment, defaulted and clamped', () => {
     const cfg = (over: Partial<GraphNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'stagger', ...over }), 120)!.config;
@@ -479,6 +567,9 @@ describe('resolveSplices', () => {
     expect(cfg.tint).toBe(1);
     expect(cfg.offsetMs).toBe(0);
     expect(cfg.order).toBe('up');
+    expect(cfg.drumOffsetMs).toBe(0);
+    expect(cfg.drumOrder).toBe('up');
+    expect(cfg.smudge).toBe(0);
   });
 
   it('clamps out-of-range authored values rather than trusting them into the render loop', () => {

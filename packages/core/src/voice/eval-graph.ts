@@ -151,6 +151,10 @@ export interface TriggerCtx {
       musical divisions into milliseconds. Snapshotted at enqueue time; later bpm changes
       must NOT affect already-enqueued fires (the resolved `relativeDelayMs` is stored). */
   bpm: number;
+  /** Beats per bar at the moment the trigger fired. Only the BAR-length divisions read it
+      (`1-bar`/`2-bars`/`4-bars`); everything else is signature-independent, so it is optional
+      and defaults to 4 — a caller that predates bar divisions needs no change. */
+  beatsPerBar?: number;
 }
 
 /**
@@ -279,7 +283,7 @@ function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): 
  * voice at all (again mirroring an empty Mix).
  */
 function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): PlayDraft | null {
-  const resolved = resolveSplices(node, ctx.bpm);
+  const resolved = resolveSplices(node, ctx.bpm, ctx.beatsPerBar);
   if (!resolved) return null;
   const mods = resolveModifierChain(graph, node);
   const modulations = resolveNodeModulations(graph, node);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
+import { DIVISION_OPTS } from './node-options';
 import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
 
 /* The Splice inspector's row derivation. The rows are what an author actually edits, so the
@@ -101,6 +102,21 @@ describe('motion mode options', () => {
   it('offers all three, and explains each — they are easy to confuse', () => {
     expect(SPLICE_MOTION_MODE_OPTS.map((o) => o.value)).toEqual(['restart', 'continuous', 'latched']);
     for (const opt of SPLICE_MOTION_MODE_OPTS) expect(SPLICE_MOTION_MODE_HINTS[opt.value], opt.value).not.toBe('');
+  });
+});
+
+describe('divisions', () => {
+  it('offers half notes and bar lengths alongside the existing values', () => {
+    const values = DIVISION_OPTS.map((o) => o.value);
+    for (const v of ['1/2', '1/4', '1/8', '1/16', '1-bar', '2-bars', '4-bars']) expect(values, v).toContain(v);
+  });
+
+  it('labels bar lengths readably', () => {
+    const label = (v: string) => DIVISION_OPTS.find((o) => o.value === v)?.label;
+    expect(label('1-bar')).toBe('1 bar');
+    expect(label('2-bars')).toBe('2 bars');
+    expect(label('4-bars')).toBe('4 bars');
+    expect(label('dotted-1/2')).toBe('1/2 dotted');
   });
 });
 

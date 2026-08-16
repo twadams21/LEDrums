@@ -174,20 +174,36 @@ export function computeSpliceBands(len: number, count: number, jitter: number, s
  * hoop into `count` — which is what makes a chase read as one spin around all sixteen rings
  * at once, rather than a single band crawling the length of the whole kit.
  */
+export interface SplicePartitionUnit {
+  start: number;
+  end: number;
+  /** Emission index across the whole walk — used to decorrelate per-unit jitter seeds. */
+  index: number;
+  /** Position on the PRIMARY cascade axis: the hoop within its drum (`'hoop'`), the drum
+      (`'drum'`), or always 0 (`'scope'`). */
+  ordinal: number;
+  ordinalCount: number;
+  /** Position on the SECOND axis — which drum this unit belongs to. Only meaningful under the
+      `'hoop'` partition, where hoops and drums are genuinely separate axes; the other two
+      partitions already cascade by drum on the primary axis. */
+  drumOrdinal: number;
+  drumCount: number;
+}
+
 export function forEachPartitionUnit(
   model: PixelModel,
   ranges: readonly PixelRange[],
   partition: SpliceConfig['partition'],
-  visit: (start: number, end: number, unitIndex: number, ordinal: number, ordinalCount: number) => void,
+  visit: (unit: SplicePartitionUnit) => void,
 ): void {
-  let unitIndex = 0;
-  const emit = (start: number, end: number, ordinal: number, ordinalCount: number): void => {
-    if (end > start) visit(start, end, unitIndex++, ordinal, ordinalCount);
+  let index = 0;
+  const emit = (start: number, end: number, rest: Omit<SplicePartitionUnit, 'start' | 'end' | 'index'>): void => {
+    if (end > start) visit({ start, end, index: index++, ...rest });
   };
 
   for (const range of ranges) {
     if (partition === 'scope') {
-      emit(range.start, range.end, 0, 1);
+      emit(range.start, range.end, { ordinal: 0, ordinalCount: 1, drumOrdinal: 0, drumCount: 1 });
       continue;
     }
     for (let d = 0; d < model.drums.length; d++) {
@@ -195,16 +211,22 @@ export function forEachPartitionUnit(
       if (partition === 'drum') {
         const start = Math.max(range.start, drum.pixelStart);
         const end = Math.min(range.end, drum.pixelStart + drum.pixelCount);
-        emit(start, end, d, model.drums.length);
+        emit(start, end, { ordinal: d, ordinalCount: model.drums.length, drumOrdinal: d, drumCount: model.drums.length });
         continue;
       }
       for (let hoop = 1; hoop <= drum.hoopCount; hoop++) {
         const hoopRange = drumHoopPixelRange(drum, hoop);
         if (!hoopRange) continue;
         // Ordinal is the hoop's position WITHIN ITS DRUM, not a running unit count: on a
-        // kit-scoped splice that makes hoop 1 of every drum fire together and the cascade
-        // climb each drum in parallel, rather than crawling across the kit drum by drum.
-        emit(Math.max(range.start, hoopRange.start), Math.min(range.end, hoopRange.end), hoop - 1, drum.hoopCount);
+        // kit-scoped splice that makes hoop 1 of every drum fire together and the cascade climb
+        // each drum in parallel. The drum axis rides alongside so a kit-wide splice can ALSO
+        // travel drum by drum.
+        emit(Math.max(range.start, hoopRange.start), Math.min(range.end, hoopRange.end), {
+          ordinal: hoop - 1,
+          ordinalCount: drum.hoopCount,
+          drumOrdinal: d,
+          drumCount: model.drums.length,
+        });
       }
     }
   }
@@ -246,26 +268,25 @@ export function spliceOrderIndex(ordinal: number, count: number, order: SpliceOr
 }
 
 /**
- * A unit's own motion clock: the voice's age minus its place in the cascade. Clamped at 0, so a
+ * A unit's own motion clock: the shared clock minus its place in the cascade. Clamped at 0, so a
  * unit whose turn has not come shows the cut STANDING STILL rather than going dark — the splice
  * colours are already lit; only the movement is waiting.
+ *
+ * Takes an absolute delay rather than (index × offset) because a unit can sit on TWO cascade axes
+ * at once: a kit-wide splice can climb each drum's hoops AND travel drum to drum, and the two
+ * delays simply add.
  */
-export function unitMotionAge(ageMs: number, orderIndex: number, offsetMs: number): number {
-  if (!(offsetMs > 0) || orderIndex <= 0) return ageMs;
-  const own = ageMs - orderIndex * offsetMs;
+export function unitMotionAge(ageMs: number, delayMs: number): number {
+  if (!(delayMs > 0)) return ageMs;
+  const own = ageMs - delayMs;
   return own > 0 ? own : 0;
 }
 
-/**
- * Emit `(slot, start, end)` for every band of one run, with the chase applied. Offsets are
- * local to the run; `end` is exclusive.
- *
- * - `offsetSlots` (step chase) rotates WHICH splice each static band shows.
- * - `shiftPx` (smooth chase) slides the band geometry around the run; a band crossing the
- *   wrap point is emitted as TWO ranges, which is why this is a walker and not a list.
- *
- * A zero-width band emits nothing.
- */
+/** A unit's total cascade delay: its place on the hoop axis plus its place on the drum axis. */
+export function unitCascadeDelayMs(orderIndex: number, drumOrderIndex: number, cfg: SpliceConfig): number {
+  return orderIndex * cfg.offsetMs + drumOrderIndex * cfg.drumOffsetMs;
+}
+
 export function forEachSpliceBand(
   bands: readonly SpliceBand[],
   len: number,
@@ -273,22 +294,83 @@ export function forEachSpliceBand(
   offsetSlots: number,
   visit: (slot: number, start: number, end: number) => void,
 ): void {
+  forEachSpliceSegment(bands, len, shiftPx, offsetSlots, 0, (slot, start, end) => visit(slot, start, end));
+}
+
+/**
+ * The feather width in pixels for a smudge amount: a fraction of the AVERAGE band width, so the
+ * same setting reads the same on a 34-pixel hoop and a 196-pixel kick. Clamped to the narrowest
+ * band, because a feather wider than a band would ramp across two boundaries at once and the
+ * weights would stop summing to 1 — a visible dip rather than a smudge.
+ */
+export function spliceFeatherPx(smudge: number, bands: readonly SpliceBand[], len: number): number {
+  const amount = clamp01(smudge);
+  if (amount <= 0 || bands.length === 0 || len <= 0) return 0;
+  let narrowest = Infinity;
+  for (const band of bands) if (band.width > 0 && band.width < narrowest) narrowest = band.width;
+  if (!Number.isFinite(narrowest)) return 0;
+  return Math.min(amount * (len / bands.length), narrowest);
+}
+
+/**
+ * Emit the weighted segments of one run: `(slot, start, end, w0, w1)`, the weight ramping
+ * linearly from `w0` at `start` to `w1` at `end`. Offsets are local to the run; `end` exclusive.
+ *
+ * With `featherPx` 0 each band is ONE segment at full weight — a hard cut, byte for byte. With a
+ * feather each band is three: a ramp up across its leading boundary, a full-weight core, and a
+ * ramp down across its trailing one. Adjacent bands' ramps cover the same pixels with
+ * complementary weights, so a caller that ACCUMULATES gets a crossfade summing to exactly 1 —
+ * the colours smudge into one another with no bright seam and no dip.
+ *
+ * A segment crossing the run's wrap point is split in two, with the ramp kept continuous across
+ * the split — which is why this is a walker and not a list.
+ */
+export function forEachSpliceSegment(
+  bands: readonly SpliceBand[],
+  len: number,
+  shiftPx: number,
+  offsetSlots: number,
+  featherPx: number,
+  visit: (slot: number, start: number, end: number, w0: number, w1: number) => void,
+): void {
   const count = bands.length;
   if (count === 0 || len <= 0) return;
   const shift = wrapIndex(Math.round(shiftPx), len);
+  // ONE integer half-width for the whole run, not one per band. Whole pixels because segment
+  // bounds index the framebuffer; shared because a band's ramp-out has to line up exactly with
+  // its neighbour's ramp-in for the two weights to sum to 1 — with jittered widths, a per-band
+  // half would leave a seam at every boundary between bands of different sizes.
+  const half = Math.round(featherPx / 2);
+
+  const emit = (slot: number, from: number, to: number, w0: number, w1: number): void => {
+    if (to <= from) return;
+    const span = to - from;
+    let cursor = from;
+    while (cursor < to) {
+      const wrapped = wrapIndex(cursor, len);
+      const chunk = Math.min(to - cursor, len - wrapped);
+      const t0 = (cursor - from) / span;
+      const t1 = (cursor + chunk - from) / span;
+      visit(slot, wrapped, wrapped + chunk, w0 + (w1 - w0) * t0, w0 + (w1 - w0) * t1);
+      cursor += chunk;
+    }
+  };
 
   for (let b = 0; b < count; b++) {
     const band = bands[b]!;
     if (band.width <= 0) continue;
     const slot = wrapIndex(b - offsetSlots, count);
-    const start = wrapIndex(band.start + shift, len);
-    const end = start + band.width;
-    if (end <= len) {
-      visit(slot, start, end);
-    } else {
-      visit(slot, start, len);
-      visit(slot, 0, end - len);
+    const start = band.start + shift;
+    // No guard on band width: when a band is exactly twice the half-width its flat core is
+    // empty and it is pure ramp — which is what a full-strength smudge IS, not a degenerate
+    // case. `emit` drops empty segments on its own.
+    if (half <= 0) {
+      emit(slot, start, start + band.width, 1, 1);
+      continue;
     }
+    emit(slot, start - half, start + half, 0, 1);
+    emit(slot, start + half, start + band.width - half, 1, 1);
+    emit(slot, start + band.width - half, start + band.width + half, 1, 0);
   }
 }
 
@@ -378,7 +460,7 @@ export interface ResolvedSplices {
  * snapshot-stable for the voice's life exactly like a delay node's offset: a tempo change
  * mid-decay must not re-time a chase already in flight.
  */
-export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | null {
+export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): ResolvedSplices | null {
   const count = clampInt(node.spliceCount ?? DEFAULT_SPLICE_COUNT, MIN_SPLICE_COUNT, MAX_SPLICE_COUNT);
   const chase = node.spliceChase ?? 'off';
   const chaseMs =
@@ -391,6 +473,7 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
             node.spliceRateMs ?? DEFAULT_SPLICE_RATE_MS,
             node.spliceDivision ?? DEFAULT_SPLICE_DIVISION,
             bpm > 0 ? bpm : 120,
+            beatsPerBar,
           ),
         );
 
@@ -405,9 +488,25 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
           (node.spliceOffsetMode ?? 'beats') === 'time'
             ? (node.spliceOffsetMs ?? 0)
             : node.spliceOffsetDivision
-              ? computeDelayMs('beats', 0, node.spliceOffsetDivision, bpm > 0 ? bpm : 120)
+              ? computeDelayMs('beats', 0, node.spliceOffsetDivision, bpm > 0 ? bpm : 120, beatsPerBar)
               : 0,
         );
+
+  /** Resolve one of the two cascade offsets — a division against the bar, or free ms. A
+      `beats` offset with no division chosen is 0: picking an ORDER alone must never start a
+      cascade the author did not ask for. */
+  const cascadeMs = (mode: 'time' | 'beats' | undefined, ms: number | undefined, division: string | undefined): number =>
+    chase === 'off'
+      ? 0
+      : Math.max(
+          0,
+          (mode ?? 'beats') === 'time'
+            ? (ms ?? 0)
+            : division
+              ? computeDelayMs('beats', 0, division, bpm > 0 ? bpm : 120, beatsPerBar)
+              : 0,
+        );
+  const drumOffsetMs = cascadeMs(node.spliceDrumOffsetMode, node.spliceDrumOffsetMs, node.spliceDrumOffsetDivision);
 
   const colors: (string | null)[] = [];
   const inputBySlot: number[] = [];
@@ -449,6 +548,9 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
       incrementPx: clampInt(node.spliceIncrementPx ?? DEFAULT_SPLICE_INCREMENT_PX, 0, MAX_SPLICE_INCREMENT_PX),
       offsetMs,
       order: node.spliceOrder ?? 'up',
+      drumOffsetMs,
+      drumOrder: node.spliceDrumOrder ?? 'up',
+      smudge: clamp01(node.spliceSmudge ?? 0),
       motionMode: node.spliceMotionMode ?? 'restart',
       tint: clamp01(node.spliceTint ?? 1),
       colors,

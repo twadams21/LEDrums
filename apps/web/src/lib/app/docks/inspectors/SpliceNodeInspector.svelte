@@ -53,6 +53,10 @@
   const offsetMode = $derived(node.spliceOffsetMode ?? 'beats');
   // The cascade offsets ACROSS units, so it means nothing when the whole scope is one unit.
   const canCascade = $derived(partition !== 'scope');
+  const drumOffsetMode = $derived(node.spliceDrumOffsetMode ?? 'beats');
+  // The drum axis is only separate from the primary one when cutting per HOOP — cutting per
+  // drum already cascades drum by drum, and per scope there is a single unit.
+  const canCascadeDrums = $derived(partition === 'hoop' && node.scope !== 'drum' && node.scope !== 'hoop');
   const unitNoun = $derived(spliceUnitNoun(partition));
   const motionMode = $derived(node.spliceMotionMode ?? 'restart');
   const layerOptions = $derived(spliceLayerOptions(store.buses));
@@ -127,6 +131,18 @@
           onChange={(v) => store.setSpliceSetting(node, { spliceJitter: v })}
           format={(v) => `${Math.round(v * 100)}%`}
           ariaLabel="Splice length jitter"
+        />
+      </Field>
+
+      <Field layout="row" label="Smudge">
+        <Slider
+          value={node.spliceSmudge ?? 0}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) => store.setSpliceSetting(node, { spliceSmudge: v })}
+          format={(v) => `${Math.round(v * 100)}%`}
+          ariaLabel="Splice smudge"
         />
       </Field>
 
@@ -266,6 +282,54 @@
               ariaLabel="{unitNoun} order"
             />
           </Field>
+        {/if}
+
+        {#if canCascadeDrums}
+          <Field layout="row" label="Drum offset">
+            <SegmentedControl
+              value={drumOffsetMode}
+              options={SPLICE_OFFSET_MODE_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMode: v as 'beats' | 'time' })}
+              ariaLabel="Drum offset mode"
+            />
+          </Field>
+
+          {#if drumOffsetMode === 'beats'}
+            <Field layout="row" label="Division">
+              <Select
+                value={node.spliceDrumOffsetDivision ?? ''}
+                options={[{ value: '', label: 'None (together)' }, ...DIVISION_OPTS]}
+                onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetDivision: v || undefined })}
+                ariaLabel="Drum offset division"
+              />
+            </Field>
+          {:else}
+            <Field layout="row" label="Time" unit="ms">
+              <CommitInput
+                type="number"
+                value={node.spliceDrumOffsetMs ?? 0}
+                min={0}
+                max={60000}
+                step={1}
+                onCommit={(v) => store.setSpliceSetting(node, { spliceDrumOffsetMs: Number(v) })}
+                ariaLabel="Drum offset milliseconds"
+              />
+            </Field>
+          {/if}
+
+          <Field layout="row" label="Drum order">
+            <Select
+              value={node.spliceDrumOrder ?? 'up'}
+              options={SPLICE_ORDER_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceDrumOrder: v as voice.SpliceOrder })}
+              ariaLabel="Drum order"
+            />
+          </Field>
+
+          <p class="hint">
+            A drum offset sends the movement round the kit one drum after another, on top of how it
+            travels up each drum. Set both and it spirals; set only this one and whole drums light in turn.
+          </p>
         {/if}
 
         <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>

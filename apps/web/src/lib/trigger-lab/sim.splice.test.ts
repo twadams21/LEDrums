@@ -188,6 +188,16 @@ describe('splice — offline preview', () => {
     expect(twoHits(500)).toEqual(twoHits(3000));
   });
 
+  it('smudges the boundary in the preview too', () => {
+    const hard = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2 }));
+    const soft = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2, spliceSmudge: 1 }));
+    const seam = Math.round(hard.hoopLen / 2);
+    expect(isBlue(hard.rgb(seam)), 'hard cut: pure blue at the seam').toBe(true);
+    const [r, , b] = soft.rgb(seam);
+    expect(r, 'smudged: red bleeds across').toBeGreaterThan(0);
+    expect(b, 'smudged: blue still present').toBeGreaterThan(0);
+  });
+
   it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
     const fx = EFFECTS.find((e) => e.generatorId === 'breathing-kit')!.id;
     const { rgb, hoopLen } = render(spliceGraph({ splices: [{ effectId: fx, color: '#ff0000' }, { effectId: fx }], spliceCount: 2 }));

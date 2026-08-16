@@ -340,6 +340,16 @@ export interface SpliceConfig {
   offsetMs: number;
   /** The order units start moving in when {@link offsetMs} is non-zero. */
   order: SpliceOrder;
+  /** Milliseconds each DRUM's motion starts after the one before it, on top of {@link offsetMs}.
+      Only meaningful under the `'hoop'` partition, where hoops and drums are separate axes — it
+      is what sends a kit-wide splice travelling drum to drum. 0 = every drum together. */
+  drumOffsetMs: number;
+  /** The order drums start moving in when {@link drumOffsetMs} is non-zero. */
+  drumOrder: SpliceOrder;
+  /** 0..1 — how far each splice's colour bleeds into its neighbours across their shared edge.
+      0 is a hard cut. Expressed as a fraction of the average band width, so it reads the same
+      on a small hoop and a big kick. */
+  smudge: number;
   /** Whether a hit restarts the motion or it free-runs across hits. */
   motionMode: SpliceMotionMode;
   /** 0..1 strength of the colour tint applied to an effect splice. */
@@ -447,6 +457,15 @@ export interface GraphNode {
   spliceOffsetDivision?: string;
   /** The order units start moving in when an offset is set. Absent → `'up'`. */
   spliceOrder?: SpliceOrder;
+  /** Per-DRUM cascade offset (hoop partition only): how the movement travels across the kit,
+      independently of how it travels up each drum. Same two-mode shape as the others. */
+  spliceDrumOffsetMode?: 'time' | 'beats';
+  spliceDrumOffsetMs?: number;
+  spliceDrumOffsetDivision?: string;
+  /** The order drums start moving in. Absent → `'up'`. */
+  spliceDrumOrder?: SpliceOrder;
+  /** 0..1 blend of each splice's colour into its neighbours. Absent/0 → hard-edged bands. */
+  spliceSmudge?: number;
   /** Whether a hit restarts this splice's motion or it free-runs. Absent → `'restart'`. */
   spliceMotionMode?: SpliceMotionMode;
   // Splice envelope. A splice node owns its own attack/hold/fade rather than inheriting the

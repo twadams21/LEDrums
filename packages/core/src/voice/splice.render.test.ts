@@ -398,6 +398,87 @@ describe('splice — layer polyphony (sustain vs cut)', () => {
   });
 });
 
+describe('splice — smudge', () => {
+  it('blends the boundary between two colours instead of cutting it', () => {
+    // 4-pixel hoops, 2 splices: hard-cut gives pure red then pure blue. A smudge mixes them
+    // across the seam, so the boundary pixels carry BOTH channels.
+    const hard = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    expectRgb(hard.rgb(1), RED, 'hard cut: pure red up to the edge');
+    expectRgb(hard.rgb(2), BLUE, 'hard cut: pure blue after it');
+
+    const soft = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
+    const [r, g, b] = soft.rgb(2);
+    expect(r, 'smudged: red bleeds past the seam').toBeGreaterThan(0);
+    expect(b, 'smudged: blue is still there').toBeGreaterThan(0);
+    expect(g, 'and nothing invents a third colour').toBeCloseTo(0, 2);
+  });
+
+  it('keeps total brightness flat across the blend — no seam, no dip', () => {
+    const soft = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
+    for (let p = 0; p < 4; p++) {
+      const [r, g, b] = soft.rgb(p);
+      expect(r + g + b, `pixel ${p} total`).toBeCloseTo(1, 1);
+    }
+  });
+
+  it('renders identically to a hard cut at zero', () => {
+    const a = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const b = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 0 }));
+    for (let i = 0; i < 16; i++) expectRgb(b.rgb(i), a.rgb(i), `pixel ${i}`);
+  });
+});
+
+describe('splice — drum cascade', () => {
+  const kitWide = (over: Partial<GraphNode>, atMs: number) =>
+    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceHoldMs: 60000,
+      ...over,
+    }), [], atMs);
+
+  it('sends the movement round the kit one drum after another', () => {
+    // Drum offset 200ms: the kick (drum 0) has stepped by 150ms; the snare (drum 1) is still
+    // inside its head start, so it holds its resting cut.
+    const { rgb } = kitWide({ spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 200, spliceDrumOrder: 'up' }, 150);
+    expectRgb(rgb(0), BLUE, 'kick has stepped');
+    expectRgb(rgb(8), RED, 'snare is waiting its turn — lit, not dark');
+  });
+
+  it('reverses which drum leads', () => {
+    const { rgb } = kitWide({ spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 200, spliceDrumOrder: 'down' }, 150);
+    expectRgb(rgb(8), BLUE, 'the snare leads');
+    expectRgb(rgb(0), RED, 'the kick waits');
+  });
+
+  it('adds to the hoop cascade rather than replacing it', () => {
+    // Hoop offset 100ms + drum offset 300ms: kick hoop 1 at 0ms, kick hoop 2 at 100ms, snare
+    // hoop 1 at 300ms, snare hoop 2 at 400ms. Sampled at 350ms they are 3, 2, 0 and 0 steps in.
+    // The drum offset is deliberately an ODD number of steps: on two splices only parity shows,
+    // so an even offset would leave this passing with the drum term removed entirely.
+    const { rgb } = kitWide(
+      {
+        spliceOffsetMode: 'time',
+        spliceOffsetMs: 100,
+        spliceDrumOffsetMode: 'time',
+        spliceDrumOffsetMs: 300,
+      },
+      350,
+    );
+    expectRgb(rgb(0), BLUE, 'kick hoop 1 — 3 steps');
+    expectRgb(rgb(4), RED, 'kick hoop 2 — 2 steps');
+    expectRgb(rgb(8), RED, 'snare hoop 1 — only just started');
+    expectRgb(rgb(12), RED, 'snare hoop 2 — not started');
+  });
+
+  it('moves every drum together when no drum offset is set', () => {
+    const { rgb } = kitWide({}, 150);
+    expectRgb(rgb(0), BLUE, 'kick');
+    expectRgb(rgb(8), BLUE, 'snare, in lockstep');
+  });
+});
+
 describe('splice — envelope', () => {
   /** Total lit brightness of the frame — a proxy for "are the lights still up". */
   const litSum = (rgb: (i: number) => [number, number, number]) => {

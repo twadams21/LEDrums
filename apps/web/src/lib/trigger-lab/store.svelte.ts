@@ -1749,6 +1749,7 @@ export class TriggerLab {
       beatPhase: this.beatPhase,
       sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const { key, graph } of toFire) {
       this.markGraphFire(key); // offline hardware MIDI: the local sim IS the engine, so stamp here
@@ -1841,6 +1842,7 @@ export class TriggerLab {
       beatPhase: this.beatPhase,
       sourceDrumId: pad.drumId,
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const { graph, label, key } of toFire) {
       const resolved = this.sim.triggerGraph(label, graph, ctx, key);
@@ -1879,6 +1881,7 @@ export class TriggerLab {
       beatPhase: this.beatPhase,
       sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
     this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
@@ -3156,7 +3159,7 @@ export class TriggerLab {
       keeps the authored rows in step). Guards `node.kind === 'splice'`. */
   setSpliceSetting(
     node: GraphNode,
-    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceMotionMode' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceTint'>>,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceTint'>>,
   ): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'splice') return;

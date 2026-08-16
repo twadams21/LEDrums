@@ -31,9 +31,11 @@ import {
   chaseStepOffset,
   computeSpliceBands,
   forEachPartitionUnit,
-  forEachSpliceBand,
+  forEachSpliceSegment,
+  spliceFeatherPx,
   spliceOrderIndex,
   spliceTintColour,
+  unitCascadeDelayMs,
   unitMotionAge,
   tintPixel,
   type SpliceBand,
@@ -149,7 +151,7 @@ function syncMixInputState(input: MixInput, rendered: Voice): void {
  * splice reuses one cached layout for the whole voice instead of re-cutting 60×/second.
  */
 function spliceLayoutKey(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): string {
-  let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${cfg.order}|${model.pixelCount}`;
+  let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${cfg.order}|${cfg.drumOrder}|${cfg.smudge}|${model.pixelCount}`;
   for (const range of ranges) key += `|${range.start}-${range.end}`;
   return key;
 }
@@ -160,7 +162,10 @@ interface SpliceUnit {
   start: number;
   end: number;
   bands: SpliceBand[];
+  /** Place on the hoop axis and on the drum axis — both structural, so they stay cacheable
+      while the offsets that scale them are read fresh each frame. */
   orderIndex: number;
+  drumOrderIndex: number;
 }
 
 /**
@@ -170,13 +175,14 @@ interface SpliceUnit {
  */
 function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): SpliceUnit[] {
   const units: SpliceUnit[] = [];
-  forEachPartitionUnit(model, ranges, cfg.partition, (start, end, unitIndex, ordinal, ordinalCount) => {
-    const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
+  forEachPartitionUnit(model, ranges, cfg.partition, (unit) => {
+    const seed = cfg.jitter > 0 ? (cfg.seed + unit.index * 0x9e3779b1) >>> 0 : cfg.seed;
     units.push({
-      start,
-      end,
-      bands: computeSpliceBands(end - start, cfg.count, cfg.jitter, seed),
-      orderIndex: spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed),
+      start: unit.start,
+      end: unit.end,
+      bands: computeSpliceBands(unit.end - unit.start, cfg.count, cfg.jitter, seed),
+      orderIndex: spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed),
+      drumOrderIndex: spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
     });
   });
   return units;
@@ -334,9 +340,10 @@ export function createDefaultCompositor(): Compositor {
           const dstRgba = mix.rgba;
           for (const unit of units) {
             const len = unit.end - unit.start;
-            // Each unit runs on its own clock, so an offset cascade starts hoop after hoop.
-            // With no offset every unit gets `age` and this is the previous behaviour exactly.
-            const unitAge = unitMotionAge(motionClock, unit.orderIndex, cfg.offsetMs);
+            // Each unit runs on its own clock, so an offset cascade starts hoop after hoop —
+            // and, on a kit-wide splice, drum after drum. With no offsets every unit gets the
+            // shared clock and this is the previous behaviour exactly.
+            const unitAge = unitMotionAge(motionClock, unitCascadeDelayMs(unit.orderIndex, unit.drumOrderIndex, cfg));
             const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
             const shift =
               cfg.chase === 'smooth'
@@ -344,29 +351,37 @@ export function createDefaultCompositor(): Compositor {
                 : cfg.chase === 'stagger'
                   ? chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
                   : 0;
-            forEachSpliceBand(unit.bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
+            const feather = spliceFeatherPx(cfg.smudge, unit.bands, len);
+            forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
               const inputIndex = cfg.inputBySlot[slot] ?? -1;
               if (inputIndex < 0) return; // a blank splice shows nothing
               const src = buffers[inputIndex]!.rgba;
               const colour = spliceTintColour(cfg.colors[slot]);
-              for (let p = unit.start + bandStart; p < unit.start + bandEnd; p++) {
+              const span = bandEnd - bandStart;
+              for (let i = 0; i < span; i++) {
+                const p = unit.start + bandStart + i;
                 const j = p * 4;
                 const r = src[j]!;
                 const g = src[j + 1]!;
                 const b = src[j + 2]!;
                 const a = src[j + 3]!;
                 if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
+                // Accumulate, never assign: across a smudge two neighbouring splices write the
+                // same pixel with complementary weights that sum to 1. With no smudge the
+                // weights are 1 and the bands never overlap, so this is still a plain copy.
+                const w = span <= 1 ? w0 : w0 + (w1 - w0) * (i / span);
+                if (w <= 0) continue;
                 if (colour) {
                   const t = tintPixel(r, g, b, colour, cfg.tint);
-                  dstRgba[j] = t.r;
-                  dstRgba[j + 1] = t.g;
-                  dstRgba[j + 2] = t.b;
+                  dstRgba[j] = dstRgba[j]! + t.r * w;
+                  dstRgba[j + 1] = dstRgba[j + 1]! + t.g * w;
+                  dstRgba[j + 2] = dstRgba[j + 2]! + t.b * w;
                 } else {
-                  dstRgba[j] = r;
-                  dstRgba[j + 1] = g;
-                  dstRgba[j + 2] = b;
+                  dstRgba[j] = dstRgba[j]! + r * w;
+                  dstRgba[j + 1] = dstRgba[j + 1]! + g * w;
+                  dstRgba[j + 2] = dstRgba[j + 2]! + b * w;
                 }
-                dstRgba[j + 3] = a;
+                dstRgba[j + 3] = dstRgba[j + 3]! + a * w;
               }
             });
           }
