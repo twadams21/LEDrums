@@ -32,6 +32,7 @@ import {
   type Transport,
   type TransportState,
 } from '@ledrums/core';
+import { graphFiredMonitorLabel, graphMonitorDestination } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
@@ -50,7 +51,8 @@ export type VoicePartialInput =
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number }
   | { kind: 'recallSection'; songId?: string; sectionId: string }
-  | { kind: 'cc'; controller: number; value: number; channel?: number }; // S37
+  | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
+  | { kind: 'releaseBus'; busId?: string };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -468,6 +470,9 @@ export class VoiceEngineHost {
           velocity: partial.velocity ?? 1,
           timeMs,
         };
+      case 'releaseBus':
+        // The dock's stop button: release the bus's voices (absent busId = all buses).
+        return { kind: 'releaseBus', busId: partial.busId, timeMs };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
         // action and never reaches the zone-map or a trigger-source graph (the same
@@ -722,7 +727,7 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
         label: `Graph resolved ${d.graphKey}`,
         detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}`,
       });
@@ -735,8 +740,8 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
-        label: `Graph fired ${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
+        label: graphFiredMonitorLabel(d.graphKey),
         detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}; actions=${d.actionCount}; effects=${effectLabels.join(', ') || 'none'}`,
       });
       return;
@@ -769,7 +774,7 @@ export class VoiceEngineHost {
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
-        destination: `graph:${d.graphKey}`,
+        destination: graphMonitorDestination(d.graphKey),
         label: `Sequence reset ${d.graphKey}`,
         detail: `input=${describeVoiceInput(d.input)}; node=${d.nodeId}; back to step 1`,
       });

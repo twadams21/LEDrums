@@ -1,0 +1,50 @@
+/* Settings section colours — one block per section id, consumed by `SettingsNav` (sidebar
+   rows) and `PaneHeader` (pane titles) through `[data-settings-section]`.
+
+   The hues are the patch node-role colours the app already draws these objects in
+   (`patch-zones.ts` / `patch-topology.ts`): a section reads as the thing it edits. System
+   has no block — it falls back to the hueless default, because it is the app, not a stage
+   of the signal path.
+
+   Why the blends name their token twice instead of mixing `var(--sec-tint)`: the gamut
+   audit (`scripts/color-mix-audit.mjs`) resolves colour mixes statically against
+   tokens.css, and an endpoint that only exists at runtime cannot be checked — it becomes
+   a silent skip in exactly the place a mix can leave the sRGB gamut. Written this way,
+   every blend below is audited on every test run. */
+
+[data-settings-section] {
+  --sec-tint: var(--text-faint);
+  --sec-wash: var(--surface-3);
+  --sec-edge: var(--border-faint);
+}
+
+[data-settings-section='input'] {
+  --sec-tint: var(--role-input);
+  --sec-wash: color-mix(in oklch, var(--role-input) 13%, var(--surface-3));
+  --sec-edge: color-mix(in oklch, var(--role-input) 30%, var(--border-faint));
+}
+
+[data-settings-section='zones'] {
+  --sec-tint: var(--role-mod);
+  --sec-wash: color-mix(in oklch, var(--role-mod) 13%, var(--surface-3));
+  --sec-edge: color-mix(in oklch, var(--role-mod) 30%, var(--border-faint));
+}
+
+[data-settings-section='controls'] {
+  --sec-tint: var(--role-modulation);
+  --sec-wash: color-mix(in oklch, var(--role-modulation) 13%, var(--surface-3));
+  --sec-edge: color-mix(in oklch, var(--role-modulation) 30%, var(--border-faint));
+}
+
+[data-settings-section='drums'] {
+  --sec-tint: var(--role-layer);
+  --sec-wash: color-mix(in oklch, var(--role-layer) 13%, var(--surface-3));
+  --sec-edge: color-mix(in oklch, var(--role-layer) 30%, var(--border-faint));
+}
+
+[data-settings-section='outputs'],
+[data-settings-section='controller'] {
+  --sec-tint: var(--role-output);
+  --sec-wash: color-mix(in oklch, var(--role-output) 13%, var(--surface-3));
+  --sec-edge: color-mix(in oklch, var(--role-output) 30%, var(--border-faint));
+}

@@ -19,7 +19,19 @@
   import X from '@lucide/svelte/icons/x';
   import { untrack, type Component } from 'svelte';
 
-  let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
+  let {
+    store,
+    open,
+    onClose,
+    layer = 1,
+  }: {
+    store: TriggerLab;
+    open: boolean;
+    onClose: () => void;
+    /** Dialog stacking tier — pass 2+ when opened OVER another dialog (e.g. Settings ›
+        System) so this scrim/content sit above it; the restore confirm rides one higher. */
+    layer?: number;
+  } = $props();
 
   // The snapshot pending restore-confirmation (null = confirm closed).
   let confirmingId = $state<string | null>(null);
@@ -76,7 +88,7 @@
   }
 </script>
 
-<Dialog {open} onClose={dismiss} title="Backups" class="dlg-backups">
+<Dialog {open} onClose={dismiss} title="Backups" class="dlg-backups" {layer}>
   <header class="bhead">
     <Eyebrow icon={History}>Backups</Eyebrow>
     <span class="spacer"></span>
@@ -115,6 +127,7 @@
 
 <ConfirmDialog
   open={confirmingId !== null}
+  layer={layer + 1}
   danger
   title="Restore this backup?"
   message="A backup of your current state is taken first, then your project, shows and songs are replaced with this snapshot and every connected screen reloads."

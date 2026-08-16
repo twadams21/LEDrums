@@ -49,6 +49,8 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
 | `select:<k>`| select the node most recently `add`ed with that kind (flips the Node Editor to Inspector) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |
+| `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
+| `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
 | `settings`  | open the app Settings dialog |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.
@@ -60,6 +62,19 @@ pnpm ui-shot --discover --view trigger
 ```
 
 Lists regions / dialogs / buttons / nodes from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,add:effect,select:effect,gallery"`).
+
+## `--click` / `--rightclick` — surfaces that only exist after a gesture
+
+A dialog behind a button and a right-click menu have no store state to summon them, so open them
+the way a user does and capture what appears:
+
+```bash
+pnpm ui-shot --state "view:trigger" --click "button:Add graph" --target "dialog:Add graph" --name add-graph
+pnpm ui-shot --state "view:trigger" --rightclick ".gcard" --target ".lab-ctx-content" --name graph-card-menu
+```
+
+Both take the same target syntax as `--target`, and both are also preset fields (`click`,
+`rightclick`). `--click` runs before `--rightclick` when both are given.
 
 ## Presets (`shots.json`)
 
@@ -85,7 +100,7 @@ The rule is **not** "register every component." It is:
 
 `--full` (full page) · `--strict` (exit 1 on any console/page error — the clean-console gate) · `--viewport WxH` (default 1600×1000) · `--settle MS` (extra pre-capture wait) · `--name` (output basename for ad-hoc/CLI captures).
 
-Ad-hoc raw route is still supported for edge cases: `pnpm ui-shot --route "?view=patch" --target "main.center" --name my-shot`.
+Ad-hoc raw route is still supported for edge cases: `pnpm ui-shot --route "?view=sections" --target "main.center" --name my-shot`.
 
 ## Validation
 

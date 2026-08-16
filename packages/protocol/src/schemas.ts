@@ -177,6 +177,8 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('key'), drumId: z.string(), zone: z.string().optional(), velocity: z.number().optional() }).strict(),
   z.object({ t: z.literal('fireGraph'), graphKey: z.string(), velocity: z.number() }).strict(),
   z.object({ t: z.literal('recallSection'), songId: z.string(), sectionId: z.string() }).strict(),
+  // Release every active voice on a bus (the dock's stop button); absent busId = all buses.
+  z.object({ t: z.literal('releaseBus'), busId: z.string().optional() }).strict(),
   z.object({ t: z.literal('takeover') }).strict(),
   z.object({ t: z.literal('tunnel'), action: z.enum(['start', 'stop']) }).strict(),
   z.object({ t: z.literal('loadProject'), name: z.string() }).strict(),

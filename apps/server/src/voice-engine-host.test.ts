@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
+import { graphFireKeyOf } from '@ledrums/protocol';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
 
@@ -504,6 +505,13 @@ describe('VoiceEngineHost', () => {
         label: `Graph fired ${voice.padKey('kick', '0')}`,
       }),
     );
+    // The web client reads that same event back through the shared contract to light the
+    // fired graph's card (#177) — assert the round trip, not just the literal shape.
+    expect(
+      (events as Array<{ type: string; label: string; destination?: string }>)
+        .map(graphFireKeyOf)
+        .filter(Boolean),
+    ).toEqual([voice.padKey('kick', '0')]);
     expect(events).toContainEqual(
       expect.objectContaining({
         detail: expect.stringContaining('path=pad-fallback'),

@@ -55,6 +55,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'addClip', layerId: 'base', clip },
   { t: 'removeClip', layerId: 'base', clipId: 'c1' },
   { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4 },
+  { t: 'releaseBus', busId: 'base' },
   { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true, color: '#ff8800' },
   { t: 'setKitGlobal', mirror: 'x', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
   { t: 'setHoopConfig', drumId: 'kick', hoopIndex: 1, pixelCount: 196, reverse: true },
@@ -143,6 +144,7 @@ describe('clientMessageSchema', () => {
   });
 
   it('rejects unknown t, missing fields, wrong types, and unknown keys', () => {
+    expect(clientMessageSchema.safeParse({ t: 'releaseBus' }).success).toBe(true); // busId optional = all buses
     expect(clientMessageSchema.safeParse({ t: 'bogus' }).success).toBe(false);
     expect(clientMessageSchema.safeParse({ t: 'midi', velocity: 1, on: true }).success).toBe(false); // missing note
     expect(clientMessageSchema.safeParse({ t: 'midi', note: 'x', velocity: 1, on: true }).success).toBe(false); // wrong type

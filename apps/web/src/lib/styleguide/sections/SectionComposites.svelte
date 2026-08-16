@@ -13,6 +13,11 @@
   import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
+  import ViewTabs from '../../app/chrome/ViewTabs.svelte';
+  import SongsBar from '../../app/chrome/SongsBar.svelte';
+  import SectionsBar from '../../app/chrome/SectionsBar.svelte';
+  import type { ShellStore } from '../../app/shell-store.svelte';
+  import type { View } from '../../app/shell-nav';
   import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
@@ -23,6 +28,14 @@
   import Monitor from '../../app/docks/Monitor.svelte';
   import ReadRow from '../../app/docks/inspectors/ReadRow.svelte';
   import RenameField from '../../app/docks/inspectors/RenameField.svelte';
+  import SettingsNav from '../../app/settings/SettingsNav.svelte';
+  import PaneHeader from '../../app/settings/PaneHeader.svelte';
+  import type { SettingsPane } from '../../app/shell-nav';
+  import OutputChainCard from '../../app/settings/panes/OutputChainCard.svelte';
+  import UnassignedPool from '../../app/settings/panes/UnassignedPool.svelte';
+  import { addHoop, dropHoop, moveHoop, removeHoop, unassignedHoops } from '../../app/settings/panes/chain-editor';
+  import { pixelRanges, type HoopRef, type PatchRouting } from '../../app/patch-routing';
+  import type { KitConfig, RgbOrder } from '@ledrums/core';
   import Field from '../../ui/Field.svelte';
   import Slider from '../../ui/Slider.svelte';
   import DemoCard from '../DemoCard.svelte';
@@ -203,6 +216,47 @@
   }
   const renameStub = new RenameStub() as unknown as TriggerLab;
 
+  /* ---- Output chain editor (S4c) — real reducers on a stub kit + routing -------- */
+  const chainDrum = (id: string, label: string): KitConfig['drums'][number] => ({
+    id,
+    label,
+    color: '#fff',
+    diameterIn: 22,
+    hoopSpacingMm: 50,
+    localSpinDeg: 0,
+    startAngleDeg: 0,
+    origin: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+  });
+  const chainKit: KitConfig = {
+    version: 1,
+    units: 'mm',
+    global: { ledDensityPxPerM: 60, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 304, mirror: 'none', expanded: false },
+    drums: [chainDrum('kick', 'Kick'), chainDrum('snare', 'Snare')],
+    outputs: [],
+  };
+  let chainRouting = $state<PatchRouting>({
+    outputs: [
+      {
+        id: 'out-1',
+        channelsPerPixel: 3,
+        hoops: [
+          { drumId: 'kick', hoop: 1 },
+          { drumId: 'kick', hoop: 2 },
+        ],
+      },
+    ],
+  });
+  const chainPool = $derived(unassignedHoops(chainKit, chainRouting));
+  const chainRanges = $derived(pixelRanges(chainRouting, () => 108));
+  const chainLabels = (h: HoopRef): { drum: string; hoop: string; full: string } => {
+    const drum = chainKit.drums.find((d) => d.id === h.drumId)?.label ?? h.drumId;
+    return { drum, hoop: `Hoop ${h.hoop}`, full: `${drum} · Hoop ${h.hoop}` };
+  };
+  const chainScalar = (partial: { startUniverse?: number; channelsPerPixel?: number; rgbOrder?: RgbOrder }): void => {
+    chainRouting = { outputs: chainRouting.outputs.map((o) => ({ ...o, ...partial })) };
+  };
+
   let inspectorGain = $state(0.7);
 
   /* ---- GraphLintStrip — pure props (compileRenderPlan issues) ------------------- */
@@ -224,6 +278,48 @@
 
   /* ---- BootOverlay — pure props (status + active) ------------------------------ */
   const boot = (patch: Partial<BootStatus>): BootStatus => ({ ...initialBootStatus, ...patch });
+
+  /* ---- Tabbed chrome bars (S2) — reactive stubs drive the real components ------ */
+  class ShellStub {
+    view = $state<View>('trigger');
+    setView(v: View): void {
+      this.view = v;
+    }
+  }
+  const shellStub = new ShellStub() as unknown as ShellStore;
+
+  /* ---- Settings sections — the nav routes itself; the header follows the same row -- */
+  let settingsPane = $state<SettingsPane>('zones');
+
+  class SetlistStub {
+    songs = [
+      {
+        id: 'song-1',
+        name: 'Opener',
+        sections: [
+          { id: 'sec-1', name: 'Intro', graphs: ['g1', 'g2'] },
+          { id: 'sec-2', name: 'Verse', graphs: ['g1'] },
+          { id: 'sec-3', name: 'Chorus', graphs: ['g1', 'g2', 'g3'] },
+        ],
+      },
+      { id: 'song-2', name: 'Midnight Run', sections: [{ id: 'sec-4', name: 'Drop', graphs: ['g1'] }] },
+    ];
+    resolvedSongs = [...this.songs, { id: 'song-3', name: 'Encore', sections: [] }];
+    activeSongId = $state('song-1');
+    activeSectionId = $state('sec-1');
+    canEdit = true;
+    get activeSong() {
+      return this.songs.find((s) => s.id === this.activeSongId) ?? null;
+    }
+    setActiveSong(id: string): void {
+      this.activeSongId = id;
+    }
+    setActiveSection(id: string): void {
+      this.activeSectionId = id;
+    }
+    createSong(): void {}
+  }
+  const setlistStub = new SetlistStub() as unknown as TriggerLab;
 </script>
 
 <section class="block" id="composites">
@@ -236,6 +332,39 @@
   </div>
 
   <div class="comp-grid">
+    <DemoCard
+      title="View tabs"
+      src="lib/app/chrome/ViewTabs"
+      note="The nav bar's workspace router (tabbed chrome): Perform · Objects · Sections · Trigger Graph · Monitor — no Patch tab, the patch lives in Settings. Active tab is the surface-raised bordered pill; hover is colour + background only, no motion."
+      wide
+    >
+      <ViewTabs shell={shellStub} />
+    </DemoCard>
+
+    <DemoCard
+      title="Settings sections — nav + pane header"
+      src={['lib/app/settings/SettingsNav', 'lib/app/settings/PaneHeader', 'lib/app/settings/sections']}
+      note="How a section carries an identity: one registry row gives the sidebar entry and its pane header the same icon and hue, so arriving from the sidebar lands on the same colour. The hues are the signal-flow role colours of the objects each section edits (input · zone · drum/kit · output); System is deliberately hueless. Active = a 13% wash of that hue with a tinted border; hover is colour + background only, no motion."
+      wide
+    >
+      <div class="secnav-demo">
+        <SettingsNav active={settingsPane} onSelect={(id) => (settingsPane = id)} />
+        <div class="secnav-pane"><PaneHeader id={settingsPane} /></div>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Setlist songs bar · sections bar"
+      src={['lib/app/chrome/SongsBar', 'lib/app/chrome/SectionsBar']}
+      note="Chrome rows 2 + 3: chip rows for the show's setlist and the active song's sections. The active chip is surface-raised with an inset ring; the count trails in tabular numerals; editors get the add-song affordance. Both scroll horizontally without a visible scrollbar."
+      wide
+    >
+      <div class="bar-stack">
+        <SongsBar store={setlistStub} />
+        <SectionsBar store={setlistStub} />
+      </div>
+    </DemoCard>
+
     <DemoCard
       title="Node icon chip"
       src={['lib/app/views/NodeIconChip', 'lib/app/views/trigger-node-meta']}
@@ -430,6 +559,37 @@
     </DemoCard>
 
     <DemoCard
+      title="Output chain editor"
+      src={['lib/app/settings/panes/OutputChainCard', 'lib/app/settings/panes/UnassignedPool', 'lib/app/settings/panes/chain-editor']}
+      note="Settings › Outputs & Chains: one card per physical output — transport scalars above the ordered hoop chain — with the unassigned-hoops pool beneath. Hoops are dragged between the pool and any chain (and reordered within one); every drop, button and picker choice reduces through the same pure chain-editor, so a hoop sits on at most one chain by construction. Drag a chip below onto the chain — this demo runs the real reducers."
+      wide
+    >
+      <div class="chain-demo">
+        <OutputChainCard
+          store={renameStub}
+          output={chainRouting.outputs[0]!}
+          index={0}
+          expanded={false}
+          pool={chainPool}
+          labels={chainLabels}
+          span={chainRanges.byOutput['out-1']}
+          disabled={false}
+          canEdit
+          onScalar={chainScalar}
+          onAdd={(h) => (chainRouting = addHoop(chainRouting, 'out-1', h))}
+          onRemove={(i) => (chainRouting = removeHoop(chainRouting, 'out-1', i))}
+          onMove={(from, to) => (chainRouting = moveHoop(chainRouting, 'out-1', from, to))}
+          onDropHoop={(drag, gap) => (chainRouting = dropHoop(chainRouting, drag, { kind: 'chain', outputId: 'out-1', gap }))}
+        />
+        <UnassignedPool
+          pool={chainPool}
+          labels={chainLabels}
+          onDropHoop={(drag) => (chainRouting = dropHoop(chainRouting, drag, { kind: 'pool' }))}
+        />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Monitor"
       src={['lib/app/docks/Monitor', 'lib/app/monitor']}
       note="The routing/debug log — entries colour-code by type on the left border. The filters here are live (this demo runs the real filter code)."
@@ -467,6 +627,28 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-3);
+  }
+  /* the songs/sections bars fill their row height in the shell; pin it here */
+  /* The modal's own split: a 200px section column beside the pane it opens. */
+  .secnav-demo {
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .secnav-pane {
+    padding: var(--space-3);
+    min-width: 0;
+  }
+  .bar-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .bar-stack > :global(.bar) {
+    height: 38px;
   }
   .chip-row {
     display: flex;
@@ -514,6 +696,12 @@
     flex-direction: column;
     gap: var(--space-3);
     max-width: 300px;
+  }
+  .chain-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 360px;
   }
   /* Sit the strip on a canvas-like inset so it reads as it does over the graph surface. */
   .lint-demo {

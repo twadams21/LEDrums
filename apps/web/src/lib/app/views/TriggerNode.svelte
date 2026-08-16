@@ -246,17 +246,7 @@
      the card can't drag them off the face (item 1.7 / E). -->
 {#snippet cardHandles()}
   {#if nodeHasInput(kind)}
-    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style={nodeHasModInput(kind) ? 'top: 35%' : 'top: 50%'} />
-  {/if}
-  {#if nodeHasModInput(kind)}
-    <Handle
-      type="target"
-      id="mod"
-      position={Position.Left}
-      class="mod-handle"
-      aria-label="Modifier chain in"
-      style={nodeHasInput(kind) ? 'top: 65%' : 'top: 50%'}
-    />
+    <Handle type="target" position={Position.Left} class={kind === 'play' || kind === 'effect' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'play' || kind === 'effect' ? 'Trigger flow in' : 'Effect flow in'} style="top: 50%" />
   {/if}
   {#if nodeHasOutput(kind)}
     <Handle type="source" position={Position.Right} class={kind === 'trigger' ? 'trigger-handle' : 'effect-handle'} aria-label={kind === 'trigger' ? 'Trigger flow out' : 'Effect flow out'} />
@@ -335,6 +325,12 @@
         leadHandles={cardHandles}
         footer={mixRows.length > 0 ? mixFooter : modRows.length > 0 ? paramFooter : undefined}
       />
+      {#if nodeHasModInput(kind)}
+        <!-- Card-level (not head-anchored): the modifier-chain input sits centred ON the
+             card's bottom edge, wherever the footer ends — modulation wiring arrives from
+             below, distinct from the left→right trigger/effect flow. -->
+        <Handle type="target" id="mod" position={Position.Bottom} class="mod-handle" aria-label="Modifier chain in" />
+      {/if}
       {@render lintBadge()}
     </div>
   {/if}
@@ -457,27 +453,29 @@
   }
   /* the scoped modulation input handle rides the row's left edge */
 .modrow :global(.param-handle) {
-  left: -12px;
+  /* Same base CSS as every handle (translate(-50%) centres ON `left`); the only difference
+     is the containing block — the ROW, inset from the card by 1px row border + 8px footer
+     padding + 1.5px card border. Compensate exactly that, so the centre lands on the card's
+     left edge like the normal input handles. */
+  left: -10.5px;
   background: var(--role-modulation);
   border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
 }
 
-/* the modulation OUTPUT handle mirrors the param INPUT handle's -12px role offset and sits at
-   the node's vertical centre (a mod-source node has no other handle to share the face with).
-   Its role colour is owned by GraphCanvas (`.mod-source-handle`) so it beats the grey base. */
-.tnode :global(.mod-source-handle) {
-  right: -12px;
-  top: 50%;
-}
+/* The modulation OUTPUT (right) and modifier-chain INPUT (bottom, a card-level sibling of
+   NodeCard so a growing param footer can't strand it mid-card) take NO positional overrides:
+   xyflow's base handle CSS (`right/bottom: 0` + `translate(±50%)`) centres a handle exactly
+   on its containing block's edge — the same rules the normal flow handles ride, which is why
+   those always sat right. Only role colours differ, owned by GraphCanvas. */
 
 .mixrow :global(.mix-handle) {
-  left: -12px;
+  left: -10.5px; /* same row→card inset compensation as .param-handle above */
 }
-  /* small "N in chain" chip anchored at the play node's mod input (bottom-left corner) */
+  /* small "N in chain" modify badge riding the card's top-right edge */
   .modcount {
     position: absolute;
-    left: -8px;
-    bottom: -7px;
+    right: -8px;
+    top: -7px;
     display: inline-flex;
     align-items: center;
     gap: 2px;

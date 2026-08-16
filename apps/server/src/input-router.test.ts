@@ -75,9 +75,17 @@ describe('zone-map resolution (PINNED precedence step 1)', () => {
     expect(voice.padKey(pad.drumId, pad.zone)).toBe('kick:0');
   });
 
-  it('clamps an out-of-range slot into the trigger-slot range', () => {
+  // The 8-slot ceiling came off with the zone cap (2026-08-14): a drum may declare as many
+  // zones as it needs, and clamping slot 99 to "7" would not have limited anything — it would
+  // have silently fired a DIFFERENT zone's graph.
+  it('carries a high slot through as its own zone, uncapped', () => {
     const inputMap = { ...defaultProject().inputMap, midiNotes: [{ note: 60, drumId: 'kick', slot: 99 }] };
-    expect(zoneForNote(inputMap, 60)).toEqual({ drumId: 'kick', zone: '7' });
+    expect(zoneForNote(inputMap, 60)).toEqual({ drumId: 'kick', zone: '99' });
+  });
+
+  it('still floors a negative slot rather than minting a nonsense zone', () => {
+    const inputMap = { ...defaultProject().inputMap, midiNotes: [{ note: 61, drumId: 'kick', slot: -3 }] };
+    expect(zoneForNote(inputMap, 61)).toEqual({ drumId: 'kick', zone: '0' });
   });
 
   it('returns null for an unmapped MIDI note (forward raw for direct binding)', () => {
