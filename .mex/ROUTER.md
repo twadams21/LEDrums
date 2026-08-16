@@ -36,6 +36,31 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**OVERNIGHT BUILD — stack #194 READY, AWAITING TRENT'S MORNING REVIEW, NOT MERGED (2026-08-17
+~05:30):** requested by Trent pre-AFK ("the deliverable is all the features we've discussed in
+a PR stack on github that I can preview in the morning"); decisions taken by Trent in-session
+before bed: #182 at the stack bottom, envelope work "go all the way" into core/engine, strength
+= profile curvature, exactly two handles, Add-palette = on-canvas popover, workers NEVER run
+full test sweeps (orchestrator-only; saved to memory). Nine PRs, bottom→top, ALL CI-green and
+MERGEABLE/CLEAN, physically chained: **#182** voice-life → **#186** S1 envelope-handle
+roundness → **#187** S2 now-playing (VoiceStat.pad on the wire) → **#188** S3 inspector
+slideover + Add-node popover (full-window height — Trent's verbatim reading; one-line CSS trims
+it to the workspace row if he reads it otherwise) → **#190** S4 effect inspector disclosure →
+**#191** S5 face params on modInputs rows → **#189** S6a CurveField primitive → **#192** S6b
+envelope-valued life/decay (carries #182 by design) → **#193** S8 per-drum velocity sensitivity.
+Built by 8 opus twux implementers off briefs in `docs/plans/2026-08-17-trigger-reimagine-build/`
+(S6b's model design is IN its brief); every diff line-reviewed by the orchestrator. Assembly
+fixed two cross-slice defects: S4×S5 (FaceExposeButton re-seated into ParamRow's reserved
+gutter; S6b's life-curve UI transplanted into EffectParamsSection) and S6b×S8 (both moved curve
+maths to core independently — unified onto `packages/core/src/model/curve.ts`, zod-first,
+`curve/curve.ts` deleted; 2 test files S8's `onInput` signature change missed were updated).
+Evidence at the top (`a08964f`): typecheck 0, core 814 + web 1456 targeted green, CI (full
+suite) green on every layer. Merge = `gh stack merge 194 --merge` after Trent's yes. Flags for
+Trent: S6a's `exp` = ease-out (one-line flip if wrong), S4 fold-memory not persisted across
+reloads (wants an AuthoredState field), pre-existing Slider unit-suffix clipping (backlog),
+S7 param-key normalisation still backlog. #184 (Tim's Splice) untouched, open, will need
+re-chaining after this stack lands.
+
 **Stack #185 MERGED TO MAIN (2026-08-16, main `bd63699`):** Trent (this machine) approved
 #176/#178/#179/#180/#181/#183 and chose GitHub's stacked-PRs public preview (one CI wave +
 one atomic merge) over sequential merges. `gh stack link 176 179 180 183 178 181` chained
