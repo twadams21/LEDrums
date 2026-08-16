@@ -52,6 +52,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
 | `settings`  | open the app Settings dialog |
+| `velocity-curve[:<drum>]`| author a non-identity velocity sensitivity curve on a drum and open Settings › Drum trigger zones (`velocity-curve:kick`; bare = the first drum) — pair with `fire:<drum>` to catch the live hit marker |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.
 

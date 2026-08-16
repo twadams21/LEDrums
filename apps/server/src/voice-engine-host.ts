@@ -1,5 +1,6 @@
 import {
   advanceTransport,
+  applyDrumVelocity,
   blockingRoutingIssues,
   buildDmxMap,
   buildPixelModel,
@@ -337,6 +338,11 @@ export class VoiceEngineHost {
     return this.activeSongId;
   }
 
+  /** The live input map — the zone-map the input echo resolves a hit's drum against. */
+  getInputMap(): InputMap {
+    return this.project.inputMap;
+  }
+
   // --- input ---------------------------------------------------------------
 
   /**
@@ -458,7 +464,10 @@ export class VoiceEngineHost {
           // Zone identity is the slot index as a string (the padKey form the web sends and
           // authored graphs are keyed by) — NOT a SLOT_LABELS label.
           zone: partial.zone ?? '0',
-          velocity: partial.velocity ?? 1,
+          // A pad hit names its drum outright, so the drum's sensitivity curve applies
+          // here exactly as it does to a MIDI hit: the test fire and the real stick
+          // must agree, or tuning the curve from the UI proves nothing.
+          velocity: applyDrumVelocity(this.project.inputMap, partial.drumId, partial.velocity ?? 1),
           timeMs,
         };
       case 'fireGraph':
@@ -487,7 +496,11 @@ export class VoiceEngineHost {
           kind: 'noteOn',
           ...(pad ? { drumId: pad.drumId, zone: pad.zone } : {}),
           note: partial.note,
-          velocity: partial.velocity,
+          // Per-DRUM velocity sensitivity, applied at the ONE seam where the raw
+          // velocity and the zone-map's drum first coexist. A note the map does not
+          // claim (direct-bound graph, modulation-only) has no drum and passes
+          // through untouched — see `applyDrumVelocity`'s header for the rule.
+          velocity: applyDrumVelocity(this.project.inputMap, pad?.drumId, partial.velocity),
           channel: partial.channel,
           timeMs,
         };
@@ -523,7 +536,11 @@ export class VoiceEngineHost {
           kind: 'osc',
           ...(pad ? { drumId: pad.drumId, zone: pad.zone } : {}),
           address: partial.address,
-          value: partial.value,
+          // A zone-mapped OSC address IS a drum trigger (that is what Sensory
+          // Percussion sends), so it carries the drum's sensitivity too. An address
+          // the map does not claim stays raw — its `osc` modulation source must read
+          // the value that was actually sent.
+          value: applyDrumVelocity(this.project.inputMap, pad?.drumId, partial.value),
           timeMs,
         };
       }

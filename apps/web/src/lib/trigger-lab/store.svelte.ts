@@ -45,9 +45,11 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { graphFireKeyOf } from '@ledrums/protocol';
-import { WSClient, type ConnectionState } from '../ws/client';
+import { WSClient, type ConnectionState, type InputEcho } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { appendVelocityHit, type VelocityHits } from '../app/velocity-hits';
+import type { CurveHit } from '../ui/curve-field';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
@@ -66,7 +68,7 @@ import type {
   PlayType,
   Project,
 } from '@ledrums/core';
-import { BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
+import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
 import { voice, canvasEffectId } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
@@ -155,6 +157,9 @@ import {
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
+
+/** One shared empty buffer, so a drum with no hits yet reads a stable identity. */
+const EMPTY_HITS: readonly CurveHit[] = [];
 
 export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
 export type LfoCreationPreset = voice.LfoWaveform;
@@ -985,6 +990,30 @@ export class TriggerLab {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.graphFireAt = { ...this.graphFireAt, [key]: now };
   }
+  /** Recent input velocities per drum, for the velocity-sensitivity editor's live overlay
+      (Trent, 2026-08-17: see the curve helping while you drum). Each entry is the RAW input
+      velocity only — its y is read off whatever curve is on screen, so an unsaved tweak
+      re-plots hits that already landed. UI timestamps, never engine state. */
+  velocityHits = $state<VelocityHits>({});
+  /** Stamp one raw hit against its drum. Connected, the server's `input` echo is the source
+      (it carries the pre-curve value + the drum the zone-map claimed); offline the local fire
+      paths call it. Never both, or the same stick hit would plot twice. */
+  private recordVelocityHit(drumId: string | undefined, value: number): void {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.velocityHits = appendVelocityHit(this.velocityHits, drumId, { x: value, at: now });
+  }
+  /** The recent hits to plot under one drum's curve. */
+  velocityHitsFor(drumId: string): readonly CurveHit[] {
+    return this.velocityHits[drumId] ?? EMPTY_HITS;
+  }
+  /** Shape a velocity by its drum's sensitivity curve — the OFFLINE mirror of the server's
+      `toInputEvent` seam. Connected, the server has already applied it and the client must
+      not apply it again. */
+  private shapeVelocity(drumId: string | undefined, velocity: number): number {
+    const inputMap = this.project?.inputMap;
+    return inputMap ? applyDrumVelocity(inputMap, drumId, velocity) : velocity;
+  }
+
   /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
       threaded into that graph's node previews so they animate on the graph's own fire. */
   get selectedGraphFireAt(): number | null {
@@ -1478,7 +1507,7 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
+      onInput: (input) => this.receiveInputEcho(input),
       // Server-side rejection (e.g. an invalid patch paste — S45): surface it as a dismissible
       // notice so the failure is user-visible rather than silent.
       onError: (message) => {
@@ -1505,14 +1534,12 @@ export class TriggerLab {
       re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
       rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
       the timeline intact. */
-  private receiveInputEcho(
-    kind: 'midi' | 'osc',
-    label: string,
-    value: number,
-    note: number | undefined,
-    channel: number | undefined,
-  ): void {
+  private receiveInputEcho({ kind, label, value, note, channel, drumId }: InputEcho): void {
     const time = Date.now();
+    // The echo's `value` is the RAW input, before the drum's sensitivity curve — exactly the
+    // x a velocity-curve editor plots. Connected, this is the ONLY place hits are recorded
+    // (the local fire paths stay quiet), so a stick hit plots once.
+    this.recordVelocityHit(drumId, value);
     if (kind === 'midi' && note !== undefined) {
       const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
@@ -1726,6 +1753,13 @@ export class TriggerLab {
 
   private fireRawMidiLocal(note: number, value: number): void {
     const graphs = this.resolvedView.graphs;
+    // The drum the zone-map CLAIMS this note for — no `pads[0]` fallback here, unlike the
+    // ctx's `sourceDrumId` below: an unclaimed note carries no drum's sensitivity, and
+    // plotting it under one would attribute a hit to a drum that was never struck.
+    const claimedDrumId = this.mappedDrumIdForMidiNote(note) ?? undefined;
+    const raw = Math.max(0, Math.min(1, value / 127));
+    // Offline the local sim IS the engine, so this path is both the echo and the fire.
+    this.recordVelocityHit(claimedDrumId, raw);
     const toFire = resolveGraphsForFire(graphs, { kind: 'midi', note, value });
     // Sequence reset bindings apply BEFORE the fires (mirroring engine.processInput), so a note
     // that both resets and triggers a sequence plays step 1 on this very hit. A reset-only note
@@ -1743,11 +1777,11 @@ export class TriggerLab {
     if (toFire.length === 0 && resets.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
-      velocity: Math.max(0, Math.min(1, value / 127)),
+      velocity: this.shapeVelocity(claimedDrumId, raw),
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
-      sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
+      sourceDrumId: claimedDrumId ?? this.pads[0]?.drumId ?? '',
       bpm: this.bpm,
     };
     for (const { key, graph } of toFire) {
@@ -1801,6 +1835,10 @@ export class TriggerLab {
   }
 
   hit(pad: Pad): void {
+    // Live feedback for the velocity editor, before the routing checks below: a hit on a pad
+    // that routes nowhere is still a hit worth plotting while tuning. Connected, the server's
+    // `key` echo carries this same pair, so recording here too would double-plot it.
+    if (this.link !== 'open') this.recordVelocityHit(pad.drumId, this.velocity);
     const toFire = this.resolveHitGraphsLocal(pad);
     // A pad may route to a sequence RESET binding alone (a sequence node's own `resetSource`,
     // firing nothing) — that hit still counts as routed, and connected it must still reach the
@@ -1835,7 +1873,9 @@ export class TriggerLab {
     }
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
-      velocity: this.velocity,
+      // Offline mirror of the server's `key` seam: the pad's drum shapes its own velocity,
+      // so a test fire and a real stick agree about what this drum does with a hit.
+      velocity: this.shapeVelocity(pad.drumId, this.velocity),
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,

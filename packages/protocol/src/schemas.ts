@@ -414,9 +414,14 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     t: z.literal('input'),
     kind: z.enum(['midi', 'osc']),
     label: z.string(),
+    /** The input's normalised 0..1 value, BEFORE the drum's sensitivity curve —
+        the raw hit, which is what a velocity-curve editor plots on its x axis. */
     value: z.number(),
     note: z.number().optional(),
     channel: z.number().optional(),
+    /** The drum the zone-map claimed this hit for, when it claimed one. Absent =
+        unrouted or not a drum trigger. */
+    drumId: z.string().optional(),
   }).strict(),
   z.object({ t: z.literal('monitor'), event: monitorEventSchema }).strict(),
   z.object({ t: z.literal('projects'), names: z.array(z.string()) }).strict(),

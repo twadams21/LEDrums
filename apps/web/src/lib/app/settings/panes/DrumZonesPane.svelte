@@ -6,6 +6,7 @@
      mutation path. The lists carry no gating of their own, so the Inspector's
      natively-disabled fieldset wraps them here exactly as it did in Input. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
+  import DrumVelocityCurve from './DrumVelocityCurve.svelte';
   import DrumZonesList from '../../docks/inspectors/DrumZonesList.svelte';
   import { patchLabel } from '../../docks/inspectors/forms';
   import { drumZoneId } from '../../patch-zones';
@@ -22,12 +23,16 @@
   <PaneHeader id="zones" />
   <p class="zhint">
     Map each drum's zones to the MIDI notes / OSC addresses that fire them — shared by every
-    trigger graph on that drum.
+    trigger graph on that drum. Each drum also carries one velocity sensitivity curve, shared
+    by all of its zones.
   </p>
   <fieldset class="drums" disabled={!store.canEdit}>
     {#each drums as drum (drum.id)}
+      {@const label = patchLabel(store, drumZoneId(drum.id), drum.label || drum.id)}
       <div class="drumcard">
-        <DrumZonesList {store} drumId={drum.id} drumLabel={patchLabel(store, drumZoneId(drum.id), drum.label || drum.id)} />
+        <DrumZonesList {store} drumId={drum.id} drumLabel={label} />
+        <hr class="rule" />
+        <DrumVelocityCurve {store} drumId={drum.id} drumLabel={label} />
       </div>
     {/each}
   </fieldset>
@@ -64,5 +69,13 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     background: var(--surface-inset);
+  }
+  /* Zones and velocity are two facts about the SAME drum, so they share the card and are
+     separated by a rule rather than by another border — the drum stays one object. */
+  .rule {
+    height: 0;
+    margin: var(--space-3) 0;
+    border: 0;
+    border-top: 1px solid var(--border-faint);
   }
 </style>

@@ -18,7 +18,7 @@ import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
 import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
-import { voice } from '@ledrums/core';
+import { voice, withVelocityCurve } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
@@ -61,6 +61,10 @@ export interface ShotSeam {
   firePad(drumId?: string): void;
   /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
   openSettings(pane?: SettingsPane): void;
+  /** Author a non-identity velocity sensitivity curve on a drum (`velocity-curve:kick`,
+      bare = the first drum) so the tuned state — not just the empty diagonal — is
+      capturable. Writes through the same `setInputMap` gate the pane's own editor uses. */
+  previewVelocityCurve(drumId?: string): void;
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
@@ -419,6 +423,30 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  previewVelocityCurve(drumId?: string): void {
+    this.claimEdit(() => {
+      const project = this.store.project;
+      if (!project) return;
+      const wanted = drumId?.toLowerCase();
+      const drum = wanted
+        ? project.kit.drums.find((d) => d.id.toLowerCase() === wanted)
+        : project.kit.drums[0];
+      if (!drum) return;
+      // A gate plus a lift: silent below a light tap, then an ease-out that gives the quiet
+      // hits most of the range. Non-identity in every way the plot can show at once —
+      // handles moved on both axes, a curved profile, and a bent strength.
+      this.store.setInputMap(
+        withVelocityCurve(project.inputMap, drum.id, {
+          h0: { x: 0.18, y: 0 },
+          h1: { x: 0.9, y: 1 },
+          profile: 'exp',
+          strength: 0.62,
+        }),
+      );
+    });
+    this.openSettings('zones');
+  }
+
   previewGlobalControls(): void {
     this.claimEdit(() => {
       // The override warning still deserves a picture, but the editors can no longer PRODUCE
@@ -585,6 +613,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'no-path-to-output':
         this.notReachingOutput();
+        break;
+      case 'velocity-curve':
+        this.previewVelocityCurve(arg);
         break;
       case 'global-controls':
         this.previewGlobalControls();

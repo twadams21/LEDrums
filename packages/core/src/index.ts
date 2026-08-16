@@ -16,6 +16,8 @@ export * from './color/color';
 export * from './color/blend';
 
 // Model
+export * from './model/curve';
+export * from './model/velocity-curve';
 export * from './model/project-schema';
 export * from './model/global-controls';
 export * from './model/integrity';
