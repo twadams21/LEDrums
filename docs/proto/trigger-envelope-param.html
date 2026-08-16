@@ -137,13 +137,18 @@
   /* ---- option layout ------------------------------------------------------ */
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: var(--space-5); }
 
-  /* the param row this replaces — every option is framed as one */
+  /* The param row this replaces. Capped at the width the Inspector actually has
+     (~320px of control beside its label) — which is the whole constraint this file
+     is arguing about, so drawing the widgets stretched across a 900px plate would
+     quietly cheat the comparison. It also keeps the SVGs at 1:1, so a handle drawn
+     as a circle IS a circle. */
   .paramrow {
     display: grid;
     grid-template-columns: 84px minmax(0, 1fr);
     gap: var(--space-3);
     align-items: start;
     padding: var(--space-3);
+    max-width: 448px;
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
@@ -156,7 +161,8 @@
   .paramrow > .pk small { display: block; color: var(--text-disabled); margin-top: 2px; }
 
   .widget { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-  svg.env { display: block; width: 100%; touch-action: none; user-select: none; overflow: visible; }
+  /* 320px, matching the viewBox, so nothing is scaled and circular handles stay circular */
+  svg.env { display: block; width: 320px; max-width: 100%; touch-action: none; user-select: none; overflow: visible; }
   svg.env .grid { stroke: var(--border-faint); stroke-width: 1; }
   svg.env .axis { stroke: var(--border); stroke-width: 1; }
   svg.env .curve { fill: none; stroke: var(--accent); stroke-width: 2; }
@@ -235,6 +241,11 @@
 
   footer.bot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-top: 1px solid var(--border-faint); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); }
   footer.bot .sep { color: var(--border-strong); }
+
+  /* while a handle is being dragged: no text selection anywhere, and the grab cursor
+     survives the pointer leaving the handle (the gesture is tracked on window) */
+  body.dragging { user-select: none; cursor: grabbing; }
+  body.dragging svg.env, body.dragging .hnd, body.dragging .stop, body.dragging .mid { cursor: grabbing; }
 
   @media (prefers-reduced-motion: reduce) { .chip, .btn { transition-duration: 0ms !important; } }
 </style>
@@ -611,17 +622,62 @@ function ptOf(svg, e) {
   return { t: unX(px), v: unY(py) };
 }
 
-function drag(node, svg, onMove, onDown) {
+/* Dragging used to hang off setPointerCapture on the handle element itself. That
+   cannot work here: A, B and C all rebuild their handle DOM inside paint(), so the
+   captured node is destroyed on the first move and every later pointermove lands on
+   the bare <svg> instead. Listening on `window` for the life of the gesture is immune
+   to that — the closure holds the STATE object, not the element, so a rebuilt handle
+   keeps dragging.
+
+   Two other rules the widgets depend on:
+     · nothing is applied until the pointer has actually moved (2px), so clicking a
+       handle SELECTS it without nudging its value;
+     · a gesture that moved sets `dragMoved`, which the click-to-add handlers check —
+       otherwise finishing a drag over empty canvas would add a stray stop/point. */
+let dragMoved = false;
+
+function dragWith(node, mapPoint, onMove, onDown) {
   node.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    node.setPointerCapture(e.pointerId);
+    if (e.button !== 0 && e.button !== undefined && e.pointerType === 'mouse') return;
+    e.stopPropagation();          /* NOT preventDefault — that would kill the click that selects */
     if (onDown) onDown();
-    onMove(ptOf(svg, e));
+    const x0 = e.clientX, y0 = e.clientY;
+    let moved = false;
+
+    const move = (ev) => {
+      if (!moved && Math.abs(ev.clientX - x0) < 2 && Math.abs(ev.clientY - y0) < 2) return;
+      moved = true;
+      dragMoved = true;
+      ev.preventDefault();
+      onMove(mapPoint(ev));
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      document.body.classList.remove('dragging');
+      /* let the trailing click see the flag, then clear it */
+      if (moved) setTimeout(() => { dragMoved = false; }, 0);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    document.body.classList.add('dragging');
   });
-  node.addEventListener('pointermove', (e) => {
-    if (!node.hasPointerCapture(e.pointerId)) return;
-    onMove(ptOf(svg, e));
-  });
+}
+
+function drag(node, svg, onMove, onDown) {
+  dragWith(node, (e) => ptOf(svg, e), onMove, onDown);
+}
+
+/** An invisible, generously-sized hit target so a 5px handle is grabbable.
+    Uses `style`, not presentation attributes: the widgets style handles with CSS
+    (`.hnd circle { fill: … }`), and CSS beats a presentation attribute — which would
+    otherwise paint the hit area as a second, giant visible knob. */
+function hitArea(r) {
+  const c = svgEl('circle', { r });
+  c.setAttribute('style', 'fill: none; stroke: none; pointer-events: all');
+  return c;
 }
 
 function chipRow(label, entries, get, set) {
@@ -675,7 +731,7 @@ function chipRow(label, entries, get, set) {
     const g = svgEl('g', { class: 'hnd' });
     const c = svgEl('circle', { r: 6 });
     const lbl = svgEl('text', { 'text-anchor': 'middle' });
-    g.append(c, lbl);
+    g.append(hitArea(13), c, lbl);
     g.onclick = (e) => { e.stopPropagation(); st.sel = which; paint(); };
     drag(g, svg, ({ t, v }) => {
       const h = st[which];
@@ -688,10 +744,14 @@ function chipRow(label, entries, get, set) {
   }
   const hA = handle('a');
   const hB = handle('b');
+  /* the split markers a timed profile creates — draggable in their own right, so the
+     hold window can be set from either end */
   const tieA = svgEl('g', { class: 'hnd tie' });
-  tieA.append(svgEl('circle', { r: 4.5 }));
+  tieA.append(hitArea(12), svgEl('circle', { r: 4.5 }));
   const tieB = svgEl('g', { class: 'hnd tie' });
-  tieB.append(svgEl('circle', { r: 4.5 }));
+  tieB.append(hitArea(12), svgEl('circle', { r: 4.5 }));
+  drag(tieA, svg, ({ t }) => { st.a.hold = clamp01(Math.min(t, 0.85)); st.sel = 'a'; paint(); }, () => { st.sel = 'a'; });
+  drag(tieB, svg, ({ t }) => { st.b.hold = clamp01(Math.min(1 - t, 0.85)); st.sel = 'b'; paint(); }, () => { st.sel = 'b'; });
   const tieLineA = svgEl('line', { class: 'grid', stroke: 'var(--role-modulation)', 'stroke-dasharray': '2 2' });
   const tieLineB = svgEl('line', { class: 'grid', stroke: 'var(--role-modulation)', 'stroke-dasharray': '2 2' });
   svg.append(tieLineA, tieLineB, tieA, tieB, hA.g, hB.g);
@@ -845,19 +905,11 @@ function chipRow(label, entries, get, set) {
 
   /* B-local drag: same contract as `drag`, but mapped through the offset plot */
   function dragB(node, onMove, onDown) {
-    node.addEventListener('pointerdown', (e) => {
-      e.stopPropagation();
-      node.setPointerCapture(e.pointerId);
-      if (onDown) onDown();
-      onMove(ptB(e));
-    });
-    node.addEventListener('pointermove', (e) => {
-      if (!node.hasPointerCapture(e.pointerId)) return;
-      onMove(ptB(e));
-    });
+    dragWith(node, ptB, onMove, onDown);
   }
 
   band.addEventListener('click', (e) => {
+    if (dragMoved) return;   /* a drag that ended over the band is not "add a stop" */
     const { t } = ptB(e);
     st.stops.push({ t, v: clamp01(sample(t)) });
     st.stops.sort((a, b) => a.t - b.t);
@@ -905,7 +957,9 @@ function chipRow(label, entries, get, set) {
     st.stops.forEach((s, i) => {
       const g = svgEl('g', { class: 'stop' + (i === st.sel ? ' sel' : '') });
       g.setAttribute('transform', `translate(${X(s.t)},${MARK_Y})`);
-      g.append(svgEl('rect', { x: -4, y: 0, width: 8, height: 10, rx: 2 }));
+      const hit = svgEl('rect', { x: -9, y: -6, width: 18, height: 22, rx: 2 });
+      hit.setAttribute('style', 'fill: none; stroke: none; pointer-events: all');
+      g.append(hit, svgEl('rect', { x: -4, y: 0, width: 8, height: 10, rx: 2 }));
       markers.append(g);
       g.onclick = (e) => { e.stopPropagation(); st.sel = i; paint(); };
       g.ondblclick = (e) => {
@@ -932,7 +986,7 @@ function chipRow(label, entries, get, set) {
       const tm = lerp(s.t, nx.t, m);
       const g = svgEl('g', { class: 'mid' });
       g.setAttribute('transform', `translate(${X(tm)},${MARK_Y + 5})`);
-      g.append(svgEl('path', { d: 'M0 -4 L4 0 L0 4 L-4 0 Z', fill: 'var(--surface-3)', stroke: 'var(--border-strong)' }));
+      g.append(hitArea(11), svgEl('path', { d: 'M0 -4 L4 0 L0 4 L-4 0 Z', fill: 'var(--surface-3)', stroke: 'var(--border-strong)' }));
       markers.append(g);
       dragB(g, ({ t }) => {
         const span = Math.max(0.0001, nx.t - s.t);
@@ -991,6 +1045,7 @@ function chipRow(label, entries, get, set) {
   svg.style.cursor = 'copy';
 
   svg.addEventListener('click', (e) => {
+    if (dragMoved) return;   /* a drag that ended on empty canvas is not "add a point" */
     if (e.target.closest('.hnd') || e.target.closest('.seg')) return;
     const { t, v } = ptOf(svg, e);
     const i = st.pts.findIndex((p) => p.t > t);
@@ -1031,7 +1086,7 @@ function chipRow(label, entries, get, set) {
     st.pts.forEach((p, i) => {
       const g = svgEl('g', { class: 'hnd' + (i === st.selPt ? ' sel' : '') });
       g.setAttribute('transform', `translate(${X(p.t)},${Y(p.v)})`);
-      g.append(svgEl('circle', { r: 5 }));
+      g.append(hitArea(12), svgEl('circle', { r: 5 }));
       g.onclick = (e) => { e.stopPropagation(); st.selPt = i; paint(); };
       g.ondblclick = (e) => {
         e.stopPropagation();
@@ -1095,7 +1150,7 @@ function chipRow(label, entries, get, set) {
 
   function tri(cls, w, fill) {
     const g = svgEl('g', { class: 'hnd ' + cls, style: 'cursor: ew-resize' });
-    g.append(svgEl('path', { d: `M0 -${w} L${w} ${w} L-${w} ${w} Z`, fill, stroke: 'var(--border-strong)' }));
+    g.append(hitArea(12), svgEl('path', { d: `M0 -${w} L${w} ${w} L-${w} ${w} Z`, fill, stroke: 'var(--border-strong)' }));
     return g;
   }
   const hIn = tri('in', 5, 'var(--surface-3)');
