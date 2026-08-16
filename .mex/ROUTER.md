@@ -36,7 +36,27 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Graph-list #177 + settings-sidebar refactor — BUILT + REVIEW-PASSED, PRs #179/#180 OPEN, NOTHING MERGED (2026-08-13):**
+**Stack #185 MERGED TO MAIN (2026-08-16, main `bd63699`):** Trent (this machine) approved
+#176/#178/#179/#180/#181/#183 and chose GitHub's stacked-PRs public preview (one CI wave +
+one atomic merge) over sequential merges. `gh stack link 176 179 180 183 178 181` chained
+them (bases retargeted); the atomic merge additionally requires each branch to PHYSICALLY
+contain the one below (merge commits qualify), so chaining merge commits were pushed up the
+stack — the only textual conflict anywhere was `docs/design-system.html` (regenerated per
+standing rule, twice). `gh stack merge 185 --yes --merge` landed all six in one operation;
+GH #177 auto-closed. **Held out by Trent: #182 (voice-life) and #184 (Tim's Splice node —
+similar territory to #183 Segments but a different layer: composition node vs effect; both
+can coexist; #184 needs a rebase onto the new main).** Tooling notes: `gh-stack` extension
+installed; stacked-PRs UI needs the user's Feature Preview opt-in; GitHub's per-PR
+`mergeable` is unreliable mid-stack — trust a local composite merge simulation. Post-merge
+leftovers Trent deferred: uncommitted drum-elevation v3 in this branch's working tree
+(after-PRs task), merged remote branches not yet pruned. **In flight: twux agent
+`opus-high-proto-trigger-c051f1` (opus/high, worktree `prototrig`) building 4 divergent
+trigger-view prototype HTML files** — brief
+`docs/plans/2026-08-16-trigger-reimagine/P1-trigger-reimagine-protos.md` (on-canvas
+controls · inspector slideover · common-effect-controls inspector · envelope-by-default
+life/decay), drum-elevation style + DM Sans, requested by Trent in-session.
+
+**Prior (merged as part of stack #185): Graph-list #177 + settings-sidebar refactor (2026-08-13):**
 requested by **Trent** (this machine) in-session; two opus/high twux implementers off dispatch
 briefs `docs/plans/2026-08-13-graphlist-settings/G1-graph-list-177.md` / `G2-settings-refactor.md`,
 both stacked on `feat/tabbed-chrome` (PR #176's head). **G1 / PR #179** (`feat/graph-list-177`,
