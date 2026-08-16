@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01 } from '../../math';
 import type { PixelModel } from '../../geometry/pixel-model';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 export interface SwingState {
   /** Per-drum accumulated energy, indexed by drumId. */
@@ -18,6 +19,9 @@ export const swing: EffectGenerator<SwingState> = {
   id: 'swing',
   name: 'Swing',
   category: 'trigger',
+  // Not a cutoff: per-drum energy decays by exp(-dt/decayMs) each frame,
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 300, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
