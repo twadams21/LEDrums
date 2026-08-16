@@ -280,9 +280,15 @@ export type SpliceOrder = 'up' | 'down' | 'outside-in' | 'random';
  * - `'continuous'` — the motion runs off a free clock, so a hit picks up wherever the last
  *                    one left off and the movement never visibly resets. Every voice from
  *                    this node shares that clock, which is what keeps successive hits in
- *                    phase with each other rather than each starting its own timeline.
+ *                    phase with each other rather than each starting its own timeline. The
+ *                    clock keeps running while the kit is DARK, so a hit after a long gap
+ *                    lands wherever the movement would have travelled unseen.
+ * - `'latched'`    — like continuous, except the movement only advances while the lights are
+ *                    actually up: it freezes at the position it reached as the fade ended,
+ *                    and the next hit carries on from exactly there. The visible motion is
+ *                    therefore continuous ACROSS the silence rather than through it.
  */
-export type SpliceMotionMode = 'restart' | 'continuous';
+export type SpliceMotionMode = 'restart' | 'continuous' | 'latched';
 
 /**
  * One splice — what renders inside one band of the partition. Every field is optional
@@ -707,6 +713,13 @@ export interface Voice {
   /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. Present exactly
       when this voice came from a `splice` node. */
   splice?: SpliceConfig;
+  /**
+   * Accumulated motion time in ms for a `'latched'` splice. The engine advances it only while
+   * a voice for this (pad, splice node) is alive and carries the total ACROSS voices, so the
+   * movement resumes exactly where the fade left it. Stamped onto the voice each frame; the
+   * other two motion modes ignore it.
+   */
+  spliceMotionMs?: number;
   /**
    * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
    * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from

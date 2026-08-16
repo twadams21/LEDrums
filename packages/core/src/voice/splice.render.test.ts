@@ -342,7 +342,7 @@ describe('splice — envelope', () => {
 });
 
 describe('splice — restart vs continuous', () => {
-  const motion = (mode: 'restart' | 'continuous', over: Partial<GraphNode> = {}) =>
+  const motion = (mode: 'restart' | 'continuous' | 'latched', over: Partial<GraphNode> = {}) =>
     spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceChase: 'step',
       spliceRateMode: 'time',
@@ -376,6 +376,28 @@ describe('splice — restart vs continuous', () => {
     // odd → the other splice), while a restarted one is 50ms in (0 steps).
     expectRgb(reHit(motion('continuous'), 1050, 1100)(0), BLUE, 'eleven steps in, unbroken by the hit');
     expectRgb(reHit(motion('restart'), 1050, 1100)(0), RED, 'and the same moment restarted');
+  });
+
+  // A short hold means each hit banks ~170ms of lit time; at a 150ms interval that is one
+  // step, while a restarted chase at the same instant has taken none.
+  const SHORT = { spliceHoldMs: 100, spliceReleaseMs: 20, spliceRateMs: 150 };
+
+  it('latched resumes on the step it banked, where restart goes back to zero', () => {
+    expectRgb(reHit(motion('latched', SHORT), 1050, 1090)(0), BLUE, 'carries on from the banked step');
+    expectRgb(reHit(motion('restart', SHORT), 1050, 1090)(0), RED, 'back to the start');
+  });
+
+  it('latched ignores time spent dark, where continuous does not', () => {
+    // Two gaps that differ ONLY in how long the kit sat dark. Latched must land identically
+    // (dark time is not movement); continuous must not (its clock ran the whole time) — the
+    // second assertion is what proves the first is testing something real.
+    const latchedShort = reHit(motion('latched', SHORT), 500, 540)(0);
+    const latchedLong = reHit(motion('latched', SHORT), 600, 640)(0);
+    expectRgb(latchedLong, latchedShort, 'same position after either gap');
+
+    const contShort = reHit(motion('continuous', SHORT), 500, 540)(0);
+    const contLong = reHit(motion('continuous', SHORT), 600, 640)(0);
+    expect(contShort[0]).not.toBeCloseTo(contLong[0], 2);
   });
 
   it('restart is the default, so an un-authored splice behaves as it always did', () => {

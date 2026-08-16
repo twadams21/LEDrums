@@ -50,6 +50,9 @@ export interface ShotSeam {
   /** Select a node — by the kind most recently added, by node id, else the first
       non-trigger node. Flips the Node Editor to its Inspector tab. */
   selectNode(kindOrId: string): void;
+  /** Put the last-added (else first) splice node into a motion mode, so the MOVE controls —
+      rate, increment, per-unit offset, order, restart/continuous/latched — actually render. */
+  setSpliceMotion(chase: string): void;
   /** Open the effect gallery for the selected / last-added / first effect node. */
   openGallery(): void;
   /** Set that same node's effect (`effect:gen:segments`) through the store seam a gallery
@@ -216,6 +219,20 @@ class ShotSeamImpl implements ShotSeam {
           ? ({ kind: 'osc', address: '/reset' } as const)
           : ({ kind: 'midi', note: 61 } as const);
     this.store.setSequenceResetSource(seq, source);
+  }
+
+  setSpliceMotion(chase: string): void {
+    const graph = this.store.selectedGraph;
+    const addedId = this.added.get('splice')?.id;
+    // Re-resolve through the store's graph, not the `added` reference — see `bindSequenceReset`.
+    const node = (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'splice');
+    if (!node) return;
+    this.store.setSpliceSetting(node, {
+      spliceChase: chase as 'off' | 'step' | 'smooth' | 'stagger',
+      // A representative cascade so the offset + order rows render with real values.
+      spliceOffsetMode: 'beats',
+      spliceOffsetDivision: '1/16',
+    });
   }
 
   openGallery(): void {
@@ -525,6 +542,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'select':
         if (arg) this.selectNode(arg);
+        break;
+      case 'splice-motion':
+        if (arg) this.setSpliceMotion(arg);
         break;
       case 'gallery':
         this.openGallery();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
-import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
+import { SPLICE_CHASE_HINTS, SPLICE_CHASE_OPTS, SPLICE_MOTION_MODE_HINTS, SPLICE_MOTION_MODE_OPTS, SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from './splice-options';
 
 /* The Splice inspector's row derivation. The rows are what an author actually edits, so the
    thing worth pinning is that they show what will RENDER — including the slots currently
@@ -94,6 +94,13 @@ describe('motion options', () => {
       if (opt.value === 'off') expect(SPLICE_CHASE_HINTS[opt.value]).toBe('');
       else expect(SPLICE_CHASE_HINTS[opt.value], opt.value).not.toBe('');
     }
+  });
+});
+
+describe('motion mode options', () => {
+  it('offers all three, and explains each — they are easy to confuse', () => {
+    expect(SPLICE_MOTION_MODE_OPTS.map((o) => o.value)).toEqual(['restart', 'continuous', 'latched']);
+    for (const opt of SPLICE_MOTION_MODE_OPTS) expect(SPLICE_MOTION_MODE_HINTS[opt.value], opt.value).not.toBe('');
   });
 });
 

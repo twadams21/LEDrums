@@ -466,6 +466,7 @@ describe('resolveSplices', () => {
     const mode = (over: Partial<GraphNode>) => resolveSplices(spliceNode({ splices: [{ color: '#fff' }], ...over }), 120)!.config.motionMode;
     expect(mode({})).toBe('restart');
     expect(mode({ spliceMotionMode: 'continuous' })).toBe('continuous');
+    expect(mode({ spliceMotionMode: 'latched' })).toBe('latched');
   });
 
   it('fills every default, so a splice node authored with nothing but content still resolves', () => {

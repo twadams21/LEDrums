@@ -325,7 +325,12 @@ export function createDefaultCompositor(): Compositor {
           // movement over; `continuous` runs off the engine clock every voice shares, so a
           // hit picks up exactly where the last one left off. Only the MOTION reads this —
           // the envelope and the modifier chain stay voice-relative either way.
-          const motionClock = cfg.motionMode === 'continuous' ? timeMs : age;
+          const motionClock =
+            cfg.motionMode === 'continuous'
+              ? timeMs
+              : cfg.motionMode === 'latched'
+                ? (v.spliceMotionMs ?? 0) // only ran while lit — see `advanceLatchedSpliceMotion`
+                : age;
           const dstRgba = mix.rgba;
           for (const unit of units) {
             const len = unit.end - unit.start;

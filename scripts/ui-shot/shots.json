@@ -177,5 +177,9 @@
   "splice-inspector": {
     "state": "view:trigger,new-graph,add:splice,select:splice",
     "target": "Node editor"
+  },
+  "splice-motion": {
+    "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger",
+    "target": "Node editor"
   }
 }

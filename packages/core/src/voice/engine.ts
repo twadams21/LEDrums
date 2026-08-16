@@ -197,6 +197,14 @@ class VoiceBusEngine implements RenderEngine {
    */
   private readonly registeredCanvasSceneIds = new Set<string>();
 
+  /**
+   * Accumulated motion time per `(pad, splice node)` for `'latched'` splices, in ms. Advanced
+   * once per frame per key while ANY voice for that key is alive, and deliberately NOT while
+   * the kit is dark — that is the whole difference between latched and continuous. Kept here
+   * rather than on the voice because it has to OUTLIVE the voice: the next hit resumes from it.
+   */
+  private spliceMotionMs = new Map<string, number>();
+
   // Object-pooled voices (fixed-size slab; `acquire`/`release`/`spawn` in voice-pool.ts).
   private readonly voices = new VoicePool();
 
@@ -331,6 +339,7 @@ class VoiceBusEngine implements RenderEngine {
     this.lastPick.clear();
     this.latched.clear();
     this.mixMemberSnapshots.clear();
+    this.spliceMotionMs.clear(); // authored content replaced → latched motion starts fresh
     this.renderPlanCache.reset(); // R18: authored graphs replaced → drop cached plans
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
@@ -343,6 +352,26 @@ class VoiceBusEngine implements RenderEngine {
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
     this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+  }
+
+  /**
+   * Advance the latched-motion accumulator for every `(pad, splice node)` with a live voice,
+   * then stamp the total onto those voices for the compositor to read as their motion clock.
+   *
+   * Advanced once per KEY, not once per voice: two overlapping hits on one pad are one moving
+   * pattern, so counting dt twice would double its speed for as long as they overlap.
+   */
+  private advanceLatchedSpliceMotion(dt: number): void {
+    const advanced = new Set<string>();
+    for (const v of this.voices.pool) {
+      if (!v.active || v.splice?.motionMode !== 'latched') continue;
+      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
+      if (!advanced.has(key)) {
+        advanced.add(key);
+        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dt));
+      }
+      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
+    }
   }
 
   // --- input -------------------------------------------------------------
@@ -862,6 +891,8 @@ class VoiceBusEngine implements RenderEngine {
     // Advance voice envelopes, then reap dead voices back into the pool.
     advanceEnvelopes(this.voices.pool, this.timeMs, this.busById);
     reapDeadVoices(this.voices.pool, this.latched);
+
+    this.advanceLatchedSpliceMotion(dt);
 
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {

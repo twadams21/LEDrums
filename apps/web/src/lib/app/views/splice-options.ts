@@ -51,12 +51,14 @@ export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string 
 export const SPLICE_MOTION_MODE_OPTS: Array<{ value: voice.SpliceMotionMode; label: string }> = [
   { value: 'restart', label: 'Restart' },
   { value: 'continuous', label: 'Continuous' },
+  { value: 'latched', label: 'Latched' },
 ];
 
 /** What a hit does to the motion — the pair is easy to mix up, so each says it outright. */
 export const SPLICE_MOTION_MODE_HINTS: Record<voice.SpliceMotionMode, string> = {
   restart: 'Every hit puts the movement back to its starting position.',
-  continuous: 'The movement free-runs; every hit picks up where the last one left off.',
+  continuous: 'The movement free-runs, even while the kit is dark — a hit lands wherever it has travelled unseen.',
+  latched: 'The movement only runs while the lights are up: it stops where the fade left it, and the next hit carries on from there.',
 };
 
 /** What one partition unit IS, for labelling the cascade controls — the offset runs across

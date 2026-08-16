@@ -133,7 +133,12 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
   const age = sim.timeMs - v.bornAtMs;
   // `continuous` free-runs off the shared clock so a hit resumes where the last stopped;
   // `restart` uses the voice's own age. Mirrors core's compositor.
-  const motionClock = cfg.motionMode === 'continuous' ? sim.timeMs : age;
+  const motionClock =
+    cfg.motionMode === 'continuous'
+      ? sim.timeMs
+      : cfg.motionMode === 'latched'
+        ? (v.spliceMotionMs ?? 0) // only ran while lit
+        : age;
   voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex, ordinal, ordinalCount) => {
     const len = unitEnd - unitStart;
     const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;

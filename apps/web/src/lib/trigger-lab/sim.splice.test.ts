@@ -159,6 +159,35 @@ describe('splice — offline preview', () => {
     expect(isDark(render(short, 900).rgb(0)), 'a short hold is long gone').toBe(true);
   });
 
+  it('latches the motion in the preview too — dark time is not movement', () => {
+    const graph = spliceGraph({
+      mode: 'oneshot',
+      splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+      spliceCount: 2,
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 150,
+      spliceHoldMs: 100,
+      spliceReleaseMs: 20,
+      spliceMotionMode: 'latched',
+    });
+    /** Fire, let it fade, wait out `gapMs` in the dark, fire again, sample 40ms later. */
+    const twoHits = (gapMs: number) => {
+      const lab = buildLabModel();
+      const sim = freshSim();
+      const fire = () => sim.triggerGraph('test', graph, ctx());
+      fire();
+      for (let t = 5; t <= gapMs; t += 5) sim.tick(5);
+      fire();
+      for (let t = 0; t < 40; t += 5) sim.tick(5);
+      const buf = new Uint8Array(lab.model.count * 3);
+      renderFrame(buf, sim, lab);
+      return [buf[0]!, buf[1]!, buf[2]!] as [number, number, number];
+    };
+    // Only lit time counts, so wildly different dark gaps land on the same splice.
+    expect(twoHits(500)).toEqual(twoHits(3000));
+  });
+
   it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
     const fx = EFFECTS.find((e) => e.generatorId === 'breathing-kit')!.id;
     const { rgb, hoopLen } = render(spliceGraph({ splices: [{ effectId: fx, color: '#ff0000' }, { effectId: fx }], spliceCount: 2 }));

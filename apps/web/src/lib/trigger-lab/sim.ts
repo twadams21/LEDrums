@@ -219,6 +219,8 @@ export interface Voice {
   spliceInputs?: voice.MixInput[];
   /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. */
   splice?: voice.SpliceConfig;
+  /** Accumulated motion time for a `latched` splice — mirrors the core Voice field. */
+  spliceMotionMs?: number;
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
@@ -346,6 +348,13 @@ export class Sim {
       Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
       store's WebMIDI forward so the preview tracks CC exactly like the connected engine; the
       render sweep reads it per frame via `render.ts` `modCtxFor`. */
+  /**
+   * Accumulated motion time per `(pad, splice node)` for `latched` splices — the offline
+   * mirror of the engine's own map. Advanced only while a voice for that key is alive, and
+   * carried across voices so the movement resumes where the fade left it.
+   */
+  private spliceMotionMs = new Map<string, number>();
+
   ccTable = new Map<string, number>();
 
   /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
@@ -585,6 +594,21 @@ export class Sim {
     return voice;
   }
 
+  /** Advance the latched-motion accumulator once per `(pad, splice node)` with a live voice,
+      then stamp it onto those voices. Mirrors the engine's `advanceLatchedSpliceMotion`. */
+  private advanceLatchedSpliceMotion(dtMs: number): void {
+    const advanced = new Set<string>();
+    for (const v of this.voices) {
+      if (v.splice?.motionMode !== 'latched') continue;
+      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
+      if (!advanced.has(key)) {
+        advanced.add(key);
+        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dtMs));
+      }
+      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
+    }
+  }
+
   private release(v: Voice): void {
     if (v.phase === 'release') return;
     v.phase = 'release';
@@ -672,6 +696,7 @@ export class Sim {
     this.beat += (dtMs / 60000) * this.bpm;
 
     this.drainPendingFires();
+    this.advanceLatchedSpliceMotion(dtMs);
 
     for (const v of this.voices) {
       const age = this.timeMs - v.bornAtMs;

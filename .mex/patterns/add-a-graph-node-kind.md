@@ -74,6 +74,16 @@ Decide two things before writing code:
   many settings is better served by ONE patch-based setter than fifteen near-identical ones.
 - The single-client lock makes a second browser a VIEWER, and every authoring mutator silently
   no-ops there. When driving the app live, check `store.isViewer` first and call `store.takeover()`.
+  **`takeover()` STEALS the slot from whoever holds it — including Trent's own open window**, which
+  then goes read-only with no obvious cause (`<fieldset disabled={!store.canEdit}>` greys the whole
+  inspector and node deletion). Close the automation tab when finished; the human's window reclaims
+  the slot on reload or via the TopBar's Takeover. Prefer headless `pnpm ui-shot` over driving the
+  live app precisely because it does not fight over this lock for long.
+- A store mutator's KIND GUARD is the easiest place to break a new node kind: `setScope` /
+  `setTargetId` / `setMode` and friends enumerate the kinds they accept, so a new kind is silently
+  read-only until it is added to each list. Symptoms look like an engine bug (the control does
+  nothing) while the engine is fine. Test that the STORE can set it, not just that the engine
+  honours it.
 
 ## Verify
 - [ ] `pnpm typecheck` (the exhaustive maps are the checklist).

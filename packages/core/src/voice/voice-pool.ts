@@ -204,6 +204,9 @@ export class VoicePool {
       slot.spliceInputs = undefined;
       slot.splice = undefined;
     }
+    // The engine re-stamps this each frame from its own accumulator; clear it so a reused
+    // pool slot never shows the previous voice's position for one frame.
+    slot.spliceMotionMs = undefined;
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
@@ -272,6 +275,7 @@ function makeVoiceSlot(): Voice {
     mixInputs: undefined,
     spliceInputs: undefined,
     splice: undefined,
+    spliceMotionMs: undefined,
   };
 }
 
