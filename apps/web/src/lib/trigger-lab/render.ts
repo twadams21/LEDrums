@@ -131,14 +131,19 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
   }
 
   const age = sim.timeMs - v.bornAtMs;
-  const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(age, cfg.chaseMs, cfg.direction) : 0;
-  // Authored in pixels, so it is the same on every run regardless of length — hoisted, mirroring core.
-  const staggerShift = cfg.chase === 'stagger' ? voice.chaseStaggerShift(age, cfg.chaseMs, cfg.direction, cfg.incrementPx) : 0;
-  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex) => {
+  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unitStart, unitEnd, unitIndex, ordinal, ordinalCount) => {
     const len = unitEnd - unitStart;
     const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
     const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
-    const shift = cfg.chase === 'smooth' ? voice.chasePixelShift(age, cfg.chaseMs, cfg.direction, len) : staggerShift;
+    // Per-unit motion clock, mirroring core: an offset cascade starts hoop after hoop.
+    const unitAge = voice.unitMotionAge(age, voice.spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed), cfg.offsetMs);
+    const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
+    const shift =
+      cfg.chase === 'smooth'
+        ? voice.chasePixelShift(unitAge, cfg.chaseMs, cfg.direction, len)
+        : cfg.chase === 'stagger'
+          ? voice.chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
+          : 0;
     voice.forEachSpliceBand(bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
       const inputIndex = cfg.inputBySlot[slot] ?? -1;
       if (inputIndex < 0) return; // a blank splice shows nothing

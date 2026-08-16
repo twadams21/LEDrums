@@ -263,6 +263,17 @@ export type SplicePartition = 'hoop' | 'drum' | 'scope';
 export type SpliceChaseMode = 'off' | 'step' | 'smooth' | 'stagger';
 
 /**
+ * The order the partition units start moving in, when a splice node offsets its motion across
+ * them (see {@link SpliceConfig.offsetMs}). "Unit" is a hoop under the `'hoop'` partition and a
+ * drum under `'drum'` — so on a whole drum this is the order the HOOPS fire in.
+ * - `'up'`         — hoop 1 first, climbing the drum.
+ * - `'down'`       — the top hoop first, descending.
+ * - `'outside-in'` — the two outer hoops first, working inward (1, N, 2, N−1, …).
+ * - `'random'`     — a seeded shuffle: stable for the voice's life, different per seed.
+ */
+export type SpliceOrder = 'up' | 'down' | 'outside-in' | 'random';
+
+/**
  * One splice — what renders inside one band of the partition. Every field is optional
  * because "blank" is a legitimate, authorable state:
  *   effect + colour → the effect, tinted toward the colour
@@ -303,6 +314,15 @@ export interface SpliceConfig {
   direction: 1 | -1;
   /** Pixels the cut jumps per interval in `'stagger'`. Ignored by the other modes. */
   incrementPx: number;
+  /**
+   * Milliseconds each partition unit's motion starts AFTER the one before it in {@link order}
+   * — so a chase can climb a drum hoop by hoop instead of every hoop moving in lockstep. 0
+   * (the default) means every unit moves together, which is the previous behaviour exactly.
+   * A unit that has not reached its start shows the cut standing still, not darkness.
+   */
+  offsetMs: number;
+  /** The order units start moving in when {@link offsetMs} is non-zero. */
+  order: SpliceOrder;
   /** 0..1 strength of the colour tint applied to an effect splice. */
   tint: number;
   /** Per-slot authored colour (null = none), index-aligned with the splice slots. */
@@ -396,6 +416,18 @@ export interface GraphNode {
       splice width on purpose — a 3px stagger over 12px splices creates a slow crawl the
       splice-wide `'step'` chase cannot express. */
   spliceIncrementPx?: number;
+  /** How the per-unit motion offset is expressed: resolved against bpm (`'beats'`) or taken
+      as milliseconds (`'time'`). Absent → `'beats'`. */
+  spliceOffsetMode?: 'time' | 'beats';
+  /** Per-unit motion offset in milliseconds (used when `spliceOffsetMode === 'time'`).
+      Absent/0 → every unit moves together. */
+  spliceOffsetMs?: number;
+  /** Musical division for the per-unit offset (used when `spliceOffsetMode === 'beats'`).
+      Absent → no offset: a division only takes effect once one is chosen, so simply picking
+      an order can never start a cascade the author did not ask for. */
+  spliceOffsetDivision?: string;
+  /** The order units start moving in when an offset is set. Absent → `'up'`. */
+  spliceOrder?: SpliceOrder;
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes

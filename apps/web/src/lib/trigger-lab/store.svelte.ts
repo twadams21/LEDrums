@@ -3156,7 +3156,7 @@ export class TriggerLab {
       keeps the authored rows in step). Guards `node.kind === 'splice'`. */
   setSpliceSetting(
     node: GraphNode,
-    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceTint'>>,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceTint'>>,
   ): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     if (node.kind !== 'splice') return;

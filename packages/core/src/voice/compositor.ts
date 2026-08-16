@@ -32,7 +32,9 @@ import {
   computeSpliceBands,
   forEachPartitionUnit,
   forEachSpliceBand,
+  spliceOrderIndex,
   spliceTintColour,
+  unitMotionAge,
   tintPixel,
   type SpliceBand,
 } from './splice';
@@ -147,16 +149,18 @@ function syncMixInputState(input: MixInput, rendered: Voice): void {
  * splice reuses one cached layout for the whole voice instead of re-cutting 60×/second.
  */
 function spliceLayoutKey(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): string {
-  let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${model.pixelCount}`;
+  let key = `${cfg.count}|${cfg.jitter}|${cfg.seed}|${cfg.partition}|${cfg.order}|${model.pixelCount}`;
   for (const range of ranges) key += `|${range.start}-${range.end}`;
   return key;
 }
 
-/** One partition unit's absolute pixel run plus how it is cut. */
+/** One partition unit's absolute pixel run, how it is cut, and where it sits in the
+    cascade (0 = starts with the hit; higher = one offset later). */
 interface SpliceUnit {
   start: number;
   end: number;
   bands: SpliceBand[];
+  orderIndex: number;
 }
 
 /**
@@ -166,9 +170,14 @@ interface SpliceUnit {
  */
 function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly PixelRange[]): SpliceUnit[] {
   const units: SpliceUnit[] = [];
-  forEachPartitionUnit(model, ranges, cfg.partition, (start, end, unitIndex) => {
+  forEachPartitionUnit(model, ranges, cfg.partition, (start, end, unitIndex, ordinal, ordinalCount) => {
     const seed = cfg.jitter > 0 ? (cfg.seed + unitIndex * 0x9e3779b1) >>> 0 : cfg.seed;
-    units.push({ start, end, bands: computeSpliceBands(end - start, cfg.count, cfg.jitter, seed) });
+    units.push({
+      start,
+      end,
+      bands: computeSpliceBands(end - start, cfg.count, cfg.jitter, seed),
+      orderIndex: spliceOrderIndex(ordinal, ordinalCount, cfg.order, cfg.seed),
+    });
   });
   return units;
 }
@@ -312,15 +321,19 @@ export function createDefaultCompositor(): Compositor {
           const { mix } = ensureScratch();
           mix.clear();
           const age = timeMs - v.bornAtMs;
-          const stepOffset = cfg.chase === 'step' ? chaseStepOffset(age, cfg.chaseMs, cfg.direction) : 0;
-          // A stagger's jump is authored in pixels, so unlike a smooth lap it does not depend on
-          // the run's length — hoist it out of the per-unit loop, where it is also the proof that
-          // every hoop staggers by the same amount however long it is.
-          const staggerShift = cfg.chase === 'stagger' ? chaseStaggerShift(age, cfg.chaseMs, cfg.direction, cfg.incrementPx) : 0;
           const dstRgba = mix.rgba;
           for (const unit of units) {
             const len = unit.end - unit.start;
-            const shift = cfg.chase === 'smooth' ? chasePixelShift(age, cfg.chaseMs, cfg.direction, len) : staggerShift;
+            // Each unit runs on its own clock, so an offset cascade starts hoop after hoop.
+            // With no offset every unit gets `age` and this is the previous behaviour exactly.
+            const unitAge = unitMotionAge(age, unit.orderIndex, cfg.offsetMs);
+            const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
+            const shift =
+              cfg.chase === 'smooth'
+                ? chasePixelShift(unitAge, cfg.chaseMs, cfg.direction, len)
+                : cfg.chase === 'stagger'
+                  ? chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
+                  : 0;
             forEachSpliceBand(unit.bands, len, shift, stepOffset, (slot, bandStart, bandEnd) => {
               const inputIndex = cfg.inputBySlot[slot] ?? -1;
               if (inputIndex < 0) return; // a blank splice shows nothing

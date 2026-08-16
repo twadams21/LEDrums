@@ -35,6 +35,26 @@ export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
   { value: '-1', label: 'Reverse' },
 ];
 
+export const SPLICE_OFFSET_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
+  { value: 'beats', label: 'Division' },
+  { value: 'time', label: 'Time' },
+];
+
+/** The order the units start moving in when a cascade offset is set. */
+export const SPLICE_ORDER_OPTS: Array<{ value: voice.SpliceOrder; label: string }> = [
+  { value: 'up', label: 'Up' },
+  { value: 'down', label: 'Down' },
+  { value: 'outside-in', label: 'Outside in' },
+  { value: 'random', label: 'Random' },
+];
+
+/** What one partition unit IS, for labelling the cascade controls — the offset runs across
+    hoops under the hoop partition and across drums under the drum partition, so the controls
+    say which rather than making the author infer it. */
+export function spliceUnitNoun(partition: voice.SplicePartition | undefined): string {
+  return partition === 'drum' ? 'Drum' : 'Hoop';
+}
+
 /** Sentinel for "this splice has no effect" in the per-row effect Select. Empty string is the
     Select's own placeholder state, so the no-effect choice needs a value of its own. */
 export const SPLICE_NO_EFFECT = '@none';

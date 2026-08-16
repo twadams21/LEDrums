@@ -239,6 +239,78 @@ describe('splice — chase', () => {
   });
 });
 
+describe('splice — cascade offset across units', () => {
+  const cascading = (over: Partial<GraphNode>, atMs: number) =>
+    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      ...over,
+    }), [], atMs);
+
+  it('starts each hoop later than the one before it, so the chase climbs the drum', () => {
+    // Offset 200ms, chase interval 100ms. Voice born at t=5, so at frame 150 the first hoop
+    // has aged 145ms (one step) while the second is still waiting out its 200ms head start.
+    const { rgb } = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceOrder: 'up' }, 150);
+    expectRgb(rgb(0), BLUE, 'hoop 1 has stepped');
+    expectRgb(rgb(4), RED, 'hoop 2 has not started — it holds the cut, it does not go dark');
+  });
+
+  it('a waiting hoop is LIT and still, never blank', () => {
+    const { rgb } = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 5000, spliceOrder: 'up' }, 150);
+    expectRgb(rgb(4), RED, 'hoop 2 shows its resting cut');
+    expectRgb(rgb(6), BLUE, 'both its splices are lit, just not moving');
+  });
+
+  it('reverses which hoop leads on a down order', () => {
+    const down = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceOrder: 'down' }, 150);
+    expectRgb(down.rgb(4), BLUE, 'the TOP hoop leads');
+    expectRgb(down.rgb(0), RED, 'and the bottom one waits');
+  });
+
+  it('runs the cascade per drum, so hoop 1 of every drum fires together', () => {
+    const { rgb } = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceOrder: 'up' }, 150);
+    expectRgb(rgb(0), BLUE, 'kick hoop 1');
+    expectRgb(rgb(8), BLUE, 'snare hoop 1 — same position in its own drum, same start');
+    expectRgb(rgb(12), RED, 'snare hoop 2 waits exactly like the kick’s');
+  });
+
+  it('moves every unit together when no offset is set — the previous behaviour', () => {
+    const together = cascading({ spliceOrder: 'down' }, 150);
+    expectRgb(together.rgb(0), BLUE, 'hoop 1');
+    expectRgb(together.rgb(4), BLUE, 'hoop 2 moved with it');
+  });
+
+  it('resolves a bpm-synced offset like every other splice timing', () => {
+    // 1/8 at 120bpm = 250ms, so at frame 150 the second hoop has not started.
+    const { rgb } = cascading({ spliceOffsetMode: 'beats', spliceOffsetDivision: '1/8' }, 150);
+    expectRgb(rgb(0), BLUE, 'hoop 1 has stepped');
+    expectRgb(rgb(4), RED, 'hoop 2 is inside its 250ms head start');
+  });
+});
+
+describe('splice — scope', () => {
+  it('cuts the whole kit by default', () => {
+    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    for (const hoopStart of [0, 4, 8, 12]) expectRgb(rgb(hoopStart), RED, `hoop@${hoopStart}`);
+  });
+
+  it('cuts only the drum it is scoped to, leaving the rest of the kit dark', () => {
+    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'drum', targetId: 'snare' }));
+    expectRgb(rgb(0), DARK, 'kick untouched');
+    expectRgb(rgb(4), DARK, 'kick untouched');
+    expectRgb(rgb(8), RED, 'snare hoop 1 cut');
+    expectRgb(rgb(12), RED, 'snare hoop 2 cut');
+  });
+
+  it('cuts a single hoop when scoped to one', () => {
+    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'hoop', targetId: 'snare#2' }));
+    expectRgb(rgb(8), DARK, 'snare hoop 1 untouched');
+    expectRgb(rgb(12), RED, 'snare hoop 2 cut');
+    expectRgb(rgb(14), BLUE, 'and cut into its splices');
+  });
+});
+
 describe('splice — effects inside a splice', () => {
   /** A real generator-backed effect, as the gallery would supply it. */
   const litEffect = (id: string): EffectDef => ({

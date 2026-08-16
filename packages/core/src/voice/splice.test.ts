@@ -16,7 +16,9 @@ import {
   isBlankSplice,
   resolveSplices,
   spliceDefAt,
+  spliceOrderIndex,
   tintPixel,
+  unitMotionAge,
   wrapIndex,
 } from './splice';
 import type { GraphNode, SpliceDef } from './types';
@@ -252,6 +254,11 @@ describe('forEachPartitionUnit', () => {
     forEachPartitionUnit(model, ranges, partition, (start, end) => out.push([start, end]));
     return out;
   };
+  const ordinals = (partition: 'hoop' | 'drum' | 'scope') => {
+    const out: [number, number][] = [];
+    forEachPartitionUnit(model, whole, partition, (_s, _e, _i, ordinal, count) => out.push([ordinal, count]));
+    return out;
+  };
 
   it('cuts the scope once, each drum, or every hoop', () => {
     expect(model.pixelCount).toBe(24); // kick 2×8 + snare 2×4
@@ -260,11 +267,67 @@ describe('forEachPartitionUnit', () => {
     expect(collect('hoop')).toEqual([[0, 8], [8, 16], [16, 20], [20, 24]]);
   });
 
+  it('numbers a hoop WITHIN ITS DRUM, so a kit-wide cascade climbs every drum in parallel', () => {
+    // Two drums, two hoops each: ordinals 0,1 then 0,1 again — not 0,1,2,3 across the kit.
+    expect(ordinals('hoop')).toEqual([[0, 2], [1, 2], [0, 2], [1, 2]]);
+    expect(ordinals('drum')).toEqual([[0, 2], [1, 2]]);
+    expect(ordinals('scope')).toEqual([[0, 1]]);
+  });
+
   it('clips units to the voice’s own ranges, so an upstream Scope still narrows a splice', () => {
     expect(collect('hoop', [{ start: 16, end: 24 }])).toEqual([[16, 20], [20, 24]]);
     expect(collect('drum', [{ start: 0, end: 16 }])).toEqual([[0, 16]]);
     // A range covering half of one hoop yields just that half — never a unit outside it.
     expect(collect('hoop', [{ start: 4, end: 10 }])).toEqual([[4, 8], [8, 10]]);
+  });
+});
+
+describe('spliceOrderIndex', () => {
+  const positions = (count: number, order: 'up' | 'down' | 'outside-in' | 'random', seed = 1) =>
+    Array.from({ length: count }, (_, i) => spliceOrderIndex(i, count, order, seed));
+
+  it('climbs, descends, and works inward from both ends', () => {
+    expect(positions(4, 'up')).toEqual([0, 1, 2, 3]);
+    expect(positions(4, 'down')).toEqual([3, 2, 1, 0]);
+    // 0, 3, 1, 2 fire in that sequence → hoop0 goes first, hoop3 second, hoop1 third.
+    expect(positions(4, 'outside-in')).toEqual([0, 2, 3, 1]);
+    expect(positions(5, 'outside-in')).toEqual([0, 2, 4, 3, 1]);
+  });
+
+  it('is a genuine permutation in every order, so no two units share a start time', () => {
+    for (const order of ['up', 'down', 'outside-in', 'random'] as const) {
+      for (const count of [1, 2, 3, 4, 5, 8]) {
+        const p = positions(count, order);
+        expect([...p].sort((a, b) => a - b), `${order}/${count}`).toEqual(Array.from({ length: count }, (_, i) => i));
+      }
+    }
+  });
+
+  it('shuffles deterministically per seed', () => {
+    expect(positions(6, 'random', 3)).toEqual(positions(6, 'random', 3));
+    expect(positions(6, 'random', 3)).not.toEqual(positions(6, 'random', 4));
+  });
+
+  it('clamps a nonsense ordinal or count rather than returning undefined', () => {
+    expect(spliceOrderIndex(0, 1, 'up', 1)).toBe(0);
+    expect(spliceOrderIndex(9, 4, 'up', 1)).toBe(3);
+    expect(spliceOrderIndex(-2, 4, 'up', 1)).toBe(0);
+    expect(spliceOrderIndex(0, 0, 'down', 1)).toBe(0);
+  });
+});
+
+describe('unitMotionAge', () => {
+  it('holds a unit at a standstill until its turn, then runs it on its own clock', () => {
+    expect(unitMotionAge(500, 0, 200), 'the first unit is never delayed').toBe(500);
+    expect(unitMotionAge(100, 1, 200), 'not started yet → frozen at 0, not dark').toBe(0);
+    expect(unitMotionAge(200, 1, 200), 'exactly at its start').toBe(0);
+    expect(unitMotionAge(500, 1, 200)).toBe(300);
+    expect(unitMotionAge(500, 2, 200)).toBe(100);
+  });
+
+  it('is the identity with no offset — the previous behaviour, byte for byte', () => {
+    for (const order of [0, 1, 5]) expect(unitMotionAge(750, order, 0)).toBe(750);
+    expect(unitMotionAge(750, 3, -5)).toBe(750);
   });
 });
 
@@ -363,6 +426,31 @@ describe('resolveSplices', () => {
     expect(cfg({ spliceIncrementPx: 99999 }).incrementPx).toBe(MAX_SPLICE_INCREMENT_PX);
   });
 
+  it('resolves the per-unit cascade offset from a division or free time', () => {
+    const cfg = (over: Partial<GraphNode>) =>
+      resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', ...over }), 120)!.config;
+    expect(cfg({ spliceOffsetMode: 'beats', spliceOffsetDivision: '1/8' }).offsetMs).toBe(250);
+    expect(cfg({ spliceOffsetMode: 'time', spliceOffsetMs: 90 }).offsetMs).toBe(90);
+    expect(cfg({ spliceOffsetMode: 'time', spliceOffsetMs: -40 }).offsetMs).toBe(0);
+  });
+
+  it('does NOT start a cascade just because an order was picked', () => {
+    const cfg = resolveSplices(
+      spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', spliceOrder: 'down' }),
+      120,
+    )!.config;
+    expect(cfg.offsetMs, 'no division chosen → units still move together').toBe(0);
+    expect(cfg.order).toBe('down');
+  });
+
+  it('drops the offset when the motion is off — there is nothing to stagger the start of', () => {
+    const cfg = resolveSplices(
+      spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'off', spliceOffsetMode: 'time', spliceOffsetMs: 300 }),
+      120,
+    )!.config;
+    expect(cfg.offsetMs).toBe(0);
+  });
+
   it('fills every default, so a splice node authored with nothing but content still resolves', () => {
     const cfg = resolveSplices(spliceNode({ splices: [{ color: '#ffffff' }] }), 120)!.config;
     expect(cfg.count).toBe(DEFAULT_SPLICE_COUNT);
@@ -371,6 +459,8 @@ describe('resolveSplices', () => {
     expect(cfg.chase).toBe('off');
     expect(cfg.direction).toBe(1);
     expect(cfg.tint).toBe(1);
+    expect(cfg.offsetMs).toBe(0);
+    expect(cfg.order).toBe('up');
   });
 
   it('clamps out-of-range authored values rather than trusting them into the render loop', () => {

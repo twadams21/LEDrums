@@ -23,6 +23,8 @@
   import {
     SPLICE_CHASE_HINTS,
     SPLICE_CHASE_OPTS,
+    SPLICE_OFFSET_MODE_OPTS,
+    SPLICE_ORDER_OPTS,
     SPLICE_DIRECTION_OPTS,
     SPLICE_NO_EFFECT,
     SPLICE_PARTITION_OPTS,
@@ -30,7 +32,9 @@
     describeSpliceRow,
     spliceEffectOptions,
     spliceRows,
+    spliceUnitNoun,
   } from '../../views/splice-options';
+  import { SCOPE_OPTS } from '../../views/node-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -42,12 +46,50 @@
   const tint = $derived(node.spliceTint ?? 1);
   const anyTinted = $derived(rows.some((r) => r.color && r.effectId && !r.muted));
   const effectName = (id: string) => store.effects.find((e) => e.id === id)?.name ?? id;
+  const partition = $derived(node.splicePartition ?? 'hoop');
+  const offsetMode = $derived(node.spliceOffsetMode ?? 'beats');
+  // The cascade offsets ACROSS units, so it means nothing when the whole scope is one unit.
+  const canCascade = $derived(partition !== 'scope');
+  const unitNoun = $derived(spliceUnitNoun(partition));
+
+  /** Scope-target options, derived from the current scope — same shape the play inspector uses. */
+  const targetOptions = $derived.by(() => {
+    const infos = store.kitDrumInfos;
+    if (node.scope === 'drum') return infos.map((d) => ({ value: d.id, label: d.label }));
+    if (node.scope === 'hoop') {
+      return infos.flatMap((d) =>
+        Array.from({ length: d.hoopCount }, (_, i) => ({ value: `${d.id}#${i + 1}`, label: `${d.label} · Hoop ${i + 1}` })),
+      );
+    }
+    return [];
+  });
 </script>
 
 {#if node.kind === 'splice'}
   <div class="kindbody">
     <section class="group">
       <h4 class="grouptitle">Cut</h4>
+
+      <Field label="On">
+        <SegmentedControl
+          value={node.scope}
+          options={SCOPE_OPTS}
+          onChange={(v) => store.setScope(node, v as 'kit' | 'drum' | 'hoop')}
+          ariaLabel="Splice scope"
+        />
+      </Field>
+
+      {#if node.scope !== 'kit'}
+        <Field layout="row" label="Target">
+          <Select
+            value={node.targetId ?? ''}
+            options={targetOptions}
+            onChange={(v) => store.setTargetId(node, v || undefined)}
+            placeholder="Auto (triggering drum)"
+            ariaLabel="Splice scope target"
+          />
+        </Field>
+      {/if}
 
       <Field layout="row" label="Splices">
         <CommitInput
@@ -165,7 +207,59 @@
           />
         </Field>
 
+        {#if canCascade}
+          <Field layout="row" label="{unitNoun} offset">
+            <SegmentedControl
+              value={offsetMode}
+              options={SPLICE_OFFSET_MODE_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceOffsetMode: v as 'beats' | 'time' })}
+              ariaLabel="{unitNoun} offset mode"
+            />
+          </Field>
+
+          {#if offsetMode === 'beats'}
+            <Field layout="row" label="Division">
+              <Select
+                value={node.spliceOffsetDivision ?? ''}
+                options={[{ value: '', label: 'None (together)' }, ...DIVISION_OPTS]}
+                onChange={(v) => store.setSpliceSetting(node, { spliceOffsetDivision: v || undefined })}
+                ariaLabel="{unitNoun} offset division"
+              />
+            </Field>
+          {:else}
+            <Field layout="row" label="Time" unit="ms">
+              <CommitInput
+                type="number"
+                value={node.spliceOffsetMs ?? 0}
+                min={0}
+                max={60000}
+                step={1}
+                onCommit={(v) => store.setSpliceSetting(node, { spliceOffsetMs: Number(v) })}
+                ariaLabel="{unitNoun} offset milliseconds"
+              />
+            </Field>
+          {/if}
+
+          <!-- A Select, not a 4-up SegmentedControl: "Outside in" overflows the panel's control
+               column by 15px, and the set is likely to grow. -->
+          <Field layout="row" label="{unitNoun} order">
+            <Select
+              value={node.spliceOrder ?? 'up'}
+              options={SPLICE_ORDER_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceOrder: v as voice.SpliceOrder })}
+              ariaLabel="{unitNoun} order"
+            />
+          </Field>
+        {/if}
+
         <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>
+        {#if canCascade}
+          <p class="hint">
+            An offset starts each {unitNoun.toLowerCase()} later than the one before it, in the order above —
+            so the motion travels {partition === 'drum' ? 'across the kit' : 'up the drum'} instead of every
+            {unitNoun.toLowerCase()} moving together. A {unitNoun.toLowerCase()} waiting its turn holds still rather than going dark.
+          </p>
+        {/if}
       {/if}
     </section>
 

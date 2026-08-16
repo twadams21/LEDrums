@@ -22,7 +22,7 @@ import { clamp01, hashString, mulberry32 } from '../math';
 import { drumHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { PixelRange } from '../modifiers/types';
 import { computeDelayMs } from './delay';
-import type { EffectDef, GraphNode, SpliceConfig, SpliceDef } from './types';
+import type { EffectDef, GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
 
 /** Splice count defaults + the authoring ceiling. The cap is a legibility bound, not a
     perf one: past a few dozen splices per hoop each band is a pixel or two wide. */
@@ -168,32 +168,82 @@ export function forEachPartitionUnit(
   model: PixelModel,
   ranges: readonly PixelRange[],
   partition: SpliceConfig['partition'],
-  visit: (start: number, end: number, unitIndex: number) => void,
+  visit: (start: number, end: number, unitIndex: number, ordinal: number, ordinalCount: number) => void,
 ): void {
   let unitIndex = 0;
-  const emit = (start: number, end: number): void => {
-    if (end > start) visit(start, end, unitIndex++);
+  const emit = (start: number, end: number, ordinal: number, ordinalCount: number): void => {
+    if (end > start) visit(start, end, unitIndex++, ordinal, ordinalCount);
   };
 
   for (const range of ranges) {
     if (partition === 'scope') {
-      emit(range.start, range.end);
+      emit(range.start, range.end, 0, 1);
       continue;
     }
-    for (const drum of model.drums) {
+    for (let d = 0; d < model.drums.length; d++) {
+      const drum = model.drums[d]!;
       if (partition === 'drum') {
         const start = Math.max(range.start, drum.pixelStart);
         const end = Math.min(range.end, drum.pixelStart + drum.pixelCount);
-        emit(start, end);
+        emit(start, end, d, model.drums.length);
         continue;
       }
       for (let hoop = 1; hoop <= drum.hoopCount; hoop++) {
         const hoopRange = drumHoopPixelRange(drum, hoop);
         if (!hoopRange) continue;
-        emit(Math.max(range.start, hoopRange.start), Math.min(range.end, hoopRange.end));
+        // Ordinal is the hoop's position WITHIN ITS DRUM, not a running unit count: on a
+        // kit-scoped splice that makes hoop 1 of every drum fire together and the cascade
+        // climb each drum in parallel, rather than crawling across the kit drum by drum.
+        emit(Math.max(range.start, hoopRange.start), Math.min(range.end, hoopRange.end), hoop - 1, drum.hoopCount);
       }
     }
   }
+}
+
+/**
+ * Where a unit sits in the firing order — 0 starts immediately, 1 starts one offset later, and
+ * so on. Pure and total: an out-of-range ordinal clamps, a single unit is always position 0.
+ *
+ * `'random'` is a seeded shuffle rather than a per-unit hash so the result is a genuine
+ * PERMUTATION: every position is used exactly once, which is what keeps a random cascade
+ * evenly spread instead of clumping several hoops onto the same start time.
+ */
+export function spliceOrderIndex(ordinal: number, count: number, order: SpliceOrder, seed: number): number {
+  const n = Math.max(1, Math.floor(count));
+  const i = Math.min(n - 1, Math.max(0, Math.floor(ordinal)));
+  switch (order) {
+    case 'down':
+      return n - 1 - i;
+    case 'outside-in': {
+      // 0, N−1, 1, N−2, … — pair up from both ends, outermost first.
+      const fromEnd = n - 1 - i;
+      return i <= fromEnd ? i * 2 : fromEnd * 2 + 1;
+    }
+    case 'random': {
+      const rng = mulberry32(hashString(`splice-order:${n}:${seed >>> 0}`));
+      const perm = Array.from({ length: n }, (_, k) => k);
+      for (let k = n - 1; k > 0; k--) {
+        const j = Math.floor(rng() * (k + 1));
+        const tmp = perm[k]!;
+        perm[k] = perm[j]!;
+        perm[j] = tmp;
+      }
+      return perm[i]!;
+    }
+    default:
+      return i;
+  }
+}
+
+/**
+ * A unit's own motion clock: the voice's age minus its place in the cascade. Clamped at 0, so a
+ * unit whose turn has not come shows the cut STANDING STILL rather than going dark — the splice
+ * colours are already lit; only the movement is waiting.
+ */
+export function unitMotionAge(ageMs: number, orderIndex: number, offsetMs: number): number {
+  if (!(offsetMs > 0) || orderIndex <= 0) return ageMs;
+  const own = ageMs - orderIndex * offsetMs;
+  return own > 0 ? own : 0;
 }
 
 /**
@@ -332,6 +382,21 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
           ),
         );
 
+  // Per-unit cascade offset, resolved here (not per frame) for the same snapshot-stability
+  // reason as the chase rate. A `beats` offset with no division chosen is 0: picking an ORDER
+  // alone must never start a cascade the author did not ask for.
+  const offsetMs =
+    chase === 'off'
+      ? 0
+      : Math.max(
+          0,
+          (node.spliceOffsetMode ?? 'beats') === 'time'
+            ? (node.spliceOffsetMs ?? 0)
+            : node.spliceOffsetDivision
+              ? computeDelayMs('beats', 0, node.spliceOffsetDivision, bpm > 0 ? bpm : 120)
+              : 0,
+        );
+
   const colors: (string | null)[] = [];
   const inputBySlot: number[] = [];
   const members: ResolvedSpliceMember[] = [];
@@ -365,6 +430,8 @@ export function resolveSplices(node: GraphNode, bpm: number): ResolvedSplices | 
       chaseMs,
       direction: node.spliceDirection === -1 ? -1 : 1,
       incrementPx: clampInt(node.spliceIncrementPx ?? DEFAULT_SPLICE_INCREMENT_PX, 0, MAX_SPLICE_INCREMENT_PX),
+      offsetMs,
+      order: node.spliceOrder ?? 'up',
       tint: clamp01(node.spliceTint ?? 1),
       colors,
       inputBySlot,

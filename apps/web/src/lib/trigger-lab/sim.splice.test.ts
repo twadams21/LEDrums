@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BUSES, EFFECTS, PRESETS } from './fixtures';
 import { Sim, makeNode, type GraphNode, type TriggerCtx, type TriggerGraph } from './sim';
 import { buildLabModel } from './kit';
+import type { LabModel } from './kit';
 import { renderFrame } from './render';
 
 /* Splice through the OFFLINE preview path (sim spawn → render.ts), the mirror of core's
@@ -42,7 +43,7 @@ function spliceGraph(over: Partial<GraphNode>): TriggerGraph {
 }
 
 /** Fire the graph and render one preview frame; returns the RGB buffer + the lab model. */
-function render(graph: TriggerGraph, atMs = 80): { rgb: (i: number) => [number, number, number]; hoopLen: number } {
+function render(graph: TriggerGraph, atMs = 80): { rgb: (i: number) => [number, number, number]; hoopLen: number; pm: LabModel['pm'] } {
   const lab = buildLabModel();
   const sim = freshSim();
   sim.triggerGraph('test', graph, ctx());
@@ -54,6 +55,7 @@ function render(graph: TriggerGraph, atMs = 80): { rgb: (i: number) => [number, 
   return {
     rgb: (i) => [buf[i * 3]!, buf[i * 3 + 1]!, buf[i * 3 + 2]!],
     hoopLen: kick.hoopPixelCounts[0]!,
+    pm: lab.pm,
   };
 }
 
@@ -121,6 +123,30 @@ describe('splice — offline preview', () => {
     const after = render(graph, 160);
     expect(isRed(after.rgb(2)), 'the red band has jumped two pixels along').toBe(true);
     expect(isRed(after.rgb(0)), 'and is no longer where it started').toBe(false);
+  });
+
+  it('cascades the motion across hoops when an offset is set', () => {
+    const graph = spliceGraph({
+      splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+      spliceCount: 2,
+      spliceChase: 'step',
+      spliceRateMode: 'time',
+      spliceRateMs: 100,
+      spliceOffsetMode: 'time',
+      spliceOffsetMs: 5000,
+      spliceOrder: 'up',
+    });
+    const { rgb, hoopLen } = render(graph, 150);
+    expect(isBlue(rgb(0)), 'hoop 1 has stepped').toBe(true);
+    expect(isRed(rgb(hoopLen)), 'hoop 2 is still waiting out its offset, lit but not moving').toBe(true);
+  });
+
+  it('cuts only the drum it is scoped to', () => {
+    const { rgb, pm } = render(spliceGraph({ splices: [{ color: '#ff0000' }], spliceCount: 1, scope: 'drum', targetId: 'snare' }));
+    const snare = pm.drumById.get('snare')!;
+    expect(isDark(rgb(0)), 'kick untouched').toBe(true);
+    expect(isRed(rgb(snare.pixelStart)), 'the snare is lit').toBe(true);
+    expect(isRed(rgb(snare.pixelStart + snare.pixelCount - 1)), 'all the way through').toBe(true);
   });
 
   it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
