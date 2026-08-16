@@ -124,7 +124,7 @@
   <Shell {store} {shell} />
 </div>
 
-<Overlays {store} />
+<Overlays {store} {shell} />
 
 <PinGate {store} />
 

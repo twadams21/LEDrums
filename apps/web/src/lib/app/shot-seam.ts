@@ -64,7 +64,11 @@ export interface ShotSeam {
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
-  /** Type a query into the Add pane's search field (drives the flat grouped
+  /** Summon the on-canvas Add-node popover at the canvas centre, via its own `+` control —
+      the popover's open state is TriggerGraphView-local, so this drives the real affordance
+      rather than duplicating the placement math. Opens the Trigger view first. */
+  openAddPopover(): void;
+  /** Type a query into the Add palette's search field (drives the flat grouped
       results state). The field's value is component-local, so this drives the
       real input rather than a store method. */
   setSearch(query: string): void;
@@ -293,8 +297,14 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  openAddPopover(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
+  }
+
   setSearch(query: string): void {
-    // The Add pane's search value is AddPalette-local state (not the store), so
+    // The Add palette's search value is AddPalette-local state (not the store), so
     // drive the real input and fire `input` for Svelte's bind:value to pick up.
     // The effect gallery owns a second field with the same job; when it is open it is the
     // one on screen, so search there rather than at a hidden pane behind the dialog.
@@ -541,6 +551,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'backups':
         this.previewBackups();
+        break;
+      case 'add-popover':
+        this.openAddPopover();
         break;
       case 'search':
         this.setSearch(arg ?? '');

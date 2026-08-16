@@ -22,17 +22,23 @@
     "state": "view:trigger",
     "target": "main.center"
   },
-  "node-editor-add": {
-    "state": "view:trigger",
-    "target": "Node editor"
+  "inspector-closed": {
+    "state": "view:trigger"
   },
-  "gen3-add-pane-route": {
-    "state": "view:trigger",
-    "target": "Node editor"
+  "inspector-over-docks": {
+    "state": "view:trigger,add:mix,select:mix"
+  },
+  "add-node-popover": {
+    "state": "view:trigger,add-popover",
+    "target": "Add node palette"
+  },
+  "add-node-popover-search": {
+    "state": "view:trigger,add-popover,search:delay",
+    "target": "Add node palette"
   },
   "gen3-scope-inspector": {
     "state": "view:trigger,add:scope,select:scope",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "gen3-mix-node": {
     "state": "view:trigger,add:mix,select:mix",
@@ -40,11 +46,11 @@
   },
   "gen3-slider-input": {
     "state": "view:trigger,add:effect,select:effect",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "trigger-node-selected": {
     "state": "view:trigger,add:mix,select:mix",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "graphs-rail": {
     "state": "view:trigger",
@@ -126,9 +132,9 @@
     "target": "dialog:Settings",
     "settle": 300
   },
-  "node-editor-play": {
+  "inspector-play": {
     "state": "view:trigger,add:effect,select:effect",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "effect-gallery": {
     "state": "view:trigger,add:effect,select:effect,gallery",
@@ -157,7 +163,7 @@
   },
   "segments-params": {
     "state": "view:trigger,graph:kick,select:effect,effect:gen:segments",
-    "target": "Node editor",
+    "target": "Inspector",
     "settle": 800
   },
   "segments-gallery": {
