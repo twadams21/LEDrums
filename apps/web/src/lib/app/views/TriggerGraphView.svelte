@@ -5,8 +5,10 @@
      canvas, and highlight it. The store stays the source of truth and
      autosaves, so every canvas edit flows through its mutators; the xyflow arrays are
      a derived projection (rebuilt on graph switch / structure change), with xyflow
-     owning live node positions during a drag. All per-node editing lives in the
-     right-dock Inspector — the nodes here are display-only. */
+     owning live node positions during a drag. The nodes here are display-only: per-node
+     editing lives in the window-right Inspector slideover (mounted at the shell layer, see
+     `app/InspectorSlideover.svelte`) and adding lives in the on-canvas Add-node popover.
+     Neither takes a grid column, so the canvas keeps the full width at all times. */
   import { setContext, untrack } from 'svelte';
   import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -49,13 +51,14 @@
   import AlignGuides from './AlignGuides.svelte';
   import { computeAlignment, type AlignRect, type GuideLine } from './align-guides';
   import type { FlowApi } from './FlowHandle.svelte';
-  import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
-  import AddPalette, { type AddGroup } from './AddPalette.svelte';
+  import AddNodePopover from './AddNodePopover.svelte';
+  import type { AddGroup } from './AddPalette.svelte';
   import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
   import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
   import TriggerGraphsRail from './TriggerGraphsRail.svelte';
-  import Inspector from '../docks/Inspector.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
   import Splitter from '../../ui/Splitter.svelte';
+  import Plus from '@lucide/svelte/icons/plus';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -77,22 +80,8 @@
   const lintIndex = new GraphLintIndex();
   setContext(GRAPH_LINT_KEY, lintIndex);
 
-  // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
-  // The Add tab lists everything the graph can gain in one searchable surface:
-  // node kinds, then modulation sources, then the modifier registry grouped by
-  // category (registry-driven, so a newly registered modifier appears with no
-  // edit here). Selecting a node flips the drawer to its Inspector tab.
-  let neTab = $state<NodeEditorTab>('add');
-  $effect(() => {
-    neTab = shell.selection?.kind === 'node' ? 'inspector' : 'add';
-  });
-  const EDITOR_W = { key: 'triggerNodeEditorW', min: 280, max: 520, def: 340 };
-  const editorW = $derived(store.paneSizes[EDITOR_W.key] ?? EDITOR_W.def);
-  const setEditorW = (v: number): void => {
-    store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
-  };
   // Graphs rail (S3): the left pane hosting the active section's graph cards —
-  // same persisted-size pattern as the Node Editor drawer opposite.
+  // the one remaining resizable column now that the editor drawer has left the grid.
   const RAIL_W = { key: 'triggerGraphsRailW', min: 180, max: 340, def: 240 };
   const railW = $derived(store.paneSizes[RAIL_W.key] ?? RAIL_W.def);
   const setRailW = (v: number): void => {
@@ -111,14 +100,46 @@
   // headless Chrome can't drive the HTML5 drag.
   let dragActive = $state(false);
   const dropActive = $derived(dragActive || (import.meta.env.DEV && canvasDropPreview.current));
-  function canvasCentre(): { x: number; y: number } {
+
+  // ---- Add-node popover ------------------------------------------------------
+  // The palette lists everything the graph can gain in one searchable surface: node kinds,
+  // then modulation sources, then the modifier registry grouped by category (registry-
+  // driven, so a newly registered modifier appears with no edit here). It is summoned ON
+  // the canvas — right-click at the spot, or the `+` affordance for the visible centre —
+  // and the node lands where it was summoned, so the palette costs the canvas no width.
+  //
+  // `at` is canvas-local px (where to paint the popover); `spawn` is the matching FLOW
+  // position (where the node goes). Both are captured at invoke time so a pan/zoom while
+  // the palette is open can never land the node somewhere else than it was summoned.
+  let addPopover = $state<{ at: { x: number; y: number }; spawn: { x: number; y: number } } | null>(null);
+  const canvasBox = $derived.by(() => {
+    addPopover; // re-measure each time the popover opens
     const r = canvasWrap?.getBoundingClientRect();
-    if (!flowApi) return { x: 0, y: 0 };
-    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    return { w: r?.width ?? 0, h: r?.height ?? 0 };
+  });
+  /** Open the palette at a screen point (a right-click), or at the canvas centre (the `+`). */
+  function openAddPopover(screen?: { x: number; y: number }): void {
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!rect) return;
+    const point = screen ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    addPopover = {
+      at: { x: point.x - rect.left, y: point.y - rect.top },
+      spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
+    };
   }
+  // A graph switch invalidates the captured spawn point — close rather than drop a node into
+  // the graph the user just left.
+  $effect(() => {
+    store.selectedPadKey;
+    untrack(() => {
+      addPopover = null;
+    });
+  });
+  /** Palette pick → a node at the position the palette was summoned at. */
   function handleAdd(id: string, groupKey: string): void {
-    const c = canvasCentre();
-    handleAddAt(id, groupKey, c.x, c.y);
+    const spawn = addPopover?.spawn;
+    if (!spawn) return;
+    handleAddAt(id, groupKey, spawn.x, spawn.y);
   }
   function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
     if (groupKey === EFFECT_GROUP_KEY) addPlayNodeAt(id as PlayType, x, y);
@@ -542,13 +563,15 @@
     return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` should land on: the target's
-      first exposed row, else auto-expose its first numeric param (a sensible default so a drop
-      onto a bare node still lands). Undefined when the target has no modulatable params. */
+      first exposed NUMBER row, else auto-expose its first numeric param (a sensible default so
+      a drop onto a bare node still lands). Since S5 a face row may be an enum or a bool, which
+      nothing can modulate — `modDropTarget` skips those. Undefined when the target has no
+      modulatable params. */
   function paramPortFor(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    let key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
-    if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
+    const key = store.modDropTarget(to);
+    if (key && !store.isParamOnFace(to, key)) store.addModInput(to, key);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` WOULD land on — the read-only
@@ -557,7 +580,7 @@
   function predictParamPort(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    const key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    const key = store.modDropTarget(to);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** Would dropping the in-progress wire on `toId` (optionally the precise handle under the
@@ -611,7 +634,7 @@
   }
 </script>
 
-<div class="trigger-view" style:--rail-w={`${railW}px`} style:--editor-w={`${editorW}px`}>
+<div class="trigger-view" style:--rail-w={`${railW}px`}>
   <div class="rail-wrap">
     <TriggerGraphsRail {store} {shell} />
     <Splitter
@@ -648,6 +671,10 @@
       onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
       onEdgeClick={() => shell.clearSelection()}
       onPaneClick={() => shell.clearSelection()}
+      onPaneContextMenu={(e) => {
+        e.preventDefault();
+        openAddPopover({ x: e.clientX, y: e.clientY });
+      }}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
       onNodeDrag={guard('drag-live', onDrag)}
@@ -678,34 +705,37 @@
     {#if dropActive}
       <div class="drop-ring" aria-hidden="true"></div>
     {/if}
-  </div>
-
-  <div class="editor-wrap">
-    <Splitter
-      orientation="vertical"
-      size={editorW}
-      min={EDITOR_W.min}
-      max={EDITOR_W.max}
-      invert
-      label="Resize node editor"
-      onResize={setEditorW}
-      style="left: calc(var(--shell-gap) * -0.5); top: 0; bottom: 0;"
-    />
-    <NodeEditor bind:tab={neTab}>
-      {#snippet add()}
-        <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
-      {/snippet}
-      {#snippet inspector()}
-        <Inspector {store} {shell} />
-      {/snippet}
-    </NodeEditor>
+    <!-- The `+` affordance: the discoverable half of the add gesture (right-click being the
+         fast half). Pinned top-right of the canvas, out of the lint strip's row. -->
+    <div class="add-affordance">
+      <IconButton
+        icon={Plus}
+        label="Add node"
+        variant="soft"
+        tooltipSide="left"
+        disabled={!store.selectedGraph}
+        onclick={() => openAddPopover()}
+      />
+    </div>
+    {#if addPopover}
+      <AddNodePopover
+        at={addPopover.at}
+        bounds={canvasBox}
+        groups={addGroups}
+        disabled={!store.canEdit}
+        onAdd={handleAdd}
+        onClose={() => (addPopover = null)}
+      />
+    {/if}
   </div>
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--editor-w);
+    /* Two tracks only: the inspector left the grid for a window-right slideover, so the
+       canvas keeps that width permanently — opening the inspector never reflows it. */
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
@@ -749,10 +779,12 @@
   .lint-overlay > :global(*) {
     pointer-events: auto;
   }
-  .editor-wrap {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
+  /* `+` add affordance — pinned to the canvas's top-right, opposite the lint strip. */
+  .add-affordance {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 6;
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

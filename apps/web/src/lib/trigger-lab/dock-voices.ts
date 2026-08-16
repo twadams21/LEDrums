@@ -31,6 +31,11 @@ export interface DockVoice {
   releasing: boolean;
   /** Provenance label — the chip tooltip. */
   via: string;
+  /** Eval state prefix the voice was spawned under — the firing graph's key, `#<slot>`-suffixed
+   * on section-slot fires, `''` when the spawn path had none. Carries the graph ATTRIBUTION both
+   * sources already hold (sim `Voice.pad`, wire `VoiceStat.pad`), so a graph card can show that
+   * it is the one currently lighting the kit. Normalize with `graphKeyOfVoice`. */
+  pad: string;
 }
 
 /** Normalize an offline sim voice into the dock view model (mirrors what the dock used to read off
@@ -45,6 +50,7 @@ export function simVoiceToDockVoice(v: Voice): DockVoice {
     hue: typeof v.params.hue === 'number' ? v.params.hue : 0,
     releasing: v.phase === 'release',
     via: v.via,
+    pad: v.pad ?? '',
   };
 }
 
@@ -60,6 +66,7 @@ export function serverVoiceToDockVoice(v: VoiceStat): DockVoice {
     hue: v.hue,
     releasing: v.releasing,
     via: v.via,
+    pad: v.pad,
   };
 }
 

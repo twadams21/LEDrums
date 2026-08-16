@@ -35,7 +35,7 @@ function simVoice(over: Partial<Voice> = {}): Voice {
 
 /** A wire VoiceStat with sane defaults (levels already folded server-side). */
 function serverVoice(over: Partial<VoiceStat> = {}): VoiceStat {
-  return { id: 'srv1', busId: 'trigger', effectId: 'sparkle', mode: 'oneshot', level: 0.4, hue: 120, releasing: false, via: 'server-via', ...over };
+  return { id: 'srv1', busId: 'trigger', effectId: 'sparkle', mode: 'oneshot', level: 0.4, hue: 120, releasing: false, via: 'server-via', pad: 'graph:1', ...over };
 }
 
 describe('selectDockVoices — source selection', () => {
@@ -82,6 +82,12 @@ describe('voice → DockVoice mapping', () => {
 
   it('serverVoiceToDockVoice adopts the pre-folded server fields verbatim', () => {
     const dv = serverVoiceToDockVoice(serverVoice({ level: 0.4, hue: 120, releasing: true, mode: 'hold' }));
-    expect(dv).toEqual({ id: 'srv1', busId: 'trigger', effectId: 'sparkle', mode: 'hold', level: 0.4, hue: 120, releasing: true, via: 'server-via' });
+    expect(dv).toEqual({ id: 'srv1', busId: 'trigger', effectId: 'sparkle', mode: 'hold', level: 0.4, hue: 120, releasing: true, via: 'server-via', pad: 'graph:1' });
+  });
+
+  it('carries the graph attribution from both sources (sim `pad` may be absent — normalize to empty)', () => {
+    expect(serverVoiceToDockVoice(serverVoice({ pad: 'graph:2#1' })).pad).toBe('graph:2#1');
+    expect(simVoiceToDockVoice(simVoice({ pad: 'graph:2' })).pad).toBe('graph:2');
+    expect(simVoiceToDockVoice(simVoice({ pad: undefined })).pad).toBe('');
   });
 });

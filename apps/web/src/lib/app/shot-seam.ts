@@ -16,7 +16,7 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
-import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
+import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
@@ -76,6 +76,10 @@ export interface ShotSeam {
       card click drives — so any registered effect's params/thumbnail are capturable without
       choreographing a scroll-and-click through a 50-card grid. */
   pickEffect(effectId: string): void;
+  /** Set that same node's play mode (`mode:loop`). A `oneshot` fire is gone within a frame or
+      two, so a sustained state — a held loop, and anything keyed off it — is only capturable
+      with the node switched first. */
+  setPlayMode(mode: PlayMode): void;
   /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
       `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
   firePad(drumId?: string): void;
@@ -84,10 +88,17 @@ export interface ShotSeam {
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
-  /** Type a query into the Add pane's search field (drives the flat grouped
+  /** Summon the on-canvas Add-node popover at the canvas centre, via its own `+` control —
+      the popover's open state is TriggerGraphView-local, so this drives the real affordance
+      rather than duplicating the placement math. Opens the Trigger view first. */
+  openAddPopover(): void;
+  /** Type a query into the Add palette's search field (drives the flat grouped
       results state). The field's value is component-local, so this drives the
       real input rather than a store method. */
   setSearch(query: string): void;
+  /** Type a query into the effect inspector's param filter (S4). Like `setSearch`, the
+      field's value is component-local, so this drives the real input. */
+  filterParams(query: string): void;
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
@@ -120,6 +131,15 @@ export interface ShotSeam {
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
       an empty Mix hides the rows. */
   mixWithLayers(): void;
+  /** Author a node whose FACE carries exposed param rows (S5) — the state neither `add` nor
+      `select` reaches, since a fresh node's face is bare.
+
+      `face-params` puts the first two number params of a fresh Effect on its face.
+      `face-params:wired` additionally wires an LFO into the first row, so the driven state
+      (modulation badge + live tick beside an editable base value) is capturable.
+      `face-params:mixed` uses a MODIFIER node instead — `trail` declares a number AND an
+      enum, so one capture shows both control types on one card. */
+  faceParams(mode?: 'wired' | 'mixed'): void;
   /** Author a REAL empty-scope graph so ui-shot can capture the R06 lint surface end to end:
       an Effect scoped to one drum wired to an Output scoped to a different drum → the effective
       scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
@@ -293,6 +313,11 @@ class ShotSeamImpl implements ShotSeam {
     if (target) this.store.pickEffect(target, effectId);
   }
 
+  setPlayMode(mode: PlayMode): void {
+    const target = this.effectTarget();
+    if (target) this.store.setMode(target, mode);
+  }
+
   firePad(drumId?: string): void {
     const pads = this.store.pads;
     const wanted = drumId?.toLowerCase();
@@ -350,14 +375,27 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  openAddPopover(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
+  }
+
   setSearch(query: string): void {
-    // The Add pane's search value is AddPalette-local state (not the store), so
+    // The Add palette's search value is AddPalette-local state (not the store), so
     // drive the real input and fire `input` for Svelte's bind:value to pick up.
     // The effect gallery owns a second field with the same job; when it is open it is the
     // one on screen, so search there rather than at a hidden pane behind the dialog.
     const input =
       document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]') ??
       document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    if (!input) return;
+    input.value = query;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  filterParams(query: string): void {
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter parameters"]');
     if (!input) return;
     input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -608,6 +646,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'effect':
         if (arg) this.pickEffect(arg);
         break;
+      case 'mode':
+        if (arg === 'oneshot' || arg === 'loop' || arg === 'hold') this.setPlayMode(arg);
+        break;
       case 'fire':
         this.firePad(arg);
         break;
@@ -618,8 +659,14 @@ class ShotSeamImpl implements ShotSeam {
       case 'backups':
         this.previewBackups();
         break;
+      case 'add-popover':
+        this.openAddPopover();
+        break;
       case 'search':
         this.setSearch(arg ?? '');
+        break;
+      case 'param-filter':
+        this.filterParams(arg ?? '');
         break;
       case 'sections-insert':
         this.previewSectionsDnd('graph');
@@ -655,6 +702,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'mix-layers':
         this.mixWithLayers();
+        break;
+      case 'face-params':
+        this.faceParams(arg === 'wired' ? 'wired' : arg === 'mixed' ? 'mixed' : undefined);
         break;
       case 'empty-scope':
         this.emptyScope();
@@ -696,6 +746,34 @@ class ShotSeamImpl implements ShotSeam {
     this.added.set('mix', mix);
     this.lastAdded = mix;
     this.shell.select({ kind: 'node', nodeId: mix.id });
+  }
+
+  faceParams(mode?: 'wired' | 'mixed'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // A modifier node is the mixed-TYPE case (`trail`: a number + an enum); an effect node
+    // gives two numbers, the modulatable pair the wired capture needs.
+    const target = mode === 'mixed' ? this.addNode('modifier') : this.addNode('effect');
+    if (!target) return;
+    // The store hands back the RAW node — always re-resolve through the live graph before
+    // mutating, or the value lands but never re-renders (ROUTER gotcha).
+    const live = () => this.store.selectedGraph?.nodes.find((n) => n.id === target.id) ?? null;
+    const node = live();
+    if (!node) return;
+    for (const spec of this.store.faceParamSpecs(node).slice(0, 2)) {
+      const n = live();
+      if (n) this.store.addFaceParam(n, spec.key);
+    }
+    if (mode === 'wired') {
+      // Placed explicitly, well clear of the target — the staggered `addNode` default would
+      // drop the source card ON TOP of the very rows the capture exists to show.
+      const lfo = this.store.addNode('lfo', 60, 420);
+      const n = live();
+      const key = n ? this.store.modDropTarget(n) : undefined;
+      if (lfo && key) this.store.connect(lfo.id, target.id, undefined, `param:${key}`);
+    }
+    this.lastAdded = target;
+    this.shell.select({ kind: 'node', nodeId: target.id });
   }
 
   emptyScope(): void {

@@ -1,32 +1,27 @@
 <script lang="ts">
   /* Play-node editor — the effect header (thumb + name + swap), preset bar (select + apply/save),
-     play-mode + layer segments, scope selector + target dropdown, and the per-param controls
-     (slider / toggle + optional envelope button). The shared node header (kind selector + remove)
+     play-mode + layer segments, scope selector + target dropdown, and the effect's parameters.
+     The params themselves render through `EffectParamsSection` (S4: filter + always-visible
+     common section + effect-specific fold). The shared node header (kind selector + remove)
      lives in the parent Inspector. A preset is a snapshot (S39): selecting one forks its params
      onto the node, Apply re-forks (resets local edits), Save captures the node's params as a new
      preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
-  import { resolveVoiceSustainMs, voice, type CurveValue, type Hsv } from '@ledrums/core';
-  import { lifeParamKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
+  import { voice } from '@ledrums/core';
   import { busIcon } from '../../views/trigger-node-meta';
-  import { MODE_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
+  import { MODE_OPTS, SCOPE_OPTS } from '../../views/node-options';
   import { nodeLintEntries } from '../../views/graph-lint';
   import LintCallout from '../../../ui/LintCallout.svelte';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
-  import Slider from '../../../ui/Slider.svelte';
-  import CurveField from '../../../ui/CurveField.svelte';
   import Select from '../../../ui/Select.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
-  import Toggle from '../../../ui/Toggle.svelte';
-  import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import EffectParamsSection from './EffectParamsSection.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
-  import Spline from '@lucide/svelte/icons/spline';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -42,24 +37,6 @@
   const eff = $derived(store.effectOf(node));
   const live = $derived(store.liveParams(node));
 
-  /** Read a param as a string (enum choice / colour hex), falling back to `d`. */
-  const str = (v: unknown, d: string): string => (typeof v === 'string' ? v : d);
-  /** Enum value → a friendly Select label ("out" → "Out", "x" → "X"). */
-  const titleCase = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-
-  /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
-      that writes through to all three (the picker is UI-only — persistence stays numeric). */
-  const COLOR_KEYS = ['hue', 'saturation', 'brightness'] as const;
-  const hasColorSwatch = $derived(!!eff && COLOR_KEYS.every((k) => eff.params.some((p) => p.key === k)));
-  // A colour param is "modulated" when it's an exposed target with at least one incoming
-  // modulation wire (doc 10) — the legacy per-param envelope was folded into these mappings (S35).
-  const colorModulated = $derived(hasColorSwatch && COLOR_KEYS.some((k) => store.mappingsFor(node, k).length > 0));
-
-  function applyColor(hsv: Hsv): void {
-    store.setParam(node, 'hue', hsv.h);
-    store.setParam(node, 'saturation', hsv.s);
-    store.setParam(node, 'brightness', hsv.v);
-  }
   // Canvas play nodes (D3/D4) get a scene picker; their params render through the SAME generic
   // param loop below (CANVAS_PARAM_SPEC), so there's no special-casing past the picker.
   const isCanvas = $derived((node.playType ?? eff?.playType) === 'canvas');
@@ -68,34 +45,6 @@
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
-
-  // --- life envelope (S6b) ---------------------------------------------------
-  // An effect that DECLARES a life param (`EffectGenerator.voiceLife`) can have that scalar
-  // drawn as a shape instead. The curve's x axis is normalised over exactly that declared
-  // life, so `h1.x = 1` is the Life slider's own value and seeding changes nothing visually.
-  const lifeKey = $derived(lifeParamKey(eff?.generatorId));
-  const lifeEnvelope = $derived(node.lifeEnvelope ?? null);
-  /** Real-time width of the envelope's x axis — what the author is actually drawing across. */
-  const lifeSpanMs = $derived(
-    eff ? resolveVoiceSustainMs(eff.generatorId, live, store.bpm, eff.sustainMs) : 0,
-  );
-  const lifeSpec = $derived(lifeKey ? eff?.params.find((p) => p.key === lifeKey) ?? null : null);
-  /** One undo per gesture: the first live frame opens the checkpoint, the rest fold into it. */
-  let lifeDragging = $state(false);
-
-  function onLifeChange(v: CurveValue): void {
-    if (lifeDragging) store.updateLifeEnvelope(node, v);
-    else {
-      lifeDragging = true;
-      store.setLifeEnvelope(node, v); // snapshots the PRE-drag state, then writes
-    }
-  }
-  function onLifeCommit(v: CurveValue): void {
-    store.updateLifeEnvelope(node, v);
-    lifeDragging = false;
-  }
-  const fmtLifeX = (u: number): string =>
-    lifeSpanMs >= 1000 ? `${(u * lifeSpanMs / 1000).toFixed(2)} s` : `${Math.round(u * lifeSpanMs)} ms`;
 
   /** Options for the scope-target dropdown, derived from the current scope. */
   const targetOptions = $derived.by(() => {
@@ -189,85 +138,7 @@
     </div>
   {/if}
 
-  <div class="params">
-    {#if hasColorSwatch}
-      <div class="prow">
-        <span class="plabel">Colour</span>
-        <ColorSwatch
-          hue={num(live['hue'], 0)}
-          saturation={num(live['saturation'], 1)}
-          brightness={num(live['brightness'], 1)}
-          modulated={colorModulated}
-          onChange={applyColor}
-          ariaLabel="Effect colour"
-        />
-      </div>
-    {/if}
-    <!-- The life param's scalar row steps aside while a curve owns it. The value is untouched
-         underneath — it still sets the curve's time span, and Detach brings the slider back. -->
-    {#each eff.params.filter((p) => !(lifeEnvelope && p.key === lifeKey)) as spec (spec.key)}
-      <div class="prow">
-        <span class="plabel">{spec.label}</span>
-        {#if spec.kind === 'number'}
-          <Slider
-            value={num(live[spec.key], 0)}
-            min={spec.min}
-            max={spec.max}
-            step={spec.step}
-            format={(v) => fmt(spec, v)}
-            onChange={(v) => store.setParam(node, spec.key, v)}
-            ariaLabel={spec.label}
-          />
-        {:else if spec.kind === 'enum'}
-          <Select
-            value={str(live[spec.key], spec.options?.[0] ?? '')}
-            options={(spec.options ?? []).map((o) => ({ value: o, label: titleCase(o) }))}
-            onChange={(v) => store.setParam(node, spec.key, v)}
-            ariaLabel={spec.label}
-            class="paramsel"
-          />
-        {:else}
-          <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
-               control — the write-through swatch — is owned by S19; no effect declares one yet. -->
-          <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
-        {/if}
-        {#if spec.key === lifeKey}
-          <IconButton
-            icon={Spline}
-            label="Draw {spec.label} as a curve"
-            variant="soft"
-            size={14}
-            onclick={() => store.setLifeEnvelope(node, seedLifeEnvelope(eff.generatorId))}
-          />
-        {/if}
-      </div>
-    {/each}
-
-    {#if lifeEnvelope}
-      <div class="lifeenv">
-        <div class="lifehead">
-          <span class="plabel">{lifeSpec?.label ?? 'Life'}</span>
-          <span class="lifespan">{fmtLifeX(1)}</span>
-          <IconButton
-            icon={Undo2}
-            label="Detach the curve — back to the {lifeSpec?.label ?? 'Life'} slider"
-            variant="soft"
-            size={14}
-            onclick={() => store.setLifeEnvelope(node, null)}
-          />
-        </div>
-        <CurveField
-          value={lifeEnvelope}
-          onChange={onLifeChange}
-          onCommit={onLifeCommit}
-          xAxis={{ label: 'time', format: fmtLifeX }}
-          yAxis={{ label: 'level', format: (u) => `${Math.round(u * 100)}%` }}
-          height={104}
-          ariaLabel="{lifeSpec?.label ?? 'Life'} envelope"
-        />
-      </div>
-    {/if}
-  </div>
+  <EffectParamsSection {store} {node} {eff} />
 
   <ModulationParamsSection {store} {node} />
 
@@ -384,59 +255,6 @@
   }
   .targetrow :global(.select-trigger) {
     flex: 1;
-    min-width: 0;
-  }
-  .lifeenv {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding-top: var(--space-1);
-  }
-  .lifehead {
-    /* Same three-column rhythm as a param row, so the Detach button lands in the gutter the
-       draw-as-a-curve button left behind — the swap happens in place, not somewhere new. */
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) var(--control-icon-size);
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .lifehead :global(.ib) {
-    justify-self: center;
-  }
-  .lifespan {
-    font-size: var(--text-2xs);
-    font-family: var(--font-mono);
-    color: var(--text-faint);
-    font-variant-numeric: tabular-nums;
-  }
-  .params {
-    padding: var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .prow {
-    display: grid;
-    /* The third column is a RESERVED gutter, not a column the life row alone creates: only one
-       param carries the draw-as-a-curve affordance, and without the reservation every other
-       slider would run 30px longer than that one and the stack would read as ragged. */
-    grid-template-columns: 84px minmax(0, 1fr) var(--control-icon-size);
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .prow :global(.ib) {
-    justify-self: center;
-  }
-  .plabel {
-    font-size: var(--text-xs);
-    color: var(--text);
-  }
-  .prow :global(.boolcell) {
-    justify-self: start;
-  }
-  /* Enum Select fills the middle (value) column, like the scope-target select. */
-  .prow :global(.paramsel) {
-    width: 100%;
     min-width: 0;
   }
   .foot {
