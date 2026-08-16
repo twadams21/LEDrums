@@ -49,6 +49,8 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
 | `select:<k>`| select the node most recently `add`ed with that kind (flips the Node Editor to Inspector) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |
+| `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
+| `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
 | `settings`  | open the app Settings dialog |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.

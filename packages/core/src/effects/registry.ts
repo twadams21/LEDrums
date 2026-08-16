@@ -58,6 +58,8 @@ import { orbitComet } from './impl/orbit-comet';
 import { scanPlane } from './impl/scan-plane';
 import { drumSonar } from './impl/drum-sonar';
 import { gravityDrops } from './impl/gravity-drops';
+// Angular wedges across the struck drum (E1).
+import { segments } from './impl/segments';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -109,6 +111,7 @@ const ALL: EffectGenerator<any>[] = [
   scanPlane,
   drumSonar,
   gravityDrops,
+  segments,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();

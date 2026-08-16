@@ -52,6 +52,13 @@ export interface ShotSeam {
   selectNode(kindOrId: string): void;
   /** Open the effect gallery for the selected / last-added / first effect node. */
   openGallery(): void;
+  /** Set that same node's effect (`effect:gen:segments`) through the store seam a gallery
+      card click drives — so any registered effect's params/thumbnail are capturable without
+      choreographing a scroll-and-click through a 50-card grid. */
+  pickEffect(effectId: string): void;
+  /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
+      `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
+  firePad(drumId?: string): void;
   /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
   openSettings(pane?: SettingsPane): void;
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
@@ -224,6 +231,36 @@ class ShotSeamImpl implements ShotSeam {
     if (target) this.store.openGallery(target);
   }
 
+  pickEffect(effectId: string): void {
+    const target = this.effectTarget();
+    if (target) this.store.pickEffect(target, effectId);
+  }
+
+  firePad(drumId?: string): void {
+    const pads = this.store.pads;
+    const wanted = drumId?.toLowerCase();
+    const match = wanted
+      ? pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted))
+      : undefined;
+    const pad = match ?? pads[0];
+    if (pad) this.store.hit(pad);
+  }
+
+  /** The effect/play node an effect op acts on: the selected one, else the last added, else the
+      graph's first. Always re-resolved THROUGH `graph.nodes` — `addNode` hands back the raw
+      object, and passing that to a mutator bypasses the `$state` proxy (the write lands but
+      never re-renders). */
+  private effectTarget(): GraphNode | null {
+    const graph = this.store.selectedGraph;
+    if (!graph) return null;
+    const isEffect = (node: GraphNode): boolean => node.kind === 'effect' || node.kind === 'play';
+    const byId = (id: string | null | undefined): GraphNode | undefined =>
+      id ? graph.nodes.find((node) => node.id === id) : undefined;
+    const selectedId = this.shell.selection?.kind === 'node' ? this.shell.selection.nodeId : null;
+    const candidates = [byId(selectedId), byId(this.lastAdded?.id), graph.nodes.find(isEffect)];
+    return candidates.find((node): node is GraphNode => !!node && isEffect(node)) ?? null;
+  }
+
   openSettings(pane?: SettingsPane): void {
     // Settings routing lives in the shell store (deep-linkable `?settings=<pane>`),
     // so the seam drives the same method the gear + the URL drive.
@@ -259,7 +296,11 @@ class ShotSeamImpl implements ShotSeam {
   setSearch(query: string): void {
     // The Add pane's search value is AddPalette-local state (not the store), so
     // drive the real input and fire `input` for Svelte's bind:value to pick up.
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    // The effect gallery owns a second field with the same job; when it is open it is the
+    // one on screen, so search there rather than at a hidden pane behind the dialog.
+    const input =
+      document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]') ??
+      document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
     if (!input) return;
     input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -487,6 +528,12 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'gallery':
         this.openGallery();
+        break;
+      case 'effect':
+        if (arg) this.pickEffect(arg);
+        break;
+      case 'fire':
+        this.firePad(arg);
         break;
       case 'settings':
         // `settings` opens the modal on its default pane; `settings:outputs` deep-links a section.
