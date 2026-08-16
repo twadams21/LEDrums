@@ -12,6 +12,7 @@
   import { type AdsrShape, type EaseSpec, adsrToPoints } from './sim';
   import {
     GEO,
+    innerWidthOf,
     xOf,
     yOf,
     toUnit,
@@ -21,6 +22,7 @@
     dragSustain,
     dragRelease,
     NUDGE,
+    type Box,
     type Stage,
   } from './envelope-editor-geom';
   import type { Attachment } from 'svelte/attachments';
@@ -73,8 +75,13 @@
   }
 
   // --- SVG geometry (constants + mapping live in envelope-editor-geom) ------
-  const innerW = GEO.W - GEO.PAD * 2;
+  /* The viewBox width tracks the measured CSS width, so 1 SVG unit = 1 CSS px and the
+     handles stay round; a fixed 480 viewBox stretches to the container (~33% squash in
+     the drawer, which is user-resizable — hence an observer, not a one-off measure). */
+  let plotW = $state<number>(GEO.W);
+  const innerW = $derived(innerWidthOf(plotW));
   const innerH = GEO.H - GEO.PAD * 2;
+  const px = (t: number): number => xOf(t, plotW);
 
   const anchors = $derived(handleAnchors(adsr));
   const attackT = $derived(anchors.attack.t);
@@ -85,12 +92,12 @@
   const bands = $derived(segmentBands(adsr));
 
   const points = $derived(adsrToPoints(adsr));
-  const linePath = $derived(points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(p.t)},${yOf(p.v)}`).join(' '));
+  const linePath = $derived(points.map((p, i) => `${i === 0 ? 'M' : 'L'}${px(p.t)},${yOf(p.v)}`).join(' '));
   const areaPath = $derived.by(() => {
     if (points.length === 0) return '';
-    const top = points.map((p) => `L${xOf(p.t)},${yOf(p.v)}`).join(' ');
+    const top = points.map((p) => `L${px(p.t)},${yOf(p.v)}`).join(' ');
     const baseY = yOf(0);
-    return `M${xOf(points[0]!.t)},${baseY} ${top} L${xOf(points[points.length - 1]!.t)},${baseY} Z`;
+    return `M${px(points[0]!.t)},${baseY} ${top} L${px(points[points.length - 1]!.t)},${baseY} Z`;
   });
 
   const gridX = [0.25, 0.5, 0.75];
@@ -100,7 +107,15 @@
   let svgEl: SVGSVGElement | undefined = $state();
   const captureSvg: Attachment<SVGSVGElement> = (node) => {
     svgEl = node;
+    // Content box, not border box: the SVG viewport excludes the 1px border.
+    const measure = (w: number): void => {
+      if (w > 0) plotW = w;
+    };
+    measure(node.clientWidth);
+    const ro = new ResizeObserver(([entry]) => measure(entry!.contentRect.width));
+    ro.observe(node);
     return () => {
+      ro.disconnect();
       if (svgEl === node) svgEl = undefined;
     };
   };
@@ -122,9 +137,17 @@
     selectedSegment = handle === 'sustain' ? 'decay' : handle;
   }
 
+  /** The SVG's content box in client px — the viewport the viewBox maps onto. The
+      bounding rect includes the 1px border, which would offset every drag. */
+  function plotBox(el: SVGSVGElement): Box {
+    const r = el.getBoundingClientRect();
+    const border = (r.width - el.clientWidth) / 2;
+    return { left: r.left + border, top: r.top + border, width: el.clientWidth, height: el.clientHeight };
+  }
+
   function onHandleMove(e: PointerEvent): void {
     if (dragStage === null || !svgEl) return;
-    const { t, v } = toUnit(e.clientX, e.clientY, svgEl.getBoundingClientRect());
+    const { t, v } = toUnit(e.clientX, e.clientY, plotBox(svgEl), plotW);
     applyDrag(dragStage, t, v);
   }
 
@@ -193,28 +216,28 @@
   <svg
     {@attach captureSvg}
     class="curve"
-    viewBox="0 0 {GEO.W} {GEO.H}"
+    viewBox="0 0 {plotW} {GEO.H}"
     preserveAspectRatio="none"
     role="application"
     aria-label="{label} ADSR envelope"
   >
     <rect class="frame" x={GEO.PAD} y={GEO.PAD} width={innerW} height={innerH} />
     {#each gridX as gx (gx)}
-      <line class="grid" x1={xOf(gx)} y1={GEO.PAD} x2={xOf(gx)} y2={GEO.H - GEO.PAD} />
+      <line class="grid" x1={px(gx)} y1={GEO.PAD} x2={px(gx)} y2={GEO.H - GEO.PAD} />
     {/each}
     {#each gridY as gy (gy)}
-      <line class="grid" x1={GEO.PAD} y1={yOf(gy)} x2={GEO.W - GEO.PAD} y2={yOf(gy)} />
+      <line class="grid" x1={GEO.PAD} y1={yOf(gy)} x2={px(1)} y2={yOf(gy)} />
     {/each}
-    <line class="baseline" x1={GEO.PAD} y1={yOf(0)} x2={GEO.W - GEO.PAD} y2={yOf(0)} />
+    <line class="baseline" x1={GEO.PAD} y1={yOf(0)} x2={px(1)} y2={yOf(0)} />
 
     {#each SEGMENTS as seg (seg)}
       {@const b = bands[seg]}
       <rect
         class="seg-band"
         class:selected={selectedSegment === seg}
-        x={xOf(b[0])}
+        x={px(b[0])}
         y={GEO.PAD}
-        width={Math.max(0, xOf(b[1]) - xOf(b[0]))}
+        width={Math.max(0, px(b[1]) - px(b[0]))}
         height={innerH}
         onclick={() => selectSegment(seg)}
         role="presentation"
@@ -224,8 +247,8 @@
     <path class="area" d={areaPath} />
     <path class="line" d={linePath} />
 
-    <circle class="anchor" cx={xOf(0)} cy={yOf(0)} r="3" />
-    <circle class="anchor" cx={xOf(1)} cy={yOf(0)} r="3" />
+    <circle class="anchor" cx={px(0)} cy={yOf(0)} r="3" />
+    <circle class="anchor" cx={px(1)} cy={yOf(0)} r="3" />
 
     <g
       class="handle"
@@ -243,9 +266,9 @@
       aria-valuenow={attackPeak}
       aria-valuetext={attackAria}
     >
-      <circle class="hit" cx={xOf(attackT)} cy={yOf(attackPeak)} r="16" />
-      <circle class="dot" cx={xOf(attackT)} cy={yOf(attackPeak)} r="7" />
-      <text class="cap" x={xOf(attackT)} y={yOf(attackPeak) - 12} text-anchor="middle">A</text>
+      <circle class="hit" cx={px(attackT)} cy={yOf(attackPeak)} r="16" />
+      <circle class="dot" cx={px(attackT)} cy={yOf(attackPeak)} r="7" />
+      <text class="cap" x={px(attackT)} y={yOf(attackPeak) - 12} text-anchor="middle">A</text>
     </g>
 
     <g
@@ -264,9 +287,9 @@
       aria-valuenow={sustainV}
       aria-valuetext={sustainAria}
     >
-      <circle class="hit" cx={xOf(sustainT)} cy={yOf(sustainV)} r="16" />
-      <circle class="dot" cx={xOf(sustainT)} cy={yOf(sustainV)} r="7" />
-      <text class="cap" x={xOf(sustainT)} y={yOf(sustainV) - 12} text-anchor="middle">D·S</text>
+      <circle class="hit" cx={px(sustainT)} cy={yOf(sustainV)} r="16" />
+      <circle class="dot" cx={px(sustainT)} cy={yOf(sustainV)} r="7" />
+      <text class="cap" x={px(sustainT)} y={yOf(sustainV) - 12} text-anchor="middle">D·S</text>
     </g>
 
     <g
@@ -285,9 +308,9 @@
       aria-valuenow={releaseT}
       aria-valuetext={releaseAria}
     >
-      <circle class="hit" cx={xOf(releaseT)} cy={yOf(sustainV)} r="16" />
-      <circle class="dot" cx={xOf(releaseT)} cy={yOf(sustainV)} r="7" />
-      <text class="cap" x={xOf(releaseT)} y={yOf(sustainV) - 12} text-anchor="middle">R</text>
+      <circle class="hit" cx={px(releaseT)} cy={yOf(sustainV)} r="16" />
+      <circle class="dot" cx={px(releaseT)} cy={yOf(sustainV)} r="7" />
+      <text class="cap" x={px(releaseT)} y={yOf(sustainV) - 12} text-anchor="middle">R</text>
     </g>
   </svg>
 

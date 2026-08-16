@@ -19,9 +19,14 @@
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const rows = $derived(store.modInputsOf(node));
-  const specs = $derived(store.modTargetSpecs(node));
-  const available = $derived(store.availableModParams(node));
+  // S5: the specs read the FULL declared list, not just the modulatable numbers — the same
+  // rows now render an in-place control on the node face, so an enum / bool row has a label
+  // here too. `min`/`max` below still come from a number spec, so mapping ranges are unchanged.
+  const specs = $derived(store.faceParamSpecs(node));
+  const available = $derived(store.availableFaceParams(node));
   const addOptions = $derived(available.map((p) => ({ value: p.key, label: p.label })));
+  /** Only a number can be driven by a modulation source; a non-numeric row is face-only. */
+  const modulatable = (key: string): boolean => specs.find((s) => s.key === key)?.kind === 'number';
 
   const labelFor = (key: string): string => specs.find((s) => s.key === key)?.label ?? key;
   const sourceLabel = (fromId: string): string => {
@@ -60,13 +65,16 @@
       onChange={onAdd}
       placeholder="Add parameter…"
       disabled={addOptions.length === 0}
-      ariaLabel="Add a modulation parameter"
+      ariaLabel="Add a parameter to the node face"
       class="addsel"
     />
   </div>
 
   {#if rows.length === 0}
-    <p class="hint">Add a parameter to animate it, then wire an envelope, LFO, or MIDI source into it.</p>
+    <p class="hint">
+      Add a parameter to put it on the node face, where it can be edited in place — then wire an
+      envelope, LFO, or MIDI source into its row to animate it.
+    </p>
   {/if}
 
   {#each rows as row (row.param)}
@@ -75,7 +83,9 @@
     <div class="paramrow">
       <div class="rowhead">
         <span class="pname">{labelFor(row.param)}</span>
-        <span class="count">{maps.length} {maps.length === 1 ? 'wire' : 'wires'}</span>
+        <span class="count">
+          {#if modulatable(row.param)}{maps.length} {maps.length === 1 ? 'wire' : 'wires'}{:else}on face{/if}
+        </span>
         <IconButton icon={X} label={`Remove ${labelFor(row.param)} parameter`} variant="ghost" size={13} onclick={() => onRemove(row.param)} />
       </div>
 
@@ -87,7 +97,9 @@
         </div>
       {/if}
 
-      {#if maps.length === 0}
+      {#if !modulatable(row.param)}
+        <p class="empty">Editable on the node face. Only number params can be modulated.</p>
+      {:else if maps.length === 0}
         <p class="empty">Not wired yet — drag a source into this row to animate it.</p>
       {/if}
 

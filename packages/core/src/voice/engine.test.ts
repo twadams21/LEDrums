@@ -197,6 +197,20 @@ describe('VoiceBusEngine — stats().voices per-voice detail (S17)', () => {
     expect(fxA!.releasing).toBe(true);
   });
 
+  it('attributes each voice to the graph that fired it via `pad`', () => {
+    // The attribution a client needs to show WHICH graph is currently lighting the kit. On the
+    // flat-pad path the state prefix IS the graph key; section slots suffix it with `#<slot>`.
+    const e = createVoiceBusEngine();
+    e.setModel(testModel());
+    e.setShow(show(allGraph()));
+    e.applyInput(hit('kick', 0));
+    e.tick(5, 5, transport(5));
+
+    const { voices } = e.stats();
+    expect(voices).toHaveLength(2);
+    for (const v of voices) expect(v.pad).toBe(padKey('kick', ''));
+  });
+
   it('surfaces a section look as a looped voice on its bus after a server recall (S15 → S17)', () => {
     // The S17 acceptance end-to-end: S15 spawns section looks in the engine on recall; those must
     // appear in the per-voice stream (with bus + loop mode) so a connected dock renders them.

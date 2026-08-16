@@ -14,6 +14,7 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
+  import FaceExposeButton from './FaceExposeButton.svelte';
   import Spline from '@lucide/svelte/icons/spline';
   import Blend from '@lucide/svelte/icons/blend';
 
@@ -97,6 +98,7 @@
         {:else}
           <span class="envspace"></span>
         {/if}
+        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
       </div>
     {/each}
   </div>
@@ -186,7 +188,8 @@
   }
   .prow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) auto;
+    /* label · control · envelope button · face-expose affordance (S5) */
+    grid-template-columns: 84px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: var(--space-2);
   }
