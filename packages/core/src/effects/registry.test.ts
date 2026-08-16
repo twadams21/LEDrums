@@ -29,7 +29,7 @@ describe('effect registry', () => {
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(50);
+    expect(listEffects().length).toBe(51);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {
