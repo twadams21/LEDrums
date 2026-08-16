@@ -24,6 +24,8 @@
   import NodeSignalPreview from './NodeSignalPreview.svelte';
   import NodeStatePreview from './NodeStatePreview.svelte';
   import ParamRowTick from './ParamRowTick.svelte';
+  import FaceParamControl from '../../ui/FaceParamControl.svelte';
+  import { faceParamValue, formatFaceValue, isModulatable } from '../../trigger-lab/store/face-params';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
@@ -40,6 +42,7 @@
   nodeHasOutput,
   nodeIsModSource,
   type NodeKind,
+  type ParamValue,
 } from '../../trigger-lab/sim';
   import { voice, collectionMeta } from '@ledrums/core';
   import { describeTriggerSource, drumLinkHint } from '../trigger-source-label';
@@ -107,20 +110,38 @@
       : 0,
   );
 
-  // Exposed modulation-target rows (doc 10, S34): each renders its own labelled node-face row
-  // with a `param:<key>` input handle scoped to modulation sources. Play + modifier nodes only.
+  // Exposed param rows (doc 10 S34 + S5): ONE list — `node.modInputs` — read here as face
+  // rows and in the inspector as the Parameters section. Each row is labelled, EDITABLE IN
+  // PLACE (a control per declared param type), and — when the param is a number, the only
+  // thing a modulation source can drive — carries its `param:<key>` input handle.
+  // Play + modifier nodes only.
   const modRows = $derived.by(() => {
     if (!node || (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'modifier')) return [];
     const rows = node.modInputs ?? [];
     if (rows.length === 0) return [];
-    const specs = store.modTargetSpecs(node);
-    return rows.map((r) => ({
-      param: r.param,
-      label: specs.find((s) => s.key === r.param)?.label ?? r.param,
-      // resolved wired sources drive both the "wired" state and the S38 live value tick
-      sources: store.modSourcesFor(node, r.param),
-    }));
+    const specs = store.faceParamSpecs(node);
+    const params = node.params ?? {};
+    return rows.map((r) => {
+      const spec = specs.find((s) => s.key === r.param);
+      const value = spec ? faceParamValue(spec, params) : undefined;
+      return {
+        param: r.param,
+        label: spec?.label ?? r.param,
+        spec,
+        value,
+        display: spec && value !== undefined ? formatFaceValue(spec, value) : '—',
+        // resolved wired sources drive both the "wired" state and the S38 live value tick
+        sources: store.modSourcesFor(node, r.param),
+      };
+    });
   });
+
+  /** One drag = one undo (S5). The store brackets the gesture; every value inside it folds
+      into a single checkpoint, and the mutation route is the SAME `setParam` the inspector
+      uses — no second write path to the engine. */
+  function setFaceParam(param: string, v: ParamValue): void {
+    if (node) store.setParam(node, param, v);
+  }
   const mixRows = $derived.by(() => {
     if (!node || node.kind !== 'mix' || !store.selectedGraph) return [];
     return mixLayerRowsFor(store.selectedGraph, node.id, (nodeId) => store.liveNodeY(nodeId));
@@ -267,19 +288,45 @@
   {/if}
 {/snippet}
 
-<!-- Exposed modulation-target rows — rendered INSIDE the node card (NodeCard footer): one
-     border, one surface, concentric radii (item E). Each row is its own drop target (a
-     `param:<key>` handle scoped to modulation sources). -->
+<!-- Exposed param rows — rendered INSIDE the node card (NodeCard footer): one border, one
+     surface, concentric radii (item E). Each row is EDITABLE IN PLACE (S5) and, when its
+     param is a number, is also its own drop target (a `param:<key>` handle scoped to
+     modulation sources). A non-numeric row carries no handle: nothing can modulate an enum
+     or a bool, so offering a target that must reject every wire would be a lie. -->
 {#snippet paramFooter()}
   <ul class="noderows">
     {#each modRows as row (row.param)}
-      <li class="modrow" class:wired={row.sources.length > 0}>
-        <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" aria-label={`Modulation in: ${row.label}`} />
-        <span class="pdot" aria-hidden="true"></span>
-        <span class="plabel">{row.label}</span>
-        <ParamRowTick
-          sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
-        />
+      {@const wired = row.sources.length > 0}
+      <li class="modrow" class:wired>
+        {#if isModulatable(row.spec)}
+          <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" aria-label={`Modulation in: ${row.label}`} />
+          <span class="pdot" aria-hidden="true"></span>
+        {:else}
+          <span class="pdot flat" aria-hidden="true"></span>
+        {/if}
+        <span class="plabel" title={row.label}>{row.label}</span>
+        {#if row.spec && row.value !== undefined}
+          <FaceParamControl
+            kind={row.spec.kind}
+            value={row.value}
+            display={row.display}
+            min={row.spec.min}
+            max={row.spec.max}
+            step={row.spec.step}
+            options={row.spec.options}
+            modulated={wired}
+            disabled={store.isViewer}
+            ariaLabel={row.label}
+            onChange={(v) => setFaceParam(row.param, v as ParamValue)}
+            onGestureStart={() => store.beginGesture()}
+            onGestureEnd={() => store.endGesture()}
+          />
+        {/if}
+        {#if isModulatable(row.spec)}
+          <ParamRowTick
+            sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
+          />
+        {/if}
       </li>
     {/each}
   </ul>
@@ -410,6 +457,11 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-1);
   }
+  /* An editable row packs dot · label · control · tick into ≤226px of card, so it trades the
+     row gap down to `space-1`. Height stays 22px — the card must not grow taller per param. */
+  .modrow {
+    gap: var(--space-1);
+  }
   .mixrow {
     background: color-mix(in oklch, var(--role-mod) 10%, var(--surface-inset));
   }
@@ -420,6 +472,11 @@
     border-radius: 50%;
     border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
     background: transparent;
+  }
+  /* A non-modulatable row (enum / bool) keeps the dot's ALIGNMENT so labels line up, but
+     drops the modulation tint — it has no handle and nothing can wire into it. */
+  .pdot.flat {
+    border-color: var(--border-faint);
   }
   .ldot {
     width: 6px;
@@ -435,6 +492,7 @@
   }
   .plabel {
     flex: 1;
+    min-width: 0; /* let the label ellipsis instead of squeezing the in-place control */
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);

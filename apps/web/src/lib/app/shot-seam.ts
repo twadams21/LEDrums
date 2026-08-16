@@ -104,6 +104,15 @@ export interface ShotSeam {
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
       an empty Mix hides the rows. */
   mixWithLayers(): void;
+  /** Author a node whose FACE carries exposed param rows (S5) — the state neither `add` nor
+      `select` reaches, since a fresh node's face is bare.
+
+      `face-params` puts the first two number params of a fresh Effect on its face.
+      `face-params:wired` additionally wires an LFO into the first row, so the driven state
+      (modulation badge + live tick beside an editable base value) is capturable.
+      `face-params:mixed` uses a MODIFIER node instead — `trail` declares a number AND an
+      enum, so one capture shows both control types on one card. */
+  faceParams(mode?: 'wired' | 'mixed'): void;
   /** Author a REAL empty-scope graph so ui-shot can capture the R06 lint surface end to end:
       an Effect scoped to one drum wired to an Output scoped to a different drum → the effective
       scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
@@ -593,6 +602,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'mix-layers':
         this.mixWithLayers();
         break;
+      case 'face-params':
+        this.faceParams(arg === 'wired' ? 'wired' : arg === 'mixed' ? 'mixed' : undefined);
+        break;
       case 'empty-scope':
         this.emptyScope();
         break;
@@ -633,6 +645,34 @@ class ShotSeamImpl implements ShotSeam {
     this.added.set('mix', mix);
     this.lastAdded = mix;
     this.shell.select({ kind: 'node', nodeId: mix.id });
+  }
+
+  faceParams(mode?: 'wired' | 'mixed'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // A modifier node is the mixed-TYPE case (`trail`: a number + an enum); an effect node
+    // gives two numbers, the modulatable pair the wired capture needs.
+    const target = mode === 'mixed' ? this.addNode('modifier') : this.addNode('effect');
+    if (!target) return;
+    // The store hands back the RAW node — always re-resolve through the live graph before
+    // mutating, or the value lands but never re-renders (ROUTER gotcha).
+    const live = () => this.store.selectedGraph?.nodes.find((n) => n.id === target.id) ?? null;
+    const node = live();
+    if (!node) return;
+    for (const spec of this.store.faceParamSpecs(node).slice(0, 2)) {
+      const n = live();
+      if (n) this.store.addFaceParam(n, spec.key);
+    }
+    if (mode === 'wired') {
+      // Placed explicitly, well clear of the target — the staggered `addNode` default would
+      // drop the source card ON TOP of the very rows the capture exists to show.
+      const lfo = this.store.addNode('lfo', 60, 420);
+      const n = live();
+      const key = n ? this.store.modDropTarget(n) : undefined;
+      if (lfo && key) this.store.connect(lfo.id, target.id, undefined, `param:${key}`);
+    }
+    this.lastAdded = target;
+    this.shell.select({ kind: 'node', nodeId: target.id });
   }
 
   emptyScope(): void {

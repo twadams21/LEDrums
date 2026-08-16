@@ -171,6 +171,26 @@
     "target": "dialog:Change effect",
     "settle": 1500
   },
+  "face-params-card": {
+    "state": "view:trigger,new-graph,face-params",
+    "target": "main.center",
+    "settle": 300
+  },
+  "face-params-wired": {
+    "state": "view:trigger,new-graph,face-params:wired",
+    "target": "main.center",
+    "settle": 400
+  },
+  "face-params-mixed": {
+    "state": "view:trigger,new-graph,face-params:mixed",
+    "target": "main.center",
+    "settle": 300
+  },
+  "face-params-expose": {
+    "state": "view:trigger,new-graph,face-params",
+    "target": "Inspector",
+    "settle": 300
+  },
   "segments-fire-graph": {
     "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,fire:kick",
     "target": "Trigger graph canvas",

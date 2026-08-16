@@ -563,13 +563,15 @@
     return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` should land on: the target's
-      first exposed row, else auto-expose its first numeric param (a sensible default so a drop
-      onto a bare node still lands). Undefined when the target has no modulatable params. */
+      first exposed NUMBER row, else auto-expose its first numeric param (a sensible default so
+      a drop onto a bare node still lands). Since S5 a face row may be an enum or a bool, which
+      nothing can modulate — `modDropTarget` skips those. Undefined when the target has no
+      modulatable params. */
   function paramPortFor(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    let key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
-    if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
+    const key = store.modDropTarget(to);
+    if (key && !store.isParamOnFace(to, key)) store.addModInput(to, key);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` WOULD land on — the read-only
@@ -578,7 +580,7 @@
   function predictParamPort(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    const key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    const key = store.modDropTarget(to);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** Would dropping the in-progress wire on `toId` (optionally the precise handle under the

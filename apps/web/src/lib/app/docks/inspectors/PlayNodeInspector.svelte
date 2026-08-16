@@ -20,6 +20,7 @@
   import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
+  import FaceExposeButton from './FaceExposeButton.svelte';
   import Replace from '@lucide/svelte/icons/replace';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
@@ -197,6 +198,7 @@
                control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
+        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
       </div>
     {/each}
   </div>
@@ -326,7 +328,9 @@
   }
   .prow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
+    /* label · control · face-expose affordance (S5). The colour row fills only the first two
+       columns; `auto` collapses to zero width there, so the sliders stay aligned. */
+    grid-template-columns: 84px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
   }

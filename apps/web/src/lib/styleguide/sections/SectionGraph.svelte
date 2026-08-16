@@ -19,6 +19,7 @@
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
+  import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
@@ -44,6 +45,14 @@
   };
   const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
   const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
+
+  // S5 face-param demo: the three control types a node-face row can carry, live-editable here
+  // exactly as they are on a node card (the same component, no copied markup).
+  let faceSize = $state(0.45);
+  let faceBlend = $state<string>('add');
+  let faceMirror = $state(false);
+  const FACE_BLENDS = ['add', 'over', 'mask'];
+  const fmt2 = (v: number): string => v.toFixed(2).replace(/\.?0+$/, '');
 
   // Wave-4 state-face demo: one node per gating/routing kind, plus a Fire button that
   // stamps the same epoch contract the store's selectedGraphFireAt provides.
@@ -288,6 +297,69 @@
   </DemoCard>
 
   <DemoCard
+    title="Face param control · in-place editing on a node row"
+    src={['lib/ui/FaceParamControl', 'lib/ui/drag-number', 'lib/trigger-lab/store/face-params']}
+    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row edits in place with a type-appropriate control rather than a slider: number = drag / scroll / arrow keys, enum = cycle chip (shift-click reverses), bool = a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
+  >
+    <ul class="face-demo">
+      <li class="face-row">
+        <span class="pdot" aria-hidden="true"></span>
+        <span class="sig-plabel">size</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          ariaLabel="Size"
+          onChange={(v) => (faceSize = v as number)}
+        />
+        <ParamRowTick sample={demoTick} />
+      </li>
+      <li class="face-row">
+        <span class="pdot" aria-hidden="true"></span>
+        <span class="sig-plabel">depth</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          modulated
+          ariaLabel="Depth"
+          onChange={(v) => (faceSize = v as number)}
+        />
+        <ParamRowTick sample={demoTick} />
+      </li>
+      <li class="face-row">
+        <span class="pdot flat" aria-hidden="true"></span>
+        <span class="sig-plabel">blend</span>
+        <FaceParamControl
+          kind="enum"
+          value={faceBlend}
+          display={faceBlend}
+          options={FACE_BLENDS}
+          ariaLabel="Blend"
+          onChange={(v) => (faceBlend = v as string)}
+        />
+      </li>
+      <li class="face-row">
+        <span class="pdot flat" aria-hidden="true"></span>
+        <span class="sig-plabel">mirror</span>
+        <FaceParamControl
+          kind="bool"
+          value={faceMirror}
+          display={faceMirror ? 'on' : 'off'}
+          ariaLabel="Mirror"
+          onChange={(v) => (faceMirror = v as boolean)}
+        />
+      </li>
+    </ul>
+  </DemoCard>
+
+  <DemoCard
     title="State previews · gating & routing node faces"
     src={['lib/app/views/NodeStatePreview', 'lib/trigger-lab/signal-preview']}
     note="Wave-4 full preview coverage: a static face reading the node's configured state, plus a trigger-driven response (firePulse / firePick / delayProgress) when the graph fires. Fire to see the chance flash, toggle flip, delay fill + arrival, sequence step, and the random pick."
@@ -344,6 +416,7 @@
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
+      <li><strong>A face param row and a modulation target row are the same row.</strong> "Put this param on the node face" ≡ "expose it for modulation" — one gesture, one list (<code>node.modInputs</code>), rendered as face rows on the card and as the Parameters section in the inspector. The row is editable in place (<code>FaceParamControl</code>: number drag / enum cycle chip / bool switch), and one drag is one undo. A NUMBER row also carries the <code>param:&#123;key&#125;</code> handle; an enum or bool row does not, because nothing can modulate it. A wired row keeps its control and badges the modulation — the value shown is the BASE, as on <code>ColorSwatch</code>.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
       <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
@@ -412,6 +485,44 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
+  }
+  /* face-param demo — the node-card footer row, at the card's real metrics (22px tall,
+     ~226px of usable width) so the styleguide shows the actual squeeze the control lives in */
+  .face-demo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 226px;
+  }
+  .face-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 22px;
+    padding: 0 var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .face-row .sig-plabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .face-row .pdot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
+  }
+  .face-row .pdot.flat {
+    border-color: var(--border-faint);
   }
   .contract {
     margin-top: var(--space-5);
