@@ -72,6 +72,9 @@ export interface ShotSeam {
       results state). The field's value is component-local, so this drives the
       real input rather than a store method. */
   setSearch(query: string): void;
+  /** Type a query into the effect inspector's param filter (S4). Like `setSearch`, the
+      field's value is component-local, so this drives the real input. */
+  filterParams(query: string): void;
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
@@ -311,6 +314,13 @@ class ShotSeamImpl implements ShotSeam {
     const input =
       document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]') ??
       document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    if (!input) return;
+    input.value = query;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  filterParams(query: string): void {
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter parameters"]');
     if (!input) return;
     input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -557,6 +567,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'search':
         this.setSearch(arg ?? '');
+        break;
+      case 'param-filter':
+        this.filterParams(arg ?? '');
         break;
       case 'sections-insert':
         this.previewSectionsDnd('graph');

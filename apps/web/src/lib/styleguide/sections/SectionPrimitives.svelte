@@ -16,6 +16,7 @@
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
+  import Disclosure from '../../ui/Disclosure.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import Pill from '../../ui/Pill.svelte';
@@ -83,6 +84,9 @@
   let railW = $state(160);
   let mdSelected = $state('songs');
   let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
+  let discOpen = $state(true);
+  let discComets = $state(40);
+  let discTail = $state(70);
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
@@ -435,6 +439,25 @@
     </DemoCard>
 
     <DemoCard
+      title="Disclosure"
+      src="lib/ui/Disclosure"
+      wide
+      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by the effect inspector to fold an effect's own params under its always-visible common section."
+    >
+      <div class="disc-demo">
+        <Disclosure label="Comet Trails" count={4} open={discOpen} onToggle={(v) => (discOpen = v)}>
+          <div class="disc-rows">
+            <Slider value={discComets} min={0} max={100} onChange={(v) => (discComets = v)} ariaLabel="Comets" />
+            <Slider value={discTail} min={0} max={100} onChange={(v) => (discTail = v)} ariaLabel="Tail" />
+          </div>
+        </Disclosure>
+        <Disclosure label="Empty group" count={0} open={false}>
+          <div class="disc-rows"><span class="disc-none">This effect has no parameters of its own.</span></div>
+        </Disclosure>
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Panel header"
       src="lib/ui/PanelHeader"
       wide
@@ -583,6 +606,24 @@
     align-items: center;
     width: 100%;
     min-width: 0;
+  }
+  /* Disclosure draws its own top border — show it inside a panel surface so it reads as a
+     section divider, the way it does in the inspector. */
+  .disc-demo {
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .disc-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-3);
+  }
+  .disc-none {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
   }
   /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
   .ph-demo {
