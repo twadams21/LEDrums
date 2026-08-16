@@ -1,0 +1,25 @@
+/* Settings form rhythm — the ONE field layout the panes share (2026-08-14, Trent): label
+   ABOVE its control, fields in columns, and no help text under a field. A card's fields read
+   as a small grid you can scan down, not a ladder of label-left rows.
+
+   `.set-grid` is 2-up wherever the pane is wide enough and collapses to one column when it
+   isn't; `.set-wide` opts a genuinely wide field (an address, a long select) back out to the
+   full row. Global rather than component-scoped because every pane and card uses it. */
+
+.set-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.set-grid > .set-wide {
+  grid-column: 1 / -1;
+}
+
+@container (max-width: 520px) {
+  .set-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -4,11 +4,13 @@ import type { HoopRef, PatchRouting } from '../patch-routing';
 import { makeNode } from '../../trigger-lab/sim.graph-compilation';
 import {
   addDeclaredZone,
-  availableSlots,
+  defaultZoneName,
   boundTriggerFor,
   buildPixelOutputTable,
   hoopPixelSpan,
-  moveZoneSlot,
+  nextZoneSlot,
+  setZoneLabel,
+  zoneLabel,
   patchEditorFor,
   perHoopPixelCount,
   physicalPortLine,
@@ -276,35 +278,69 @@ describe('boundTriggerFor', () => {
   });
 });
 
-describe('availableSlots', () => {
-  const empty: InputMap = { midiChannel: null,
-    globalControls: {}, zones: [], midiNotes: [], oscMap: [], volumeOscAddress: '/vol' };
+describe('nextZoneSlot', () => {
+  const empty: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
 
-  it('returns all 8 slot labels when nothing is used', () => {
-    expect(availableSlots(empty, 'kick', [])).toEqual(['center', 'edge', 'rim-tip', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2']);
+  it('hands out the lowest free slot on the drum', () => {
+    expect(nextZoneSlot(empty, 'kick')).toBe(0);
+    expect(nextZoneSlot(addDeclaredZone(empty, 'kick', 0), 'kick')).toBe(1);
   });
 
-  it('excludes slots passed in usedSlots', () => {
-    expect(availableSlots(empty, 'kick', [0, 2])).toEqual(['edge', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2']);
+  it('reuses a removed zone slot instead of drifting upward', () => {
+    let m = addDeclaredZone(addDeclaredZone(empty, 'kick', 0), 'kick', 1);
+    m = removeZone(m, 'kick', 0);
+    expect(nextZoneSlot(m, 'kick')).toBe(0);
   });
 
-  it('also excludes slots already mapped for this drum in the input map', () => {
-    const map: InputMap = {
+  it('counts bound-but-undeclared slots, and only this drum', () => {
+    const m: InputMap = {
       midiChannel: null,
-    globalControls: {},
+      globalControls: {},
       zones: [],
-      midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }, { note: 40, drumId: 'snare', slot: 3 }],
-      oscMap: [{ address: '/kick/shell', drumId: 'kick', slot: 4 }],
-      volumeOscAddress: '/vol',
+      midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
+      oscMap: [{ address: '/s', drumId: 'snare', slot: 1 }],
     };
-    // kick slots 1 (midi) + 4 (osc) excluded; snare's slot 3 is untouched (different drum)
-    expect(availableSlots(map, 'kick', [0])).toEqual(['rim-tip', 'rim-shoulder', 'cross-stick', 'aux-1', 'aux-2']);
+    expect(nextZoneSlot(m, 'kick')).toBe(1);
+    expect(nextZoneSlot(m, 'snare')).toBe(0);
   });
 
-  it('excludes DECLARED (unbound) zone slots too', () => {
-    const map: InputMap = { midiChannel: null,
-    globalControls: {}, zones: [{ drumId: 'kick', slot: 2 }], midiNotes: [], oscMap: [] };
-    expect(availableSlots(map, 'kick', [])).not.toContain('rim-tip'); // slot 2
+  it('keeps going past the old 8-slot cap — a drum may have as many zones as it needs', () => {
+    let m: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+    for (let i = 0; i < 12; i++) m = addDeclaredZone(m, 'kick', nextZoneSlot(m, 'kick'));
+    expect(zoneSlotsForDrum(m, 'kick')).toHaveLength(12);
+    expect(nextZoneSlot(m, 'kick')).toBe(12);
+  });
+});
+
+describe('zone names', () => {
+  const empty: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+
+  it('falls back to the slot default name until the zone is renamed', () => {
+    expect(zoneLabel(empty, 'kick', 0)).toBe('center');
+    expect(zoneLabel(empty, 'kick', 11)).toBe('Zone 12'); // past the classic slot names
+  });
+
+  it('setZoneLabel stores a free-text name', () => {
+    const m = setZoneLabel(addDeclaredZone(empty, 'kick', 0), 'kick', 0, '  Beater  ');
+    expect(zoneLabel(m, 'kick', 0)).toBe('Beater');
+  });
+
+  it('names a bound-but-undeclared zone by declaring it, so the name persists', () => {
+    const bound = setZoneMidiNote(empty, 'kick', 3, 42);
+    const named = setZoneLabel(bound, 'kick', 3, 'Rim click');
+    expect(named.zones).toEqual([{ drumId: 'kick', slot: 3, label: 'Rim click' }]);
+    expect(zoneMidiNote(named, 'kick', 3)).toBe(42);
+  });
+
+  it('an emptied name reverts to the default rather than showing blank', () => {
+    const m = setZoneLabel(setZoneLabel(empty, 'kick', 1, 'Edge hit'), 'kick', 1, '   ');
+    expect(zoneLabel(m, 'kick', 1)).toBe('edge');
+  });
+
+  it('names are display only — two zones may share one, and identity stays the slot', () => {
+    let m = setZoneLabel(addDeclaredZone(empty, 'kick', 0), 'kick', 0, 'Hit');
+    m = setZoneLabel(addDeclaredZone(m, 'kick', 1), 'kick', 1, 'Hit');
+    expect(zoneSlotsForDrum(m, 'kick')).toEqual([0, 1]);
   });
 });
 
@@ -314,7 +350,7 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
 
   it('addDeclaredZone persists a slot with no binding (idempotent)', () => {
     const m = addDeclaredZone(empty, 'kick', 2);
-    expect(m.zones).toEqual([{ drumId: 'kick', slot: 2 }]);
+    expect(m.zones).toEqual([{ drumId: 'kick', slot: 2, label: '' }]);
     expect(addDeclaredZone(m, 'kick', 2)).toBe(m); // no-op when already declared
     expect(zoneSlotsForDrum(m, 'kick')).toEqual([2]);
   });
@@ -323,7 +359,7 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
     const m: InputMap = {
       midiChannel: null,
     globalControls: {},
-      zones: [{ drumId: 'kick', slot: 5 }],
+      zones: [{ drumId: 'kick', slot: 5, label: '' }],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
       oscMap: [{ address: '/k', drumId: 'kick', slot: 0 }, { address: '/x', drumId: 'snare', slot: 1 }],
     };
@@ -334,7 +370,7 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
     const m: InputMap = {
       midiChannel: null,
     globalControls: {},
-      zones: [{ drumId: 'kick', slot: 1 }],
+      zones: [{ drumId: 'kick', slot: 1, label: '' }],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }],
       oscMap: [{ address: '/k', drumId: 'kick', slot: 1 }],
     };
@@ -344,11 +380,12 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
     expect(out.oscMap).toEqual([]);
   });
 
-  it('moveZoneSlot carries the declaration + note + address to the new slot', () => {
-    const m = addDeclaredZone(setZoneMidiNote(empty, 'kick', 0, 42), 'kick', 0);
-    const out = moveZoneSlot(m, 'kick', 0, 3);
-    expect(zoneSlotsForDrum(out, 'kick')).toEqual([3]);
-    expect(zoneMidiNote(out, 'kick', 3)).toBe(42);
-    expect(zoneMidiNote(out, 'kick', 0)).toBeNull();
+  it("removing a zone leaves its neighbours' bindings alone", () => {
+    let m = setZoneMidiNote(addDeclaredZone(addDeclaredZone(empty, 'kick', 0), 'kick', 1), 'kick', 0, 42);
+    m = setZoneMidiNote(m, 'kick', 1, 44);
+    const out = removeZone(m, 'kick', 0);
+    expect(zoneSlotsForDrum(out, 'kick')).toEqual([1]);
+    expect(zoneMidiNote(out, 'kick', 1)).toBe(44);
   });
+
 });

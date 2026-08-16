@@ -63,4 +63,43 @@ describe('graphThumb', () => {
   it('returns empty for an empty graph', () => {
     expect(graphThumb({ nodes: [], edges: [] })).toEqual({ dots: [], paths: [] });
   });
+
+  it('carries each node kind onto its dot (the card tints by kind)', () => {
+    const spec = graphThumb(
+      {
+        nodes: [
+          { id: 'a', x: 0, y: 0, kind: 'trigger' },
+          { id: 'b', x: 100, y: 100, kind: 'random' },
+        ],
+        edges: [],
+      },
+      172,
+      104,
+      16,
+    );
+    expect(spec.dots).toEqual([
+      { x: 16, y: 16, kind: 'trigger' },
+      { x: 156, y: 88, kind: 'random' },
+    ]);
+  });
+
+  it('omits the kind for kind-less nodes rather than inventing one', () => {
+    const spec = graphThumb({ nodes: [{ id: 'a', x: 0, y: 0 }], edges: [] });
+    expect(spec.dots[0]).not.toHaveProperty('kind');
+  });
+
+  it('defaults to the card-aspect box with a margin clear of the outermost points', () => {
+    const spec = graphThumb({
+      nodes: [
+        { id: 'a', x: 0, y: 0 },
+        { id: 'b', x: 100, y: 100 },
+      ],
+      edges: [],
+    });
+    // 172×64 box, pad 12 — both extremes sit a full pad inside every edge.
+    expect(spec.dots).toEqual([
+      { x: 12, y: 12 },
+      { x: 160, y: 52 },
+    ]);
+  });
 });

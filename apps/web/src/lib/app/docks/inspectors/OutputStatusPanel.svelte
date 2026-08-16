@@ -131,6 +131,12 @@
 </section>
 
 <style>
+  /* Density: this panel is read at a glance while diagnosing a rig, so its rows sit tighter
+     than the inspector default. Scoped to the panel — ReadRow's own rhythm is unchanged for
+     its dozen other call sites. */
+  .panel :global(.readrow) {
+    padding: 2px 0;
+  }
   .panel {
     display: flex;
     flex-direction: column;
@@ -140,7 +146,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
   .readrows {
     display: flex;

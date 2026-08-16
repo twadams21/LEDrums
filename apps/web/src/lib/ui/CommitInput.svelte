@@ -29,6 +29,7 @@
          ariaLabel="MIDI note" onCommit={(v) => onNum(v, apply)} /> */
   import { untrack } from 'svelte';
   import { resolveCommit, type CommitInputType } from './commit-input';
+  import { wheelStep } from './wheel-step';
 
   type Props = {
     value: string | number;
@@ -107,6 +108,53 @@
     } else onCancel?.();
   }
 
+  /* Wheel-adjust (number mode): one step per tick while the pointer is over the field.
+     The draft moves on every tick but the COMMIT is debounced to the end of the gesture —
+     each commit is a store mutation with an undo snapshot and a server write, and a ten-tick
+     scroll must not be ten of those. Blur/unmount flush whatever is pending, so a scrolled
+     value can never be lost by clicking away.
+
+     The listener is attached by hand because a `wheel` handler must be non-passive to
+     preventDefault: without that the pane under the pointer scrolls while the value changes. */
+  let wheelPending = false;
+  let wheelTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flushWheel(): void {
+    const pending = wheelPending;
+    cancelWheel();
+    if (pending) onCommit(draft);
+  }
+
+  /** Drop a pending wheel commit — the edit session that follows owns the draft and commits
+      it on blur, so a timer firing mid-typing must not publish a half-typed value. */
+  function cancelWheel(): void {
+    wheelPending = false;
+    if (wheelTimer === null) return;
+    clearTimeout(wheelTimer);
+    wheelTimer = null;
+  }
+
+  function onWheel(e: WheelEvent): void {
+    if (disabled || type !== 'number') return;
+    const next = wheelStep({ value: draft, deltaY: e.deltaY, min, max, step });
+    if (next === null) return;
+    e.preventDefault();
+    draft = next;
+    wheelPending = true;
+    if (wheelTimer !== null) clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(flushWheel, 180);
+  }
+
+  $effect(() => {
+    if (type !== 'number') return;
+    const node = el;
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      flushWheel();
+    };
+  });
+
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -135,6 +183,7 @@
     onfocus={() => {
       editing = true;
       done = false;
+      cancelWheel();
     }}
     {onkeydown}
     onblur={() => {

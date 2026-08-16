@@ -22,10 +22,12 @@ describe('effect registry', () => {
       'chase-bands', 'ripple-3d', 'spark-arc', 'rain-3d',
       // U6 gap-fill natives
       'orbit-comet', 'scan-plane', 'drum-sonar', 'gravity-drops',
+      // angular wedges (E1)
+      'segments',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(49);
+    expect(listEffects().length).toBe(50);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

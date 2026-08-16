@@ -1,4 +1,4 @@
-import { TRIGGER_SLOT_COUNT, type Engine, type InputEvent, type InputMap, type voice } from '@ledrums/core';
+import type { Engine, InputEvent, InputMap, voice } from '@ledrums/core';
 import type { OscEvent } from '@ledrums/io';
 import type { ClientMessage } from './ws-protocol';
 
@@ -16,7 +16,7 @@ export interface ZonePad {
 }
 
 /**
- * Map a trigger slot index to its padKey zone form — the slot index AS A STRING (clamped).
+ * Map a trigger slot index to its padKey zone form — the slot index AS A STRING.
  *
  * This is the zone identity the authored model uses everywhere: graphs are keyed
  * `padKey(drumId, String(slot))` (`"snare:0"`), a `drum` trigger source carries the same
@@ -25,9 +25,13 @@ export interface ZonePad {
  * never match an authored graph — every hit missed with `no-slot-graphs` while the web's own
  * pad clicks worked, because only this path converted. {@link SLOT_LABELS} is a DISPLAY
  * concern (see `describeVoiceInput`), never an identity.
+ *
+ * Only the floor is clamped. The old ceiling (8 slots) came off with the zone cap
+ * (2026-08-14): clamping slot 9 to "7" would not have limited anything, it would have
+ * silently fired a DIFFERENT zone's graph.
  */
 function slotToZone(slot: number): string {
-  return String(Math.max(0, Math.min(TRIGGER_SLOT_COUNT - 1, slot)));
+  return String(Math.max(0, Math.trunc(slot)));
 }
 
 /**

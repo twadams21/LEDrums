@@ -6,13 +6,17 @@
     "state": "view:trigger",
     "target": ".top"
   },
-  "transport": {
+  "songs-bar": {
     "state": "view:trigger",
-    "target": ".xport"
+    "target": ".songs"
   },
-  "left-rail": {
+  "sections-bar": {
     "state": "view:trigger",
-    "target": ".rail"
+    "target": ".sections"
+  },
+  "bottom-bar": {
+    "state": "view:trigger",
+    "target": ".bottom"
   },
   "trigger-graph": {
     "state": "view:trigger",
@@ -42,9 +46,9 @@
     "state": "view:trigger,add:mix,select:mix",
     "target": "Node editor"
   },
-  "graphs-dock": {
+  "graphs-rail": {
     "state": "view:trigger",
-    "target": ".graphbar"
+    "target": ".grail"
   },
   "visualizer": {
     "state": "view:trigger",
@@ -55,14 +59,9 @@
     "state": "view:trigger",
     "target": "aside.col2 .buses"
   },
-  "patch-graph": {
-    "state": "view:patch",
-    "target": "main.center",
-    "settle": 1500
-  },
-  "patch-controller": {
-    "state": "view:patch",
-    "target": "node:controller",
+  "settings-controller": {
+    "state": "controller",
+    "target": "dialog:Settings",
     "settle": 1500
   },
   "objects": {
@@ -97,6 +96,36 @@
     "target": "dialog:Settings",
     "settle": 300
   },
+  "settings-input": {
+    "state": "view:trigger,settings:input",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-zones": {
+    "state": "view:trigger,settings:zones",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-controls": {
+    "state": "view:trigger,settings:controls",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-drums": {
+    "state": "view:trigger,settings:drums",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-outputs": {
+    "state": "view:trigger,settings:outputs",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
+  "settings-system": {
+    "state": "view:trigger,settings:system",
+    "target": "dialog:Settings",
+    "settle": 300
+  },
   "node-editor-play": {
     "state": "view:trigger,add:effect,select:effect",
     "target": "Node editor"
@@ -125,5 +154,20 @@
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",
     "settle": 1200
+  },
+  "segments-params": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments",
+    "target": "Node editor",
+    "settle": 800
+  },
+  "segments-gallery": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,gallery,search:segments",
+    "target": "dialog:Change effect",
+    "settle": 1500
+  },
+  "segments-fire-graph": {
+    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,fire:kick",
+    "target": "Trigger graph canvas",
+    "settle": 150
   }
 }
