@@ -7,6 +7,8 @@
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
+  import CurveField, { type CurveHit, type CurveValue } from '../../ui/CurveField.svelte';
+  import CurveFieldMini from '../../ui/CurveFieldMini.svelte';
   import Tabs from '../../ui/Tabs.svelte';
   import Toggle from '../../ui/Toggle.svelte';
   import Switch from '../../ui/Switch.svelte';
@@ -83,6 +85,39 @@
   let railW = $state(160);
   let mdSelected = $state('songs');
   let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
+
+  /* Curve field demos — one per domain the primitive has to serve. The envelope
+     is time → level; the transfer curve is input velocity → output velocity, and
+     it opens on Linear so the greyed-out (not hidden) strength fader is visible. */
+  let decayCurve = $state<CurveValue>({
+    h0: { x: 0, y: 1 },
+    h1: { x: 0.72, y: 0 },
+    profile: 'exp',
+    strength: 0.55,
+  });
+  let velocityCurve = $state<CurveValue>({
+    h0: { x: 0.12, y: 0 },
+    h1: { x: 1, y: 1 },
+    profile: 'linear',
+    strength: 0,
+  });
+  /* The live-input overlay wants a drummer. The styleguide fakes one on an
+     interval so the markers are visible without a kit plugged in — in the app
+     the hits come from the real input feed. */
+  let demoHits = $state<CurveHit[]>([]);
+  $effect(() => {
+    let n = 0;
+    const id = setInterval(() => {
+      n += 1;
+      // A rough four-on-the-floor spread rather than pure noise, so the markers
+      // read as playing rather than as static.
+      const x = [0.86, 0.42, 0.71, 0.55, 0.94][n % 5]!;
+      demoHits = [...demoHits.slice(-11), { x, at: performance.now() }];
+    }, 420);
+    return () => clearInterval(id);
+  });
+  /** Today's `exp(−t/τ)` decay — the shape the curve control exists to beat. */
+  const todayDecay = (x: number): number => Math.exp(-x * 3.9);
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
@@ -284,6 +319,49 @@
       <div class="comp-stack">
         <EasePicker value={demoEase} onChange={(e) => (demoEase = e)} ariaLabel="Demo easing" />
         <p class="ease-readout">{demoEase.fn} · {demoEase.dir}</p>
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Curve field"
+      src={['lib/ui/CurveField', 'lib/ui/CurveFieldMini', 'lib/ui/curve-field']}
+      wide
+      note="Two free handles, one profile for the whole curve, and a strength fader that IS that profile's curvature — greyed out (never hidden) for Linear and Snap, which have nothing to bend. Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at node-face size."
+    >
+      <div class="curve-demo">
+        <div class="curve-col">
+          <span class="curve-cap">envelope · time → level · exp, with today's decay ghosted</span>
+          <CurveField
+            value={decayCurve}
+            onChange={(v) => (decayCurve = v)}
+            xAxis={{ label: 'life', format: (u) => `${Math.round(u * 1200)} ms` }}
+            yAxis={{ label: 'level' }}
+            ghost={todayDecay}
+            ariaLabel="Decay envelope"
+          />
+        </div>
+        <div class="curve-col">
+          <span class="curve-cap">transfer · velocity in → out · linear, strength greyed</span>
+          <CurveField
+            value={velocityCurve}
+            onChange={(v) => (velocityCurve = v)}
+            xAxis={{ label: 'in', format: (u) => String(Math.round(u * 127)) }}
+            yAxis={{ label: 'out', format: (u) => String(Math.round(u * 127)) }}
+            hits={demoHits}
+            hitFadeMs={2400}
+            showPreview={false}
+            ariaLabel="Velocity sensitivity"
+          />
+        </div>
+      </div>
+      <div class="curve-minis">
+        <span class="curve-cap">node faces (56×32, read-only)</span>
+        <CurveFieldMini value={decayCurve} ariaLabel="Decay envelope thumbnail" />
+        <CurveFieldMini value={velocityCurve} ariaLabel="Velocity curve thumbnail" />
+        <CurveFieldMini
+          value={{ h0: { x: 0.2, y: 1 }, h1: { x: 0.6, y: 0 }, profile: 'snap', strength: 0 }}
+          ariaLabel="Snap thumbnail"
+        />
       </div>
     </DemoCard>
 
@@ -678,5 +756,32 @@
   .ov-text {
     font-size: var(--text-sm);
     color: var(--text-muted);
+  }
+
+  /* Curve field demo — two domains side by side, each capped near the inspector
+     width the control actually has to survive at. */
+  .curve-demo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+  }
+  .curve-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 1 1 300px;
+    min-width: 0;
+    max-width: 340px;
+  }
+  .curve-cap {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    letter-spacing: var(--tracking-label);
+  }
+  .curve-minis {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
   }
 </style>

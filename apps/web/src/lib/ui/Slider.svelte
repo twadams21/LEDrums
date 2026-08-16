@@ -12,6 +12,9 @@
     max?: number;
     step?: number;
     disabled?: boolean;
+    /** `vertical` is a fader: it fills upward and stretches to the row's height,
+        so a caller must give the wrapper one. Used by CurveField's strength fader. */
+    orientation?: 'horizontal' | 'vertical';
     /** Fired on every change; use this when `value` isn't a bindable local. */
     onChange?: (v: number) => void;
     /** Formats the trailing readout (e.g. `v => v + 'ms'`). */
@@ -28,6 +31,7 @@
     max = 100,
     step = 1,
     disabled = false,
+    orientation = 'horizontal',
     onChange,
     format,
     showValue = true,
@@ -131,7 +135,7 @@
   });
 </script>
 
-<div bind:this={root} class={['slider', klass]} class:disabled>
+<div bind:this={root} class={['slider', klass]} class:disabled class:vertical={orientation === 'vertical'}>
   <Slider.Root
     type="single"
     bind:value
@@ -139,6 +143,7 @@
     {max}
     {step}
     {disabled}
+    {orientation}
     onValueChange={handleValueChange}
     aria-label={ariaLabel}
     class="track"
@@ -287,5 +292,54 @@
   }
   .unit {
     color: var(--text-faint);
+  }
+
+  /* ---- Vertical (fader) ---------------------------------------------------
+     Bits swaps the axis for us — Range/Thumb switch to bottom/top inline styles
+     under `orientation="vertical"` — so this only has to swap the box: the
+     track becomes a full-height column, the rail a narrow vertical well, and
+     the readout sits under it (column-reverse, since the wrapper is a flex
+     row by default). */
+  .slider.vertical {
+    flex-direction: column-reverse;
+    width: auto;
+    height: 100%;
+    gap: var(--space-2);
+  }
+  .slider.vertical :global(.track) {
+    flex-direction: column;
+    justify-content: center;
+    width: 16px;
+    height: auto;
+    flex: 1;
+  }
+  .slider.vertical :global(.rail) {
+    inset: 0 auto 0 50%;
+    width: 5px;
+    height: auto;
+    transform: translateX(-50%);
+  }
+  /* Bits sets top/bottom inline (inline wins), so only the axis-specific bits
+     the base rule hard-codes need undoing here. */
+  .slider.vertical :global(.range) {
+    left: 50%;
+    width: 5px;
+    height: auto;
+    transform: translateX(-50%);
+  }
+  .slider.vertical :global(.thumb) {
+    left: 50%;
+    /* The base rule's `top: 50%` is NOT overridden inline; leaving it would win
+       against the inline `bottom` and pin every thumb to the middle. */
+    top: auto;
+    transform: translateX(-50%);
+  }
+  .slider.vertical .value {
+    min-width: 0;
+    justify-content: center;
+  }
+  .slider.vertical .value input {
+    width: 36px;
+    text-align: center;
   }
 </style>
