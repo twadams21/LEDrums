@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GEO,
+  innerWidthOf,
   xOf,
   yOf,
   toUnit,
@@ -20,31 +21,57 @@ import type { AdsrShape } from './sim';
 
 const base: AdsrShape = { attack: 0.2, decay: 0.3, sustain: 0.5, release: 0.25 };
 
+/* The plot is px-true, so the x mappings are width-parameterised: 320 is the inspector
+   drawer's default, 488 roughly the modal's — both exercised, not just the fallback. */
+const WIDTHS = [GEO.W, 320, 488];
+
 describe('coordinate mapping', () => {
-  it('xOf/yOf map the unit corners to the padded viewBox', () => {
-    expect(xOf(0)).toBe(GEO.PAD);
-    expect(xOf(1)).toBe(GEO.W - GEO.PAD);
+  it('xOf/yOf map the unit corners to the padded viewBox, at any plot width', () => {
+    for (const w of WIDTHS) {
+      expect(xOf(0, w)).toBe(GEO.PAD);
+      expect(xOf(1, w)).toBe(w - GEO.PAD);
+      expect(xOf(0.5, w)).toBeCloseTo(w / 2, 10);
+    }
     expect(yOf(0)).toBe(GEO.H - GEO.PAD); // v=0 at the bottom
     expect(yOf(1)).toBe(GEO.PAD); //         v=1 at the top
   });
 
-  it('toUnit inverts a pointer over the SVG box (1:1 box → viewBox)', () => {
-    const rect: Box = { left: 0, top: 0, width: GEO.W, height: GEO.H };
-    // Centre of the drawable area ≈ (t 0.5, v 0.5).
-    const mid = toUnit(xOf(0.5), yOf(0.5), rect);
-    expect(mid.t).toBeCloseTo(0.5, 10);
-    expect(mid.v).toBeCloseTo(0.5, 10);
+  it('xOf defaults to the GEO.W fallback width', () => {
+    expect(xOf(1)).toBe(GEO.W - GEO.PAD);
+    expect(xOf(0.5)).toBe(xOf(0.5, GEO.W));
+  });
+
+  it('innerWidthOf is the padded drawable width, never below 1', () => {
+    expect(innerWidthOf(320)).toBe(300);
+    expect(innerWidthOf()).toBe(GEO.W - GEO.PAD * 2);
+    expect(innerWidthOf(0)).toBe(1);
+  });
+
+  it('toUnit round-trips xOf/yOf on a px-true box, at any plot width', () => {
+    for (const w of WIDTHS) {
+      const rect: Box = { left: 0, top: 0, width: w, height: GEO.H };
+      for (const t of [0, 0.25, 0.5, 1]) {
+        const back = toUnit(xOf(t, w), yOf(0.5), rect, w);
+        expect(back.t).toBeCloseTo(t, 10);
+        expect(back.v).toBeCloseTo(0.5, 10);
+      }
+    }
   });
 
   it('toUnit accounts for a scaled + offset box and clamps out-of-bounds', () => {
-    const rect: Box = { left: 100, top: 50, width: GEO.W * 2, height: GEO.H * 2 };
+    const w = 320;
+    const rect: Box = { left: 100, top: 50, width: w * 2, height: GEO.H * 2 };
     // A point far past the bottom-right clamps to (1, 0), never outside 0..1.
-    const oob = toUnit(100 + GEO.W * 4, 50 + GEO.H * 4, rect);
+    const oob = toUnit(100 + w * 4, 50 + GEO.H * 4, rect, w);
     expect(oob.t).toBe(1);
     expect(oob.v).toBe(0);
-    const topLeft = toUnit(100, 50, rect);
+    const topLeft = toUnit(100, 50, rect, w);
     expect(topLeft.t).toBe(0); // PAD maps just inside; the corner clamps to 0
     expect(topLeft.v).toBe(1);
+    // Mid-box maps to the middle regardless of the 2× box↔viewBox ratio.
+    const mid = toUnit(100 + w, 50 + GEO.H, rect, w);
+    expect(mid.t).toBeCloseTo(0.5, 10);
+    expect(mid.v).toBeCloseTo(0.5, 10);
   });
 });
 
