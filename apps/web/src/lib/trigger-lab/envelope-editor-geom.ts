@@ -9,10 +9,16 @@
  */
 import type { AdsrShape } from './sim';
 
-/** SVG viewBox dimensions + inner padding (so endpoint/stage handles never clip). */
+/** SVG viewBox height + inner padding (so endpoint/stage handles never clip). `W` is
+    only the fallback width: the view sets its viewBox width to its measured CSS width
+    so 1 SVG unit = 1 CSS px and the round handles stay round, so every x-mapping below
+    takes the live plot width. */
 export const GEO = { W: 480, H: 160, PAD: 10 } as const;
-const innerW = GEO.W - GEO.PAD * 2;
 const innerH = GEO.H - GEO.PAD * 2;
+
+/** Drawable width inside the padding, for a plot `w` px wide (floored so a zero-width
+    container can't divide by zero). */
+export const innerWidthOf = (w: number = GEO.W): number => Math.max(1, w - GEO.PAD * 2);
 
 /** Keyboard nudge step (unit space) for arrow-key handle adjustment. */
 export const NUDGE = 0.02;
@@ -23,8 +29,8 @@ const clamp = (x: number, lo: number, hi: number): number => (x < lo ? lo : x > 
 /** The three easable/draggable segments. The flat sustain plateau has no ease. */
 export type Stage = 'attack' | 'decay' | 'release';
 
-/** unit phase 0..1 → SVG x. */
-export const xOf = (t: number): number => GEO.PAD + t * innerW;
+/** unit phase 0..1 → SVG x, in a plot `w` px wide. */
+export const xOf = (t: number, w: number = GEO.W): number => GEO.PAD + t * innerWidthOf(w);
 /** unit level 0..1 → SVG y (inverted: v=0 bottom, v=1 top). */
 export const yOf = (v: number): number => GEO.PAD + (1 - v) * innerH;
 
@@ -39,13 +45,19 @@ export interface Box {
 
 /**
  * Map a pointer position (client px) to envelope `(t, v)` using the SVG's box.
- * The SVG scales its viewBox to its rendered box (`preserveAspectRatio="none"`),
- * so client px → viewBox px → unit, both axes clamped to 0..1.
+ * The SVG scales its viewBox to its rendered box, so client px → viewBox px → unit,
+ * both axes clamped to 0..1. `w` is the viewBox width — equal to `rect.width` once the
+ * view is px-true, but the ratio is kept general for the pre-measure frame.
  */
-export function toUnit(clientX: number, clientY: number, rect: Box): { t: number; v: number } {
-  const px = ((clientX - rect.left) / rect.width) * GEO.W;
+export function toUnit(
+  clientX: number,
+  clientY: number,
+  rect: Box,
+  w: number = GEO.W,
+): { t: number; v: number } {
+  const px = ((clientX - rect.left) / rect.width) * w;
   const py = ((clientY - rect.top) / rect.height) * GEO.H;
-  const t = clampUnit((px - GEO.PAD) / innerW);
+  const t = clampUnit((px - GEO.PAD) / innerWidthOf(w));
   const v = clampUnit(1 - (py - GEO.PAD) / innerH);
   return { t, v };
 }

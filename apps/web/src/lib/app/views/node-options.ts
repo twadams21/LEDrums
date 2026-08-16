@@ -123,8 +123,17 @@ export function num(v: ParamValue | undefined, d: number): number {
 /** Format a param value for a read-out: numbers honour the spec's step (2dp for
     sub-integer steps) + unit; booleans render as "on" / "off". */
 export function fmt(spec: ParamSpec, v: ParamValue | undefined): string {
-  if (typeof v === 'number') return `${spec.step && spec.step < 1 ? v.toFixed(2) : Math.round(v)}${spec.unit ?? ''}`;
-  return v ? 'on' : 'off';
+  if (typeof v !== 'number') return v ? 'on' : 'off';
+  const n = spec.step && spec.step < 1 ? v.toFixed(2) : String(Math.round(v));
+  return `${n}${unitSuffix(spec.unit)}`;
+}
+
+/** A unit as it should read after a number: symbols hug it (`90°`, `0.50×`), words get a
+    space (`4 beats`, `1500 ms`). Word units glued to the digits — "4beats", "0.25rev/beat" —
+    are what let a Life slider be misread as seconds. */
+function unitSuffix(unit: string | undefined): string {
+  if (!unit) return '';
+  return /^[a-z]/i.test(unit) ? ` ${unit}` : unit;
 }
 
 /** A pixel span read-out ("first – last"), or an em-dash when there is none. */

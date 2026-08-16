@@ -1,5 +1,6 @@
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 /**
  * Whole Kit: any hit lights every pixel of the entire kit, fading over decayMs
@@ -14,6 +15,9 @@ export const wholeKit: EffectGenerator = {
   name: 'Whole Kit',
   category: 'trigger',
   timebase: 'voice',
+  // Not a cutoff: the whole kit fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 50, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
