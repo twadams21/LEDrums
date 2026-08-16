@@ -24,6 +24,8 @@ export const chaseBands: EffectGenerator<ChaseBandsState> = {
   name: 'Chase Bands',
   category: 'trigger',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeBeats`, so the host voice must live that long.
+  voiceLife: { key: 'lifeBeats', unit: 'beats' },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

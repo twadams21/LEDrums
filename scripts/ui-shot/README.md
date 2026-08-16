@@ -50,6 +50,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `select:<k>`| select the node most recently `add`ed with that kind (opens the Inspector slideover) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |
 | `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
+| `mode:<m>`  | set that node's play mode (`mode:loop`) — a `oneshot` fire is gone before the shot lands, so sustained states need this first |
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
 | `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
 | `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |

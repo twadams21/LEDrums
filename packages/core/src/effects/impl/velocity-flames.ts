@@ -1,6 +1,7 @@
 import { clamp01, lerp } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 /**
  * Velocity Flames: each drum grows a flame from hoop 0 upward whose height tracks
@@ -12,6 +13,9 @@ export const velocityFlames: EffectGenerator = {
   id: 'velocity-flames',
   name: 'Velocity Flames',
   category: 'trigger',
+  // Not a cutoff: flame height fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'decayMs', label: 'Decay', type: 'number', default: 700, min: 50, max: 6000, unit: 'ms' },
     { key: 'flicker', label: 'Flicker', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01 },

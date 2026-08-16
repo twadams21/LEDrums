@@ -134,6 +134,11 @@ export interface VoiceStat {
   releasing: boolean;
   /** Provenance label (the voice's `via`) — shown as the chip tooltip. */
   via: string;
+  /** Eval state prefix the voice was spawned under: the firing graph's key, with a
+   * `#<slotIndex>` suffix on section-slot fires. `''` when the spawn path supplied none.
+   * This is the graph ATTRIBUTION — it is what lets a client show which graph is currently
+   * driving lights on the kit. */
+  pad: string;
 }
 
 /** Optional voice-bus telemetry, present only when the server runs the voice engine. */
