@@ -2,7 +2,7 @@
    Pure TS (no runes, no `.svelte`) so the row logic — which is the only part with any real
    decisions in it — is unit-testable without a DOM, like `node-options.ts` beside it. */
 import { voice } from '@ledrums/core';
-import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
+import type { Bus, EffectDef, GraphNode } from '../../trigger-lab/sim';
 
 export const SPLICE_PARTITION_OPTS: Array<{ value: voice.SplicePartition; label: string }> = [
   { value: 'hoop', label: 'Hoop' },
@@ -60,6 +60,16 @@ export const SPLICE_MOTION_MODE_HINTS: Record<voice.SpliceMotionMode, string> = 
   continuous: 'The movement free-runs, even while the kit is dark — a hit lands wherever it has travelled unseen.',
   latched: 'The movement only runs while the lights are up: it stops where the fade left it, and the next hit carries on from there.',
 };
+
+/**
+ * Layer options for a splice, with each layer's polyphony spelled out — because that rule IS
+ * the sustain-or-cut choice: a MONO layer releases whatever it was already playing when a new
+ * voice starts (so a sequencer stepping between splice nodes cuts each hoop as it moves on),
+ * while a POLY layer lets them overlap and fade out on their own envelopes.
+ */
+export function spliceLayerOptions(buses: readonly Bus[]): Array<{ value: string; label: string }> {
+  return buses.map((b) => ({ value: b.id, label: `${b.name} · ${b.polyphony === 'mono' ? 'cuts' : 'sustains'}` }));
+}
 
 /** What one partition unit IS, for labelling the cascade controls — the offset runs across
     hoops under the hoop partition and across drums under the drum partition, so the controls

@@ -369,7 +369,10 @@ export class Sim {
     // Reserved fill effect for colour-only splices — registered here exactly as the core
     // engine registers it at `setShow`, so a splice colour previews without the authored
     // effect list carrying a def for it (see core `voice/splice.ts`).
-    this.effectsById.set(voice.SPLICE_FILL_EFFECT_ID, voice.spliceFillEffectDef(buses[0]?.id ?? ''));
+    // Prefer a POLY layer, mirroring the engine: a mono layer makes every new splice voice
+    // release the last, which cuts each hoop off as a sequencer moves on.
+    const fillBus = buses.find((b) => b.polyphony === 'poly') ?? buses[0];
+    this.effectsById.set(voice.SPLICE_FILL_EFFECT_ID, voice.spliceFillEffectDef(fillBus?.id ?? ''));
     this.presets = presets;
     for (const p of presets) this.presetsById.set(p.id, p);
   }

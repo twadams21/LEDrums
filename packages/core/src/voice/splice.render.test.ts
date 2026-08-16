@@ -318,6 +318,86 @@ describe('splice — scope', () => {
   });
 });
 
+describe('splice — layer polyphony (sustain vs cut)', () => {
+  /** Trigger → sequence → two splice nodes on `busId`, the shape a sequencer-of-splices takes. */
+  function sequencedGraph(busId: string): TriggerGraph {
+    const splice = (id: string, colour: string, y: number) =>
+      node('splice', id, {
+        y,
+        busId,
+        splices: [{ color: colour }],
+        spliceCount: 1,
+        splicePartition: 'hoop',
+        spliceHoldMs: 4000,
+        spliceReleaseMs: 200,
+      });
+    return {
+      version: 3,
+      nodes: [node('trigger', 'trigger'), node('sequence', 'seq'), splice('a', '#ff0000', 0), splice('b', '#0000ff', 100), node('output', 'output')],
+      edges: [
+        { id: 'e0', from: 'trigger', to: 'seq' },
+        { id: 'e1', from: 'seq', to: 'a' },
+        { id: 'e2', from: 'seq', to: 'b' },
+        { id: 'e3', from: 'a', to: 'output' },
+        { id: 'e4', from: 'b', to: 'output' },
+      ],
+    };
+  }
+
+  /** Two hits 500ms apart — the sequence fires splice A then splice B. */
+  function twoSteps(busId: string, polyphony: 'mono' | 'poly'): number {
+    const model = testModel();
+    const engine = createVoiceBusEngine();
+    engine.setModel(model);
+    engine.setShow({
+      buses: [{ id: busId, name: busId, polyphony, crossfadeMs: 200 }],
+      graphs: { [padKey('kick', '')]: sequencedGraph(busId) },
+      sections: [],
+      effects: [],
+      presets: [],
+    });
+    engine.applyInput(hit(0));
+    runTo(engine, 500);
+    engine.applyInput(hit(500));
+    runTo(engine, 560, 500);
+    return engine.stats().voices.filter((v) => !v.releasing).length;
+  }
+
+  it('sustains both splices on a poly layer — the earlier hoop keeps burning', () => {
+    expect(twoSteps('trigger', 'poly')).toBe(2);
+  });
+
+  it('cuts the previous splice on a mono layer, even though it came from a different node', () => {
+    // This is the case a per-node "cut" flag could never express: the two voices come from
+    // DIFFERENT splice nodes, so only a layer-level rule can end one when the other starts.
+    expect(twoSteps('base', 'mono')).toBe(1);
+  });
+
+  it('a colour-only splice lands on a poly layer, not blindly on the first one', () => {
+    // The reported bug: the reserved fill def took `buses[0]`, which is mono in the real kit,
+    // so a sequencer cycling splice nodes cut each hoop off as it moved on.
+    const model = testModel();
+    const engine = createVoiceBusEngine();
+    engine.setModel(model);
+    engine.setShow({
+      buses: [
+        { id: 'base', name: 'Base', polyphony: 'mono', crossfadeMs: 900 },
+        { id: 'trigger', name: 'Trigger', polyphony: 'poly', crossfadeMs: 240 },
+      ],
+      // No busId on the splice nodes at all → they fall back to the fill def's layer.
+      graphs: { [padKey('kick', '')]: sequencedGraph('') },
+      sections: [],
+      effects: [],
+      presets: [],
+    });
+    engine.applyInput(hit(0));
+    runTo(engine, 500);
+    engine.applyInput(hit(500));
+    runTo(engine, 560, 500);
+    expect(engine.stats().voices.filter((v) => !v.releasing)).toHaveLength(2);
+  });
+});
+
 describe('splice — envelope', () => {
   /** Total lit brightness of the frame — a proxy for "are the lights still up". */
   const litSum = (rgb: (i: number) => [number, number, number]) => {

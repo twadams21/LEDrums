@@ -195,6 +195,23 @@ describe('scope', () => {
   });
 });
 
+describe('layer', () => {
+  // The layer's mono/poly rule IS the sustain-or-cut choice, so a splice must be able to set it.
+  // `setBus` guards on `isEffectNode`, which does not include splice — the same trap as setScope.
+  it('starts on a layer that sustains rather than one that cuts', () => {
+    const { store, node } = withSplice();
+    const bus = store.buses.find((b) => b.id === store.busOf(node));
+    expect(bus?.polyphony, 'a fresh splice must not silently land on a mono layer').toBe('poly');
+  });
+
+  it('moves a splice to another layer', () => {
+    const { store, node } = withSplice();
+    const mono = store.buses.find((b) => b.polyphony === 'mono')!;
+    store.setBus(node, mono.id);
+    expect(store.busOf(node)).toBe(mono.id);
+  });
+});
+
 describe('envelope + motion mode', () => {
   it('sets how long the lights stay up after a hit', () => {
     const { store, node } = withSplice();

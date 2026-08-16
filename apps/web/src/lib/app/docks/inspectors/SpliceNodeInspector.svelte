@@ -33,6 +33,7 @@
     SPLICE_RATE_MODE_OPTS,
     describeSpliceRow,
     spliceEffectOptions,
+    spliceLayerOptions,
     spliceRows,
     spliceUnitNoun,
   } from '../../views/splice-options';
@@ -54,6 +55,8 @@
   const canCascade = $derived(partition !== 'scope');
   const unitNoun = $derived(spliceUnitNoun(partition));
   const motionMode = $derived(node.spliceMotionMode ?? 'restart');
+  const layerOptions = $derived(spliceLayerOptions(store.buses));
+  const layerIsMono = $derived(store.buses.find((b) => b.id === store.busOf(node))?.polyphony === 'mono');
 
   /** Scope-target options, derived from the current scope — same shape the play inspector uses. */
   const targetOptions = $derived.by(() => {
@@ -279,6 +282,15 @@
     <section class="group">
       <h4 class="grouptitle">Hold</h4>
 
+      <Field layout="row" label="Layer">
+        <Select
+          value={store.busOf(node)}
+          options={layerOptions}
+          onChange={(v) => store.setBus(node, v)}
+          ariaLabel="Splice layer"
+        />
+      </Field>
+
       <Field layout="row" label="Play">
         <SegmentedControl
           value={node.mode}
@@ -327,6 +339,11 @@
       <p class="hint">
         How long the lights stay up after a hit: rise, hold at full, then fade. A One-shot runs the
         whole shape; Loop and Hold stay up until the voice is stopped.
+      </p>
+      <p class="hint">
+        {layerIsMono
+          ? 'This layer is mono, so a new hit CUTS whatever it was already playing — including another splice node fired by the same sequencer. Move to a “sustains” layer to let them overlap and fade out on their own.'
+          : 'This layer is poly, so hits SUSTAIN: an earlier splice keeps fading on its own envelope while the next one starts. Move to a “cuts” layer to have each new hit end the last.'}
       </p>
     </section>
 

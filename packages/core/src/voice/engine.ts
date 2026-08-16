@@ -331,7 +331,12 @@ class VoiceBusEngine implements RenderEngine {
     // Reserved fill effect for colour-only splices (see `splice.ts`). Registered here rather
     // than authored, so a splice colour renders without the show having to carry a def for it.
     // An authored def under the reserved id would be a graph the engine can't trust; ours wins.
-    this.effectsById.set(SPLICE_FILL_EFFECT_ID, spliceFillEffectDef(this.show.buses[0]?.id ?? ''));
+    // Prefer a POLY layer for the reserved fill: on a mono layer every new splice voice
+    // releases the last, so a sequencer cycling splice nodes would cut each hoop off as it
+    // moved on. Which layer a splice plays on is authorable (`GraphNode.busId`); this is only
+    // the fallback for a colour-only splice that names none.
+    const fillBus = this.show.buses.find((b) => b.polyphony === 'poly') ?? this.show.buses[0];
+    this.effectsById.set(SPLICE_FILL_EFFECT_ID, spliceFillEffectDef(fillBus?.id ?? ''));
     this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
     this.voices.reset();

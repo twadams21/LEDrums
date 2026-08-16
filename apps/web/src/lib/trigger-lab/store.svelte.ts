@@ -2775,7 +2775,7 @@ export class TriggerLab {
     } else if (kind === 'splice') {
       // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
       // splice node renders nothing at all (every slot blank), which would read as broken.
-      node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit());
+      node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit(this.buses));
     } else if (kind === 'randomMod') {
       node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
@@ -3562,13 +3562,15 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (!isEffectNode(node) || node.busId === busId) return;
+    if ((!isEffectNode(node) && node.kind !== 'splice') || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
   /** The effective layer for a play node (its override, or the effect's default). */
   busOf(node: GraphNode): string {
-    if (!isEffectNode(node)) return '';
+    // `splice` is a layer-producing node too — but deliberately NOT folded into `isEffectNode`,
+    // which also gates the gallery / preset / effect-param paths a splice has no business in.
+    if (!isEffectNode(node) && node.kind !== 'splice') return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 

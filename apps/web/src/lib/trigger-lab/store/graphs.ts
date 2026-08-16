@@ -4,7 +4,7 @@
    uniform here. The store wraps these with rune assignment + selection bookkeeping. Extracted
    from store.svelte.ts unchanged in behaviour. */
 
-import { type EffectDef, type GraphNode, type ParamValues, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
+import { type Bus, type EffectDef, type GraphNode, type ParamValues, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
 import { listModifiers } from '@ledrums/core';
 import { type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
@@ -84,8 +84,12 @@ export function modifierNodeInit(): Pick<GraphNode, 'modifierId' | 'params'> {
  * blank renders nothing at all, so an empty default would look like a broken node instead of
  * an unconfigured one. Four distinct hues make the cut (and any chase) legible immediately.
  */
-export function spliceNodeInit(): Pick<GraphNode, 'splices' | 'spliceCount' | 'splicePartition' | 'spliceChase' | 'spliceRateMode' | 'spliceDivision'> {
+export function spliceNodeInit(buses: readonly Bus[] = []): Pick<GraphNode, 'splices' | 'spliceCount' | 'splicePartition' | 'spliceChase' | 'spliceRateMode' | 'spliceDivision' | 'busId'> {
   return {
+    // A POLY layer by default: on a mono layer every hit releases the last, so a sequencer
+    // stepping between splice nodes would cut each hoop off as it moved on. The layer is the
+    // sustain-or-cut choice and it is authorable; this is just a sane starting side.
+    busId: buses.find((b) => b.polyphony === 'poly')?.id ?? '',
     splices: [{ color: '#ff2d55' }, { color: '#00e5ff' }, { color: '#b6ff00' }, { color: '#ffb020' }],
     spliceCount: 4,
     splicePartition: 'hoop',
