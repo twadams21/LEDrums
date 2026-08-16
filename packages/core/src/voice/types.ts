@@ -4,6 +4,7 @@
  * and unit-testable. The authored content is the {@link Show} aggregate; everything
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
+import type { CurveValue } from '../curve/curve';
 import type { ResolvedModifier } from '../modifiers/types';
 import type { PlayType } from '../effects/vocabulary';
 import type { CanvasScene } from '../canvas/types';
@@ -280,6 +281,21 @@ export interface GraphNode {
    */
   targetId?: string;
   params: ParamValues;
+  /**
+   * The voice's amplitude over its own life, authored as a shape instead of a number
+   * (S6b). Optional and additive: absent — the overwhelmingly common case — the voice
+   * behaves exactly as it did before envelopes existed, taking its dwell from the effect's
+   * declared {@link import('../effects/types').EffectGenerator.voiceLife} param.
+   *
+   * The x axis is normalised over that same declared life, so the curve carries no units of
+   * its own and `beats` still resolves once, at spawn. `h1` is therefore both the end of the
+   * shape and the end of the voice: at `x = 1` the voice lives exactly as long as its Life
+   * slider says, and dragging `h1` left shortens it.
+   *
+   * Only meaningful on play/effect nodes. See `effects/voice-life.ts` for the resolution and
+   * `voice/envelope-tick.ts` for the single place it is applied.
+   */
+  lifeEnvelope?: CurveValue;
   env: EnvMap;
   // modifier (only meaningful when kind === 'modifier')
   /** Which {@link ModifierDef} this modifier node applies (registry id). Optional +
@@ -570,6 +586,17 @@ export interface Voice {
   attackMs: number;
   sustainMs: number;
   releaseMs: number;
+  /**
+   * Authored amplitude-over-life curve, copied from the spawning node (S6b) and already
+   * normalised. `null`/absent → no envelope, and every level below is what it always was.
+   */
+  lifeEnvelope?: CurveValue | null;
+  /**
+   * Real-time width of {@link lifeEnvelope}'s x axis, resolved at spawn (ms, beats already
+   * converted at the spawn bpm). Stored so the per-frame tick stays a pure multiply with no
+   * registry lookup and no allocation.
+   */
+  lifeSpanMs?: number;
   phase: VoicePhase;
   level: number;
   bornAtMs: number;

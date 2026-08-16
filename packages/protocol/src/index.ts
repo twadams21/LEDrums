@@ -21,6 +21,10 @@ export {
   songLibraryBlobSchema,
 } from './schemas';
 export type { ClientMessage, ServerMessage } from './schemas';
+// The authored two-handle curve's shape guard (`GraphNode.lifeEnvelope`, S6b). Defined in core
+// beside the type the engine evaluates and surfaced here so wire-side callers validating an
+// imported or pasted document reach for it on the same import path as everything else.
+export { curveValueSchema } from '@ledrums/core';
 
 // The graph-fire contract carried on the `monitor` stream (server stamps, web reads back).
 export { graphFireKeyOf, graphFiredMonitorLabel, graphMonitorDestination } from './monitor-graph';

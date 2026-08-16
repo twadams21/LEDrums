@@ -132,6 +132,9 @@ export const segments: EffectGenerator<SegmentsState> = {
     'Slices the struck drum into angular wedges and fires them — all at once, chasing in order, every second one, bouncing, or in a seeded random order. Colours come from a generator (alternate, sweep, hue-step, cycle, random) so twenty wedges is still one hue and one spread, never twenty pickers. Set Fire to "single" and one node owns one wedge, so a sequence node steps wedges per hit and stacked nodes give hand-picked colours.',
   tags: ['band', 'hit', 'per-drum', 'hoop-aware', 'beat-synced', 'emission', 'seeded'],
   timebase: 'voice',
+  // Its wedges fade on a hard `1 - ageBeats / lifeBeats`, so the host voice must live that
+  // long or the Life slider looks inert (flagged 2026-08-16, landed with S6b).
+  voiceLife: { key: 'lifeBeats', unit: 'beats' },
   paramSpec: [
     // --- segmentation ---
     { key: 'segments', label: 'Segments', type: 'number', default: 8, min: 2, max: MAX_SEGMENTS, step: 1 },

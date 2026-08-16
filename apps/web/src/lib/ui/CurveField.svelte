@@ -606,9 +606,15 @@
     justify-content: space-between;
     gap: var(--space-2);
     min-width: 0;
+    /* The control ships into columns as narrow as an inspector pane. Without the wrap the
+       profile picker is the thing that gives — and a SegmentedControl that gives clips its
+       last label ("SN…"), which reads as a bug rather than as tight space. Dropping the
+       replay affordance to its own line costs a row and keeps every profile readable. */
+    flex-wrap: wrap;
   }
   .controls :global(.profiles) {
     min-width: 0;
+    flex: 1 1 240px;
   }
   .preview {
     display: inline-flex;

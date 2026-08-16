@@ -34,6 +34,9 @@ export * from './canvas/scene';
 export * from './canvas/registry';
 export * from './canvas/presets';
 
+// Curves (the two-handle curve value — authored content, evaluated by engine and sim alike)
+export * from './curve/curve';
+
 // Effects
 export * from './effects/types';
 export * from './effects/emitter';

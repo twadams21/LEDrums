@@ -1,42 +1,28 @@
 /**
- * Pure maths for the {@link CurveField} primitive — a two-handle curve over a
- * normalised 0..1 × 0..1 field. No DOM, no Svelte, no IO, so it unit-tests
- * without jsdom and the view stays a thin renderer over it.
+ * View-side maths for the {@link CurveField} primitive — the px mapping, SVG paths, drag
+ * clamping and hit overlay that turn a curve VALUE into something you can see and grab.
+ * No DOM, no Svelte, no IO, so it unit-tests without jsdom and the view stays a thin
+ * renderer over it.
  *
- * The shape is deliberately domain-agnostic: the same value drives a
- * time-domain envelope (x = time, y = level) and a transfer curve (x = input
- * velocity, y = output velocity). Consumers own the unit mapping; everything
- * here is 0..1.
- *
- * Outside the handles the curve is FLAT — `x < h0.x → h0.y`, `x > h1.x → h1.y`
- * — which is what makes a handle pair expressive enough on its own: dragging
- * `h0` right is a hold (envelope) or a threshold/gate (transfer curve) without
- * a third handle or a mode.
- *
- * `strength` is the curvature of the chosen profile, unipolar: **0 is no
- * curvature at all** (every profile collapses to `linear` there, exactly), 1 is
- * the hardest bend. Profiles with nothing to curve (`linear`, `snap`) report
- * `hasStrength: false` — the view disables the control rather than hiding it.
+ * The value itself — its type, its profiles, and how it evaluates — lives in
+ * `@ledrums/core` (`curve/curve.ts`) and is re-exported below, unchanged, so this module
+ * stays the one import the control and its consumers reach for. It had to move: a curve is
+ * authored content now (an effect node's `lifeEnvelope`, S6b), and the server engine
+ * evaluates the same shape this control draws. Two copies of `evalCurve` would be two
+ * answers to "what is this voice's brightness right now".
  */
+export {
+  CURVE_PROFILE_OPTIONS,
+  DEFAULT_CURVE,
+  clampUnit as clamp01,
+  evalCurve,
+  normalizeCurve,
+  profileHasStrength,
+  shapeAt,
+} from '@ledrums/core';
+export type { CurveProfile, CurveProfileOption, CurvePoint, CurveValue } from '@ledrums/core';
 
-/** The fixed profile set (Trent, 2026-08-17 — closed; new shapes need a verdict). */
-export type CurveProfile = 'linear' | 'exp' | 'sCurve' | 'snap';
-
-/** A handle position in normalised field space. */
-export interface CurvePoint {
-  x: number;
-  y: number;
-}
-
-/** The whole control's value. Exported for S6b (envelope life/decay) and S8
-    (per-drum velocity sensitivity), which persist it in their own models. */
-export interface CurveValue {
-  h0: CurvePoint;
-  h1: CurvePoint;
-  profile: CurveProfile;
-  /** 0..1 curvature of `profile`; ignored where `hasStrength` is false. */
-  strength: number;
-}
+import { clampUnit as clamp01, evalCurve, normalizeCurve, type CurvePoint, type CurveValue } from '@ledrums/core';
 
 /** Which of the two handles a gesture is addressing. */
 export type CurveHandle = 'h0' | 'h1';
@@ -53,115 +39,9 @@ export interface CurveAxisSpec {
   format?: (u: number) => string;
 }
 
-export interface CurveProfileOption {
-  value: CurveProfile;
-  label: string;
-  /** False → `strength` is meaningless; the view greys the control out. */
-  hasStrength: boolean;
-}
-
-/** Single source for the picker's options and the strength control's enablement. */
-export const CURVE_PROFILE_OPTIONS: readonly CurveProfileOption[] = [
-  { value: 'linear', label: 'Linear', hasStrength: false },
-  { value: 'exp', label: 'Exp', hasStrength: true },
-  { value: 'sCurve', label: 'S-curve', hasStrength: true },
-  { value: 'snap', label: 'Snap', hasStrength: false },
-] as const;
-
-/** Whether `strength` does anything for this profile. */
-export function profileHasStrength(profile: CurveProfile): boolean {
-  return CURVE_PROFILE_OPTIONS.find((o) => o.value === profile)?.hasStrength ?? false;
-}
-
-/** Opening value: full-range fall, gently exponential — the shape a decay wants. */
-export const DEFAULT_CURVE: CurveValue = {
-  h0: { x: 0, y: 1 },
-  h1: { x: 1, y: 0 },
-  profile: 'exp',
-  strength: 0.5,
-};
-
 /** Keyboard nudge in normalised units; shift multiplies by {@link NUDGE_COARSE}. */
 export const NUDGE = 0.01;
 export const NUDGE_COARSE = 10;
-
-/** Hardest `exp` bend, as the exponent at `strength = 1`. */
-const EXP_MAX_POWER = 8;
-/** Hardest `sCurve` shoulder, as the exponent at `strength = 1`. */
-const S_MAX_POWER = 5;
-
-/** NaN (the only value with no place on the axis) reads as 0; ±Infinity clamps. */
-export const clamp01 = (n: number): number => (Number.isNaN(n) ? 0 : n < 0 ? 0 : n > 1 ? 1 : n);
-
-/**
- * Clamp every field into range and put the handles in x order, so `evalCurve`
- * is total over any value — including one loaded from an older/hand-edited
- * document. Dragging can't cross the handles (see {@link dragHandle}), so the
- * swap only ever fires on malformed input.
- */
-export function normalizeCurve(value: CurveValue): CurveValue {
-  const a = { x: clamp01(value.h0.x), y: clamp01(value.h0.y) };
-  const b = { x: clamp01(value.h1.x), y: clamp01(value.h1.y) };
-  const swapped = a.x > b.x;
-  return {
-    h0: swapped ? b : a,
-    h1: swapped ? a : b,
-    profile: isProfile(value.profile) ? value.profile : 'linear',
-    strength: clamp01(value.strength),
-  };
-}
-
-function isProfile(p: unknown): p is CurveProfile {
-  return CURVE_PROFILE_OPTIONS.some((o) => o.value === p);
-}
-
-/**
- * The profile's shaping function on the normalised span between the handles:
- * `p` 0..1 in, 0..1 out, always `f(0) = 0` and `f(1) = 1` so the curve meets
- * both handles exactly whatever the strength.
- *
- * `exp` is an ease-OUT — quick departure, slow settle. That is the
- * `exp(−t/τ)` decay the app already paints (and the shape this control exists
- * to beat); on a transfer curve it reads as "lift the quiet hits". The
- * opposite bend is reachable without a second profile by moving a handle: a
- * flat run out to `h0.x` is a hold, or a gate.
- */
-export function shapeAt(profile: CurveProfile, p: number, strength: number): number {
-  const u = clamp01(p);
-  const s = clamp01(strength);
-  switch (profile) {
-    case 'linear':
-      return u;
-    case 'snap':
-      // Held at the start level until the end handle, then a step. The caller
-      // handles the endpoints, so anything short of 1 is still "before".
-      return u >= 1 ? 1 : 0;
-    case 'exp': {
-      const k = Math.pow(EXP_MAX_POWER, s); // s=0 → 1 (linear), s=1 → 8
-      return 1 - Math.pow(1 - u, k);
-    }
-    case 'sCurve': {
-      const k = 1 + s * (S_MAX_POWER - 1); // s=0 → 1 (linear), s=1 → 5
-      return u < 0.5 ? 0.5 * Math.pow(u * 2, k) : 1 - 0.5 * Math.pow((1 - u) * 2, k);
-    }
-  }
-}
-
-/**
- * The curve's y at a given x. Flat outside the handles; the profile shapes the
- * span between them. Coincident handles are a pure step at that x — no divide
- * by zero, because both endpoint branches fire first.
- */
-export function evalCurve(value: CurveValue, x: number): number {
-  const v = normalizeCurve(value);
-  const at = clamp01(x);
-  if (at <= v.h0.x) return v.h0.y;
-  if (at >= v.h1.x) return v.h1.y;
-  if (v.profile === 'snap') return v.h0.y;
-  const span = v.h1.x - v.h0.x;
-  const p = (at - v.h0.x) / span;
-  return v.h0.y + (v.h1.y - v.h0.y) * shapeAt(v.profile, p, v.strength);
-}
 
 /** `samples + 1` evenly spaced points across the field, for plotting. */
 export function sampleCurve(value: CurveValue, samples = 64): CurvePoint[] {

@@ -67,7 +67,7 @@ import type {
   Project,
 } from '@ledrums/core';
 import { BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
-import { voice, canvasEffectId } from '@ledrums/core';
+import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
@@ -3544,6 +3544,32 @@ export class TriggerLab {
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     node.params = penv.setParamValue(node.params, key, value);
+  }
+
+  /** Author the node's life ENVELOPE — the amplitude-over-life curve that replaces its scalar
+      Life/Decay param (S6b). `null` detaches, restoring the scalar path exactly. Same mutation
+      path and same undo slot as {@link setParam}, so a curve edit is one undo like any other.
+      The scalar param is left untouched underneath: it still sets the envelope's time span, and
+      detaching returns to it with nothing lost. */
+  setLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.pushUndoSnapshot();
+    this.writeLifeEnvelope(node, value);
+  }
+
+  /** The same write with NO undo checkpoint — for the live frames of a curve drag, which fire
+      per pointermove. The control commits once at gesture end through {@link setLifeEnvelope},
+      so the stack gets one entry per gesture instead of one per frame. */
+  updateLifeEnvelope(node: GraphNode, value: CurveValue): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.writeLifeEnvelope(node, value);
+  }
+
+  private writeLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (value) node.lifeEnvelope = value;
+    else delete node.lifeEnvelope;
   }
 
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new

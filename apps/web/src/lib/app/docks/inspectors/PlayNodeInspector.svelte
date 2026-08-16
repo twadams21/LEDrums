@@ -7,13 +7,15 @@
      preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
-  import { voice, type Hsv } from '@ledrums/core';
+  import { resolveVoiceSustainMs, voice, type CurveValue, type Hsv } from '@ledrums/core';
+  import { lifeParamKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
   import { busIcon } from '../../views/trigger-node-meta';
   import { MODE_OPTS, SCOPE_OPTS, num, fmt } from '../../views/node-options';
   import { nodeLintEntries } from '../../views/graph-lint';
   import LintCallout from '../../../ui/LintCallout.svelte';
   import EffectThumb from '../../../trigger-lab/EffectThumb.svelte';
   import Slider from '../../../ui/Slider.svelte';
+  import CurveField from '../../../ui/CurveField.svelte';
   import Select from '../../../ui/Select.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
@@ -23,6 +25,8 @@
   import Replace from '@lucide/svelte/icons/replace';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus';
+  import Spline from '@lucide/svelte/icons/spline';
+  import Undo2 from '@lucide/svelte/icons/undo-2';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -64,6 +68,34 @@
   const presetOptions = $derived(eff ? store.presetsForEffect(eff.id).map((p) => ({ value: p.id, label: p.name })) : []);
   // Store-bound layer options stay reactive over the live buses.
   const LAYER_OPTS = $derived(store.buses.map((b) => ({ value: b.id, label: b.name, icon: busIcon[b.id] })));
+
+  // --- life envelope (S6b) ---------------------------------------------------
+  // An effect that DECLARES a life param (`EffectGenerator.voiceLife`) can have that scalar
+  // drawn as a shape instead. The curve's x axis is normalised over exactly that declared
+  // life, so `h1.x = 1` is the Life slider's own value and seeding changes nothing visually.
+  const lifeKey = $derived(lifeParamKey(eff?.generatorId));
+  const lifeEnvelope = $derived(node.lifeEnvelope ?? null);
+  /** Real-time width of the envelope's x axis — what the author is actually drawing across. */
+  const lifeSpanMs = $derived(
+    eff ? resolveVoiceSustainMs(eff.generatorId, live, store.bpm, eff.sustainMs) : 0,
+  );
+  const lifeSpec = $derived(lifeKey ? eff?.params.find((p) => p.key === lifeKey) ?? null : null);
+  /** One undo per gesture: the first live frame opens the checkpoint, the rest fold into it. */
+  let lifeDragging = $state(false);
+
+  function onLifeChange(v: CurveValue): void {
+    if (lifeDragging) store.updateLifeEnvelope(node, v);
+    else {
+      lifeDragging = true;
+      store.setLifeEnvelope(node, v); // snapshots the PRE-drag state, then writes
+    }
+  }
+  function onLifeCommit(v: CurveValue): void {
+    store.updateLifeEnvelope(node, v);
+    lifeDragging = false;
+  }
+  const fmtLifeX = (u: number): string =>
+    lifeSpanMs >= 1000 ? `${(u * lifeSpanMs / 1000).toFixed(2)} s` : `${Math.round(u * lifeSpanMs)} ms`;
 
   /** Options for the scope-target dropdown, derived from the current scope. */
   const targetOptions = $derived.by(() => {
@@ -171,7 +203,9 @@
         />
       </div>
     {/if}
-    {#each eff.params as spec (spec.key)}
+    <!-- The life param's scalar row steps aside while a curve owns it. The value is untouched
+         underneath — it still sets the curve's time span, and Detach brings the slider back. -->
+    {#each eff.params.filter((p) => !(lifeEnvelope && p.key === lifeKey)) as spec (spec.key)}
       <div class="prow">
         <span class="plabel">{spec.label}</span>
         {#if spec.kind === 'number'}
@@ -197,8 +231,42 @@
                control — the write-through swatch — is owned by S19; no effect declares one yet. -->
           <Toggle pressed={live[spec.key] === true} onChange={(v) => store.setParam(node, spec.key, v)} ariaLabel={spec.label} class="boolcell" />
         {/if}
+        {#if spec.key === lifeKey}
+          <IconButton
+            icon={Spline}
+            label="Draw {spec.label} as a curve"
+            variant="soft"
+            size={14}
+            onclick={() => store.setLifeEnvelope(node, seedLifeEnvelope(eff.generatorId))}
+          />
+        {/if}
       </div>
     {/each}
+
+    {#if lifeEnvelope}
+      <div class="lifeenv">
+        <div class="lifehead">
+          <span class="plabel">{lifeSpec?.label ?? 'Life'}</span>
+          <span class="lifespan">{fmtLifeX(1)}</span>
+          <IconButton
+            icon={Undo2}
+            label="Detach the curve — back to the {lifeSpec?.label ?? 'Life'} slider"
+            variant="soft"
+            size={14}
+            onclick={() => store.setLifeEnvelope(node, null)}
+          />
+        </div>
+        <CurveField
+          value={lifeEnvelope}
+          onChange={onLifeChange}
+          onCommit={onLifeCommit}
+          xAxis={{ label: 'time', format: fmtLifeX }}
+          yAxis={{ label: 'level', format: (u) => `${Math.round(u * 100)}%` }}
+          height={104}
+          ariaLabel="{lifeSpec?.label ?? 'Life'} envelope"
+        />
+      </div>
+    {/if}
   </div>
 
   <ModulationParamsSection {store} {node} />
@@ -318,6 +386,29 @@
     flex: 1;
     min-width: 0;
   }
+  .lifeenv {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding-top: var(--space-1);
+  }
+  .lifehead {
+    /* Same three-column rhythm as a param row, so the Detach button lands in the gutter the
+       draw-as-a-curve button left behind — the swap happens in place, not somewhere new. */
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr) var(--control-icon-size);
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .lifehead :global(.ib) {
+    justify-self: center;
+  }
+  .lifespan {
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
   .params {
     padding: var(--space-3);
     display: flex;
@@ -326,9 +417,15 @@
   }
   .prow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
+    /* The third column is a RESERVED gutter, not a column the life row alone creates: only one
+       param carries the draw-as-a-curve affordance, and without the reservation every other
+       slider would run 30px longer than that one and the stack would read as ragged. */
+    grid-template-columns: 84px minmax(0, 1fr) var(--control-icon-size);
     align-items: center;
     gap: var(--space-2);
+  }
+  .prow :global(.ib) {
+    justify-self: center;
   }
   .plabel {
     font-size: var(--text-xs);

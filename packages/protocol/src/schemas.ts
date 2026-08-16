@@ -12,6 +12,7 @@ import { z } from 'zod';
 import {
   BLEND_MODES,
   clipSchema,
+  curveValueSchema,
   inputMapSchema,
   kitGlobalSchema,
   layerSchema,
@@ -28,7 +29,7 @@ import {
   triggerBindingSchema,
   vec3Schema,
 } from '@ledrums/core';
-import type { EngineStats, voice } from '@ledrums/core';
+import type { CurveValue, EngineStats, voice } from '@ledrums/core';
 import type {
   BackupSnapshotMeta,
   ControllerStatus,
@@ -472,4 +473,10 @@ type _LockControllerTestPattern = Assert<
 >;
 type _LockVoiceStats = Assert<Equals<z.infer<typeof voiceStatsSchema>, VoiceStats>>;
 type _LockBackupSnapshotMeta = Assert<Equals<z.infer<typeof backupSnapshotMetaSchema>, BackupSnapshotMeta>>;
+// The authored two-handle curve (`GraphNode.lifeEnvelope`, S6b). It rides inside the Show,
+// which passes through `z.custom` unvalidated by design — so this is the shape guard callers
+// reach for when they DO want to check one (import, paste, hand-edited document) rather than
+// a boundary the envelope decoder applies. Locked to core's `CurveValue` so the schema and the
+// type the engine evaluates can never drift.
+type _LockCurveValue = Assert<Equals<z.infer<typeof curveValueSchema>, CurveValue>>;
 /* eslint-enable @typescript-eslint/no-unused-vars */
