@@ -4,11 +4,19 @@
  * each live voice's attack/sustain/release level and free voices that have decayed out.
  * No allocation, no array churn — they mutate the pre-sized pool in place.
  */
+import { lifeEnvelopeGain } from '../effects/voice-life';
 import { releaseVoice } from './voice-pool';
 import type { Bus, Voice } from './types';
 
 /** Advance every active voice's envelope level for this frame (attack → sustain →
-    release), releasing one-shots whose sustain window has elapsed. */
+    release), releasing one-shots whose sustain window has elapsed.
+
+    THE one place an authored `lifeEnvelope` is applied (S6b): the curve multiplies the
+    level the attack/sustain phases produce, so a voice's brightness follows the shape its
+    author drew instead of sitting flat at 1. Release is deliberately NOT multiplied — the
+    ramp already starts from `releaseFromLevel`, which is exactly where the curve left the
+    voice, so multiplying again would square the tail. Voices with no envelope take a single
+    `undefined` check and are byte-identical to what they were before. */
 export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById: Map<string, Bus>): void {
   for (const v of pool) {
     if (!v.active) continue;
@@ -16,12 +24,13 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
     if (v.phase === 'attack') {
       v.level = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
       if (v.level >= 1) v.phase = 'sustain';
+      v.level *= lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
     } else if (v.phase === 'sustain') {
       if (v.mode === 'oneshot') {
-        v.level = 1;
+        v.level = lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
         if (age >= v.attackMs + v.sustainMs) releaseVoice(v, timeMs);
       } else {
-        v.level = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480));
+        v.level = (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480))) * lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
       }
     } else {
       const bus = busById.get(v.busId);

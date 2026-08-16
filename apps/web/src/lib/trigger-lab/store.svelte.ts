@@ -51,6 +51,7 @@ import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTes
 import { appendVelocityHit, type VelocityHits } from '../app/velocity-hits';
 import type { CurveHit } from '../ui/curve-field';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { playingGraphKeys } from './graph-liveness';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
@@ -69,7 +70,7 @@ import type {
   Project,
 } from '@ledrums/core';
 import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
-import { voice, canvasEffectId } from '@ledrums/core';
+import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
@@ -125,6 +126,7 @@ import {
 import * as vsw from './store/value-switch';
 import * as penv from './store/param-envelope';
 import * as mg from './store/mod-graph';
+import * as fp from './store/face-params';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
 import * as songRefsLib from './store/song-library-refs';
@@ -758,6 +760,11 @@ export class TriggerLab {
     }),
   );
 
+  /** Graph keys with a sustained (loop/hold) voice alive right now — the graph rail's "now
+      playing" marks. Derived from {@link dockVoices}, the authoritative list, NOT the smoothed
+      display one (which decays late and would hold the mark lit past the sound). */
+  playingGraphs = $derived<Set<string>>(playingGraphKeys(this.dockVoices));
+
   /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
       them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
       but exponentially approach the authoritative values, advanced every rAF frame by
@@ -912,6 +919,15 @@ export class TriggerLab {
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
       undoable action. Set only via {@link batchIntoCurrentUndo}. */
   private suppressUndoSnapshot = false;
+  /** Open-gesture nesting depth (see {@link beginGesture}) — a drag that publishes on every
+      pointermove must collapse to ONE undo checkpoint. */
+  private gestureDepth = 0;
+  /** True between beginGesture() and the gesture's first mutation: that mutation takes the
+      one checkpoint, then suppression takes over. A gesture that mutates nothing pushes nothing. */
+  private gesturePending = false;
+  /** `suppressUndoSnapshot` as it stood when the outermost gesture opened, restored on close
+      so a gesture nested inside a batchIntoCurrentUndo can't re-arm checkpoints early. */
+  private gestureSuppressPrev = false;
   /** Whether a controller discovery sweep is in flight. See {@link ControllerMonitor.scanning}. */
   get controllerScanning(): boolean {
     return this.monitor.scanning;
@@ -1252,6 +1268,12 @@ export class TriggerLab {
 
   private pushUndoSnapshot(): void {
     if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
+    // First mutation inside an open gesture (a pointer drag on a face param / slider): THIS
+    // checkpoint covers the whole drag, and everything until endGesture() folds into it.
+    if (this.gesturePending) {
+      this.gesturePending = false;
+      this.suppressUndoSnapshot = true;
+    }
     this.undoStack.push({
       authored: structuredClone(this.toAuthored()),
       // The project is server-owned and lives outside AuthoredState, so it snapshots separately
@@ -1266,6 +1288,37 @@ export class TriggerLab {
   runUndoable<T>(edit: () => T): T {
     this.pushUndoSnapshot();
     return edit();
+  }
+
+  /** Open a continuous-edit GESTURE — a pointer drag or a wheel spin over a numeric control,
+      which publishes a value on every move. Without this a single drag of a face param would
+      stack one undo entry per pointermove and Cmd-Z would crawl back through the drag pixel
+      by pixel. The first mutation inside the gesture takes ONE checkpoint; every later one
+      folds into it (S5: one gesture = one undo, matching the G3 param-edit contract).
+
+      Nestable, and lazy: a gesture that mutates nothing pushes nothing. Always pair with
+      {@link endGesture} — the caller owns pointercancel / lostpointercapture too, since an
+      unclosed gesture would swallow later checkpoints. */
+  beginGesture(): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.gestureDepth === 0) {
+      // An enclosing batchIntoCurrentUndo already owns suppression — don't take a checkpoint
+      // inside it, and restore ITS flag on close.
+      this.gestureSuppressPrev = this.suppressUndoSnapshot;
+      this.gesturePending = !this.suppressUndoSnapshot;
+    }
+    this.gestureDepth += 1;
+  }
+
+  /** Close the gesture opened by {@link beginGesture}. Extra calls are ignored, so a
+      pointerup that races a pointercancel cannot re-open undo mid-drag. */
+  endGesture(): void {
+    if (this.gestureDepth === 0) return;
+    this.gestureDepth -= 1;
+    if (this.gestureDepth === 0) {
+      this.gesturePending = false;
+      this.suppressUndoSnapshot = this.gestureSuppressPrev;
+    }
   }
 
   /** Run `edit` WITHOUT opening a new undo checkpoint — any {@link pushUndoSnapshot} inside it is
@@ -3586,6 +3639,32 @@ export class TriggerLab {
     node.params = penv.setParamValue(node.params, key, value);
   }
 
+  /** Author the node's life ENVELOPE — the amplitude-over-life curve that replaces its scalar
+      Life/Decay param (S6b). `null` detaches, restoring the scalar path exactly. Same mutation
+      path and same undo slot as {@link setParam}, so a curve edit is one undo like any other.
+      The scalar param is left untouched underneath: it still sets the envelope's time span, and
+      detaching returns to it with nothing lost. */
+  setLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.pushUndoSnapshot();
+    this.writeLifeEnvelope(node, value);
+  }
+
+  /** The same write with NO undo checkpoint — for the live frames of a curve drag, which fire
+      per pointermove. The control commits once at gesture end through {@link setLifeEnvelope},
+      so the stack gets one entry per gesture instead of one per frame. */
+  updateLifeEnvelope(node: GraphNode, value: CurveValue): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.writeLifeEnvelope(node, value);
+  }
+
+  private writeLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (value) node.lifeEnvelope = value;
+    else delete node.lifeEnvelope;
+  }
+
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
       modifier's default params so its inspector controls resolve. No-op off a modifier. */
   setModifierId(node: GraphNode, modifierId: string): void {
@@ -3670,6 +3749,48 @@ export class TriggerLab {
     if (!next) return;
     this.pushUndoSnapshot();
     node.modInputs = next;
+  }
+
+  // --- face params (S5) ----------------------------------------------------
+  // "Add a param to the node face" ≡ "expose this param for modulation": ONE list
+  // (`node.modInputs`), two views (the node-face rows + the inspector's Parameters section).
+  // These read the SAME rows `modInputsOf` returns; they only widen what may be ADDED, since
+  // a face row is an editing surface first and a modulation target second.
+
+  /** Every param a node declares, normalized across both spec dialects (effect `kind` /
+      modifier `type`) — the face renders a control per declared TYPE. */
+  faceParamSpecs(node: GraphNode): fp.FaceParamSpec[] {
+    return fp.nodeParamSpecs(node, this.effectOf(node));
+  }
+
+  /** Params not yet on the face — the widened "Add parameter" picker (every declared param,
+      not only the modulatable numbers). */
+  availableFaceParams(node: GraphNode): { key: string; label: string }[] {
+    return fp.availableFaceParams(node, this.effectOf(node));
+  }
+
+  /** Whether a param is currently on the node's face (≡ exposed for modulation). */
+  isParamOnFace(node: GraphNode, key: string): boolean {
+    return fp.isParamOnFace(node, key);
+  }
+
+  /** The param a modulation wire dropped on this node's BODY should land on — its first
+      exposed NUMBER row, else the first number param it could expose. Skips non-numeric face
+      rows, which carry no `param:<key>` handle. */
+  modDropTarget(node: GraphNode): string | undefined {
+    return mg.modDropTargetParam(node, this.effectOf(node));
+  }
+
+  /** Put a param on the node face — the same mutation as exposing it for modulation, so the
+      gesture and the list stay one. Idempotent. */
+  addFaceParam(node: GraphNode, param: string): void {
+    this.addModInput(node, param);
+  }
+
+  /** Take a param off the face — the same mutation as un-exposing it, INCLUDING the existing
+      wire-deletion behaviour (the caller confirms first when {@link mappingsFor} is non-empty). */
+  removeFaceParam(node: GraphNode, param: string): void {
+    this.removeModInput(node, param);
   }
 
   /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */

@@ -95,6 +95,18 @@ function isCurveProfile(p: unknown): p is CurveProfile {
   return CURVE_PROFILE_OPTIONS.some((o) => o.value === p);
 }
 
+/** Opening value for a LIFE envelope: full-range fall, gently exponential — the shape a
+    decay wants. (Contrast {@link IDENTITY_CURVE}, the pass-through a TRANSFER curve starts at.) */
+export const DEFAULT_CURVE: CurveValue = {
+  h0: { x: 0, y: 1 },
+  h1: { x: 1, y: 0 },
+  profile: 'exp',
+  strength: 0.5,
+};
+
+/** S6a's original name for {@link clampCurve01} — kept so both curve consumers read naturally. */
+export const clampUnit = clampCurve01;
+
 /** Hardest `exp` bend, as the exponent at `strength = 1`. */
 const EXP_MAX_POWER = 8;
 /** Hardest `sCurve` shoulder, as the exponent at `strength = 1`. */

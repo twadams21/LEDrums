@@ -36,10 +36,13 @@ export * from './canvas/scene';
 export * from './canvas/registry';
 export * from './canvas/presets';
 
+
 // Effects
 export * from './effects/types';
 export * from './effects/emitter';
 export * from './effects/registry';
+export * from './effects/visibility';
+export * from './effects/voice-life';
 export * from './effects/vocabulary';
 export * from './effects/metadata';
 export * from './effects/aliases';

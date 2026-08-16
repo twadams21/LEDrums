@@ -1,34 +1,25 @@
 /**
- * Pure maths for the {@link CurveField} primitive — a two-handle curve over a
- * normalised 0..1 × 0..1 field. No DOM, no Svelte, no IO, so it unit-tests
- * without jsdom and the view stays a thin renderer over it.
+ * View-side maths for the {@link CurveField} primitive — the px mapping, SVG paths, drag
+ * clamping and hit overlay that turn a curve VALUE into something you can see and grab.
+ * No DOM, no Svelte, no IO, so it unit-tests without jsdom and the view stays a thin
+ * renderer over it.
  *
- * The VALUE and its evaluation live in `@ledrums/core` (`model/curve`), because
- * the same shape is persisted in the project and evaluated on the server's
- * input path — `core` may not import the web app, so the maths cannot live
- * here. Re-exported below so this module stays the one import a consumer of the
- * control needs; what remains local is view maths: pixels, paths, gestures and
- * the hit overlay.
+ * The VALUE and its evaluation live in `@ledrums/core` (`model/curve`), because the same
+ * shape is persisted in the project (an effect node's `lifeEnvelope`, a drum's velocity
+ * curve) and evaluated by the server engine and the sim alike — `core` may not import the
+ * web app, so the maths cannot live here. Re-exported below so this module stays the one
+ * import a consumer of the control needs; what remains local is view maths: pixels, paths,
+ * gestures and the hit overlay.
  *
- * The shape is deliberately domain-agnostic: the same value drives a
- * time-domain envelope (x = time, y = level) and a transfer curve (x = input
- * velocity, y = output velocity). Consumers own the unit mapping; everything
- * here is 0..1.
- *
- * Outside the handles the curve is FLAT — `x < h0.x → h0.y`, `x > h1.x → h1.y`
- * — which is what makes a handle pair expressive enough on its own: dragging
- * `h0` right is a hold (envelope) or a threshold/gate (transfer curve) without
- * a third handle or a mode.
- *
- * `strength` is the curvature of the chosen profile, unipolar: **0 is no
- * curvature at all** (every profile collapses to `linear` there, exactly), 1 is
- * the hardest bend. Profiles with nothing to curve (`linear`, `snap`) report
- * `hasStrength: false` — the view disables the control rather than hiding it.
+ * The shape is deliberately domain-agnostic: the same value drives a time-domain envelope
+ * (x = time, y = level) and a transfer curve (x = input velocity, y = output velocity).
+ * Consumers own the unit mapping; everything here is 0..1.
  */
 import { clampCurve01, evalCurve, normalizeCurve, type CurvePoint, type CurveValue } from '@ledrums/core';
 
 export {
   CURVE_PROFILE_OPTIONS,
+  DEFAULT_CURVE,
   evalCurve,
   IDENTITY_CURVE,
   isIdentityCurve,
@@ -58,14 +49,6 @@ export interface CurveAxisSpec {
   /** Normalised 0..1 → the consumer's units, already formatted. */
   format?: (u: number) => string;
 }
-
-/** Opening value: full-range fall, gently exponential — the shape a decay wants. */
-export const DEFAULT_CURVE: CurveValue = {
-  h0: { x: 0, y: 1 },
-  h1: { x: 1, y: 0 },
-  profile: 'exp',
-  strength: 0.5,
-};
 
 /** Keyboard nudge in normalised units; shift multiplies by {@link NUDGE_COARSE}. */
 export const NUDGE = 0.01;

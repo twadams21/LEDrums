@@ -1,13 +1,13 @@
 <script lang="ts">
   /* The graph system, LIVE: the real GraphCanvas (shared SvelteFlow chrome + token
-     theming), the Node Editor drawer (Add palette + Inspector tabs), WireEdge and
-     NodeCard — wired to demo data. Drag nodes, hover to light connected wires, drag
-     handles to wire, Delete to remove, add kinds from the drawer's Add tab. The
+     theming), the on-canvas Add-node popover, WireEdge and NodeCard — wired to demo
+     data. Drag nodes, hover to light connected wires, drag handles to wire, Delete to
+     remove, right-click the canvas (or hit `+`) to add a kind from the popover. The
      locked interaction contract is printed below. */
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
-  import NodeEditor from '../../app/views/NodeEditor.svelte';
-  import AddPalette, { type AddGroup } from '../../app/views/AddPalette.svelte';
+  import AddNodePopover from '../../app/views/AddNodePopover.svelte';
+  import type { AddGroup } from '../../app/views/AddPalette.svelte';
   import type { FlowApi } from '../../app/views/FlowHandle.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
@@ -19,9 +19,14 @@
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
+  import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import Link2 from '@lucide/svelte/icons/link-2';
+  import Plus from '@lucide/svelte/icons/plus';
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import X from '@lucide/svelte/icons/x';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import { makeNode } from '../../trigger-lab/sim';
   import { graphThumb } from '../../app/views/graph-thumb';
@@ -40,6 +45,14 @@
   };
   const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
   const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
+
+  // S5 face-param demo: the three control types a node-face row can carry, live-editable here
+  // exactly as they are on a node card (the same component, no copied markup).
+  let faceSize = $state(0.45);
+  let faceBlend = $state<string>('add');
+  let faceMirror = $state(false);
+  const FACE_BLENDS = ['add', 'over', 'mask'];
+  const fmt2 = (v: number): string => v.toFixed(2).replace(/\.?0+$/, '');
 
   // Wave-4 state-face demo: one node per gating/routing kind, plus a Fire button that
   // stamps the same epoch contract the store's selectedGraphFireAt provides.
@@ -111,20 +124,31 @@
     edges = hover.decorate(edges);
   }
 
-  // Node Editor drawer Add groups: the Stage 1 chooser is exactly 2x2
+  // Add-node popover groups: the Stage 1 chooser is exactly 2x2
   // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
   const addGroups = $derived<AddGroup[]>(buildAddGroups());
-  // Placement: the drawer adds at the visible canvas centre via the flow instance
-  // (FlowHandle) — the same mechanism the real views use.
+  // The popover is summoned at the invoke point and the node lands there — the same
+  // capture-at-invoke mechanism the real view uses (FlowHandle → screenToFlowPosition).
   let flowApi = $state<FlowApi | null>(null);
   let canvasWrap = $state<HTMLElement | null>(null);
-  function demoCentre(): { x: number; y: number } {
+  let addPopover = $state<{ at: { x: number; y: number }; spawn: { x: number; y: number } } | null>(null);
+  const canvasBox = $derived.by(() => {
+    addPopover;
     const r = canvasWrap?.getBoundingClientRect();
-    if (!flowApi) return { x: 0, y: 0 };
-    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    return { w: r?.width ?? 0, h: r?.height ?? 0 };
+  });
+  function openAddPopover(screen?: { x: number; y: number }): void {
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!rect) return;
+    const point = screen ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    addPopover = {
+      at: { x: point.x - rect.left, y: point.y - rect.top },
+      spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
+    };
   }
   function handleAdd(id: string, groupKey: string): void {
-    const c = demoCentre();
+    const c = addPopover?.spawn;
+    if (!c) return;
     if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
     else if (groupKey === EFFECT_GROUP_KEY) add('effect', c.x, c.y);
     else if (id.startsWith('envelope:')) add('envelope', c.x, c.y);
@@ -178,47 +202,68 @@
   </div>
 
   <DemoCard
-    title="Canvas · Node Editor drawer · wires"
+    title="Canvas · Add-node popover · wires"
     src={[
       'lib/app/views/GraphCanvas',
-      'lib/app/views/NodeEditor',
+      'lib/app/views/AddNodePopover',
       'lib/app/views/AddPalette',
+      'lib/app/views/popover-placement',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
+    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
     wide
   >
-    <div class="canvas-demo">
-      <div class="canvas-cell" bind:this={canvasWrap}>
-        <GraphCanvas
-          bind:nodes
-          bind:edges
-          nodeTypes={{ demo: GraphDemoNode }}
-          edgeTypes={{ wire: WireEdge }}
-          defaultEdgeOptions={{ type: 'wire' }}
-          fitPadding={0.25}
-          onFlow={(f) => (flowApi = f)}
-          onNodeEnter={(id) => {
-            hover.enter(id);
-            restamp();
-          }}
-          onNodeLeave={() => {
-            hover.leave();
-            restamp();
-          }}
-          onConnect={(c) => {
-            edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
-          }}
-        />
+    <div class="canvas-demo" bind:this={canvasWrap}>
+      <GraphCanvas
+        bind:nodes
+        bind:edges
+        nodeTypes={{ demo: GraphDemoNode }}
+        edgeTypes={{ wire: WireEdge }}
+        defaultEdgeOptions={{ type: 'wire' }}
+        fitPadding={0.25}
+        onFlow={(f) => (flowApi = f)}
+        onPaneContextMenu={(e) => {
+          e.preventDefault();
+          openAddPopover({ x: e.clientX, y: e.clientY });
+        }}
+        onNodeEnter={(id) => {
+          hover.enter(id);
+          restamp();
+        }}
+        onNodeLeave={() => {
+          hover.leave();
+          restamp();
+        }}
+        onConnect={(c) => {
+          edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
+        }}
+      />
+      <div class="add-affordance">
+        <IconButton icon={Plus} label="Add node" variant="soft" tooltipSide="left" onclick={() => openAddPopover()} />
       </div>
-      <NodeEditor>
-        {#snippet add()}
-          <AddPalette groups={addGroups} onAdd={handleAdd} />
-        {/snippet}
-        {#snippet inspector()}
-          <p class="insp-hint">In the app, the selected node's editor mounts here (see the Trigger / Patch views).</p>
-        {/snippet}
-      </NodeEditor>
+      {#if addPopover}
+        <AddNodePopover
+          at={addPopover.at}
+          bounds={canvasBox}
+          groups={addGroups}
+          onAdd={handleAdd}
+          onClose={() => (addPopover = null)}
+        />
+      {/if}
+    </div>
+  </DemoCard>
+
+  <DemoCard
+    title="Inspector slideover (store-free stub)"
+    src={['lib/app/InspectorSlideover', 'lib/app/overlay-dismiss']}
+    note="A faithful markup stub of the window-right Inspector slideover — the live one is fixed to the window edge and reads the shell selection, so it cannot be mounted inline here. It is an OVERLAY, never a push: it paints at --z-overlay (above the docks and chrome bars, below --z-modal-backdrop) and the graph canvas geometry never changes when it opens. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
+  >
+    <div class="slideover-stub">
+      <PanelHeader icon={SlidersHorizontal} title="Inspector">
+        <IconButton icon={X} label="Close inspector" tooltip={false} />
+      </PanelHeader>
+      <p class="insp-hint">The selected node's per-kind editor mounts here (see lib/app/docks/Inspector).</p>
     </div>
   </DemoCard>
 
@@ -249,6 +294,69 @@
         <span class="sig-label">Param row · live value tick</span>
       </div>
     </div>
+  </DemoCard>
+
+  <DemoCard
+    title="Face param control · in-place editing on a node row"
+    src={['lib/ui/FaceParamControl', 'lib/ui/drag-number', 'lib/trigger-lab/store/face-params']}
+    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row edits in place with a type-appropriate control rather than a slider: number = drag / scroll / arrow keys, enum = cycle chip (shift-click reverses), bool = a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
+  >
+    <ul class="face-demo">
+      <li class="face-row">
+        <span class="pdot" aria-hidden="true"></span>
+        <span class="sig-plabel">size</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          ariaLabel="Size"
+          onChange={(v) => (faceSize = v as number)}
+        />
+        <ParamRowTick sample={demoTick} />
+      </li>
+      <li class="face-row">
+        <span class="pdot" aria-hidden="true"></span>
+        <span class="sig-plabel">depth</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          modulated
+          ariaLabel="Depth"
+          onChange={(v) => (faceSize = v as number)}
+        />
+        <ParamRowTick sample={demoTick} />
+      </li>
+      <li class="face-row">
+        <span class="pdot flat" aria-hidden="true"></span>
+        <span class="sig-plabel">blend</span>
+        <FaceParamControl
+          kind="enum"
+          value={faceBlend}
+          display={faceBlend}
+          options={FACE_BLENDS}
+          ariaLabel="Blend"
+          onChange={(v) => (faceBlend = v as string)}
+        />
+      </li>
+      <li class="face-row">
+        <span class="pdot flat" aria-hidden="true"></span>
+        <span class="sig-plabel">mirror</span>
+        <FaceParamControl
+          kind="bool"
+          value={faceMirror}
+          display={faceMirror ? 'on' : 'off'}
+          ariaLabel="Mirror"
+          onChange={(v) => (faceMirror = v as boolean)}
+        />
+      </li>
+    </ul>
   </DemoCard>
 
   <DemoCard
@@ -308,6 +416,7 @@
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
+      <li><strong>A face param row and a modulation target row are the same row.</strong> "Put this param on the node face" ≡ "expose it for modulation" — one gesture, one list (<code>node.modInputs</code>), rendered as face rows on the card and as the Parameters section in the inspector. The row is editable in place (<code>FaceParamControl</code>: number drag / enum cycle chip / bool switch), and one drag is one undo. A NUMBER row also carries the <code>param:&#123;key&#125;</code> handle; an enum or bool row does not, because nothing can modulate it. A wired row keeps its control and badges the modulation — the value shown is the BASE, as on <code>ColorSwatch</code>.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
       <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
@@ -317,13 +426,26 @@
 
 <style>
   .canvas-demo {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    height: 400px;
-  }
-  .canvas-cell {
+    position: relative;
     min-width: 0;
     min-height: 0;
+    height: 400px;
+  }
+  .add-affordance {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 6;
+  }
+  /* inspector-slideover stub — mirrors InspectorSlideover.svelte's chrome (see the src pointer) */
+  .slideover-stub {
+    display: grid;
+    grid-template-rows: auto auto;
+    width: 340px;
+    background: var(--surface);
+    border-left: 1px solid var(--border-faint);
+    box-shadow: -12px 0 28px rgb(0 0 0 / 0.35);
+    overflow: hidden;
   }
   .insp-hint {
     margin: 0;
@@ -363,6 +485,44 @@
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
+  }
+  /* face-param demo — the node-card footer row, at the card's real metrics (22px tall,
+     ~226px of usable width) so the styleguide shows the actual squeeze the control lives in */
+  .face-demo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 226px;
+  }
+  .face-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 22px;
+    padding: 0 var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .face-row .sig-plabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .face-row .pdot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
+  }
+  .face-row .pdot.flat {
+    border-color: var(--border-faint);
   }
   .contract {
     margin-top: var(--space-5);

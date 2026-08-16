@@ -5,8 +5,8 @@ Headless captures of the running app via system Chrome (playwright-core, `channe
 The interface is **semantic**, not maintenance-driven. You capture a surface by its accessible name and put the app into the state you need with a tiny state string — you do **not** register a screenshot name or hand-write a click chain.
 
 ```bash
-pnpm ui-shot --view trigger --target "Node editor"                       # by accessible name
-pnpm ui-shot --state "view:trigger,add:scope,select:scope" --target "Node editor" --name scope
+pnpm ui-shot --view trigger --target "Inspector"                         # by accessible name
+pnpm ui-shot --state "view:trigger,add:scope,select:scope" --target "Inspector" --name scope
 pnpm ui-shot --discover --view trigger                                    # what can I capture here?
 pnpm ui-shot gen3-scope-inspector                                         # a named preset
 pnpm ui-shot --all --strict                                               # sweep, fail on console errors
@@ -29,7 +29,7 @@ A **bare** string walks the whole chain. A **prefix** forces one resolver:
 | `text:`    | `text:Mix`                                          | visible text |
 | `node:`    | `node:controller`                                   | svelte-flow node containing that text |
 | `button:`  | `button:Add Scope`                                  | button by name |
-| _(none)_   | `Node editor`, `main.center`, `.graphbar`           | walk the chain (CSS if all else fails) |
+| _(none)_   | `Inspector`, `main.center`, `.graphbar`             | walk the chain (CSS if all else fails) |
 
 If a surface has an accessible name, it is screenshot-able — no registration.
 
@@ -47,10 +47,14 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `graph:<g>` | open a trigger graph by key / key-prefix (`snare`) / label; bare `graph` keeps the pre-selected pad |
 | `new-graph` | author a fresh empty graph and select it — a clean slate for `add`/`select` free of authored-graph id clashes |
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
-| `select:<k>`| select the node most recently `add`ed with that kind (flips the Node Editor to Inspector) |
+| `select:<k>`| select the node most recently `add`ed with that kind (opens the Inspector slideover) |
 | `gallery`   | open the effect gallery for the selected / last-added effect node |
 | `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
+| `mode:<m>`  | set that node's play mode (`mode:loop`) — a `oneshot` fire is gone before the shot lands, so sustained states need this first |
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
+| `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
+| `face-params[:wired\|:mixed]`| author a node with exposed param rows on its FACE — bare = two number rows on an Effect, `:wired` also wires an LFO into the first (driven state), `:mixed` uses a Modifier so a number AND an enum row show on one card |
+| `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |
 | `settings`  | open the app Settings dialog |
 | `velocity-curve[:<drum>]`| author a non-identity velocity sensitivity curve on a drum and open Settings › Drum trigger zones (`velocity-curve:kick`; bare = the first drum) — pair with `fire:<drum>` to catch the live hit marker |
 
@@ -82,7 +86,7 @@ Both take the same target syntax as `--target`, and both are also preset fields 
 Presets are **for CI/sweep stability and locked baselines only** — not a registry you must feed for every new component. Each is a record:
 
 ```json
-{ "gen3-scope-inspector": { "state": "view:trigger,add:scope,select:scope", "target": "Node editor" } }
+{ "gen3-scope-inspector": { "state": "view:trigger,add:scope,select:scope", "target": "Inspector" } }
 ```
 
 Fields: `state`, `target`, optional `name` (defaults to the key), optional `viewport` (`"1280x800"`), optional `settle` (ms — for animated canvases: visualizer, patch, gallery). Run one by name (`pnpm ui-shot gen3-scope-inspector`), list them (`--list`), or sweep all (`--all`).
@@ -91,7 +95,7 @@ Fields: `state`, `target`, optional `name` (defaults to the key), optional `view
 
 The rule is **not** "register every component." It is:
 
-- **Every meaningful UI surface must have an accessible name** — a role + name, or an `aria-label`. If a surface is accessible, it is screenshot-able. (`.node-editor` carries `aria-label="Node editor"`; that is all `--target "Node editor"` needs.)
+- **Every meaningful UI surface must have an accessible name** — a role + name, or an `aria-label`. If a surface is accessible, it is screenshot-able. (`.slideover` carries `aria-label="Inspector"`; that is all `--target "Inspector"` needs.)
 - **Reusable primitives may optionally emit `data-ui`** derived from their existing props — a stable hook that costs no new state.
 - **`data-shot` is reserved** for the rare surface that genuinely can't get a stable accessible name. Adding one is a smell — prefer fixing the accessible name.
 - **New app state a shot needs = extend `__LEDRUMS_SHOT__`** with one adapter method (`shot-seam.ts`), never a bespoke click script in a preset.
