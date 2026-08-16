@@ -32,6 +32,12 @@ function settle(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
 
+/** Split on the FIRST separator only, so a value may contain it. */
+function splitOnce(text: string, sep: string): [string, string | undefined] {
+  const i = text.indexOf(sep);
+  return i < 0 ? [text, undefined] : [text.slice(0, i), text.slice(i + sep.length)];
+}
+
 export interface ShotSeam {
   /** Close every summoned drawer/modal and drop the inspector selection. */
   reset(): void;
@@ -47,6 +53,20 @@ export interface ShotSeam {
   newGraph(): void;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
+  /** Author a one-effect graph, set the named params on it, place it in the active section
+      and FIRE it — so a capture can show what an effect actually renders, at whatever moment
+      `--settle` lands on. The route to "does this effect's Life param do anything" and to any
+      other look-of-the-render shot; without it, proving engine behaviour needs a click chain
+      through the gallery and a slider. */
+  fireEffect(generatorId: string, params: Record<string, number>): void;
+  /** Fire the graph {@link fireEffect} last authored, again. Connected, the show reaches the
+      server asynchronously, so the fire that rides the same tick as the authoring can land
+      before the engine has the graph — sequence `fire:…,refire` to fire once the sync has
+      had a beat. */
+  refire(): void;
+  /** Hold the op sequence for `ms` — for state that lands asynchronously (the debounced show
+      sync to the engine), which no amount of rAF settling will cover. */
+  wait(ms: number): Promise<void>;
   /** Select a node — by the kind most recently added, by node id, else the first
       non-trigger node. Flips the Node Editor to its Inspector tab. */
   selectNode(kindOrId: string): void;
@@ -131,6 +151,8 @@ class ShotSeamImpl implements ShotSeam {
       the scope node `add:scope` just created without threading its id through the CLI. */
   private added = new Map<NodeKind, GraphNode>();
   private lastAdded: GraphNode | null = null;
+  /** The graph {@link fireEffect} authored, so {@link refire} can fire it again. */
+  private firedGraphKey: string | null = null;
 
   constructor(
     private readonly store: TriggerLab,
@@ -184,6 +206,41 @@ class ShotSeamImpl implements ShotSeam {
       this.lastAdded = node;
     }
     return node;
+  }
+
+  fireEffect(generatorId: string, params: Record<string, number>): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const section = this.store.activeSection;
+    if (!section) return;
+    const key = this.store.createGraph(`Shot ${generatorId}`);
+    const created = this.store.addNode('effect', 360, 200);
+    if (!created) return;
+    // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
+    // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
+    // re-resolve through the graph or the edit lands on a detached object.
+    const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
+    const target = live();
+    if (target) this.store.pickEffect(target, `gen:${generatorId}`);
+    for (const [paramKey, value] of Object.entries(params)) {
+      const node = live();
+      if (node) this.store.setParam(node, paramKey, value);
+    }
+    // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
+    // Output, but nothing drives it.
+    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+    if (trigger) this.store.connect(trigger.id, created.id);
+    this.store.addGraphToSection(section.id, key);
+    this.firedGraphKey = key;
+    this.refire();
+  }
+
+  wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  }
+
+  refire(): void {
+    const index = this.firedGraphKey ? (this.store.activeSection?.graphs.indexOf(this.firedGraphKey) ?? -1) : -1;
+    if (index >= 0) this.store.fireSectionGraph(index);
   }
 
   selectNode(kindOrId: string): void {
@@ -500,13 +557,17 @@ class ShotSeamImpl implements ShotSeam {
       const idx = trimmed.indexOf(':');
       const op = (idx >= 0 ? trimmed.slice(0, idx) : trimmed).trim();
       const arg = idx >= 0 ? trimmed.slice(idx + 1).trim() : undefined;
-      this.runOp(op, arg);
+      await this.runOp(op, arg);
       await settle();
     }
   }
 
-  private runOp(op: string, arg?: string): void {
+  private runOp(op: string, arg?: string): void | Promise<void> {
     switch (op) {
+      // wait:<ms> — hold the sequence. The show reaches the server on a 300ms debounce, so a
+      // capture that authors a graph and then fires it has to let the sync land in between.
+      case 'wait':
+        return this.wait(Number(arg) || 0);
       case 'reset':
         this.reset();
         break;
@@ -525,6 +586,21 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'select':
         if (arg) this.selectNode(arg);
+        break;
+      // fire:<generatorId>[:key=value[;key=value]] — e.g. `fire:chase-bands:lifeBeats=8`
+      case 'fire': {
+        if (!arg) break;
+        const [generatorId, spec] = splitOnce(arg, ':');
+        const params: Record<string, number> = {};
+        for (const pair of (spec ?? '').split(';')) {
+          const [k, v] = splitOnce(pair.trim(), '=');
+          if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
+        }
+        this.fireEffect(generatorId, params);
+        break;
+      }
+      case 'refire':
+        this.refire();
         break;
       case 'gallery':
         this.openGallery();

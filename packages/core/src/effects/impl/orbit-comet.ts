@@ -23,6 +23,8 @@ export const orbitComet: EffectGenerator<OrbitCometState> = {
   name: 'Orbit Comet',
   category: 'particle',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeBeats`, so the host voice must live that long.
+  voiceLife: { key: 'lifeBeats', unit: 'beats' },
   description:
     'Every hit launches a comet around the struck drum; its tail corkscrews up the hoop stack so one strike reads as a physical orbit, not a flat blink.',
   tags: ['particle', 'hit', 'per-drum', 'hoop-aware', 'emission', 'seeded'],

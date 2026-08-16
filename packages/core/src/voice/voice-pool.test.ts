@@ -38,6 +38,7 @@ const deps = (timeMs: number): SpawnDeps => ({
   busById: new Map([['lead', monoBus]]),
   latched: new Map(),
   timeMs,
+  bpm: 120,
 });
 
 describe('VoicePool — mono steal resets voice age (S25)', () => {

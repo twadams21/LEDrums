@@ -725,6 +725,7 @@ class VoiceBusEngine implements RenderEngine {
         busById: this.busById,
         latched: this.latched,
         timeMs: this.timeMs,
+        bpm: this.bpm,
       });
     }
   }
@@ -805,6 +806,7 @@ class VoiceBusEngine implements RenderEngine {
           busById: this.busById,
           latched: this.latched,
           timeMs: this.timeMs,
+          bpm: this.bpm,
           pad,
         });
       }
