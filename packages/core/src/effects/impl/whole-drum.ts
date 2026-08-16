@@ -1,5 +1,6 @@
 import { hsvToRgb } from '../../color/color';
 import { pnum, pbool, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 /**
  * Whole Drum: a hit lights every pixel of the struck drum, fading over decayMs
@@ -18,6 +19,9 @@ export const wholeDrum: EffectGenerator = {
   name: 'Whole Drum',
   category: 'trigger',
   timebase: 'voice',
+  // Not a cutoff: the struck drum's every pixel fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
     { key: 'noteHue', label: 'Note Hue', type: 'bool', default: false },

@@ -26,6 +26,8 @@ export const scanPlane: EffectGenerator<ScanPlaneState> = {
   name: 'Scan Plane',
   category: 'trigger',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeMs`, so the host voice must live that long.
+  voiceLife: { key: 'lifeMs', unit: 'ms' },
   description:
     'Every hit launches a bright 3D scanning plane through the kit; the band crosses the gaps between drums before slicing across the next shell.',
   tags: ['wave', 'hit', '3d', 'kit-wide', 'airspace', 'emission'],

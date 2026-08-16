@@ -279,6 +279,7 @@ describe('modulation graph — end to end (engine render path)', () => {
     busById: new Map([['main', bus]]),
     latched: new Map(),
     timeMs,
+    bpm: 120,
   });
 
   /** Build a graph whose one play node exposes `brightness`, driven by one rise envelope. */
