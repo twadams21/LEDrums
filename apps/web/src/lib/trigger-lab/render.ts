@@ -150,7 +150,13 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       cfg,
     );
     // `dark`: nothing until this unit's turn — measured on the voice's age, mirroring core.
-    if (cfg.waitMode === 'dark' && delay > 0 && age < delay) return;
+    if (cfg.waitMode !== 'lit' && delay > 0 && age < delay) return;
+    // `pulse` runs the authored envelope per unit, mirroring core.
+    const unitLevel =
+      cfg.waitMode === 'pulse'
+        ? voice.unitEnvelopeLevel(age - delay, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
+        : 1;
+    if (unitLevel <= 0) return;
     const unitAge = voice.unitMotionAge(motionClock, delay);
     const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
     const shift =
@@ -173,7 +179,7 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
         let g = src[j3 + 1]! / 255;
         let b = src[j3 + 2]! / 255;
         if (r <= 0 && g <= 0 && b <= 0) continue;
-        const w = span <= 1 ? w0 : w0 + (w1 - w0) * (i / span);
+        const w = (span <= 1 ? w0 : w0 + (w1 - w0) * (i / span)) * unitLevel;
         if (w <= 0) continue;
         if (colour) ({ r, g, b } = voice.tintPixel(r, g, b, colour, cfg.tint));
         // Accumulate: across a smudge two splices write the same pixel with weights summing to 1.

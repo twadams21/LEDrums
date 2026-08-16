@@ -296,12 +296,15 @@ export type SpliceMotionMode = 'restart' | 'continuous' | 'latched';
  *              kit is fully lit from the first frame and the cascade reads as motion.
  * - `'dark'` — it emits nothing at all until its turn comes, so the light itself travels
  *              across the hoops (or drums) rather than the movement travelling through
- *              already-lit ones.
+ *              already-lit ones. Once lit it stays up for the rest of the voice.
+ * - `'pulse'` — as `'dark'`, and it runs its OWN attack/hold/fade as the cascade reaches it,
+ *               then goes dark again: a pulse of light travelling across the kit rather than
+ *               a leading edge that leaves everything lit behind it.
  * Timed against the VOICE's age, not the motion clock, so it means the same thing under all
  * three {@link SpliceMotionMode}s — including `continuous`, whose clock has no zero to
  * measure a delay from.
  */
-export type SpliceWaitMode = 'lit' | 'dark';
+export type SpliceWaitMode = 'lit' | 'dark' | 'pulse';
 
 /**
  * One splice — what renders inside one band of the partition. Every field is optional
@@ -365,8 +368,12 @@ export interface SpliceConfig {
   smudge: number;
   /** Whether a hit restarts the motion or it free-runs across hits. */
   motionMode: SpliceMotionMode;
-  /** Whether a unit waiting its turn in the cascade is lit and still, or dark. */
+  /** Whether a unit waiting its turn in the cascade is lit and still, dark, or pulsing. */
   waitMode: SpliceWaitMode;
+  /** The AUTHORED envelope, carried here as well as on the action because `'pulse'` runs it
+      per unit — and the voice's own `sustainMs` is extended to outlive the cascade, so it is
+      no longer the authored hold by the time the compositor sees it. */
+  envelope: { attackMs: number; sustainMs: number; releaseMs: number };
   /** 0..1 strength of the colour tint applied to an effect splice. */
   tint: number;
   /** Per-slot authored colour (null = none), index-aligned with the splice slots. */

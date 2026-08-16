@@ -74,6 +74,7 @@ export function spliceLayerOptions(buses: readonly Bus[]): Array<{ value: string
 export const SPLICE_WAIT_MODE_OPTS: Array<{ value: voice.SpliceWaitMode; label: string }> = [
   { value: 'lit', label: 'Lit' },
   { value: 'dark', label: 'Dark' },
+  { value: 'pulse', label: 'Pulse' },
 ];
 
 /** What a unit does before the cascade reaches it — the difference is whether the LIGHT travels
@@ -81,6 +82,7 @@ export const SPLICE_WAIT_MODE_OPTS: Array<{ value: voice.SpliceWaitMode; label: 
 export const SPLICE_WAIT_MODE_HINTS: Record<voice.SpliceWaitMode, string> = {
   lit: 'Everything lights at once and holds still until the movement reaches it.',
   dark: 'Nothing lights until its turn comes, so the light itself travels across the kit.',
+  pulse: 'Each one runs its own attack, hold and fade as the cascade reaches it, then goes dark again — a pulse travelling across the kit.',
 };
 
 /** What one partition unit IS, for labelling the cascade controls — the offset runs across

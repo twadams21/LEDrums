@@ -49,13 +49,14 @@ import {
   type Show,
   type TriggerGraph,
   type TriggerSource,
+  type Voice,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
 import { relativeNavTarget, type NavAxis } from './navigation';
 import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
-import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
+import { SPLICE_FILL_EFFECT_ID, maxCascadeDelayMs, spliceFillEffectDef } from './splice';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -359,6 +360,22 @@ class VoiceBusEngine implements RenderEngine {
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
     this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+  }
+
+  /**
+   * A cascading splice has to OUTLIVE its cascade: the last hoop's turn comes
+   * `maxCascadeDelayMs` after the hit, so a voice whose hold ends before then would be cut off
+   * mid-travel and the far side of the kit would never light at all. Extend the hold by exactly
+   * that span. Done here rather than in the voice pool because the span depends on the MODEL
+   * (how many hoops, how many drums), which only the engine holds.
+   *
+   * The authored envelope is untouched on `splice.envelope`, which is what `'pulse'` runs per
+   * unit — so extending the voice does not stretch each unit's own attack/hold/fade.
+   */
+  private extendForCascade(voice: Voice | null): void {
+    if (!voice?.splice || !this.model) return;
+    const extra = maxCascadeDelayMs(this.model, voice.splice);
+    if (extra > 0) voice.sustainMs += extra;
   }
 
   /**
@@ -763,12 +780,14 @@ class VoiceBusEngine implements RenderEngine {
       if (!effectId) continue;
       const action = this.lookAction(effectId, `Section: ${section.name}`);
       if (!action) continue;
-      this.voices.spawn(action, null, 1, {
-        effectsById: this.effectsById,
-        busById: this.busById,
-        latched: this.latched,
-        timeMs: this.timeMs,
-      });
+      this.extendForCascade(
+        this.voices.spawn(action, null, 1, {
+          effectsById: this.effectsById,
+          busById: this.busById,
+          latched: this.latched,
+          timeMs: this.timeMs,
+        }),
+      );
     }
   }
 
@@ -843,13 +862,15 @@ class VoiceBusEngine implements RenderEngine {
       } else if (a.kind === 'pending') {
         this.enqueuePendingFire(a.descriptor);
       } else {
-        this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
-          effectsById: this.effectsById,
-          busById: this.busById,
-          latched: this.latched,
-          timeMs: this.timeMs,
-          pad,
-        });
+        this.extendForCascade(
+          this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
+            effectsById: this.effectsById,
+            busById: this.busById,
+            latched: this.latched,
+            timeMs: this.timeMs,
+            pad,
+          }),
+        );
       }
     }
   }

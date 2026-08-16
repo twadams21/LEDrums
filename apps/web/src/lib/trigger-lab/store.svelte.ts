@@ -932,6 +932,7 @@ export class TriggerLab {
     // Build the sim from the (possibly restored) arrays — it snapshots `buses` by reference and
     // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
     this.sim = new Sim(this.buses, this.effects, this.presets);
+    this.sim.pixelModel = this.labModel.pm;
     this.client = makeClient();
   }
 
@@ -1261,6 +1262,7 @@ export class TriggerLab {
     this.applyAuthored(prev.authored);
     this.normalizeGraphs();
     this.sim = new Sim(this.buses, this.effects, this.presets);
+    this.sim.pixelModel = this.labModel.pm;
     this.sim.clearPendingFires();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the

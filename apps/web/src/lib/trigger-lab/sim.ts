@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
+import { voice, voice as coreVoice, type BlendMode, type PixelModel, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
@@ -355,6 +355,13 @@ export class Sim {
    */
   private spliceMotionMs = new Map<string, number>();
 
+  /**
+   * The kit geometry, set by the store once the lab model is built. Needed only so a cascading
+   * splice voice can be extended to outlive its cascade (the span depends on how many hoops and
+   * drums there are) — everything else in the sim is geometry-free.
+   */
+  pixelModel: PixelModel | null = null;
+
   ccTable = new Map<string, number>();
 
   /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
@@ -558,6 +565,10 @@ export class Sim {
       a.splice && spliceMembers.length
         ? { ...a.splice, inputBySlot: a.splice.inputBySlot.map((i) => (i < 0 ? -1 : spliceRemap.get(i) ?? -1)) }
         : undefined;
+    // Via the `coreVoice` alias: the local `const voice` below shadows the `voice` namespace for
+    // this whole function (TDZ), which is the same trap the `seed` comment above warns about.
+    // The span depends on the MODEL (hoops per drum, drum count) — see `extendForCascade`.
+    const cascadeExtraMs = spliceConfig && this.pixelModel ? coreVoice.maxCascadeDelayMs(this.pixelModel, spliceConfig) : 0;
     const voice: Voice = {
       id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
@@ -592,6 +603,9 @@ export class Sim {
       pad: this.stateKey,
       originNodeId: a.originNodeId,
     };
+    // A cascading splice has to outlive its cascade or the far side of the kit never lights;
+    // mirrors the engine's `extendForCascade`.
+    if (cascadeExtraMs > 0) voice.sustainMs += cascadeExtraMs;
     this.voices.push(voice);
     if (a.latchKey) this.latched.set(a.latchKey, voice.id);
     return voice;

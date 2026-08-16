@@ -36,6 +36,7 @@ import {
   spliceOrderIndex,
   spliceTintColour,
   unitCascadeDelayMs,
+  unitEnvelopeLevel,
   unitMotionAge,
   tintPixel,
   type SpliceBand,
@@ -348,7 +349,16 @@ export function createDefaultCompositor(): Compositor {
             // rather than the movement travelling through already-lit hoops. Measured against
             // the voice's own age, not the motion clock — `continuous` has no zero to count a
             // delay from, and a hit should always cascade from the moment it was struck.
-            if (cfg.waitMode === 'dark' && delay > 0 && age < delay) continue;
+            if (cfg.waitMode !== 'lit' && delay > 0 && age < delay) continue;
+            // `pulse` runs the AUTHORED envelope per unit, started at this unit's turn, so the
+            // light travels as a pulse instead of a leading edge. The voice's own level still
+            // multiplies in below (it handles the bus, deck gain and any steal), and the voice
+            // was extended at spawn so the far side of the kit is not cut off mid-cascade.
+            const unitLevel =
+              cfg.waitMode === 'pulse'
+                ? unitEnvelopeLevel(age - delay, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
+                : 1;
+            if (unitLevel <= 0) continue;
             const unitAge = unitMotionAge(motionClock, delay);
             const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
             const shift =
@@ -375,7 +385,7 @@ export function createDefaultCompositor(): Compositor {
                 // Accumulate, never assign: across a smudge two neighbouring splices write the
                 // same pixel with complementary weights that sum to 1. With no smudge the
                 // weights are 1 and the bands never overlap, so this is still a plain copy.
-                const w = span <= 1 ? w0 : w0 + (w1 - w0) * (i / span);
+                const w = (span <= 1 ? w0 : w0 + (w1 - w0) * (i / span)) * unitLevel;
                 if (w <= 0) continue;
                 if (colour) {
                   const t = tintPixel(r, g, b, colour, cfg.tint);

@@ -282,6 +282,34 @@ export function unitMotionAge(ageMs: number, delayMs: number): number {
   return own > 0 ? own : 0;
 }
 
+/**
+ * The LONGEST cascade delay any unit of this splice will take on the given model — what a voice
+ * has to outlive for the cascade to finish rather than being cut off mid-travel. Derived from
+ * the model's shape rather than by walking units, so the engine can extend a voice at spawn.
+ */
+export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number {
+  if (cfg.partition === 'scope' || model.drums.length === 0) return 0;
+  const drums = model.drums.length;
+  const primary = cfg.partition === 'drum' ? drums : Math.max(...model.drums.map((d) => d.hoopCount));
+  return Math.max(0, (primary - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs);
+}
+
+/**
+ * One unit's own envelope level 0..1 in `'pulse'`, from the age it has had SINCE its turn came:
+ * the same attack → hold → fade shape the voice runs, just started later. Before its turn (a
+ * negative age) it is 0, and once its fade has run out it is 0 again — which is what makes the
+ * light a travelling pulse rather than a leading edge.
+ */
+export function unitEnvelopeLevel(ownAgeMs: number, attackMs: number, sustainMs: number, releaseMs: number): number {
+  if (!(ownAgeMs > 0)) return 0;
+  if (ownAgeMs < attackMs) return ownAgeMs / attackMs;
+  const held = attackMs + sustainMs;
+  if (ownAgeMs <= held) return 1;
+  const fade = Math.max(1, releaseMs);
+  const out = 1 - (ownAgeMs - held) / fade;
+  return out > 0 ? out : 0;
+}
+
 /** A unit's total cascade delay: its place on the hoop axis plus its place on the drum axis. */
 export function unitCascadeDelayMs(orderIndex: number, drumOrderIndex: number, cfg: SpliceConfig): number {
   return orderIndex * cfg.offsetMs + drumOrderIndex * cfg.drumOffsetMs;
@@ -531,12 +559,14 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
 
   if (members.length === 0) return null;
 
+  const envelope = {
+    attackMs: clampInt(node.spliceAttackMs ?? DEFAULT_SPLICE_ATTACK_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+    sustainMs: clampInt(node.spliceHoldMs ?? DEFAULT_SPLICE_HOLD_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+    releaseMs: clampInt(node.spliceReleaseMs ?? DEFAULT_SPLICE_RELEASE_MS, 0, MAX_SPLICE_ENVELOPE_MS),
+  };
+
   return {
-    envelope: {
-      attackMs: clampInt(node.spliceAttackMs ?? DEFAULT_SPLICE_ATTACK_MS, 0, MAX_SPLICE_ENVELOPE_MS),
-      sustainMs: clampInt(node.spliceHoldMs ?? DEFAULT_SPLICE_HOLD_MS, 0, MAX_SPLICE_ENVELOPE_MS),
-      releaseMs: clampInt(node.spliceReleaseMs ?? DEFAULT_SPLICE_RELEASE_MS, 0, MAX_SPLICE_ENVELOPE_MS),
-    },
+    envelope,
     config: {
       count,
       partition: node.splicePartition ?? 'hoop',
@@ -548,11 +578,14 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
       incrementPx: clampInt(node.spliceIncrementPx ?? DEFAULT_SPLICE_INCREMENT_PX, 0, MAX_SPLICE_INCREMENT_PX),
       offsetMs,
       order: node.spliceOrder ?? 'up',
-      drumOffsetMs,
+      // Zeroed off the hoop partition: elsewhere the primary axis IS the drum, so letting this
+      // through would delay every unit twice over.
+      drumOffsetMs: (node.splicePartition ?? 'hoop') === 'hoop' ? drumOffsetMs : 0,
       drumOrder: node.spliceDrumOrder ?? 'up',
       smudge: clamp01(node.spliceSmudge ?? 0),
       motionMode: node.spliceMotionMode ?? 'restart',
       waitMode: node.spliceWaitMode ?? 'lit',
+      envelope,
       tint: clamp01(node.spliceTint ?? 1),
       colors,
       inputBySlot,

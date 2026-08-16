@@ -121,8 +121,8 @@ describe('divisions', () => {
 });
 
 describe('wait mode options', () => {
-  it('offers lit and dark, and explains the difference', () => {
-    expect(SPLICE_WAIT_MODE_OPTS.map((o) => o.value)).toEqual(['lit', 'dark']);
+  it('offers all three, and explains the difference', () => {
+    expect(SPLICE_WAIT_MODE_OPTS.map((o) => o.value)).toEqual(['lit', 'dark', 'pulse']);
     for (const opt of SPLICE_WAIT_MODE_OPTS) expect(SPLICE_WAIT_MODE_HINTS[opt.value], opt.value).not.toBe('');
   });
 });

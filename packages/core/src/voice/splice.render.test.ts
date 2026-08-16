@@ -297,6 +297,38 @@ describe('splice — cascade offset across units', () => {
     expect(r + g + b, 'lit once past its 200ms turn').toBeGreaterThan(0);
   });
 
+  it('pulse runs each unit\'s own attack/hold/fade, so the light travels and leaves', () => {
+    // Hold 60ms + fade 40ms per unit, hoops 200ms apart. At 150ms hoop 1's own pulse is long
+    // over (its window closed at ~110ms) and hoop 2's has not opened — the kit is dark BETWEEN
+    // pulses, which a leading-edge cascade could never be.
+    const pulse = (atMs: number) =>
+      cascading(
+        { spliceOffsetMode: 'time', spliceOffsetMs: 200, spliceWaitMode: 'pulse', spliceAttackMs: 10, spliceHoldMs: 60, spliceReleaseMs: 40 },
+        atMs,
+      );
+    const early = pulse(40);
+    expect(early.rgb(0)[0] + early.rgb(0)[1] + early.rgb(0)[2], 'hoop 1 is mid-pulse').toBeGreaterThan(0);
+    expectRgb(early.rgb(4), DARK, 'hoop 2 has not started');
+
+    const between = pulse(150);
+    expectRgb(between.rgb(0), DARK, 'hoop 1 has pulsed and gone out again');
+    expectRgb(between.rgb(4), DARK, 'hoop 2 still waiting');
+
+    const later = pulse(240);
+    expectRgb(later.rgb(0), DARK, 'hoop 1 stays out');
+    expect(later.rgb(4)[0] + later.rgb(4)[1] + later.rgb(4)[2], 'hoop 2 is now pulsing').toBeGreaterThan(0);
+  });
+
+  it('outlives its own cascade, so the far side of the kit still gets its turn', () => {
+    // Hold 50ms with hoops 400ms apart: without extending the voice it would be reaped long
+    // before hoop 2's turn at 400ms, and half the kit would never light at all.
+    const late = cascading(
+      { spliceOffsetMode: 'time', spliceOffsetMs: 400, spliceWaitMode: 'pulse', spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 40 },
+      440,
+    );
+    expect(late.rgb(4)[0] + late.rgb(4)[1] + late.rgb(4)[2], 'hoop 2 lights on its turn').toBeGreaterThan(0);
+  });
+
   it('defaults to lit, so an un-authored cascade behaves as it always did', () => {
     const lit = cascading({ spliceOffsetMode: 'time', spliceOffsetMs: 200 }, 150);
     expectRgb(lit.rgb(4), RED, 'hoop 2 shows its resting cut rather than going dark');
