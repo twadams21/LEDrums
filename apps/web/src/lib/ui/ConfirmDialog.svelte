@@ -12,6 +12,7 @@
     confirmLabel = 'Confirm',
     cancelLabel = 'Cancel',
     danger = false,
+    layer = 1,
     onConfirm,
     onClose,
   }: {
@@ -21,6 +22,9 @@
     confirmLabel?: string;
     cancelLabel?: string;
     danger?: boolean;
+    /** Dialog stacking tier (forwarded) — pass caller's layer + 1 when confirming over
+        another dialog so this prompt sits above it. */
+    layer?: number;
     onConfirm: () => void;
     onClose?: () => void;
   } = $props();
@@ -35,7 +39,7 @@
   }
 </script>
 
-<Dialog {open} {title} onClose={close} class="confirm-dialog">
+<Dialog {open} {title} {layer} onClose={close} class="confirm-dialog">
   <div class="cd-body">
     <h2 class="cd-title">{title}</h2>
     {#if message}<p class="cd-msg">{message}</p>{/if}

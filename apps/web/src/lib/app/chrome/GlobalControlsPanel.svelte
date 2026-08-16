@@ -19,12 +19,23 @@
   import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
   import LearnButton from '../../ui/LearnButton.svelte';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import TypeChip from '../../ui/TypeChip.svelte';
   import { formatMidiNote, parseMidiNote } from '../../midi/midi-note';
   import { globalControlZoneWarning } from '../global-control-labels';
 
   let { store }: { store: TriggerLab } = $props();
 
   const locked = $derived(!store.canEdit || !store.project);
+
+  /* How the action consumes its input, as a typed chip: a press, a hold, or a value. It is
+     the reason one row shows a CC field and its neighbour does not, so naming it turns a
+     puzzling asymmetry into a stated rule. Hues are the signal-flow roles — input for a
+     press, mod for a hold, modulation for a continuous value. */
+  const KIND_TINT: Record<string, string> = {
+    trigger: 'var(--role-input)',
+    momentary: 'var(--role-mod)',
+    continuous: 'var(--role-modulation)',
+  };
 
   /** Commit a MIDI note field: an emptied field CLEARS the binding, an unparseable one is
       ignored (CommitInput has already reverted the draft). */
@@ -73,7 +84,10 @@
 </script>
 
 <section class="gc" aria-label="Global controls" data-shot="global-controls">
-  <span class="glabel">Global controls<em class="ghint">app-general MIDI / OSC</em></span>
+  <div class="ghead">
+    <span class="glabel">Global controls<em class="ghint">app-general MIDI / OSC</em></span>
+    <span class="gcount">{GLOBAL_CONTROL_CATALOG.length} actions</span>
+  </div>
 
   <ul class="rows">
     {#each GLOBAL_CONTROL_CATALOG as def (def.id)}
@@ -86,7 +100,11 @@
 
       <li class="row" class:bound={!!binding}>
         <div class="rhead">
-          <span class="rname">{def.label}</span>
+          <span class="rtitle">
+            <span class="rname">{def.label}</span>
+            <TypeChip label={def.kind} tint={KIND_TINT[def.kind]} title={`${def.kind} control`} />
+            {#if binding}<span class="rbound">bound</span>{/if}
+          </span>
           <span class="rhint">{def.hint}</span>
         </div>
 
@@ -191,6 +209,21 @@
     font-weight: 500;
     color: var(--text-muted);
   }
+  .ghead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .gcount {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
+  }
   .ghint {
     font-style: normal;
     color: var(--text-faint);
@@ -206,13 +239,16 @@
   .row {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    gap: var(--space-1_5);
+    padding: var(--space-2) var(--space-3);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     background: var(--surface-inset);
-    transition-property: border-color;
-    transition-duration: var(--dur-150);
+    transition-property: border-color, background-color;
+    transition-duration: var(--dur-120);
+  }
+  .row:hover {
+    background: var(--surface);
   }
   /* A bound control reads as configured at a glance, without shouting. */
   .row.bound {
@@ -221,8 +257,23 @@
   .rhead {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
     min-width: 0;
+  }
+  .rtitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  /* Mono state word, not a coloured pill: the row's border already carries "configured". */
+  .rbound {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--ok) 70%, var(--text-faint));
   }
   .rname {
     font-size: var(--text-sm);

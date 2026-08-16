@@ -61,14 +61,20 @@ export const compositionSchema = z.object({
 });
 
 /**
- * Each drum exposes up to 8 trigger slots (Sensory Percussion-style zones).
- * What a `(drum, slot)` hit DOES is decided by the active section's bindings.
+ * A drum's trigger slots (zones). The slot INDEX is the zone's stable identity: the engine
+ * keys pads `padKey(drumId, String(slot))`, a `drum` trigger source carries the same numeric
+ * string, and section bindings reference `(drumId, slot)` — so a slot number, once assigned,
+ * must never change under a zone. The zone's NAME is data (`declaredZoneSchema.label`).
+ *
+ * There is no upper bound (2026-08-14, Trent): a drum may declare as many zones as it needs.
+ * The Sensory Percussion 8-slot linkage is dead; {@link SLOT_LABELS} survives only as the
+ * default NAME for the first few slots, never as identity.
  */
 export const TRIGGER_SLOT_COUNT = 8;
 export const SLOT_LABELS = [
   'center', 'edge', 'rim-tip', 'rim-shoulder', 'shell', 'cross-stick', 'aux-1', 'aux-2',
 ] as const;
-export const slotSchema = z.number().int().min(0).max(TRIGGER_SLOT_COUNT - 1);
+export const slotSchema = z.number().int().min(0);
 
 /** Maps a MIDI note to a drum + trigger slot (velocity control + section routing). */
 export const midiNoteMapSchema = z.object({
@@ -84,13 +90,18 @@ export const oscMapSchema = z.object({
   slot: slotSchema.default(0),
 });
 
-/** A zone slot DECLARED on a drum but not (yet) bound to any MIDI note or OSC address — so an
-    added-but-unbound zone persists (the note/osc arrays only represent BOUND slots). A bound slot
-    is a zone too and need not be listed here; the effective zone set is the union of this list and
-    the bound slots. */
+/** A zone DECLARED on a drum: its stable slot identity and its display name. Declaring persists
+    an added zone before it carries any MIDI/OSC binding (the note/osc arrays only represent BOUND
+    slots), and it is where a renamed zone's name lives. A bound slot is a zone too and need not be
+    listed here; the effective zone set is the union of this list and the bound slots.
+
+    `label` empty = no name given, so the UI shows the slot's default name. The name is model data,
+    not a display override: "assign a MIDI note to a drum and give it a name" is what a zone IS
+    (Trent, 2026-08-14), so it round-trips with the project rather than living in client labels. */
 export const declaredZoneSchema = z.object({
   drumId: z.string(),
   slot: slotSchema.default(0),
+  label: z.string().default(''),
 });
 
 export const inputMapSchema = z.object({

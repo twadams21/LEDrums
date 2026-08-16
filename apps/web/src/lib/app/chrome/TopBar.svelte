@@ -1,19 +1,20 @@
 <script lang="ts">
-  /* Top bar: brand · show identity · presence · share · engine status · output pill.
-     The show control is the document identity: the active show's name shown + edited
-     in place (→ store.renameShow), with a ListMusic affordance that opens the show
-     browser (New / Open / Save / Save-As / Close / Rename / Delete). The live section
-     context rides underneath so the bar still reads at a glance. Transport lives in its
-     own bar below this one (see AuthorShell) — the bar stays an identity/status strip. */
+  /* Nav bar (tabbed chrome row 1): brand · view tabs · show identity + status.
+     The identity chip is the document control — the active show's name edited in
+     place (→ store.renameShow), the save state, and the ListMusic project menu
+     (ShowBrowser: New / Open / Save / Save-As / Rename / Delete). To its right:
+     Share, presence/takeover, Backups, UpdateBadge, and the Settings gear (the
+     Settings modal is shell-routed — `?settings=<pane>` deep-links open it too).
+     Engine stats (StatusBar · OutputPill) live in the bottom bar. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import OutputPill from './OutputPill.svelte';
+  import type { ShellStore } from '../shell-store.svelte';
+  import ViewTabs from './ViewTabs.svelte';
   import ShareInfo from './ShareInfo.svelte';
-  import StatusBar from '../../trigger-lab/StatusBar.svelte';
   import ShowBrowser from './ShowBrowser.svelte';
   import BackupsDialog from './BackupsDialog.svelte';
   import SaveIndicator from './SaveIndicator.svelte';
-  import AppSettingsDialog from './AppSettingsDialog.svelte';
   import UpdateBadge from './UpdateBadge.svelte';
+  import SettingsModal from '../settings/SettingsModal.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Logo from '../../ui/Logo.svelte';
@@ -21,15 +22,12 @@
   import History from '@lucide/svelte/icons/history';
   import Settings from '@lucide/svelte/icons/settings';
 
-  let { store }: { store: TriggerLab } = $props();
+  let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  const activeName = $derived(store.activeSection?.name ?? '—');
   const showName = $derived(store.activeShow?.name ?? 'Untitled show');
-  const sectionCount = $derived(store.activeSong?.sections.length ?? 0);
 
   let browserOpen = $state(false);
   let backupsOpen = $state(false);
-  let settingsOpen = $state(false);
   let editingName = $state(false);
 
   function commitName(name: string): void {
@@ -40,21 +38,23 @@
 
 <header class="topbar">
   <div class="brand">
-    <Logo size={28} />
+    <Logo size={24} />
     <span class="word">LEDrums</span>
   </div>
 
-  <div class="setlist">
-    <IconButton icon={ListMusic} label="Shows" size={15} onclick={() => (browserOpen = true)} />
-    <span class="set-labels">
+  <ViewTabs {shell} />
+
+  <div class="right">
+    <div class="identity">
+      <IconButton icon={ListMusic} label="Shows" size={15} onclick={() => (browserOpen = true)} />
       {#if editingName}
-        <span class="set-name-edit">
+        <span class="name-edit">
           <CommitInput value={showName} ariaLabel="Show name" onCommit={commitName} onCancel={() => (editingName = false)} />
         </span>
       {:else}
         <button
           type="button"
-          class="set-name"
+          class="name"
           title={store.canEdit ? 'Rename show' : 'Viewing — another client is editing'}
           disabled={!store.canEdit}
           onclick={() => store.canEdit && (editingName = true)}
@@ -62,12 +62,9 @@
           {showName}
         </button>
       {/if}
-      <span class="set-sub">{sectionCount} sections · {activeName}</span>
-    </span>
-    <SaveIndicator {store} />
-  </div>
-
-  <div class="right">
+      <SaveIndicator {store} />
+    </div>
+    <ShareInfo {store} />
     {#if store.canTakeover}
       <!-- Viewer (another client edits): clear read-only indicator + a one-press Takeover. -->
       <div class="presence presence--viewing">
@@ -84,18 +81,16 @@
         <span class="presence-label">You're editing</span>
       </div>
     {/if}
-    <ShareInfo {store} />
-    <UpdateBadge onOpen={() => (settingsOpen = true)} />
     <IconButton icon={History} label="Backups" size={15} onclick={() => (backupsOpen = true)} />
-    <IconButton icon={Settings} label="Settings" size={15} onclick={() => (settingsOpen = true)} />
-    <StatusBar {store} />
-    <OutputPill {store} />
+    <!-- The update flow lives in Settings › System — land the badge there, not the default pane. -->
+    <UpdateBadge onOpen={() => shell.openSettings('system')} />
+    <IconButton icon={Settings} label="Settings" size={15} onclick={() => shell.openSettings()} />
   </div>
 </header>
 
 <ShowBrowser {store} open={browserOpen} onClose={() => (browserOpen = false)} />
 <BackupsDialog {store} open={backupsOpen} onClose={() => (backupsOpen = false)} />
-<AppSettingsDialog {store} open={settingsOpen} onClose={() => (settingsOpen = false)} />
+<SettingsModal {store} {shell} />
 
 <style>
   .topbar {
@@ -120,32 +115,33 @@
     letter-spacing: var(--tracking-label);
     color: var(--ink);
   }
-  .setlist {
+  .right {
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-3);
+    gap: var(--space-3);
+    flex: none;
+    min-width: 0;
+  }
+
+  /* The show-identity chip: project menu · in-place-editable name · save state.
+     A fixed footprint so a longer/shorter name never reflows the controls to its
+     right — the name truncates within (.name max-width via flex/min-width). */
+  .identity {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-2);
     background: var(--surface-2);
-    color: var(--text-faint);
-    /* Fixed 300px footprint (basis, no grow/shrink) so a longer/shorter show name never
-       reflows the status cluster to its right — the name truncates within
-       (.set-labels flex:1/min-width:0 + .set-name max-width:100%). */
-    flex: 0 0 300px;
-  }
-  .set-labels {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.15;
-    flex: 1;
+    flex: 0 1 240px;
     min-width: 0;
   }
-  /* the show name is an in-place editable title: a bare button that reveals a CommitInput */
-  .set-name {
-    align-self: flex-start;
-    max-width: 100%;
-    margin: -2px -4px;
+  .name {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
     padding: 2px 4px;
     background: transparent;
     border: 1px solid transparent;
@@ -158,34 +154,21 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .set-name:hover:not(:disabled) {
+  .name:hover:not(:disabled) {
     background: var(--surface-3);
     border-color: var(--border);
   }
-  .set-name:disabled {
+  .name:disabled {
     cursor: default;
     opacity: 0.7;
   }
-  .set-name-edit {
+  .name-edit {
     display: block;
-    width: 180px;
-  }
-  .set-sub {
-    font-size: var(--text-2xs);
-    color: var(--text-faint);
-    font-variant-numeric: tabular-nums;
-  }
-  .right {
-    /* margin-left:auto pushes the status cluster to the far edge now that the
-       flex-grow transport slot that used to separate it is gone. */
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex: none;
+    flex: 1;
+    min-width: 120px;
   }
 
-  /* Multi-client editing indicator (S2): who holds the single authoring slot. */
+  /* Multi-client editing indicator: who holds the single authoring slot. */
   .presence {
     display: inline-flex;
     align-items: center;

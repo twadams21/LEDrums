@@ -1,4 +1,4 @@
-import { blockingRoutingIssues, projectPatchSchema, validateRouting } from '@ledrums/core';
+import { blockingRoutingIssues, introducedBlockingIssues, projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
@@ -483,7 +483,14 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     if (msg.t === 'setKitOutputs') {
       // Blocking (error) issues reject with ZERO state applied; `hoop-uncovered` warnings pass
       // through and apply (the editor indicates incomplete coverage, it doesn't block it) (B1).
-      const issues = blockingRoutingIssues(validateRouting(host.engine.getProject().kit, msg.outputs));
+      // DELTA gate: only issues the CURRENT routing doesn't already carry reject — a routing
+      // damaged by a kit change (hoop-count shrink while routed) must stay repairable one edit
+      // at a time, and the Settings chain editor commits through the same predicate.
+      const kit = host.engine.getProject().kit;
+      const issues = introducedBlockingIssues(
+        validateRouting(kit, kit.outputs),
+        validateRouting(kit, msg.outputs),
+      );
       if (issues.length) {
         const first = issues[0]!;
         ws.send(encodeServer({ t: 'error', message: `Invalid outputs: ${first.message}` }));

@@ -22,6 +22,9 @@ export {
 } from './schemas';
 export type { ClientMessage, ServerMessage } from './schemas';
 
+// The graph-fire contract carried on the `monitor` stream (server stamps, web reads back).
+export { graphFireKeyOf, graphFiredMonitorLabel, graphMonitorDestination } from './monitor-graph';
+
 // ---------------------------------------------------------------------------
 // Transport-level constants
 // ---------------------------------------------------------------------------
