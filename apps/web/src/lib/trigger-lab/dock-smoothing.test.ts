@@ -3,7 +3,7 @@ import { groupVoicesByBus, smoothBusLevels, smoothDockVoices, smoothingAlpha } f
 import type { DockVoice } from './dock-voices';
 
 const dv = (id: string, busId: string, level: number): DockVoice => ({
-  id, busId, effectId: 'fx', mode: 'oneshot', level, hue: 0, releasing: false, via: '',
+  id, busId, effectId: 'fx', mode: 'oneshot', level, hue: 0, releasing: false, via: '', pad: 'graph:1',
 });
 
 describe('smoothingAlpha', () => {

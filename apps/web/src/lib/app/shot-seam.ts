@@ -16,7 +16,7 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
-import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
+import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
@@ -56,6 +56,10 @@ export interface ShotSeam {
       card click drives — so any registered effect's params/thumbnail are capturable without
       choreographing a scroll-and-click through a 50-card grid. */
   pickEffect(effectId: string): void;
+  /** Set that same node's play mode (`mode:loop`). A `oneshot` fire is gone within a frame or
+      two, so a sustained state — a held loop, and anything keyed off it — is only capturable
+      with the node switched first. */
+  setPlayMode(mode: PlayMode): void;
   /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
       `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
   firePad(drumId?: string): void;
@@ -234,6 +238,11 @@ class ShotSeamImpl implements ShotSeam {
   pickEffect(effectId: string): void {
     const target = this.effectTarget();
     if (target) this.store.pickEffect(target, effectId);
+  }
+
+  setPlayMode(mode: PlayMode): void {
+    const target = this.effectTarget();
+    if (target) this.store.setMode(target, mode);
   }
 
   firePad(drumId?: string): void {
@@ -531,6 +540,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'effect':
         if (arg) this.pickEffect(arg);
+        break;
+      case 'mode':
+        if (arg === 'oneshot' || arg === 'loop' || arg === 'hold') this.setPlayMode(arg);
         break;
       case 'fire':
         this.firePad(arg);

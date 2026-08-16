@@ -50,6 +50,11 @@
     "state": "view:trigger",
     "target": ".grail"
   },
+  "graphs-rail-playing": {
+    "state": "view:trigger,graph:kick,mode:loop,fire:kick",
+    "target": ".grail",
+    "settle": 2500
+  },
   "visualizer": {
     "state": "view:trigger",
     "target": "aside.col2 .viz",
