@@ -1,6 +1,7 @@
 import { distance } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, pstr, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 export type WashMode = 'out' | 'in' | 'bounce';
 
@@ -36,6 +37,9 @@ export const radialWash: EffectGenerator = {
   name: '3D Radial Wash',
   category: 'wash',
   timebase: 'voice',
+  // Not a cutoff: the wave fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

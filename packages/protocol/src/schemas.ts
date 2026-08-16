@@ -305,6 +305,7 @@ const voiceStatSchema = z.object({
   hue: z.number(),
   releasing: z.boolean(),
   via: z.string(),
+  pad: z.string(),
 });
 
 const voiceStatsSchema = z.object({

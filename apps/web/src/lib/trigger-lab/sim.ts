@@ -21,7 +21,7 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
+import { resolveVoiceSustainMs, voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
 import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
@@ -540,7 +540,10 @@ export class Sim {
       mixBlendMode: a.mixBlendMode,
       params: { ...a.params },
       attackMs: effect.attackMs,
-      sustainMs: effect.sustainMs,
+      // Sustain follows the effect's OWN life param when it declares one (mirrors core
+      // VoicePool.spawn) — otherwise the category envelope reaps the voice before the
+      // effect's internal fade finishes and its Life slider looks inert.
+      sustainMs: resolveVoiceSustainMs(effect.generatorId, a.params, this.bpm, effect.sustainMs),
       releaseMs: effect.releaseMs,
       phase: 'attack',
       level: 0,

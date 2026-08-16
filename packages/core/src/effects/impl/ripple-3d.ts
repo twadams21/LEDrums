@@ -23,6 +23,8 @@ export const ripple3d: EffectGenerator<Ripple3dState> = {
   name: 'Ripple 3D',
   category: 'trigger',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeMs`, so the host voice must live that long.
+  voiceLife: { key: 'lifeMs', unit: 'ms' },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },

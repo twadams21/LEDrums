@@ -7,7 +7,10 @@
      and its trigger source. Clicking a card opens it on the canvas. Firing ticks a quiet
      accent marker in the card's left edge, keyed off store.graphFireAt (the one fire signal:
      keyboard, local hit and SERVER engine fires all land there, so a hit traces to its card
-     in both modes). Right-click carries the card's verbs; "+ Add graph" opens the library
+     in both modes); a graph whose loop/hold voices are still sounding also wears a steady
+     "playing" dot, so the kit's current light always traces back to a card. Those answer
+     different questions and can be lit at once.
+     Right-click carries the card's verbs; "+ Add graph" opens the library
      picker. Section switching lives outside the rail (the shell's sections bar and the global
      ←/→ hotkeys), so this pane is just the active section's graphs. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -109,6 +112,7 @@
         {@const thumb = g ? graphThumb(g) : null}
         {@const links = placements(key)}
         {@const firedAt = store.graphFireAt[key]}
+        {@const playing = store.playingGraphs.has(key)}
         {#if renaming === key}
           <div class="gcard gedit">
             <CommitInput
@@ -144,6 +148,11 @@
               {/if}
               <span class="gscrim" aria-hidden="true"></span>
               <span class="gbadges">
+                {#if playing}
+                  <Tooltip text="Playing — this graph is holding voices on the kit" side="left">
+                    <span class="gplay" role="img" aria-label="Playing"></span>
+                  </Tooltip>
+                {/if}
                 {#if links > 1}
                   <Tooltip text="Linked · placed in {links} sections" side="left">
                     <span class="glink"><Link2 size={11} aria-hidden="true" />{links}</span>
@@ -292,6 +301,17 @@
   .gcard.sel .khot {
     border-color: var(--accent-dim);
     color: var(--accent);
+  }
+  /* NOW PLAYING — a lit pixel, not an animation. The fire marker owns the transient; this owns
+     the sustained state, so it must be readable at a glance while never pulling the eye off the
+     canvas. A static halo does the work a pulse would. */
+  .gplay {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-dim);
   }
   .glink {
     display: inline-flex;

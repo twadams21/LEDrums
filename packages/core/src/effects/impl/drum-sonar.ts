@@ -20,6 +20,8 @@ export const drumSonar: EffectGenerator<DrumSonarState> = {
   name: 'Drum Sonar',
   category: 'trigger',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeMs`, so the host voice must live that long.
+  voiceLife: { key: 'lifeMs', unit: 'ms' },
   description:
     'Every hit pings the struck drum with expanding hoop-level sonar rings and a faint angular sweep, turning the shell into a radar display.',
   tags: ['wave', 'hit', 'per-drum', 'hoop-aware', 'emission'],

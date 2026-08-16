@@ -49,6 +49,7 @@ import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { playingGraphKeys } from './graph-liveness';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
@@ -753,6 +754,11 @@ export class TriggerLab {
       serverVoices: this.serverVoices,
     }),
   );
+
+  /** Graph keys with a sustained (loop/hold) voice alive right now — the graph rail's "now
+      playing" marks. Derived from {@link dockVoices}, the authoritative list, NOT the smoothed
+      display one (which decays late and would hold the mark lit past the sound). */
+  playingGraphs = $derived<Set<string>>(playingGraphKeys(this.dockVoices));
 
   /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
       them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
