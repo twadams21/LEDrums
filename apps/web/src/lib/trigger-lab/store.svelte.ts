@@ -1876,10 +1876,14 @@ export class TriggerLab {
 
   stopBus(busId: string): void {
     this.sim.stopBus(busId);
+    // Connected: the server's voice engine is authoritative — the local release alone
+    // changes nothing on the rig (the old "Release <bus>" buttons only ever stopped the sim).
+    if (this.link === 'open') this.client.send({ t: 'releaseBus', busId });
     this.snapshot();
   }
   panic(): void {
     this.sim.stopAll();
+    if (this.link === 'open') this.client.send({ t: 'releaseBus' });
     this.snapshot();
   }
 

@@ -58,6 +58,7 @@
     onNodeLeave,
     onConnect,
     onReconnect,
+    onReconnectAbandon,
     onDelete,
     onNodeDragStop,
     onNodeDrag,
@@ -103,6 +104,11 @@
     onNodeLeave?: () => void;
     onConnect?: (c: Connection) => void;
     onReconnect?: (oldEdge: Edge, conn: Connection) => void;
+    /** A reconnect grab was released over NOTHING (no handle at all) — the wire was dragged
+        away and dropped. Views that own wire deletion (Trigger graph) remove the edge here;
+        omit it (Patch graph) and an abandoned grab snaps back like before. A drop on a
+        wrong-but-real handle still snaps back either way. */
+    onReconnectAbandon?: (edgeId: string) => void;
     onDelete?: (detail: DeleteDetail) => void;
     onNodeDragStop?: (detail: DragStop) => void;
     onNodeDrag?: (detail: Drag) => void;
@@ -150,6 +156,9 @@
       onnodepointerleave={() => onNodeLeave?.()}
       onconnect={onConnect}
       onreconnect={onReconnect}
+      onreconnectend={(_e, edge, _ht, state) => {
+        if (state.toHandle == null) onReconnectAbandon?.(edge.id);
+      }}
       ondelete={(detail) => onDelete?.(detail as DeleteDetail)}
       onnodedrag={(detail) => onNodeDrag?.(detail as Drag)}
       onnodedragstop={(detail) => onNodeDragStop?.(detail as DragStop)}
@@ -265,31 +274,40 @@
     stroke: transparent;
     stroke-opacity: 0;
   }
-  /* modifier-chain wires read distinctly from trigger-flow wires by their dashed stroke alone:
-     the wire itself stays grey (signal-flow wires are intentionally de-coloured), so only the
-     dash separates the modifier chain from the trigger flow at a glance. */
+  /* modifier-chain wires are SOLID PINK (the modify role) — role colour, not dash, is what
+     separates them from the grey trigger/effect flow (Trent, 2026-08-13). */
   .gcanvas :global(.svelte-flow__edge.edge-mod .svelte-flow__edge-path) {
-    stroke-dasharray: 5 4;
+    stroke: var(--role-mod);
   }
-  /* modulation wires (source→param) are the one coloured flow — a value routed into a parameter
-     is a genuinely different wire from signal flow, so it keeps the modulation role colour + a
-     finer dotted stroke to read distinctly from the grey trigger/modifier wires. */
+  /* modulation wires (source→param) are solid in the modulation role colour — a value routed
+     into a parameter is a genuinely different wire from signal flow. */
   .gcanvas :global(.svelte-flow__edge.edge-modulation .svelte-flow__edge-path) {
     stroke: var(--role-modulation);
-    stroke-dasharray: 2 3;
   }
-  /* a directly hovered or selected wire lights up accent (the instant-hover interaction
-     contract); signal-flow wires otherwise read grey. */
-  .gcanvas :global(.svelte-flow__edge.selected .svelte-flow__edge-path),
-  .gcanvas :global(.svelte-flow__edge:hover .svelte-flow__edge-path) {
+  /* a directly hovered or selected FLOW wire lights up accent (the instant-hover interaction
+     contract); role-coloured wires keep their colour and thicken instead, so pink stays pink
+     and blue stays blue under selection (their grab dots carry the same colour). */
+  .gcanvas :global(.svelte-flow__edge.selected:not(.edge-mod):not(.edge-modulation) .svelte-flow__edge-path),
+  .gcanvas :global(.svelte-flow__edge:hover:not(.edge-mod):not(.edge-modulation) .svelte-flow__edge-path) {
     stroke: var(--accent);
   }
-  /* Reconnect grab dots. The reconnect anchor (and this dot) render in xyflow's `edge-labels`
-     PORTAL — NOT inside `.svelte-flow__edge` — so they can't key off edge hover/selection in
-     CSS. WireEdge pushes the state down instead: hovering the wire's hit-path (or selecting
-     the wire) stamps `.show` on both end dots, so the affordance appears exactly when the wire
-     has your attention and a dense graph carries zero dot noise at rest. The 25px anchor stays
-     grabbable regardless. All state changes are instant (locked graph contract). */
+  .gcanvas :global(.svelte-flow__edge.edge-mod.selected .svelte-flow__edge-path),
+  .gcanvas :global(.svelte-flow__edge.edge-mod:hover .svelte-flow__edge-path),
+  .gcanvas :global(.svelte-flow__edge.edge-modulation.selected .svelte-flow__edge-path),
+  .gcanvas :global(.svelte-flow__edge.edge-modulation:hover .svelte-flow__edge-path) {
+    stroke-width: 2.2;
+  }
+  /* Reconnect grab dots. Anchors render in xyflow's `edge-labels` PORTAL, and WireEdge
+     renders them ONLY while the wire is selected, concentric OVER the node handles at the
+     wire's endpoints. Raising the portal above the nodes layer is what lets a selected
+     wire's dot win the pointer contest with the handle's 50px new-wire overlay — safe
+     because unselected wires contribute nothing to the portal, so handles keep their full
+     reach at rest. Dots are solid discs in the wire's own colour (WireEdge sets `--dot`),
+     larger than the 10px node handles and stepping up in grab range. All state changes are
+     instant (locked graph contract). */
+  .gcanvas :global(.svelte-flow__edge-labels) {
+    z-index: 5;
+  }
   .gcanvas :global(.svelte-flow__edgeupdater) {
     display: flex;
     align-items: center;
@@ -300,43 +318,21 @@
     cursor: grabbing;
   }
   .gcanvas :global(.reconnect-dot) {
-    display: none;
-    width: 9px;
-    height: 9px;
+    display: block;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
-    border: 2px solid var(--border-strong);
-    /* canvas-coloured fill + halo punch the dot out of the wire beneath it */
-    background: var(--bg-perform);
-    box-shadow: 0 0 0 2px var(--bg-perform);
+    background: var(--dot, var(--accent));
   }
-  .gcanvas :global(.reconnect-dot.show) {
-    display: block;
-  }
-  /* direction reads from the pair: the source end is a hollow ring, the target end filled */
-  .gcanvas :global(.svelte-flow__edgeupdater-target .reconnect-dot) {
-    background: var(--border-strong);
-  }
-  /* Entering the 25px hit-box is "grab range": the dot steps up and lights accent the moment
-     the cursor can actually grab — the hit-box/visual gap is made legible rather than closed.
-     `display:block` here also reveals a dot approached directly, before any wire hover. */
   .gcanvas :global(.svelte-flow__edgeupdater:hover .reconnect-dot) {
-    display: block;
-    width: 13px;
-    height: 13px;
-    border-color: var(--accent);
+    width: 18px;
+    height: 18px;
   }
-  .gcanvas :global(.svelte-flow__edgeupdater-target:hover .reconnect-dot) {
-    background: var(--accent);
-  }
-  /* WireEdge stamps these on the edge path: `wire-grab` while an anchor is hovered (the wire
-     lights up to confirm WHICH run the grab would re-point — ends can sit close together);
-     `wire-reconnecting` mid-drag (the old run dims while the accent connection line previews
-     the new one). Placed after the hover/selection rules so they win the cascade. */
-  .gcanvas :global(.svelte-flow__edge-path.wire-grab) {
-    stroke: var(--accent);
-  }
-  .gcanvas :global(.svelte-flow__edge-path.wire-reconnecting) {
-    stroke-opacity: 0.35;
+  /* Mid-drag the original run disappears entirely — the accent connection line IS the wire
+     while it's being re-pointed; a ghost of the old run reads as two wires. Same specificity
+     as the hover/selection rules, later in the cascade, so it wins. */
+  .gcanvas :global(.svelte-flow__edge .svelte-flow__edge-path.wire-reconnecting) {
+    stroke: transparent;
   }
   /* R08: a wire ARMED for a splice (a node is dragged over it) lights accent, thickens, and
      glows — the pending insert reads clearly BEFORE release. Instant, no motion (the locked
@@ -355,6 +351,12 @@
   .gcanvas :global(.svelte-flow__handle.mod-source-handle) {
     background: color-mix(in oklch, var(--role-modulation) 30%, var(--surface-2));
     border-color: var(--role-modulation);
+  }
+  /* the modifier-chain input wears the MODIFY role (pink) — matching its solid pink wires,
+     distinct from the blue modulation ports above. */
+  .gcanvas :global(.svelte-flow__handle.mod-handle) {
+    background: color-mix(in oklch, var(--role-mod) 30%, var(--surface-2));
+    border-color: var(--role-mod);
   }
   /* editable: handles are grabbable wiring affordances (accent on hover / wiring) */
   .gcanvas :global(.svelte-flow__handle) {

@@ -87,6 +87,10 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       voiceHost.applyInput({ kind: 'recallSection', songId: msg.songId, sectionId: msg.sectionId });
       return true;
     }
+    if (msg.t === 'releaseBus') {
+      voiceHost.applyInput({ kind: 'releaseBus', busId: msg.busId });
+      return true;
+    }
     if (msg.t === 'midi') {
       if (msg.on && msg.velocity > 0) {
         voiceHost.applyInput({ kind: 'noteOn', note: msg.note, velocity: msg.velocity / 127, channel: msg.channel });
@@ -118,6 +122,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
     msg.t === 'key' ||
     msg.t === 'fireGraph' ||
     msg.t === 'recallSection' ||
+    msg.t === 'releaseBus' ||
     msg.t === 'cc' ||
     msg.t === 'programChange'
   ) {

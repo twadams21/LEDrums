@@ -50,7 +50,8 @@ export type VoicePartialInput =
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number }
   | { kind: 'recallSection'; songId?: string; sectionId: string }
-  | { kind: 'cc'; controller: number; value: number; channel?: number }; // S37
+  | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
+  | { kind: 'releaseBus'; busId?: string };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -468,6 +469,9 @@ export class VoiceEngineHost {
           velocity: partial.velocity ?? 1,
           timeMs,
         };
+      case 'releaseBus':
+        // The dock's stop button: release the bus's voices (absent busId = all buses).
+        return { kind: 'releaseBus', busId: partial.busId, timeMs };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
         // action and never reaches the zone-map or a trigger-source graph (the same

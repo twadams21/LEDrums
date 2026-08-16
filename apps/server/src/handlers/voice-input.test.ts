@@ -152,3 +152,25 @@ describe('handleVoiceInput — fireGraph intent fires the exact graph once (S13)
     expect(Object.values(host.getStats().engine.busLevels).filter((l) => l > 0)).toHaveLength(0);
   });
 });
+
+/* releaseBus — the dock's per-bus stop button finally reaches the live engine: the message
+   rides the deterministic input queue like every other performance input. */
+describe('handleVoiceInput — releaseBus routes to the engine input queue', () => {
+  it('maps the message to a releaseBus input (bus-scoped and all-buses)', () => {
+    const applied: unknown[] = [];
+    const deps: VoiceInputDeps = {
+      voiceHost: { applyInput: (e: unknown) => applied.push(e) } as never,
+      broadcastJson: () => {},
+    };
+    expect(handleVoiceInput({ t: 'releaseBus', busId: 'lead' }, deps)).toBe(true);
+    expect(handleVoiceInput({ t: 'releaseBus' }, deps)).toBe(true);
+    expect(applied).toEqual([
+      { kind: 'releaseBus', busId: 'lead' },
+      { kind: 'releaseBus', busId: undefined },
+    ]);
+  });
+
+  it('is consumed as a no-op in legacy mode (no voice host)', () => {
+    expect(handleVoiceInput({ t: 'releaseBus' }, { voiceHost: null, broadcastJson: () => {} })).toBe(true);
+  });
+});

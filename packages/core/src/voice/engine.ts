@@ -65,7 +65,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -91,6 +91,8 @@ export interface InputEvent {
       re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
       precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
   graphKey?: string;
+  /** releaseBus: release every active voice on this bus (absent = all buses — panic). */
+  busId?: string;
   timeMs: number;
 }
 
@@ -437,6 +439,18 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   private processEvent(e: InputEvent): void {
+    if (e.kind === 'releaseBus') {
+      // The dock's explicit stop: release EVERY active voice on the bus — loops included
+      // (releasing the Base bus means "stop the base look"), unlike the softer
+      // releaseTriggerVoices. Absent busId = all buses (panic). Voices fade on their own
+      // release envelopes rather than cutting.
+      for (const v of this.voices.pool) {
+        if (v.active && v.phase !== 'release' && (!e.busId || v.busId === e.busId)) {
+          releaseVoice(v, this.timeMs);
+        }
+      }
+      return;
+    }
     if (e.kind === 'recallSection') {
       // Activate a section so subsequent hits fire its slot graphs (layered).
       this.recallTo(e.songId ?? null, e.sectionId ?? null);
