@@ -56,7 +56,9 @@ today inside the new drawer), settings view, patch view, other views' right colu
 
 ## Evidence
 
-- Full sweep green at committed HEAD (typecheck 0, `pnpm test`), pushed.
+- Typecheck 0 + targeted vitest for the files you touched, committed HEAD pushed. **Do NOT run
+  the full `pnpm test` sweep — orchestrator-only rule (parallel sweeps can crash this
+  machine); the orchestrator sweeps at review.**
 - ui-shot: drawer closed / open-over-docks / add-popover open — `--strict` (zero console
   errors). Existing NodeEditor presets updated rather than deleted.
 - Styleguide: slideover + popover demoed; design-system.html regenerated in the same change.

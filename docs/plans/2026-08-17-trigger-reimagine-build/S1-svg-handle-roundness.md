@@ -40,7 +40,9 @@ regen only if the styleguide actually renders this view).
 
 ## Evidence
 
-- `pnpm typecheck` 0; targeted vitest for envelope-editor-geom green; full sweep green at HEAD.
+- `pnpm typecheck` 0; targeted vitest for envelope-editor-geom green. **Do NOT run the full
+  `pnpm test` sweep — orchestrator-only rule (parallel sweeps can crash this machine); the
+  orchestrator sweeps at review.**
 - ui-shot of the envelope node inspector at default drawer width showing round handles
   (there are existing envelope-related presets in `scripts/ui-shot/shots.json`; add one if none
   captures the drawer case).
