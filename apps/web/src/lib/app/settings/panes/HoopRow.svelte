@@ -34,6 +34,7 @@
 </script>
 
 <div class="hooprow">
+  <span class="idx">{hoop}</span>
   <span class="name">
     <CommitInput
       value={patchLabel(store, nodeId, fallback)}
@@ -79,6 +80,15 @@
 <style>
   .hooprow {
     display: contents;
+  }
+  /* Right-aligned mono index — the row's position, read before its name. */
+  .idx {
+    align-self: center;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+    text-align: right;
   }
   .name,
   .px,

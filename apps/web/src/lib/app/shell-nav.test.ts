@@ -99,8 +99,8 @@ describe('openSettings / closeSettings', () => {
 });
 
 describe('SETTINGS_PANES', () => {
-  it('is the section order — the S4 panes, no general catch-all', () => {
-    expect(SETTINGS_PANES).toEqual(['input', 'drums', 'outputs', 'controller', 'system']);
+  it('is the section order — no general catch-all', () => {
+    expect(SETTINGS_PANES).toEqual(['input', 'zones', 'controls', 'drums', 'outputs', 'controller', 'system']);
   });
 });
 
@@ -130,6 +130,10 @@ describe('parseSearch', () => {
   it('reads the Settings-pane deep-link', () => {
     expect(parseSearch('?settings=outputs')).toEqual({ settings: 'outputs' });
     expect(parseSearch('?view=sections&settings=controller')).toEqual({ view: 'sections', settings: 'controller' });
+  });
+  it('reads the sections split out of Input', () => {
+    expect(parseSearch('?settings=zones')).toEqual({ settings: 'zones' });
+    expect(parseSearch('?settings=controls')).toEqual({ settings: 'controls' });
   });
   it('drops unknown views and panes (kit is gone)', () => {
     expect(parseSearch('?view=nope')).toEqual({});

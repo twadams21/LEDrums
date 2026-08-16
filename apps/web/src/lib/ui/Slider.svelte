@@ -4,6 +4,7 @@
      readout can never drift apart. Pass `value` one-way with `onChange`, or
      `bind:value` — both work. */
   import { Slider } from 'bits-ui';
+  import { wheelStep } from './wheel-step';
 
   type Props = {
     value: number;
@@ -109,9 +110,28 @@
     emit(next);
     if (!editing) draft = formatNumber(normalizeNumber(next, min, max, step), precision);
   }
+
+  /* Wheel-adjust: one step per tick anywhere over the slider (track or readout). Emitted
+     straight through — a slider already publishes continuously while dragged, so a tick is
+     the same kind of event, not a new commit contract. Attached by hand so the listener is
+     non-passive: a passive one cannot preventDefault, and the pane would scroll underneath. */
+  let root: HTMLDivElement;
+
+  function onWheel(e: WheelEvent): void {
+    if (disabled) return;
+    const next = wheelStep({ value: normalizedValue, deltaY: e.deltaY, min, max, step });
+    if (next === null) return;
+    e.preventDefault();
+    emit(Number(next));
+  }
+
+  $effect(() => {
+    root.addEventListener('wheel', onWheel, { passive: false });
+    return () => root.removeEventListener('wheel', onWheel);
+  });
 </script>
 
-<div class={['slider', klass]} class:disabled>
+<div bind:this={root} class={['slider', klass]} class:disabled>
   <Slider.Root
     type="single"
     bind:value

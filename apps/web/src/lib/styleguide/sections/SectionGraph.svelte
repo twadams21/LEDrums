@@ -21,6 +21,7 @@
   import ParamRowTick from '../../app/views/ParamRowTick.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
+  import Link2 from '@lucide/svelte/icons/link-2';
   import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import { makeNode } from '../../trigger-lab/sim';
   import { graphThumb } from '../../app/views/graph-thumb';
@@ -54,23 +55,24 @@
     { node: makeNode('modifier', 'sg-mod'), label: 'Modifier · transform curve' },
   ];
 
-  // Graphs-rail stub data: two doodle graphs through the real graphThumb projection.
+  // Graphs-rail stub data: two doodle graphs through the real graphThumb projection. Each node
+  // carries its KIND, so the dots wear the same type tints the node cards do (#177).
   const railThumbA = graphThumb({
     nodes: [
-      { id: 't', x: 0, y: 60 }, { id: 'r', x: 120, y: 60 },
-      { id: 'a', x: 240, y: 10 }, { id: 'b', x: 240, y: 110 },
+      { id: 't', x: 0, y: 60, kind: 'trigger' }, { id: 'r', x: 120, y: 60, kind: 'random' },
+      { id: 'a', x: 240, y: 10, kind: 'play' }, { id: 'b', x: 240, y: 110, kind: 'play' },
     ],
     edges: [
       { from: 't', to: 'r' }, { from: 'r', to: 'a' }, { from: 'r', to: 'b' },
     ],
   });
   const railThumbB = graphThumb({
-    nodes: [{ id: 't', x: 0, y: 0 }, { id: 'p', x: 200, y: 90 }],
+    nodes: [{ id: 't', x: 0, y: 0, kind: 'trigger' }, { id: 'p', x: 200, y: 90, kind: 'play' }],
     edges: [{ from: 't', to: 'p' }],
   });
   const railCards = [
-    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true },
-    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false },
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0 },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3 },
   ];
 
   const face = (kind: NodeKind, sub: string) => ({
@@ -268,7 +270,7 @@
   <DemoCard
     title="Graphs rail (store-free stub)"
     src="lib/app/views/TriggerGraphsRail"
-    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps and the dashed new-graph card, stacked vertically. The live rail binds the TriggerLab store (fire flash rides store.lastSectionFire) and resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store: the fire indicator rides store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there) and ticks a quiet accent marker in the card's left edge, decaying over --dur-150; right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
     <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">
@@ -277,15 +279,19 @@
       <div class="stub-cards">
         {#each railCards as cItem (cItem.hk)}
           <button type="button" class="stub-card" class:sel={cItem.sel}>
-            <span class="stub-hot">{cItem.hk}</span>
-            <svg class="stub-thumb" viewBox="0 0 172 104" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <span class="stub-badges">
+              {#if cItem.links > 1}<span class="stub-link"><Link2 size={11} aria-hidden="true" />{cItem.links}</span>{/if}
+              <span class="stub-hot">{cItem.hk}</span>
+            </span>
+            <svg class="stub-thumb" viewBox="0 0 172 64" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
               {#each cItem.thumb.paths as d (d)}<path {d} />{/each}
-              {#each cItem.thumb.dots as p, di (di)}<circle cx={p.x} cy={p.y} r="3.5" />{/each}
+              {#each cItem.thumb.dots as p, di (di)}<circle cx={p.x} cy={p.y} r="3.4" fill={p.kind ? tint[p.kind] : 'var(--accent-dim)'} />{/each}
             </svg>
+            <span class="stub-scrim"></span>
             <span class="stub-meta"><span class="stub-name">{cItem.name}</span><span class="stub-sub">{cItem.sub}</span></span>
           </button>
         {/each}
-        <button type="button" class="stub-new">+ New graph</button>
+        <button type="button" class="stub-new">+ Add graph</button>
       </div>
     </div>
   </DemoCard>
@@ -435,10 +441,16 @@
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
   }
-  .stub-hot {
+  .stub-badges {
     position: absolute;
     top: 8px;
     right: 8px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .stub-hot {
     display: grid;
     place-items: center;
     min-width: 20px;
@@ -457,21 +469,41 @@
     border-color: var(--accent-dim);
     color: var(--accent);
   }
+  .stub-link {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 18px;
+    padding: 0 6px 0 5px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--surface-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+  }
   .stub-thumb {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    opacity: 0.55;
+    opacity: 0.72;
+    pointer-events: none;
+  }
+  .stub-scrim {
+    position: absolute;
+    inset: 40% 0 0;
+    background: linear-gradient(to bottom, transparent, var(--surface-2));
     pointer-events: none;
   }
   .stub-thumb path {
     fill: none;
     stroke: var(--border);
     stroke-width: 1.4;
-  }
-  .stub-thumb circle {
-    fill: var(--accent-dim);
   }
   .stub-meta {
     position: absolute;

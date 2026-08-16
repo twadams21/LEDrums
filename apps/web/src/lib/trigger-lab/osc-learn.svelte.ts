@@ -19,9 +19,13 @@
    ============================================================================= */
 import type { GlobalControlAction, GlobalControlBinding } from '@ledrums/core';
 
-/** What an armed OSC learn is waiting to bind. A union from the start: the global
-    controls are the first users, per-zone / trigger-source OSC learn can join. */
-export type OscLearnTarget = { kind: 'global-control'; action: GlobalControlAction };
+/** What an armed OSC learn is waiting to bind: an app-general control, or one drum zone's
+    OSC address. The zone arm mirrors the MIDI zone learn that already existed — typing an
+    OSC address by hand was the only way to bind one, which is exactly the thing learn exists
+    to avoid (Trent, 2026-08-14). Identity is the SLOT, never the zone's name. */
+export type OscLearnTarget =
+  | { kind: 'global-control'; action: GlobalControlAction }
+  | { kind: 'zone'; drumId: string; slot: number };
 
 /** The store-side surface an OSC bind writes through — injected so this controller
     stays free of the project/routing plumbing. */
@@ -32,6 +36,8 @@ export interface OscLearnHost {
       whether the write was ACCEPTED — `false` means the binding guard refused the address
       because another group already owns it (see `binding-claims`). */
   setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
+  /** Write one zone's OSC address — same `setInputMap` gate, same accepted/refused contract. */
+  setZoneOscAddress(drumId: string, slot: number, address: string): boolean;
 }
 
 export class OscLearnController {
@@ -63,7 +69,11 @@ export class OscLearnController {
     if (!target || this.host.isViewer()) return;
     const trimmed = address.trim();
     if (!trimmed) return;
-    if (!this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed })) return;
+    const bound =
+      target.kind === 'global-control'
+        ? this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed })
+        : this.host.setZoneOscAddress(target.drumId, target.slot, trimmed);
+    if (!bound) return;
     this.target = null;
   }
 }

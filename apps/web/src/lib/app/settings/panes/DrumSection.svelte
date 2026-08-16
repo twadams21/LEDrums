@@ -18,6 +18,7 @@
   import type { PatchRouting } from '../../patch-routing';
   import { drumPixelTotal, hoopIndices, pixelsForHoopIn } from './drums-hoops';
   import HoopRow from './HoopRow.svelte';
+  import ListHead from '../../../ui/ListHead.svelte';
 
   let { store, drum, kit, routing }: {
     store: TriggerLab;
@@ -85,7 +86,8 @@
         {/each}
       </div>
     </div>
-    <Field layout="row" label="Colour" hint="drum swatch">
+    <div class="set-grid">
+    <Field label="Colour" info="Drum swatch.">
       <ColorSwatch
         hue={swatch.h}
         saturation={swatch.s}
@@ -95,7 +97,7 @@
         onChange={(hsv) => store.setDrumTransform(drum.id, { color: hsvToHex(hsv.h, hsv.s, hsv.v) })}
       />
     </Field>
-    <Field layout="row" label="Starting angle" hint="all hoops">
+    <Field label="Starting angle" info="All hoops.">
       <CommitInput
         type="number"
         value={drum.startAngleDeg}
@@ -105,7 +107,7 @@
         onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { startAngleDeg: n }))}
       />
     </Field>
-    <Field layout="row" label="Spin" hint="rotates pixel 0 around the hoop">
+    <Field label="Spin" info="Rotates pixel 0 around the hoop.">
       <CommitInput
         type="number"
         value={drum.localSpinDeg}
@@ -115,7 +117,7 @@
         onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { localSpinDeg: n }))}
       />
     </Field>
-    <Field layout="row" label="Hoop spacing" hint="vertical gap between hoops">
+    <Field label="Hoop spacing" info="Vertical gap between hoops.">
       <CommitInput
         type="number"
         min={1}
@@ -126,7 +128,7 @@
         onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { hoopSpacingMm: n }))}
       />
     </Field>
-    <Field layout="row" label="Diameter" hint="drum size — sets ring radius">
+    <Field label="Diameter" info="Drum size — sets ring radius.">
       <CommitInput
         type="number"
         min={1}
@@ -137,7 +139,7 @@
         onCommit={(v) => onNum(v, (n) => store.setDrumTransform(drum.id, { diameterIn: n }))}
       />
     </Field>
-    <Field layout="row" label="Flip drum" hint="rotate in place — mirror skins + reverse chase">
+    <Field label="Flip drum" info="Rotate in place — mirror skins + reverse chase.">
       <Toggle
         pressed={drum.flip ?? false}
         disabled={!project}
@@ -147,9 +149,12 @@
         onChange={(v) => store.setDrumTransform(drum.id, { flip: v })}
       />
     </Field>
+    </div>
     <ReadRow label="Bound trigger" value={boundLabel ?? bound?.label ?? '—'} />
 
+    <ListHead label="Hoops" count={hoops.length} />
     <div class="hoopgrid" role="group" aria-label={`${patchLabel(store, nodeId, fallback)} hoops`}>
+      <span class="hcol right">#</span>
       <span class="hcol">Hoop</span>
       <span class="hcol">Pixels</span>
       <span class="hcol">Reverse</span>
@@ -239,7 +244,7 @@
   /* Hoop rows: one shared column template; HoopRow cells join via display:contents. */
   .hoopgrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 6.5rem max-content max-content max-content;
+    grid-template-columns: 1.6rem minmax(0, 1fr) 6.5rem max-content max-content max-content;
     align-items: center;
     column-gap: var(--space-2);
     row-gap: var(--space-1);

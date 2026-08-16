@@ -10,29 +10,30 @@
   import type { Component } from 'svelte';
   import Dialog from '../../ui/Dialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import SettingsNav from './SettingsNav.svelte';
   import InputPane from './panes/InputPane.svelte';
+  import DrumZonesPane from './panes/DrumZonesPane.svelte';
+  import GlobalControlsPane from './panes/GlobalControlsPane.svelte';
   import DrumsHoopsPane from './panes/DrumsHoopsPane.svelte';
   import OutputsChainsPane from './panes/OutputsChainsPane.svelte';
   import ControllerPane from './panes/ControllerPane.svelte';
   import SystemPane from './panes/SystemPane.svelte';
-  import Music from '@lucide/svelte/icons/music';
-  import CircleDot from '@lucide/svelte/icons/circle-dot';
-  import Cable from '@lucide/svelte/icons/cable';
-  import Cpu from '@lucide/svelte/icons/cpu';
-  import Wrench from '@lucide/svelte/icons/wrench';
   import X from '@lucide/svelte/icons/x';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  /** The section registry — order matches SETTINGS_PANES (shell-nav). Every pane
-      receives `{ store }`; the S2 stubs simply ignore it until their slice lands. */
-  const SECTIONS: Array<{ id: SettingsPane; label: string; icon: Component; pane: Component<{ store: TriggerLab }> }> = [
-    { id: 'input', label: 'Input', icon: Music, pane: InputPane },
-    { id: 'drums', label: 'Drums & Hoops', icon: CircleDot, pane: DrumsHoopsPane },
-    { id: 'outputs', label: 'Outputs & Chains', icon: Cable, pane: OutputsChainsPane },
-    { id: 'controller', label: 'Controller', icon: Cpu, pane: ControllerPane },
-    { id: 'system', label: 'System', icon: Wrench, pane: SystemPane },
-  ];
+  /** Route → pane component. `Record<SettingsPane, …>` makes the compiler the coverage
+      check: a new section id doesn't build until it has a pane. Labels, icons and hues
+      are the registry's (`sections.ts`) — the sidebar and each pane header read them. */
+  const PANES: Record<SettingsPane, Component<{ store: TriggerLab }>> = {
+    input: InputPane,
+    zones: DrumZonesPane,
+    controls: GlobalControlsPane,
+    drums: DrumsHoopsPane,
+    outputs: OutputsChainsPane,
+    controller: ControllerPane,
+    system: SystemPane,
+  };
 
   const open = $derived(shell.settingsPane !== null);
   /* On close the route goes null while the Dialog is still tearing down — without the
@@ -43,7 +44,8 @@
   $effect(() => {
     if (shell.settingsPane !== null) lastPane = shell.settingsPane;
   });
-  const active = $derived(SECTIONS.find((s) => s.id === (shell.settingsPane ?? lastPane)) ?? SECTIONS[0]!);
+  const active = $derived(shell.settingsPane ?? lastPane);
+  const ActivePane = $derived(PANES[active]);
 
   /** Every close path (X, Esc, backdrop) disarms any pending MIDI/OSC learn — an arm
       left live after the modal closes is invisible, and the next stray input would
@@ -61,24 +63,20 @@
     <IconButton icon={X} label="Close settings" size={15} onclick={close} />
   </header>
   <div class="split">
-    <nav class="snav" aria-label="Settings sections">
-      {#each SECTIONS as s (s.id)}
-        <button type="button" class="sitem" class:on={active.id === s.id} onclick={() => shell.openSettings(s.id)}>
-          <s.icon size={14} aria-hidden="true" />
-          {s.label}
-        </button>
-      {/each}
-    </nav>
+    <SettingsNav {active} onSelect={(id) => shell.openSettings(id)} />
     <div class="pane">
-      <active.pane {store} />
+      <ActivePane {store} />
     </div>
   </div>
 </Dialog>
 
 <style>
+  /* 760, not 680: the Controller pane is the tallest thing Settings has to show, and it is
+     read while diagnosing a rig — the whole picture beats a scrollbar. Still clamped to the
+     viewport, so a short screen degrades to scrolling rather than clipping. */
   :global(.settings-modal) {
     width: min(980px, calc(100vw - 48px));
-    height: min(680px, calc(100vh - 48px));
+    height: min(760px, calc(100vh - 48px));
   }
   .head {
     display: flex;
@@ -100,36 +98,6 @@
     min-height: 0;
     flex: 1;
   }
-  .snav {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-2);
-    border-right: 1px solid var(--border-faint);
-    background: var(--surface-2);
-  }
-  .sitem {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px var(--space-3);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-2);
-    font-size: var(--text-sm);
-    color: var(--text-muted);
-    text-align: left;
-    cursor: pointer;
-  }
-  .sitem:hover {
-    color: var(--text);
-    background: var(--surface-3);
-  }
-  .sitem.on {
-    background: var(--surface-3);
-    color: var(--ink);
-    border-color: var(--border);
-  }
   .pane {
     display: flex;
     flex-direction: column;
@@ -138,6 +106,9 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* The panes' field grids size off THIS box, not the viewport — the modal is a fixed
+       width, so a viewport query would answer the wrong question. */
+    container-type: inline-size;
   }
   /* Keep the panes' selects (MIDI channel etc.) form-width in the wide pane. */
   .pane :global(.sel) {

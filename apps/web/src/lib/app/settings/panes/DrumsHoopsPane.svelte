@@ -1,6 +1,7 @@
 <script lang="ts">
   /* Settings › Drums & Hoops (S4b) — kit geometry, re-homed from the Patch graph's
-     kit / drum / hoop inspectors: kit-wide geometry defaults (setKitGlobal), then one
+     kit / drum / hoop inspectors: kit-wide geometry defaults (setKitGlobal, mirror
+     among them — it is a world reflection, geometry, not a controller setting), then one
      collapsible card per drum (DrumSection → setDrumTransform + per-hoop setHoopConfig /
      identifyHoop). Reads the AUTHORITATIVE routing straight from the project
      (outputsToPatch(kit.outputs)) for the hoop pixel-span read-outs; a read-only viewer
@@ -10,7 +11,9 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import Field from '../../../ui/Field.svelte';
+  import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import ReadRow from '../../docks/inspectors/ReadRow.svelte';
+  import PaneHeader from '../PaneHeader.svelte';
   import { onNum } from '../../docks/inspectors/forms';
   import { totalKitPixelCount } from '../../docks/patch-inspector';
   import { outputsToPatch } from '../../patch-routing';
@@ -21,16 +24,23 @@
   const project = $derived(store.project);
   const kit = $derived<KitConfig | null>(project?.kit ?? null);
   const routing = $derived(kit ? outputsToPatch(kit.outputs) : { outputs: [] });
+  const mirror = $derived(kit?.global.mirror ?? 'none');
+
+  const MIRROR_OPTS = [
+    { value: 'none', label: 'None' },
+    { value: 'x', label: 'X' },
+    { value: 'y', label: 'Y' },
+  ];
 </script>
 
 <fieldset class="pane-body" disabled={!store.canEdit}>
-  <h3>Drums &amp; Hoops</h3>
+  <PaneHeader id="drums" />
   {#if kit}
     {@const g = kit.global}
     <section class="defaults" aria-label="Kit defaults">
       <Eyebrow>Kit defaults</Eyebrow>
-      <p class="grouphint">Kit-wide geometry defaults. Per-drum geometry lives on each drum below.</p>
-      <Field layout="row" label="LED density" hint="px / m">
+      <div class="set-grid">
+      <Field label="LED density" info="Pixels per metre of LED tape.">
         <CommitInput
           type="number"
           min={0}
@@ -40,7 +50,7 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ ledDensityPxPerM: n }))}
         />
       </Field>
-      <Field layout="row" label="Hoops / drum" hint="kit default">
+      <Field label="Hoops / drum" info="Kit-wide default; a drum may override it.">
         <CommitInput
           type="number"
           min={1}
@@ -50,7 +60,7 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ hoopCount: n }))}
         />
       </Field>
-      <Field layout="row" label="Hoop spacing" hint="mm between hoops">
+      <Field label="Hoop spacing" info="Millimetres between hoops.">
         <CommitInput
           type="number"
           min={0}
@@ -60,8 +70,22 @@
           onCommit={(v) => onNum(v, (n) => store.setKitGlobal({ defaultHoopSpacingMm: n }))}
         />
       </Field>
-      <ReadRow label="Drums" value={String(kit.drums.length)} />
-      <ReadRow label="Total pixels" value={`${totalKitPixelCount(kit)} px`} />
+      <!-- variant="group": a <label> wrapper would forward a click on "Mirror" to the
+           segmented control's FIRST button, silently resetting mirror to None. -->
+      <Field label="Mirror" info="Geometry-only world reflection." variant="group">
+        <SegmentedControl
+          value={mirror}
+          options={MIRROR_OPTS}
+          disabled={!project}
+          onChange={(v) => store.setKitGlobal({ mirror: v as 'none' | 'x' | 'y' })}
+          ariaLabel="Kit mirror axis"
+        />
+      </Field>
+      </div>
+      <div class="kitreads">
+        <ReadRow label="Drums" value={String(kit.drums.length)} />
+        <ReadRow label="Total pixels" value={`${totalKitPixelCount(kit)} px`} />
+      </div>
     </section>
 
     <section class="drums" aria-label="Drums">
@@ -86,11 +110,11 @@
     padding: 0;
     border: none;
   }
-  h3 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--ink);
+  /* Read-only viewer: the mirror control is div/role-based (bits-ui toggle group), so the
+     native fieldset[disabled] gate can't reach it — stop it explicitly. */
+  .pane-body:disabled :global(.seg) {
+    pointer-events: none;
+    opacity: 0.6;
   }
   .defaults,
   .drums {
@@ -99,11 +123,10 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  .grouphint {
-    margin: 0;
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    line-height: var(--leading-normal);
+  .kitreads {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-1);
   }
   .hint {
     margin: 0;

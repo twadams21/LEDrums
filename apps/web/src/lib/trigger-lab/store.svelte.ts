@@ -44,12 +44,16 @@ import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
+import { graphFireKeyOf } from '@ledrums/protocol';
 import { WSClient, type ConnectionState } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { selectDockVoices, type DockVoice } from './dock-voices';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
+// The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
+// SAME shape the zones editor does (one mutation path, mutation parity), not a second one.
+import { setZoneOscAddress } from '../app/docks/patch-inspector';
 import type {
   BlendMode,
   CanvasScene,
@@ -834,6 +838,11 @@ export class TriggerLab {
   private readonly osc = new OscLearnController({
     isViewer: () => this.isViewer,
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
+    setZoneOscAddress: (drumId, slot, address) => {
+      if (this.isViewer || !this.project) return false;
+      this.setInputMap(setZoneOscAddress(this.project.inputMap, drumId, slot, address));
+      return true;
+    },
   });
   /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
       {@link MidiController.learnTarget}. */
@@ -961,18 +970,18 @@ export class TriggerLab {
       out (it's no longer in `graphs`). */
   graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
 
-  /** The last graph fired through {@link fireSectionGraph} (the hotkey / graph-card path) —
-      display-only, so the Graphs dock can flash the fired card. `seq` distinguishes repeat
-      fires of the same key. */
-  lastSectionFire = $state<{ key: string; seq: number } | null>(null);
-  private fireSeq = 0;
-
   /** Per-graph last-fire wall-clock (`performance.now()` ms), keyed by graph key — display-only
-      state that drives live-on-trigger node previews (TouchDesigner-style: a trigger-driven node
-      face is STATIC until its graph fires, then plays live from that instant). This is a UI
-      timestamp, NOT engine/render state, so core purity + determinism are untouched. */
+      state that drives the Graphs rail's fire indicator AND live-on-trigger node previews
+      (TouchDesigner-style: a trigger-driven node face is STATIC until its graph fires, then plays
+      live from that instant). Keyed per graph rather than "the last fire", so several graphs can
+      read as recently-fired at once and a card lights whether or not the fire came from this
+      song's section. This is a UI timestamp, NOT engine/render state, so core purity +
+      determinism are untouched. */
   graphFireAt = $state<Record<string, number>>({});
-  private markGraphFire(key: string): void {
+  /** Stamp a graph fire. THE one signal: every path lands here — the keyboard performance path
+      ({@link fireSectionGraph}), a local pad/MIDI hit offline, and the SERVER's voice engine
+      connected (its `graph fired` monitor event, read back in {@link wireClient}). */
+  markGraphFire(key: string): void {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.graphFireAt = { ...this.graphFireAt, [key]: now };
   }
@@ -1475,7 +1484,15 @@ export class TriggerLab {
       onError: (message) => {
         this.serverError = message;
       },
-      onMonitor: (event) => this.addMonitor(event),
+      onMonitor: (event) => {
+        this.addMonitor(event);
+        // Connected, the SERVER's voice engine is the resolver: its "graph fired" monitor event
+        // is the only truth about which graph a hardware drum hit actually played — including a
+        // graph the local view never resolved (another song's section). Fold it into the one
+        // fire signal so the card indicator is the same subscription online and off.
+        const fired = graphFireKeyOf(event);
+        if (fired) this.markGraphFire(fired);
+      },
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
   }
@@ -1734,6 +1751,7 @@ export class TriggerLab {
       bpm: this.bpm,
     };
     for (const { key, graph } of toFire) {
+      this.markGraphFire(key); // offline hardware MIDI: the local sim IS the engine, so stamp here
       const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
       this.addMonitor({
         type: 'effect',
@@ -1842,8 +1860,7 @@ export class TriggerLab {
     const graph = key ? this.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
-    this.lastSectionFire = { key, seq: ++this.fireSeq }; // Graphs-dock card flash
-    this.markGraphFire(key); // live-on-trigger node previews
+    this.markGraphFire(key); // card indicator + live-on-trigger node previews
     const src = triggerSourceOf(graph);
     // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
     // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct

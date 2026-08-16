@@ -266,10 +266,48 @@ export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
 
 /** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
     binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
-export function addDeclaredZone(map: InputMap, drumId: string, slot: number): InputMap {
+export function addDeclaredZone(map: InputMap, drumId: string, slot: number, label = ''): InputMap {
   const zones = map.zones ?? [];
   if (zones.some((z) => z.drumId === drumId && z.slot === slot)) return map;
-  return { ...map, zones: [...zones, { drumId, slot }] };
+  return { ...map, zones: [...zones, { drumId, slot, label }] };
+}
+
+/** The next free slot on a drum — the lowest index it isn't already using. Uncapped (2026-08-14):
+    a drum may declare as many zones as it needs, so this always returns one. Lowest-free rather
+    than count-based so a removed zone's slot is reused instead of drifting upward forever. */
+export function nextZoneSlot(map: InputMap, drumId: string): number {
+  const used = new Set(zoneSlotsForDrum(map, drumId));
+  let slot = 0;
+  while (used.has(slot)) slot++;
+  return slot;
+}
+
+/** A zone's display name: the stored label, else the slot's default name. Identity is the SLOT —
+    two zones may legitimately carry the same name, and renaming one never re-points a graph. */
+export function zoneLabel(map: InputMap, drumId: string, slot: number): string {
+  const stored = (map.zones ?? []).find((z) => z.drumId === drumId && z.slot === slot)?.label;
+  return stored?.trim() ? stored : defaultZoneName(slot);
+}
+
+/** The name a zone carries until it is renamed: the classic slot names for the first few, then
+    a plain numbered name — SLOT_LABELS is a DEFAULT here, never identity. */
+export function defaultZoneName(slot: number): string {
+  return SLOT_LABELS[slot] ?? `Zone ${slot + 1}`;
+}
+
+/** Rename a zone (immutably), declaring it if it was only implied by a binding — so naming a
+    bound-but-undeclared zone persists the name instead of dropping it. Empty label clears back
+    to the default name. */
+export function setZoneLabel(map: InputMap, drumId: string, slot: number, label: string): InputMap {
+  const trimmed = label.trim();
+  const zones = map.zones ?? [];
+  if (!zones.some((z) => z.drumId === drumId && z.slot === slot)) {
+    return { ...map, zones: [...zones, { drumId, slot, label: trimmed }] };
+  }
+  return {
+    ...map,
+    zones: zones.map((z) => (z.drumId === drumId && z.slot === slot ? { ...z, label: trimmed } : z)),
+  };
 }
 
 /** Remove a zone from a drum ENTIRELY — drops its declaration and any MIDI-note / OSC binding, so
@@ -279,23 +317,4 @@ export function removeZone(map: InputMap, drumId: string, slot: number): InputMa
   return { ...cleared, zones: (cleared.zones ?? []).filter((z) => !(z.drumId === drumId && z.slot === slot)) };
 }
 
-/** Move a zone (declaration + MIDI/OSC bindings) from `oldSlot` to `newSlot` — a re-label. */
-export function moveZoneSlot(map: InputMap, drumId: string, oldSlot: number, newSlot: number): InputMap {
-  if (oldSlot === newSlot) return map;
-  const note = zoneMidiNote(map, drumId, oldSlot);
-  const addr = zoneOscAddress(map, drumId, oldSlot);
-  let m = removeZone(map, drumId, oldSlot);
-  m = addDeclaredZone(m, drumId, newSlot);
-  m = setZoneMidiNote(m, drumId, newSlot, note);
-  m = setZoneOscAddress(m, drumId, newSlot, addr);
-  return m;
-}
 
-/** The zone slot LABELS ({@link SLOT_LABELS}) still AVAILABLE on a drum's trigger — those whose
-    0-based slot index is neither in `usedSlots` (slots the caller has already assigned in the
-    editor) nor already mapped for this drum in `inputMap` (MIDI note or OSC address). For the C6
-    trigger zones list (the per-zone slot dropdown, used slots excluded). */
-export function availableSlots(inputMap: InputMap, drumId: string, usedSlots: number[]): string[] {
-  const used = new Set([...usedSlots, ...zoneSlotsForDrum(inputMap, drumId)]);
-  return SLOT_LABELS.filter((_, slot) => !used.has(slot));
-}

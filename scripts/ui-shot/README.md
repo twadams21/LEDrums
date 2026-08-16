@@ -63,6 +63,19 @@ pnpm ui-shot --discover --view trigger
 
 Lists regions / dialogs / buttons / nodes from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,add:effect,select:effect,gallery"`).
 
+## `--click` / `--rightclick` — surfaces that only exist after a gesture
+
+A dialog behind a button and a right-click menu have no store state to summon them, so open them
+the way a user does and capture what appears:
+
+```bash
+pnpm ui-shot --state "view:trigger" --click "button:Add graph" --target "dialog:Add graph" --name add-graph
+pnpm ui-shot --state "view:trigger" --rightclick ".gcard" --target ".lab-ctx-content" --name graph-card-menu
+```
+
+Both take the same target syntax as `--target`, and both are also preset fields (`click`,
+`rightclick`). `--click` runs before `--rightclick` when both are given.
+
 ## Presets (`shots.json`)
 
 Presets are **for CI/sweep stability and locked baselines only** — not a registry you must feed for every new component. Each is a record:

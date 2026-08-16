@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { KitConfig } from '@ledrums/core';
 import type { HoopRef, PatchRouting } from '../../patch-routing';
-import { addHoop, chainBlockers, gapToIndex, moveHoop, newBlockers, removeHoop, unassignedHoops } from './chain-editor';
+import {
+  addHoop,
+  chainBlockers,
+  dropHoop,
+  gapToIndex,
+  insertHoop,
+  moveHoop,
+  newBlockers,
+  removeHoop,
+  unassignedHoops,
+} from './chain-editor';
 
 const h = (drumId: string, hoop: number): HoopRef => ({ drumId, hoop });
 
@@ -171,5 +181,68 @@ describe('newBlockers — delta validation, so pre-existing damage stays repaira
   it('is empty for a healthy edit on a healthy routing', () => {
     const current = routing([h('kick', 1)], []);
     expect(newBlockers(kit(), current, addHoop(current, 'o1', h('kick', 2)))).toEqual([]);
+  });
+});
+
+describe('insertHoop', () => {
+  it('places the hoop at the given index, pushing the rest down', () => {
+    const next = insertHoop(routing([h('kick', 1), h('kick', 2)], []), 'o1', h('snare', 1), 1);
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 1), h('snare', 1), h('kick', 2)]);
+  });
+
+  it('clamps an index past the end to an append', () => {
+    const next = insertHoop(routing([h('kick', 1)], []), 'o1', h('snare', 1), 99);
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 1), h('snare', 1)]);
+  });
+
+  it('refuses a hoop that is already on a chain — one upstream, always', () => {
+    const current = routing([h('kick', 1)], [h('snare', 1)]);
+    expect(insertHoop(current, 'o1', h('snare', 1), 0)).toBe(current);
+  });
+});
+
+describe('dropHoop', () => {
+  it('assigns a pooled hoop into a chain at the drop gap', () => {
+    const current = routing([h('kick', 1), h('kick', 2)], []);
+    const next = dropHoop(current, { hoop: h('snare', 1), from: null }, { kind: 'chain', outputId: 'o1', gap: 1 });
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 1), h('snare', 1), h('kick', 2)]);
+  });
+
+  it('moves a hoop between outputs — it leaves the old chain as it joins the new one', () => {
+    const current = routing([h('kick', 1), h('kick', 2)], [h('snare', 1)]);
+    const next = dropHoop(
+      current,
+      { hoop: h('kick', 2), from: { outputId: 'o1', index: 1 } },
+      { kind: 'chain', outputId: 'o2', gap: 0 },
+    );
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 1)]);
+    expect(next.outputs[1]!.hoops).toEqual([h('kick', 2), h('snare', 1)]);
+  });
+
+  it('reorders within one chain, reading the gap as a position among the OTHER rows', () => {
+    const current = routing([h('kick', 1), h('kick', 2), h('snare', 1)], []);
+    const next = dropHoop(
+      current,
+      { hoop: h('kick', 1), from: { outputId: 'o1', index: 0 } },
+      { kind: 'chain', outputId: 'o1', gap: 3 },
+    );
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 2), h('snare', 1), h('kick', 1)]);
+  });
+
+  it('unassigns a hoop dropped back on the pool', () => {
+    const current = routing([h('kick', 1), h('kick', 2)], []);
+    const next = dropHoop(current, { hoop: h('kick', 1), from: { outputId: 'o1', index: 0 } }, { kind: 'pool' });
+    expect(next.outputs[0]!.hoops).toEqual([h('kick', 2)]);
+  });
+
+  it('ignores a pooled hoop dropped back on the pool', () => {
+    const current = routing([h('kick', 1)], []);
+    expect(dropHoop(current, { hoop: h('snare', 1), from: null }, { kind: 'pool' })).toBe(current);
+  });
+
+  it('never fans a hoop out, whatever the drop says', () => {
+    const current = routing([h('kick', 1)], [h('snare', 1)]);
+    const next = dropHoop(current, { hoop: h('snare', 1), from: null }, { kind: 'chain', outputId: 'o1', gap: 0 });
+    expect(next).toBe(current);
   });
 });
