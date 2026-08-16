@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Life / decay as an envelope by default</title>
+<!--
+  ============================================================================
+  THROWAWAY PROTOTYPE — no build step, no dependencies, open with file://.
+  Design question: `decayMs: 220` is one number. If life/decay params became an
+  ENVELOPE by default, what does the control look like — and does it still feel
+  like a param row, or has it become a graph editor?
+  Four mechanisms, all live, all driven by one transport. Hit Fire.
+  ============================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    --bg: oklch(0.124 0.011 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+    --on-accent: oklch(0.210 0.050 130);
+
+    --role-content: oklch(0.700 0.165 300);
+    --role-effect: oklch(0.785 0.150 68);
+    --role-mod: oklch(0.760 0.130 330);
+    --role-modulation: oklch(0.820 0.130 195);
+
+    --warn: oklch(0.810 0.150 80);
+
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Geist Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+
+    --tracking-label: 0.04em;
+
+    --space-0_5: 2px;
+    --space-1: 4px;
+    --space-1_5: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    --radius-1: 3px;
+    --radius-2: 5px;
+    --radius-3: 8px;
+    --radius-pill: 999px;
+    --control-h: 26px;
+
+    --dur-90: 90ms;
+    --dur-120: 120ms;
+    --ease-control: cubic-bezier(0.2, 0, 0, 1);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: var(--text-base); -webkit-font-smoothing: antialiased; }
+
+  header.top { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4); height: 44px; background: var(--surface); border-bottom: 1px solid var(--border-faint); }
+  .proto-tag { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--warn); border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent); background: color-mix(in oklch, var(--warn) 12%, transparent); padding: 2px 6px; border-radius: var(--radius-1); flex: none; }
+  .top .title { font-size: var(--text-sm); font-weight: 500; color: var(--ink); letter-spacing: -0.011em; }
+  .top .question { font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; text-align: right; }
+
+  main { padding: var(--space-5) var(--space-4) 64px; max-width: 1240px; margin: 0 auto; }
+
+  .plate { background: var(--surface); border: 1px solid var(--border-faint); border-radius: var(--radius-3); margin-bottom: var(--space-5); overflow: hidden; }
+  .plate-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-faint); background: var(--surface-2); }
+  .plate-num { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--accent); border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); background: var(--accent-soft); border-radius: var(--radius-1); height: 24px; display: grid; place-items: center; }
+  .plate-num.base { color: var(--text-disabled); border-color: var(--border); background: var(--surface-inset); }
+  .plate-name { font-size: var(--text-base); font-weight: 700; color: var(--ink); letter-spacing: -0.011em; }
+  .plate-pitch { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.55; margin-top: 2px; text-wrap: pretty; }
+  .ref { display: inline-block; margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); border-left: 2px solid var(--border-strong); padding-left: var(--space-2); }
+  .plate-body { padding: var(--space-4); }
+  .plate-foot { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-faint); background: var(--surface-inset); font-size: var(--text-2xs); line-height: 1.6; color: var(--text-faint); }
+  .plate-foot b { color: var(--text-muted); font-weight: 500; }
+  .plate-foot > div { flex: 1 1 240px; }
+
+  /* ---- transport ---------------------------------------------------------- */
+  .transport {
+    position: sticky; top: 44px; z-index: 30;
+    display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    margin-bottom: var(--space-5);
+  }
+  .btn {
+    appearance: none; display: inline-flex; align-items: center; gap: var(--space-2);
+    height: 30px; padding: 0 var(--space-3);
+    border-radius: var(--radius-2);
+    border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+    background: var(--accent-soft); color: var(--accent-bright);
+    font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label);
+    cursor: pointer;
+    transition: background-color var(--dur-90) var(--ease-control);
+  }
+  .btn:hover { background: color-mix(in oklch, var(--accent) 26%, transparent); }
+  .btn.ghost { border-color: var(--border); background: var(--surface-inset); color: var(--text-muted); }
+  .btn.ghost[aria-pressed='true'] { border-color: var(--accent); color: var(--accent-bright); background: var(--accent-soft); }
+  .tlab { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-disabled); }
+  .tval { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink); font-variant-numeric: tabular-nums; min-width: 6ch; }
+  .lifewrap { display: flex; align-items: center; gap: var(--space-2); min-width: 260px; flex: 1 1 260px; }
+  .todaynote { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+
+  .rail { position: relative; height: 4px; flex: 1; border-radius: var(--radius-pill); background: var(--surface-inset); border: 1px solid var(--border-faint); cursor: ew-resize; touch-action: none; }
+  .rail .fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--accent) 70%, transparent); }
+  .rail .knob { position: absolute; top: 50%; width: 11px; height: 11px; margin-left: -5.5px; transform: translateY(-50%); border-radius: 50%; background: var(--surface-3); border: 1.5px solid var(--accent); }
+
+  /* ---- option layout ------------------------------------------------------ */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: var(--space-5); }
+
+  /* the param row this replaces — every option is framed as one */
+  .paramrow {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+    padding: var(--space-3);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+  }
+  .paramrow > .pk {
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-faint); letter-spacing: var(--tracking-label);
+    padding-top: var(--space-1);
+  }
+  .paramrow > .pk small { display: block; color: var(--text-disabled); margin-top: 2px; }
+
+  .widget { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+  svg.env { display: block; width: 100%; touch-action: none; user-select: none; overflow: visible; }
+  svg.env .grid { stroke: var(--border-faint); stroke-width: 1; }
+  svg.env .axis { stroke: var(--border); stroke-width: 1; }
+  svg.env .curve { fill: none; stroke: var(--accent); stroke-width: 2; }
+  svg.env .area { fill: color-mix(in oklch, var(--accent) 16%, transparent); stroke: none; }
+  svg.env .ghost { fill: none; stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+  svg.env .play { stroke: var(--warn); stroke-width: 1.5; }
+  svg.env text { font-family: var(--font-mono); font-size: 9px; fill: var(--text-disabled); }
+  svg.env .hnd { cursor: grab; }
+  svg.env .hnd:active { cursor: grabbing; }
+  svg.env .hnd circle { fill: var(--surface-3); stroke: var(--accent); stroke-width: 1.5; }
+  svg.env .hnd.sel circle { fill: var(--accent); stroke: var(--accent-bright); }
+  svg.env .hnd.tie circle { fill: var(--surface-3); stroke: var(--role-modulation); }
+  svg.env .stop { cursor: ew-resize; }
+  svg.env .stop rect { fill: var(--surface-3); stroke: var(--border-strong); }
+  svg.env .stop.sel rect { fill: var(--accent); stroke: var(--accent-bright); }
+  svg.env .mid { cursor: ew-resize; fill: var(--surface-3); stroke: var(--border-strong); }
+  svg.env .seg { cursor: pointer; }
+  svg.env .seg.sel { stroke: var(--accent-bright); stroke-width: 3; }
+
+  .profiles { display: flex; align-items: center; gap: var(--space-1_5); flex-wrap: wrap; min-height: 26px; }
+  .profiles .plab { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); letter-spacing: var(--tracking-label); margin-right: var(--space-1); }
+  .chip {
+    appearance: none;
+    height: 22px; padding: 0 var(--space-2);
+    border-radius: var(--radius-1);
+    border: 1px solid var(--border);
+    background: var(--surface-inset);
+    color: var(--text-faint);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    cursor: pointer;
+    transition: color var(--dur-90) var(--ease-control), border-color var(--dur-90) var(--ease-control);
+  }
+  .chip:hover { color: var(--ink); border-color: var(--border-strong); }
+  .chip[aria-pressed='true'] { border-color: var(--accent); color: var(--accent-bright); background: var(--accent-soft); }
+  .chip.timed[aria-pressed='true'] { border-color: var(--role-modulation); color: var(--role-modulation); background: color-mix(in oklch, var(--role-modulation) 14%, transparent); }
+  .chip.mini { height: 18px; font-size: 10px; padding: 0 6px; }
+
+  .hint { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); line-height: 1.6; }
+  .hint b { color: var(--text-faint); font-weight: 400; }
+
+  /* ---- live preview ------------------------------------------------------- */
+  .preview {
+    display: grid;
+    grid-template-columns: 68px minmax(0, 1fr) 92px;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+  }
+  .preview svg.kit { width: 68px; height: 44px; display: block; }
+  .meter { position: relative; height: 10px; border-radius: var(--radius-pill); background: var(--surface-inset); border: 1px solid var(--border-faint); overflow: hidden; }
+  .meter .m { position: absolute; inset: 0 auto 0 0; width: 0%; background: linear-gradient(90deg, color-mix(in oklch, var(--accent) 45%, transparent), var(--accent-bright)); }
+  .readout { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; line-height: 1.4; }
+  .readout b { color: var(--ink); font-weight: 400; display: block; }
+
+  /* verdict */
+  .verdict { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-3); overflow: hidden; }
+  .verdict .vhead { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface-2); border-bottom: 1px solid var(--border-faint); }
+  .verdict h2 { margin: 0; font-size: var(--text-base); color: var(--ink); font-weight: 700; letter-spacing: -0.011em; }
+  .verdict .saved { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+  .verdict .saved.on { color: var(--accent); }
+  .vbody { padding: var(--space-4); display: grid; gap: var(--space-3); }
+  .vopt { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: var(--space-3); border: 1px solid var(--border-faint); border-radius: var(--radius-2); background: var(--surface-inset); cursor: pointer; transition: border-color var(--dur-90) var(--ease-control); }
+  .vopt:hover { border-color: var(--border-strong); }
+  .vopt.win { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset)); }
+  .vopt input { accent-color: var(--accent); margin-top: 3px; }
+  .vopt .vname { font-size: var(--text-sm); color: var(--ink); font-weight: 500; }
+  .vopt .vnote { font-size: var(--text-2xs); color: var(--text-faint); margin-top: 2px; }
+  .vopt textarea { grid-column: 2; width: 100%; min-height: 46px; resize: vertical; margin-top: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-1); color: var(--text); font-family: var(--font-sans); font-size: var(--text-xs); padding: var(--space-2); outline: none; }
+  .vopt textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .vactions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+  .vactions button { appearance: none; height: var(--control-h); padding: 0 var(--space-3); border-radius: var(--radius-1); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); cursor: pointer; }
+  .vactions button:hover { border-color: var(--border-strong); color: var(--ink); }
+
+  footer.bot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-top: 1px solid var(--border-faint); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); }
+  footer.bot .sep { color: var(--border-strong); }
+
+  @media (prefers-reduced-motion: reduce) { .chip, .btn { transition-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="proto-tag">Prototype</span>
+  <span class="title">Life / decay as an envelope by default</span>
+  <span class="question">Design question: what shape does a per-hit envelope take when it has to live in a param row?</span>
+</header>
+
+<main>
+
+  <div class="transport" id="transport">
+    <button class="btn" id="fire">▶ Fire</button>
+    <button class="btn ghost" id="loop" aria-pressed="false">↻ Loop</button>
+    <div class="lifewrap">
+      <span class="tlab">Life</span>
+      <div class="rail" id="liferail"><div class="fill"></div><div class="knob"></div></div>
+      <span class="tval" id="lifeval">220 ms</span>
+    </div>
+    <span class="todaynote">today: <code>{ key: 'decayMs', default: 220, min: 10, max: 4000 }</code> — one number</span>
+  </div>
+
+  <!-- ============ framing ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num base">0</span>
+      <div>
+        <div class="plate-name">What is being replaced, and what already exists</div>
+        <div class="plate-pitch">
+          Today <strong>decay is a scalar</strong>: <code>whole-drum</code> computes
+          <code>velocity · exp(−ageMs / decayMs)</code> and <code>radial-wash</code> does the same — one
+          number picks a fixed exponential. Separately, the app already ships an <strong>opt-in ADSR
+          editor</strong> (<code>EnvelopeEditor.svelte</code> → <code>EnvelopeEditorView</code>, geometry in
+          <code>envelope-editor-geom.ts</code>): a 480×160 modal you summon per param, with draggable
+          attack / sustain / release handles and per-segment easing. It is a good editor in the wrong
+          place — a modal you visit, not a control you live in.
+        </div>
+        <div class="plate-pitch">
+          "Envelope by default" means the scalar row <em>is</em> the envelope: no modal, no opt-in, and the
+          exponential you get today is just the shape it opens with. Each option below is drawn as the
+          param row it would have to fit inside, at the width the Inspector actually has. The dashed grey
+          line in every widget is today's <code>exp(−t/τ)</code> — the shape you have to beat.
+        </div>
+        <span class="ref">Grounding: ADSR stage editors (Omnisphere's simple↔complex switch, FM8's multi-breakpoint curve), gradient stop editors, Lightroom levels. Sources listed in the footer of this file's plan entry.</span>
+      </div>
+    </div>
+    <div class="plate-foot">
+      <div><b>The constraint that decides this.</b> The Inspector column is ~320px wide. A widget that needs 480px is a modal in disguise — which is what exists already.</div>
+      <div><b>The second constraint.</b> Whatever wins has to degrade to a legible thumbnail on the node card (<code>NodeSignalPreview</code> renders envelope faces at 56×32).</div>
+    </div>
+  </section>
+
+  <div class="grid2">
+
+    <!-- ============ option A ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">A</span>
+        <div>
+          <div class="plate-name">Two-handle rail — Trent's shape, built</div>
+          <div class="plate-pitch">
+            One rail across the hit's life. Two handles: where the value <em>starts</em> and where it
+            <em>ends</em>. Click a handle to select it, then choose that handle's <strong>profile</strong>.
+            Pick a <strong>timed</strong> profile and the handle splits in two — a start marker and a stop
+            marker — so you can say "hold full for 40 ms, then leave". Drag handles sideways for time,
+            up/down for level.
+          </div>
+          <span class="ref">Forced from: the brief, verbatim — a 2-handle range slider where the handle owns a profile.</span>
+        </div>
+      </div>
+      <div class="plate-body">
+        <div class="paramrow">
+          <span class="pk">Decay<small>ms · env</small></span>
+          <div class="widget" id="wA"></div>
+        </div>
+      </div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — still reads as a slider, so it survives at param-row scale and on a node thumbnail. The handle-owns-a-profile idea is genuinely good: the shape is named, not drawn, so two people can talk about "exp out with a 40 ms hold".</div>
+        <div><b>Costs</b> — two handles cap you at one transition. Anything with a bump in the middle (attack → peak → fall) is unrepresentable without a third handle, at which point it is option C wearing a hat.</div>
+        <div><b>Try</b> — select the left handle, pick <em>Hold</em>. Watch it split.</div>
+      </div>
+    </section>
+
+    <!-- ============ option B ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">B</span>
+        <div>
+          <div class="plate-name">Gradient stops — the envelope as a colour ramp</div>
+          <div class="plate-pitch">
+            The life of the hit is a band; stops sit under it like gradient stops. Click the band to add a
+            stop, drag it in time, drag its level. The <strong>diamond between two stops</strong> biases the
+            interpolation the way a gradient midpoint does — one extra degree of freedom per segment without
+            a second handle. Double-click a stop to remove it.
+          </div>
+          <span class="ref">Forced from: the Photoshop / Figma gradient editor — stops on a rail, midpoints as bias.</span>
+        </div>
+      </div>
+      <div class="plate-body">
+        <div class="paramrow">
+          <span class="pk">Decay<small>ms · env</small></span>
+          <div class="widget" id="wB"></div>
+        </div>
+      </div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — arbitrary number of stages with no mode switch, and the band <em>is</em> the preview: you read the brightness ramp directly. Midpoint-bias is a cheap, familiar way to get curves without bezier handles.</div>
+        <div><b>Costs</b> — level is edited on a second axis that the gradient metaphor does not have, so it fights itself slightly. Easy to end up with 6 stops and no idea which is which.</div>
+        <div><b>Try</b> — click the middle of the band to add a stop, then drag the diamond beside it.</div>
+      </div>
+    </section>
+
+    <!-- ============ option C ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">C</span>
+        <div>
+          <div class="plate-name">Mini curve — the existing ADSR editor, shrunk into the row</div>
+          <div class="plate-pitch">
+            A 320×96 breakpoint graph inline. Drag points; click empty space to add one; double-click to
+            remove. Select a <em>segment</em> (the line between two points) and give it an easing. This is
+            the shape the codebase already knows how to persist — <code>adsrToPoints</code> already turns a
+            handle shape into a sampled curve.
+          </div>
+          <span class="ref">Forced from: FM8 / After Effects speed graphs — and from the app's own EnvelopeEditorView, miniaturised.</span>
+        </div>
+      </div>
+      <div class="plate-body">
+        <div class="paramrow">
+          <span class="pk">Decay<small>ms · env</small></span>
+          <div class="widget" id="wC"></div>
+        </div>
+      </div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — expressively complete: anything the engine can sample, you can draw. Shortest path to shipping, because the geometry, the tests and the persistence already exist.</div>
+        <div><b>Costs</b> — it is a graph editor in a param row. Hit targets are ~8px, which is fine with a mouse and hostile everywhere else. Also the least "default-feeling" of the four: it looks like a thing you opted into.</div>
+        <div><b>Try</b> — click the line between two points to select the segment, then pick an ease.</div>
+      </div>
+    </section>
+
+    <!-- ============ option D ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">D</span>
+        <div>
+          <div class="plate-name">Levels — in-point, gamma, out-point over today's decay</div>
+          <div class="plate-pitch">
+            Keeps the exponential and gives you three handles to <em>reshape</em> it, exactly like a Levels
+            dialog: an <strong>in-point</strong> (when the fall starts), a <strong>gamma</strong> triangle
+            (how the middle bends), and an <strong>out-point</strong> (when it reaches zero). No new stages,
+            no drawing — three drags that cover most of what people actually want out of a decay.
+          </div>
+          <span class="ref">Forced from: Lightroom / Photoshop Levels — reshape an existing distribution, don't author a new one.</span>
+        </div>
+      </div>
+      <div class="plate-body">
+        <div class="paramrow">
+          <span class="pk">Decay<small>ms · env</small></span>
+          <div class="widget" id="wD"></div>
+        </div>
+      </div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — the only option that is honestly <em>default</em>: the existing scalar is a valid state of it (in=0, gamma=1, out=1), so nothing breaks and no migration is needed. Three 1-D drags is the cheapest interaction of the four.</div>
+        <div><b>Costs</b> — gamma is an abstraction you have to learn; nobody hums a gamma. Cannot express hold-then-fall, or any rise at all.</div>
+        <div><b>Try</b> — drag the middle triangle. That one handle is the whole idea.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============ verdict ============ -->
+  <section class="verdict" id="verdict" style="margin-top: var(--space-5)">
+    <div class="vhead">
+      <h2>Verdict</h2>
+      <span class="saved" id="saved">not saved</span>
+    </div>
+    <div class="vbody" id="vbody"></div>
+    <div class="vactions">
+      <button type="button" id="clear">Clear verdict</button>
+      <span style="font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled)">
+        Saved to this browser's localStorage — key <code>ledrums.proto.envelope-param</code>
+      </span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bot">
+  <span>preview = the envelope driving one drum's hoops at Whole Drum's "Punch" hue</span>
+  <span class="sep">│</span>
+  <span>dashed grey = today's exp(−t/τ)</span>
+  <span class="sep">│</span>
+  <span>all four sample from the same transport</span>
+</footer>
+
+<script>
+'use strict';
+
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+const svgEl = (tag, attrs) => {
+  const n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  if (attrs) Object.entries(attrs).forEach(([k, v]) => n.setAttribute(k, v));
+  return n;
+};
+const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+/* ===========================================================================
+   Easing profiles — named, so a shape can be talked about rather than drawn.
+   =========================================================================== */
+const EASE = {
+  lin:  { label: 'Linear', f: (u) => u },
+  exp:  { label: 'Exp',    f: (u) => Math.pow(u, 2.6) },
+  log:  { label: 'Log',    f: (u) => 1 - Math.pow(1 - u, 2.6) },
+  s:    { label: 'S-curve', f: (u) => u * u * (3 - 2 * u) },
+  step: { label: 'Snap',   f: (u) => (u >= 1 ? 1 : 0) },
+};
+
+/* today's shape, for the dashed ghost line: exp(-t / tau), tau chosen so the
+   curve lands at ~0.02 by the end of `life` (matches how whole-drum reads). */
+const todayCurve = (u) => Math.exp(-u * 3.9);
+
+/* the effect hue this preview paints with — Whole Drum "Punch" sits warm */
+const HUE = 12;
+function hsvCss(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  const i = Math.floor(h / 60) % 6;
+  if (i === 0) { r = c; g = x; } else if (i === 1) { r = x; g = c; }
+  else if (i === 2) { g = c; b = x; } else if (i === 3) { g = x; b = c; }
+  else if (i === 4) { r = x; b = c; } else { r = c; b = x; }
+  return `rgb(${Math.round((r + m) * 255)} ${Math.round((g + m) * 255)} ${Math.round((b + m) * 255)})`;
+}
+
+/* ===========================================================================
+   Transport — one clock, four widgets. `life` is the param's ms range.
+   =========================================================================== */
+const T = { life: 220, min: 10, max: 4000, firedAt: null, loop: false, u: null };
+const widgets = [];
+
+(function transport() {
+  const rail = document.getElementById('liferail');
+  const fill = rail.querySelector('.fill');
+  const knob = rail.querySelector('.knob');
+  const val = document.getElementById('lifeval');
+  /* log-ish mapping so 220ms is reachable on a 10–4000 rail */
+  const toT = (ms) => Math.log(ms / T.min) / Math.log(T.max / T.min);
+  const toMs = (t) => T.min * Math.pow(T.max / T.min, t);
+  const paint = () => {
+    const t = toT(T.life);
+    fill.style.right = (100 - t * 100) + '%';
+    knob.style.left = (t * 100) + '%';
+    val.textContent = Math.round(T.life) + ' ms';
+  };
+  const at = (e) => {
+    const b = rail.getBoundingClientRect();
+    T.life = toMs(clamp01((e.clientX - b.left) / b.width));
+    paint();
+    widgets.forEach((w) => w.repaint && w.repaint());
+  };
+  rail.addEventListener('pointerdown', (e) => { rail.setPointerCapture(e.pointerId); at(e); });
+  rail.addEventListener('pointermove', (e) => { if (rail.hasPointerCapture(e.pointerId)) at(e); });
+  paint();
+
+  document.getElementById('fire').onclick = () => { T.firedAt = performance.now(); };
+  const loopBtn = document.getElementById('loop');
+  loopBtn.onclick = () => {
+    T.loop = !T.loop;
+    loopBtn.setAttribute('aria-pressed', String(T.loop));
+    if (T.loop) T.firedAt = performance.now();
+  };
+})();
+
+function frame(now) {
+  if (T.firedAt != null) {
+    const dt = now - T.firedAt;
+    if (dt > T.life) {
+      if (T.loop) T.firedAt = now; else { T.firedAt = null; T.u = null; }
+    } else {
+      T.u = dt / T.life;
+    }
+  }
+  widgets.forEach((w) => w.tick(T.u));
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ===========================================================================
+   Preview strip — hoops + meter + readout, driven by a widget's sample()
+   =========================================================================== */
+function preview(sample) {
+  const wrap = el('div', 'preview');
+
+  const kit = svgEl('svg', { class: 'kit', viewBox: '0 0 68 44' });
+  const rings = [];
+  for (let i = 0; i < 4; i++) {
+    const r = svgEl('ellipse', { cx: 34, cy: 8 + i * 9.5, rx: 26 - i * 1.5, ry: 5.2 - i * 0.4, fill: 'none', stroke: 'var(--border)', 'stroke-width': 1.4 });
+    kit.append(r);
+    rings.push(r);
+  }
+  wrap.append(kit);
+
+  const meter = el('div', 'meter');
+  const m = el('div', 'm');
+  meter.append(m);
+  wrap.append(meter);
+
+  const ro = el('div', 'readout');
+  const big = el('b', '', '0.00');
+  const small = el('span', '', '0 ms');
+  ro.append(big, small);
+  wrap.append(ro);
+
+  wrap.tick = (u) => {
+    const v = u == null ? 0 : clamp01(sample(u));
+    m.style.width = (v * 100) + '%';
+    const col = hsvCss(HUE, 1, Math.max(0.12, v));
+    rings.forEach((r, i) => {
+      r.setAttribute('stroke', v > 0.01 ? col : 'var(--border)');
+      r.setAttribute('stroke-width', String(1.4 + v * 2.2));
+      r.setAttribute('opacity', String(0.35 + v * 0.65 - i * 0.04));
+    });
+    big.textContent = v.toFixed(2);
+    small.textContent = (u == null ? 0 : Math.round(u * T.life)) + ' ms';
+  };
+  return wrap;
+}
+
+/* shared SVG geometry for the widgets */
+const W = 320, H = 96, PAD = 8;
+const IW = W - PAD * 2, IH = H - PAD * 2;
+const X = (t) => PAD + t * IW;
+const Y = (v) => PAD + (1 - v) * IH;
+const unX = (px) => clamp01((px - PAD) / IW);
+const unY = (py) => clamp01(1 - (py - PAD) / IH);
+
+function svgStage() {
+  const s = svgEl('svg', { class: 'env', viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+  s.style.height = H + 'px';
+  s.append(svgEl('line', { class: 'axis', x1: PAD, y1: Y(0), x2: W - PAD, y2: Y(0) }));
+  s.append(svgEl('line', { class: 'grid', x1: PAD, y1: Y(0.5), x2: W - PAD, y2: Y(0.5) }));
+  s.append(svgEl('line', { class: 'grid', x1: PAD, y1: Y(1), x2: W - PAD, y2: Y(1) }));
+  const ghost = svgEl('path', { class: 'ghost' });
+  let d = '';
+  for (let i = 0; i <= 60; i++) { const u = i / 60; d += (i ? 'L' : 'M') + X(u) + ' ' + Y(todayCurve(u)); }
+  ghost.setAttribute('d', d);
+  s.append(ghost);
+  return s;
+}
+
+function curvePath(sample) {
+  let d = '', a = '';
+  for (let i = 0; i <= 80; i++) {
+    const u = i / 80, v = clamp01(sample(u));
+    d += (i ? 'L' : 'M') + X(u) + ' ' + Y(v);
+    a += (i ? 'L' : 'M') + X(u) + ' ' + Y(v);
+  }
+  a += `L${X(1)} ${Y(0)} L${X(0)} ${Y(0)} Z`;
+  return [d, a];
+}
+
+/** pointer → unit coords inside the svg's rendered box */
+function ptOf(svg, e) {
+  const b = svg.getBoundingClientRect();
+  const px = ((e.clientX - b.left) / b.width) * W;
+  const py = ((e.clientY - b.top) / b.height) * H;
+  return { t: unX(px), v: unY(py) };
+}
+
+function drag(node, svg, onMove, onDown) {
+  node.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    node.setPointerCapture(e.pointerId);
+    if (onDown) onDown();
+    onMove(ptOf(svg, e));
+  });
+  node.addEventListener('pointermove', (e) => {
+    if (!node.hasPointerCapture(e.pointerId)) return;
+    onMove(ptOf(svg, e));
+  });
+}
+
+function chipRow(label, entries, get, set) {
+  const row = el('div', 'profiles');
+  row.append(el('span', 'plab', label));
+  const paint = () => row.querySelectorAll('.chip').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === get())));
+  entries.forEach(([id, text, timed]) => {
+    const b = el('button', 'chip' + (timed ? ' timed' : ''), text);
+    b.dataset.id = id;
+    b.onclick = () => { set(id); paint(); };
+    row.append(b);
+  });
+  paint();
+  row.repaint = paint;
+  return row;
+}
+
+/* ===========================================================================
+   A — two-handle rail. Each handle owns a profile; a TIMED profile splits it
+   into a start marker and a stop marker (the hold window).
+   =========================================================================== */
+(function optionA() {
+  const host = document.getElementById('wA');
+
+  const st = {
+    /* handle 1 = where the value starts; handle 2 = where it ends */
+    a: { level: 1.0, profile: 'exp', hold: 0.0 },   /* hold = timed split width */
+    b: { level: 0.0, profile: 'lin', hold: 0.0 },
+    sel: 'a',
+  };
+  const timed = (h) => h.profile === 'hold';
+
+  function sample(u) {
+    const t0 = timed(st.a) ? st.a.hold : 0;
+    const t1 = 1 - (timed(st.b) ? st.b.hold : 0);
+    if (u <= t0) return st.a.level;
+    if (u >= t1) return st.b.level;
+    const p = (u - t0) / Math.max(0.0001, t1 - t0);
+    const easeId = st.a.profile === 'hold' ? 'exp' : st.a.profile;
+    return lerp(st.a.level, st.b.level, EASE[easeId].f(p));
+  }
+
+  const svg = svgStage();
+  const area = svgEl('path', { class: 'area' });
+  const line = svgEl('path', { class: 'curve' });
+  const play = svgEl('line', { class: 'play', y1: PAD, y2: H - PAD, opacity: 0 });
+  svg.append(area, line, play);
+
+  /* handles: circle + optional tied partner marker for the timed split */
+  function handle(which) {
+    const g = svgEl('g', { class: 'hnd' });
+    const c = svgEl('circle', { r: 6 });
+    const lbl = svgEl('text', { 'text-anchor': 'middle' });
+    g.append(c, lbl);
+    g.onclick = (e) => { e.stopPropagation(); st.sel = which; paint(); };
+    drag(g, svg, ({ t, v }) => {
+      const h = st[which];
+      h.level = v;
+      if (timed(h)) h.hold = which === 'a' ? clamp01(Math.min(t, 0.85)) : clamp01(Math.min(1 - t, 0.85));
+      st.sel = which;
+      paint();
+    }, () => { st.sel = which; });
+    return { g, c, lbl };
+  }
+  const hA = handle('a');
+  const hB = handle('b');
+  const tieA = svgEl('g', { class: 'hnd tie' });
+  tieA.append(svgEl('circle', { r: 4.5 }));
+  const tieB = svgEl('g', { class: 'hnd tie' });
+  tieB.append(svgEl('circle', { r: 4.5 }));
+  const tieLineA = svgEl('line', { class: 'grid', stroke: 'var(--role-modulation)', 'stroke-dasharray': '2 2' });
+  const tieLineB = svgEl('line', { class: 'grid', stroke: 'var(--role-modulation)', 'stroke-dasharray': '2 2' });
+  svg.append(tieLineA, tieLineB, tieA, tieB, hA.g, hB.g);
+
+  const PROFILES = [['exp', 'Exp'], ['lin', 'Linear'], ['log', 'Log'], ['s', 'S-curve'], ['step', 'Snap'], ['hold', 'Hold ⇥', true]];
+  const chips = chipRow('profile', PROFILES,
+    () => st[st.sel].profile,
+    (id) => {
+      const h = st[st.sel];
+      h.profile = id;
+      if (id === 'hold' && h.hold === 0) h.hold = 0.22;
+      if (id !== 'hold') h.hold = 0;
+      paint();
+    });
+
+  const selLine = el('div', 'hint');
+  const pv = preview(sample);
+
+  host.append(svg, chips, selLine, pv);
+
+  function paint() {
+    const [d, a] = curvePath(sample);
+    line.setAttribute('d', d);
+    area.setAttribute('d', a);
+
+    const t0 = timed(st.a) ? st.a.hold : 0;
+    const t1 = 1 - (timed(st.b) ? st.b.hold : 0);
+
+    hA.g.setAttribute('transform', `translate(${X(0)},${Y(st.a.level)})`);
+    hA.g.classList.toggle('sel', st.sel === 'a');
+    hA.lbl.textContent = '';
+    hB.g.setAttribute('transform', `translate(${X(1)},${Y(st.b.level)})`);
+    hB.g.classList.toggle('sel', st.sel === 'b');
+    hB.lbl.textContent = '';
+
+    tieA.style.display = timed(st.a) ? '' : 'none';
+    tieLineA.style.display = timed(st.a) ? '' : 'none';
+    if (timed(st.a)) {
+      tieA.setAttribute('transform', `translate(${X(t0)},${Y(st.a.level)})`);
+      tieLineA.setAttribute('x1', X(0)); tieLineA.setAttribute('x2', X(t0));
+      tieLineA.setAttribute('y1', Y(st.a.level)); tieLineA.setAttribute('y2', Y(st.a.level));
+    }
+    tieB.style.display = timed(st.b) ? '' : 'none';
+    tieLineB.style.display = timed(st.b) ? '' : 'none';
+    if (timed(st.b)) {
+      tieB.setAttribute('transform', `translate(${X(t1)},${Y(st.b.level)})`);
+      tieLineB.setAttribute('x1', X(t1)); tieLineB.setAttribute('x2', X(1));
+      tieLineB.setAttribute('y1', Y(st.b.level)); tieLineB.setAttribute('y2', Y(st.b.level));
+    }
+
+    chips.repaint();
+    const h = st[st.sel];
+    selLine.innerHTML = `<b>${st.sel === 'a' ? 'start' : 'end'} handle</b> · level ${h.level.toFixed(2)} · ${EASE[h.profile] ? EASE[h.profile].label : 'Hold'}`
+      + (timed(h) ? ` · split at ${Math.round(h.hold * T.life)} ms — drag either marker` : ' · click the other handle to edit it');
+  }
+
+  widgets.push({
+    tick: (u) => {
+      pv.tick(u);
+      play.setAttribute('opacity', u == null ? 0 : 1);
+      if (u != null) { play.setAttribute('x1', X(u)); play.setAttribute('x2', X(u)); }
+    },
+    repaint: paint,
+  });
+  paint();
+})();
+
+/* ===========================================================================
+   B — gradient stops with midpoint bias
+   =========================================================================== */
+(function optionB() {
+  const host = document.getElementById('wB');
+
+  const st = {
+    stops: [{ t: 0, v: 1 }, { t: 0.35, v: 0.55 }, { t: 1, v: 0 }],
+    mids: [0.5, 0.5],   /* bias per segment, 0.5 = linear */
+    sel: 0,
+  };
+
+  function sample(u) {
+    const s = st.stops;
+    for (let i = 0; i < s.length - 1; i++) {
+      if (u >= s[i].t && u <= s[i + 1].t) {
+        const span = Math.max(0.0001, s[i + 1].t - s[i].t);
+        let p = (u - s[i].t) / span;
+        const m = st.mids[i] ?? 0.5;
+        /* gradient-midpoint bias: exponent from the midpoint position */
+        const k = Math.log(0.5) / Math.log(Math.min(0.98, Math.max(0.02, m)));
+        p = Math.pow(p, k);
+        return lerp(s[i].v, s[i + 1].v, p);
+      }
+    }
+    return u < s[0].t ? s[0].v : s[s.length - 1].v;
+  }
+
+  /* B gets its own geometry: the gradient band and its stop markers sit ABOVE the
+     plot rather than over it, so the band stays readable as a preview in its own
+     right (that is half the point of the gradient metaphor). */
+  const HB2 = 132, BAND_Y = 4, BAND_H = 24, MARK_Y = BAND_Y + BAND_H + 1, PLOT_TOP = 52, PLOT_H = HB2 - PLOT_TOP - 8;
+  const YB = (v) => PLOT_TOP + (1 - v) * PLOT_H;
+  const unYB = (py) => clamp01(1 - (py - PLOT_TOP) / PLOT_H);
+  const ptB = (e) => {
+    const b = svg.getBoundingClientRect();
+    return {
+      t: unX(((e.clientX - b.left) / b.width) * W),
+      v: unYB(((e.clientY - b.top) / b.height) * HB2),
+    };
+  };
+  const curvePathB = () => {
+    let d = '', a = '';
+    for (let i = 0; i <= 80; i++) {
+      const u = i / 80, v = clamp01(sample(u));
+      d += (i ? 'L' : 'M') + X(u) + ' ' + YB(v);
+      a += (i ? 'L' : 'M') + X(u) + ' ' + YB(v);
+    }
+    a += `L${X(1)} ${YB(0)} L${X(0)} ${YB(0)} Z`;
+    return [d, a];
+  };
+
+  const svg = svgEl('svg', { class: 'env', viewBox: `0 0 ${W} ${HB2}`, preserveAspectRatio: 'none' });
+  svg.style.height = HB2 + 'px';
+  svg.append(svgEl('line', { class: 'axis', x1: PAD, y1: YB(0), x2: W - PAD, y2: YB(0) }));
+  svg.append(svgEl('line', { class: 'grid', x1: PAD, y1: YB(0.5), x2: W - PAD, y2: YB(0.5) }));
+  svg.append(svgEl('line', { class: 'grid', x1: PAD, y1: YB(1), x2: W - PAD, y2: YB(1) }));
+  {
+    const ghost = svgEl('path', { class: 'ghost' });
+    let gd = '';
+    for (let i = 0; i <= 60; i++) { const u = i / 60; gd += (i ? 'L' : 'M') + X(u) + ' ' + YB(todayCurve(u)); }
+    ghost.setAttribute('d', gd);
+    svg.append(ghost);
+  }
+
+  /* the band: a live gradient built from the sampled envelope */
+  const defs = svgEl('defs');
+  const grad = svgEl('linearGradient', { id: 'envgrad', x1: '0', x2: '1', y1: '0', y2: '0' });
+  const stopsEls = [];
+  for (let i = 0; i <= 12; i++) {
+    const s = svgEl('stop', { offset: (i / 12 * 100) + '%' });
+    grad.append(s);
+    stopsEls.push(s);
+  }
+  defs.append(grad);
+  const band = svgEl('rect', { x: PAD, y: BAND_Y, width: IW, height: BAND_H, fill: 'url(#envgrad)', stroke: 'var(--border)', rx: 3, style: 'cursor: copy' });
+  const area = svgEl('path', { class: 'area' });
+  const line = svgEl('path', { class: 'curve' });
+  const play = svgEl('line', { class: 'play', y1: BAND_Y, y2: HB2 - 6, opacity: 0 });
+  svg.append(defs, band, area, line, play);
+
+  const markers = svgEl('g');
+  svg.append(markers);
+
+  /* B-local drag: same contract as `drag`, but mapped through the offset plot */
+  function dragB(node, onMove, onDown) {
+    node.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      node.setPointerCapture(e.pointerId);
+      if (onDown) onDown();
+      onMove(ptB(e));
+    });
+    node.addEventListener('pointermove', (e) => {
+      if (!node.hasPointerCapture(e.pointerId)) return;
+      onMove(ptB(e));
+    });
+  }
+
+  band.addEventListener('click', (e) => {
+    const { t } = ptB(e);
+    st.stops.push({ t, v: clamp01(sample(t)) });
+    st.stops.sort((a, b) => a.t - b.t);
+    st.mids = st.stops.slice(0, -1).map((_, i) => st.mids[i] ?? 0.5);
+    st.sel = st.stops.findIndex((s) => s.t === t);
+    paint();
+  });
+
+  const levelRow = el('div', 'profiles');
+  const levLab = el('span', 'plab', 'stop level');
+  const levRail = el('div', 'rail');
+  levRail.style.cssText = 'flex:1;min-width:120px';
+  levRail.append(el('div', 'fill'), el('div', 'knob'));
+  levelRow.append(levLab, levRail);
+  {
+    const fill = levRail.querySelector('.fill'), knob = levRail.querySelector('.knob');
+    const at = (e) => {
+      const b = levRail.getBoundingClientRect();
+      st.stops[st.sel].v = clamp01((e.clientX - b.left) / b.width);
+      paint();
+    };
+    levRail.addEventListener('pointerdown', (e) => { levRail.setPointerCapture(e.pointerId); at(e); });
+    levRail.addEventListener('pointermove', (e) => { if (levRail.hasPointerCapture(e.pointerId)) at(e); });
+    levRail.paint = () => {
+      const v = st.stops[st.sel].v;
+      fill.style.right = (100 - v * 100) + '%';
+      knob.style.left = (v * 100) + '%';
+    };
+  }
+
+  const hint = el('div', 'hint', '');
+  const pv = preview(sample);
+  host.append(svg, levelRow, hint, pv);
+
+  function paint() {
+    for (let i = 0; i <= 12; i++) {
+      const v = clamp01(sample(i / 12));
+      stopsEls[i].setAttribute('stop-color', hsvCss(HUE, 1, Math.max(0.05, v)));
+    }
+    const [d, a] = curvePathB();
+    line.setAttribute('d', d);
+    area.setAttribute('d', a);
+
+    markers.innerHTML = '';
+    st.stops.forEach((s, i) => {
+      const g = svgEl('g', { class: 'stop' + (i === st.sel ? ' sel' : '') });
+      g.setAttribute('transform', `translate(${X(s.t)},${MARK_Y})`);
+      g.append(svgEl('rect', { x: -4, y: 0, width: 8, height: 10, rx: 2 }));
+      markers.append(g);
+      g.onclick = (e) => { e.stopPropagation(); st.sel = i; paint(); };
+      g.ondblclick = (e) => {
+        e.stopPropagation();
+        if (st.stops.length <= 2 || i === 0 || i === st.stops.length - 1) return;
+        st.stops.splice(i, 1);
+        st.mids.splice(i, 1);
+        st.sel = 0;
+        paint();
+      };
+      dragB(g, ({ t, v }) => {
+        st.sel = i;
+        if (i > 0 && i < st.stops.length - 1) {
+          s.t = Math.min(st.stops[i + 1].t - 0.01, Math.max(st.stops[i - 1].t + 0.01, t));
+        }
+        s.v = v;
+        paint();
+      });
+    });
+
+    st.stops.slice(0, -1).forEach((s, i) => {
+      const nx = st.stops[i + 1];
+      const m = st.mids[i] ?? 0.5;
+      const tm = lerp(s.t, nx.t, m);
+      const g = svgEl('g', { class: 'mid' });
+      g.setAttribute('transform', `translate(${X(tm)},${MARK_Y + 5})`);
+      g.append(svgEl('path', { d: 'M0 -4 L4 0 L0 4 L-4 0 Z', fill: 'var(--surface-3)', stroke: 'var(--border-strong)' }));
+      markers.append(g);
+      dragB(g, ({ t }) => {
+        const span = Math.max(0.0001, nx.t - s.t);
+        st.mids[i] = Math.min(0.92, Math.max(0.08, (t - s.t) / span));
+        paint();
+      });
+    });
+
+    levRail.paint();
+    hint.innerHTML = `<b>${st.stops.length} stops</b> · stop ${st.sel + 1} at ${Math.round(st.stops[st.sel].t * T.life)} ms, level ${st.stops[st.sel].v.toFixed(2)} · click the band to add · double-click a stop to remove · drag a ◇ to bias`;
+  }
+
+  widgets.push({
+    tick: (u) => {
+      pv.tick(u);
+      play.setAttribute('opacity', u == null ? 0 : 1);
+      if (u != null) { play.setAttribute('x1', X(u)); play.setAttribute('x2', X(u)); }
+    },
+    repaint: paint,
+  });
+  paint();
+})();
+
+/* ===========================================================================
+   C — mini curve editor (breakpoints + per-segment ease)
+   =========================================================================== */
+(function optionC() {
+  const host = document.getElementById('wC');
+
+  const st = {
+    pts: [{ t: 0, v: 1 }, { t: 0.18, v: 0.75 }, { t: 1, v: 0 }],
+    eases: ['exp', 'log'],
+    selSeg: 0,
+    selPt: -1,
+  };
+
+  function sample(u) {
+    const p = st.pts;
+    for (let i = 0; i < p.length - 1; i++) {
+      if (u >= p[i].t && u <= p[i + 1].t) {
+        const span = Math.max(0.0001, p[i + 1].t - p[i].t);
+        const e = EASE[st.eases[i] || 'lin'];
+        return lerp(p[i].v, p[i + 1].v, e.f((u - p[i].t) / span));
+      }
+    }
+    return u < p[0].t ? p[0].v : p[p.length - 1].v;
+  }
+
+  const svg = svgStage();
+  const area = svgEl('path', { class: 'area' });
+  const line = svgEl('path', { class: 'curve' });
+  const play = svgEl('line', { class: 'play', y1: PAD, y2: H - PAD, opacity: 0 });
+  const hits = svgEl('g');
+  const knobs = svgEl('g');
+  svg.append(area, line, hits, knobs, play);
+  svg.style.cursor = 'copy';
+
+  svg.addEventListener('click', (e) => {
+    if (e.target.closest('.hnd') || e.target.closest('.seg')) return;
+    const { t, v } = ptOf(svg, e);
+    const i = st.pts.findIndex((p) => p.t > t);
+    const at = i < 0 ? st.pts.length - 1 : i;
+    st.pts.splice(at, 0, { t, v });
+    st.eases.splice(at, 0, st.eases[Math.max(0, at - 1)] || 'lin');
+    paint();
+  });
+
+  const chips = chipRow('segment ease', [['exp', 'Exp'], ['lin', 'Linear'], ['log', 'Log'], ['s', 'S-curve'], ['step', 'Snap']],
+    () => st.eases[st.selSeg] || 'lin',
+    (id) => { st.eases[st.selSeg] = id; paint(); });
+
+  const hint = el('div', 'hint', '');
+  const pv = preview(sample);
+  host.append(svg, chips, hint, pv);
+
+  function paint() {
+    const [d, a] = curvePath(sample);
+    line.setAttribute('d', d);
+    area.setAttribute('d', a);
+
+    /* fat invisible hit lines so a segment is selectable */
+    hits.innerHTML = '';
+    st.pts.slice(0, -1).forEach((p, i) => {
+      const nx = st.pts[i + 1];
+      let dd = '';
+      for (let k = 0; k <= 16; k++) {
+        const u = lerp(p.t, nx.t, k / 16);
+        dd += (k ? 'L' : 'M') + X(u) + ' ' + Y(sample(u));
+      }
+      const seg = svgEl('path', { class: 'seg' + (i === st.selSeg ? ' sel' : ''), d: dd, stroke: i === st.selSeg ? 'var(--accent-bright)' : 'transparent', 'stroke-width': i === st.selSeg ? 3 : 12, fill: 'none' });
+      seg.onclick = (e) => { e.stopPropagation(); st.selSeg = i; paint(); };
+      hits.append(seg);
+    });
+
+    knobs.innerHTML = '';
+    st.pts.forEach((p, i) => {
+      const g = svgEl('g', { class: 'hnd' + (i === st.selPt ? ' sel' : '') });
+      g.setAttribute('transform', `translate(${X(p.t)},${Y(p.v)})`);
+      g.append(svgEl('circle', { r: 5 }));
+      g.onclick = (e) => { e.stopPropagation(); st.selPt = i; paint(); };
+      g.ondblclick = (e) => {
+        e.stopPropagation();
+        if (i === 0 || i === st.pts.length - 1) return;
+        st.pts.splice(i, 1);
+        st.eases.splice(i, 1);
+        st.selSeg = Math.min(st.selSeg, st.pts.length - 2);
+        paint();
+      };
+      drag(g, svg, ({ t, v }) => {
+        st.selPt = i;
+        if (i > 0 && i < st.pts.length - 1) {
+          p.t = Math.min(st.pts[i + 1].t - 0.01, Math.max(st.pts[i - 1].t + 0.01, t));
+        }
+        p.v = v;
+        paint();
+      });
+      knobs.append(g);
+    });
+
+    chips.repaint();
+    hint.innerHTML = `<b>${st.pts.length} points</b> · segment ${st.selSeg + 1} of ${st.pts.length - 1} selected (${EASE[st.eases[st.selSeg] || 'lin'].label}) · click empty space to add a point · double-click one to remove`;
+  }
+
+  widgets.push({
+    tick: (u) => {
+      pv.tick(u);
+      play.setAttribute('opacity', u == null ? 0 : 1);
+      if (u != null) { play.setAttribute('x1', X(u)); play.setAttribute('x2', X(u)); }
+    },
+    repaint: paint,
+  });
+  paint();
+})();
+
+/* ===========================================================================
+   D — levels: in-point / gamma / out-point reshaping today's exponential
+   =========================================================================== */
+(function optionD() {
+  const host = document.getElementById('wD');
+
+  const st = { inP: 0.0, outP: 1.0, gamma: 1.0, sel: 'gamma' };
+
+  function sample(u) {
+    if (u <= st.inP) return 1;
+    if (u >= st.outP) return 0;
+    const p = (u - st.inP) / Math.max(0.0001, st.outP - st.inP);
+    /* today's exp, remapped through the gamma — gamma 1 reproduces it exactly */
+    return Math.pow(todayCurve(p) / todayCurve(0), st.gamma);
+  }
+
+  const svg = svgStage();
+  const area = svgEl('path', { class: 'area' });
+  const line = svgEl('path', { class: 'curve' });
+  const play = svgEl('line', { class: 'play', y1: PAD, y2: H - PAD, opacity: 0 });
+  svg.append(area, line, play);
+
+  const HB = H - PAD - 2;   /* handle baseline, below the plot */
+  const handles = svgEl('g');
+  svg.append(handles);
+
+  function tri(cls, w, fill) {
+    const g = svgEl('g', { class: 'hnd ' + cls, style: 'cursor: ew-resize' });
+    g.append(svgEl('path', { d: `M0 -${w} L${w} ${w} L-${w} ${w} Z`, fill, stroke: 'var(--border-strong)' }));
+    return g;
+  }
+  const hIn = tri('in', 5, 'var(--surface-3)');
+  const hGam = tri('gam', 6, 'var(--role-modulation)');
+  const hOut = tri('out', 5, 'var(--accent)');
+  handles.append(hIn, hGam, hOut);
+
+  drag(hIn, svg, ({ t }) => { st.inP = Math.min(t, st.outP - 0.05); st.sel = 'in'; paint(); });
+  drag(hOut, svg, ({ t }) => { st.outP = Math.max(t, st.inP + 0.05); st.sel = 'out'; paint(); });
+  drag(hGam, svg, ({ t }) => {
+    const span = Math.max(0.0001, st.outP - st.inP);
+    const p = clamp01((t - st.inP) / span);
+    /* midpoint left → brighter/longer tail (gamma < 1); right → faster fall */
+    st.gamma = Math.pow(4, (p - 0.5) * 2);
+    st.sel = 'gamma';
+    paint();
+  });
+
+  const resetRow = el('div', 'profiles');
+  resetRow.append(el('span', 'plab', 'presets'));
+  [['today', 'Today (γ 1)', () => { st.inP = 0; st.outP = 1; st.gamma = 1; }],
+   ['long', 'Long tail', () => { st.inP = 0; st.outP = 1; st.gamma = 0.42; }],
+   ['tight', 'Tight', () => { st.inP = 0; st.outP = 0.55; st.gamma = 2.1; }],
+   ['sustain', 'Hold then fall', () => { st.inP = 0.28; st.outP = 1; st.gamma = 1.6; }]].forEach(([id, label, f]) => {
+    const b = el('button', 'chip', label);
+    b.onclick = () => { f(); paint(); };
+    resetRow.append(b);
+  });
+
+  const hint = el('div', 'hint', '');
+  const pv = preview(sample);
+  host.append(svg, resetRow, hint, pv);
+
+  function paint() {
+    const [d, a] = curvePath(sample);
+    line.setAttribute('d', d);
+    area.setAttribute('d', a);
+    hIn.setAttribute('transform', `translate(${X(st.inP)},${HB})`);
+    hOut.setAttribute('transform', `translate(${X(st.outP)},${HB})`);
+    const p = 0.5 + Math.log(st.gamma) / Math.log(4) / 2;
+    hGam.setAttribute('transform', `translate(${X(lerp(st.inP, st.outP, clamp01(p)))},${HB})`);
+    hint.innerHTML = `<b>in</b> ${Math.round(st.inP * T.life)} ms · <b>γ</b> ${st.gamma.toFixed(2)} · <b>out</b> ${Math.round(st.outP * T.life)} ms`
+      + (Math.abs(st.gamma - 1) < 0.02 && st.inP === 0 && st.outP === 1 ? ' — identical to today\'s scalar' : '');
+  }
+
+  widgets.push({
+    tick: (u) => {
+      pv.tick(u);
+      play.setAttribute('opacity', u == null ? 0 : 1);
+      if (u != null) { play.setAttribute('x1', X(u)); play.setAttribute('x2', X(u)); }
+    },
+    repaint: paint,
+  });
+  paint();
+})();
+
+/* ===========================================================================
+   Verdict panel
+   =========================================================================== */
+(function verdict() {
+  const KEY = 'ledrums.proto.envelope-param';
+  const OPTS = [
+    ['two', 'A · Two-handle rail', 'Handle owns a named profile; timed profile splits it. Reads as a slider, capped at one transition.'],
+    ['stops', 'B · Gradient stops', 'Stops + midpoint bias on a live band. Any number of stages, second axis is awkward.'],
+    ['curve', 'C · Mini curve', 'Breakpoints + per-segment ease. Expressively complete, closest to shipping, most graph-like.'],
+    ['levels', 'D · Levels', 'In / gamma / out over today\'s exponential. Truly default-compatible, least expressive.'],
+    ['hybrid', 'Hybrid', 'e.g. A as the default face, C behind an "edit curve" affordance — note which pair.'],
+    ['none', 'None — keep the scalar', 'Envelope-by-default is not worth it; keep the opt-in ADSR modal.'],
+  ];
+  const body = document.getElementById('vbody');
+  const savedTag = document.getElementById('saved');
+  const state = JSON.parse(localStorage.getItem(KEY) || '{"winner":null,"notes":{}}');
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    savedTag.textContent = 'saved ' + new Date().toLocaleTimeString();
+    savedTag.classList.add('on');
+  }
+  OPTS.forEach(([id, name, pitch]) => {
+    const l = document.createElement('label');
+    l.className = 'vopt' + (state.winner === id ? ' win' : '');
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'winner'; r.value = id; r.checked = state.winner === id;
+    const d = el('div');
+    d.append(el('div', 'vname', name), el('div', 'vnote', pitch));
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes on ' + name + '…';
+    ta.value = state.notes[id] || '';
+    ta.oninput = () => { state.notes[id] = ta.value; save(); };
+    ta.onclick = (e) => e.preventDefault();
+    r.onchange = () => {
+      state.winner = id;
+      body.querySelectorAll('.vopt').forEach((x) => x.classList.remove('win'));
+      l.classList.add('win');
+      save();
+    };
+    l.append(r, d, ta);
+    body.append(l);
+  });
+  if (state.winner) { savedTag.textContent = 'restored'; savedTag.classList.add('on'); }
+  document.getElementById('clear').onclick = () => { localStorage.removeItem(KEY); location.reload(); };
+})();
+</script>
+</body>
+</html>

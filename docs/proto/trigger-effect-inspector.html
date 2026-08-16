@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Effect inspector: common + specific</title>
+<!--
+  ============================================================================
+  THROWAWAY PROTOTYPE — no build step, no dependencies, open with file://.
+  Design question: every effect exposes a flat param list today. Split it into
+  a COMMON section (the params ~every effect has) + an EFFECT-SPECIFIC section.
+  Which organizing structure? Four, side by side, all driven by one effect
+  switcher — so you can watch what stays put and what changes.
+  Param data is copied verbatim from packages/core/src/effects/impl/*.ts.
+  ============================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    --bg: oklch(0.124 0.011 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+
+    --role-content: oklch(0.700 0.165 300);
+    --role-effect: oklch(0.785 0.150 68);
+    --role-layer: oklch(0.745 0.150 152);
+    --role-output: oklch(0.720 0.120 205);
+    --role-mod: oklch(0.760 0.130 330);
+    --role-modulation: oklch(0.820 0.130 195);
+
+    --warn: oklch(0.810 0.150 80);
+
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Geist Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+
+    --tracking-label: 0.04em;
+
+    --space-0_5: 2px;
+    --space-1: 4px;
+    --space-1_5: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    --radius-1: 3px;
+    --radius-2: 5px;
+    --radius-3: 8px;
+    --radius-pill: 999px;
+    --control-h: 26px;
+
+    --dur-90: 90ms;
+    --dur-120: 120ms;
+    --ease-control: cubic-bezier(0.2, 0, 0, 1);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: var(--text-base); -webkit-font-smoothing: antialiased; }
+
+  header.top { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-4); height: 44px; background: var(--surface); border-bottom: 1px solid var(--border-faint); }
+  .proto-tag { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--warn); border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent); background: color-mix(in oklch, var(--warn) 12%, transparent); padding: 2px 6px; border-radius: var(--radius-1); flex: none; }
+  .top .title { font-size: var(--text-sm); font-weight: 500; color: var(--ink); letter-spacing: -0.011em; }
+  .top .question { font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; text-align: right; }
+
+  main { padding: var(--space-5) var(--space-4) 64px; max-width: 1240px; margin: 0 auto; }
+
+  .plate { background: var(--surface); border: 1px solid var(--border-faint); border-radius: var(--radius-3); margin-bottom: var(--space-5); overflow: hidden; }
+  .plate-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-faint); background: var(--surface-2); }
+  .plate-num { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--accent); border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); background: var(--accent-soft); border-radius: var(--radius-1); height: 24px; display: grid; place-items: center; }
+  .plate-num.base { color: var(--text-disabled); border-color: var(--border); background: var(--surface-inset); }
+  .plate-name { font-size: var(--text-base); font-weight: 700; color: var(--ink); letter-spacing: -0.011em; }
+  .plate-pitch { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.55; margin-top: 2px; text-wrap: pretty; }
+  .ref { display: inline-block; margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); border-left: 2px solid var(--border-strong); padding-left: var(--space-2); }
+  .plate-body { padding: var(--space-4); }
+  .plate-foot { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-faint); background: var(--surface-inset); font-size: var(--text-2xs); line-height: 1.6; color: var(--text-faint); }
+  .plate-foot b { color: var(--text-muted); font-weight: 500; }
+  .plate-foot > div { flex: 1 1 240px; }
+
+  /* ---- effect switcher (drives all four) ---------------------------------- */
+  .switcher {
+    position: sticky; top: 44px; z-index: 30;
+    display: flex; align-items: center; gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    margin-bottom: var(--space-5);
+  }
+  .switcher .lab { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-disabled); }
+  .effbtn {
+    appearance: none; display: inline-flex; align-items: center; gap: var(--space-2);
+    height: 32px; padding: 0 var(--space-3);
+    border-radius: var(--radius-2);
+    border: 1px solid var(--border);
+    background: var(--surface-inset);
+    color: var(--text-muted);
+    font-family: var(--font-sans); font-size: var(--text-sm);
+    cursor: pointer;
+    transition: border-color var(--dur-90) var(--ease-control), color var(--dur-90) var(--ease-control);
+  }
+  .effbtn:hover { border-color: var(--border-strong); color: var(--ink); }
+  .effbtn[aria-pressed='true'] { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+  .effbtn .dot { width: 8px; height: 8px; border-radius: 2px; }
+  .legend { margin-left: auto; display: flex; gap: var(--space-4); font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+  .legend span b { font-weight: 400; }
+  .kdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .kdot.common { background: var(--accent); }
+  .kdot.spec { background: transparent; border: 1.5px solid var(--role-effect); }
+
+  /* ---- the four inspector mocks ------------------------------------------- */
+  /* a clean 2×2 so the four are compared in pairs, collapsing to one column when narrow */
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); }
+  @media (min-width: 880px) { .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .insp {
+    width: 100%;
+    height: 486px;
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+  }
+  .insp-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+    background: var(--surface-2);
+    flex: none;
+  }
+  .insp-head .th { width: 56px; height: 32px; border-radius: var(--radius-1); border: 1px solid var(--border-faint); overflow: hidden; flex: none; }
+  .insp-head h3 { margin: 0; font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+  .insp-head .cat { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); margin-left: auto; }
+  .insp-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+  .insp-fixed { flex: none; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+
+  .sect { padding: var(--space-2) var(--space-3) var(--space-3); }
+  .sect + .sect { border-top: 1px solid var(--border-faint); }
+  .eyebrow {
+    display: flex; align-items: center; gap: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--text-disabled);
+    margin: var(--space-2) 0 var(--space-2);
+  }
+  .eyebrow .count { margin-left: auto; color: var(--text-disabled); text-transform: none; letter-spacing: var(--tracking-label); }
+  .eyebrow.acc { color: var(--accent-dim); }
+
+  .prow { display: grid; grid-template-columns: 106px minmax(0, 1fr) 56px; align-items: center; gap: var(--space-2); height: 24px; }
+  .prow .k { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); letter-spacing: var(--tracking-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prow .v { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .prow.common .k::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 5px; vertical-align: middle; }
+  .prow.spec .k::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--role-effect); margin-right: 5px; vertical-align: middle; box-sizing: border-box; }
+
+  .rail { position: relative; height: 4px; border-radius: var(--radius-pill); background: var(--surface-inset); border: 1px solid var(--border-faint); cursor: ew-resize; touch-action: none; }
+  .rail .fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--accent) 70%, transparent); }
+  .rail .knob { position: absolute; top: 50%; width: 10px; height: 10px; margin-left: -5px; transform: translateY(-50%); border-radius: 50%; background: var(--surface-3); border: 1.5px solid var(--accent); }
+
+  .enumsel {
+    height: 20px; width: 100%;
+    background: var(--surface-inset);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    color: var(--text); font-family: var(--font-mono); font-size: var(--text-2xs);
+    padding: 0 var(--space-1);
+  }
+  .boolbtn {
+    height: 16px; width: 30px; border-radius: var(--radius-pill);
+    border: 1px solid var(--border); background: var(--surface-inset);
+    position: relative; cursor: pointer; padding: 0;
+  }
+  .boolbtn::after { content: ''; position: absolute; top: 1px; left: 1px; width: 12px; height: 12px; border-radius: 50%; background: var(--text-disabled); transition: transform var(--dur-90) var(--ease-control); }
+  .boolbtn[aria-pressed='true'] { background: var(--accent-soft); border-color: var(--accent-dim); }
+  .boolbtn[aria-pressed='true']::after { transform: translateX(14px); background: var(--accent); }
+
+  .swatch { height: 24px; border-radius: var(--radius-1); border: 1px solid var(--border); }
+
+  .tabbar { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface-2); flex: none; }
+  .tabbar button {
+    appearance: none; flex: 1; border: 0; background: transparent;
+    border-bottom: 2px solid transparent;
+    color: var(--text-faint);
+    font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label);
+    padding: var(--space-2) var(--space-2);
+    cursor: pointer;
+    transition: color var(--dur-90) var(--ease-control), border-color var(--dur-90) var(--ease-control);
+  }
+  .tabbar button:hover { color: var(--text); }
+  .tabbar button[aria-pressed='true'] { color: var(--ink); border-bottom-color: var(--accent); }
+
+  /* channel strip */
+  .strip { display: grid; grid-template-columns: 84px minmax(0, 1fr); height: 100%; min-height: 0; }
+  .strip .modules { border-right: 1px solid var(--border-faint); background: var(--surface-inset); padding: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); overflow-y: auto; }
+  .strip .modules button {
+    appearance: none; text-align: left; border: 1px solid transparent; background: transparent;
+    border-radius: var(--radius-1); padding: var(--space-1_5) var(--space-2);
+    color: var(--text-faint); font-family: var(--font-mono); font-size: var(--text-2xs);
+    cursor: pointer;
+  }
+  .strip .modules button:hover { background: var(--surface-2); color: var(--text); }
+  .strip .modules button[aria-pressed='true'] { background: var(--accent-soft); border-color: color-mix(in oklch, var(--accent) 40%, transparent); color: var(--accent-bright); }
+  .strip .modules .hr { height: 1px; background: var(--border-faint); margin: var(--space-1_5) 0; }
+  .strip .pane { overflow-y: auto; min-height: 0; }
+
+  /* progressive disclosure */
+  .fold { border-top: 1px solid var(--border-faint); }
+  .fold summary {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label); text-transform: uppercase;
+    color: var(--text-faint);
+  }
+  .fold summary::-webkit-details-marker { display: none; }
+  .fold summary::before { content: '▸'; color: var(--text-disabled); }
+  .fold[open] summary::before { content: '▾'; }
+  .fold summary:hover { color: var(--ink); }
+  .fold summary .count { margin-left: auto; color: var(--text-disabled); text-transform: none; }
+  .searchrow { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-faint); }
+  .searchrow input {
+    width: 100%; height: 24px;
+    background: var(--surface-inset); border: 1px solid var(--border);
+    border-radius: var(--radius-1); color: var(--text);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    padding: 0 var(--space-2); outline: none;
+  }
+  .searchrow input:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+  /* derivation table */
+  table.derive { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+  table.derive th, table.derive td { text-align: left; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-faint); vertical-align: top; }
+  table.derive th { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-disabled); font-weight: 400; }
+  table.derive td.mono { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  table.derive td.n { font-family: var(--font-mono); color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+  table.derive tr.in td.mono { color: var(--accent-bright); }
+
+  /* verdict */
+  .verdict { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-3); overflow: hidden; }
+  .verdict .vhead { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface-2); border-bottom: 1px solid var(--border-faint); }
+  .verdict h2 { margin: 0; font-size: var(--text-base); color: var(--ink); font-weight: 700; letter-spacing: -0.011em; }
+  .verdict .saved { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+  .verdict .saved.on { color: var(--accent); }
+  .vbody { padding: var(--space-4); display: grid; gap: var(--space-3); }
+  .vopt { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: var(--space-3); border: 1px solid var(--border-faint); border-radius: var(--radius-2); background: var(--surface-inset); cursor: pointer; transition: border-color var(--dur-90) var(--ease-control); }
+  .vopt:hover { border-color: var(--border-strong); }
+  .vopt.win { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset)); }
+  .vopt input { accent-color: var(--accent); margin-top: 3px; }
+  .vopt .vname { font-size: var(--text-sm); color: var(--ink); font-weight: 500; }
+  .vopt .vnote { font-size: var(--text-2xs); color: var(--text-faint); margin-top: 2px; }
+  .vopt textarea { grid-column: 2; width: 100%; min-height: 46px; resize: vertical; margin-top: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-1); color: var(--text); font-family: var(--font-sans); font-size: var(--text-xs); padding: var(--space-2); outline: none; }
+  .vopt textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .vactions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+  .vactions button { appearance: none; height: var(--control-h); padding: 0 var(--space-3); border-radius: var(--radius-1); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); cursor: pointer; }
+  .vactions button:hover { border-color: var(--border-strong); color: var(--ink); }
+
+  footer.bot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-top: 1px solid var(--border-faint); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); }
+  footer.bot .sep { color: var(--border-strong); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="proto-tag">Prototype</span>
+  <span class="title">Effect inspector — common + effect-specific</span>
+  <span class="question">Design question: what is the shared section, and what structure holds it next to the specifics?</span>
+</header>
+
+<main>
+
+  <!-- the switcher drives all four mocks at once -->
+  <div class="switcher" id="switcher">
+    <span class="lab">Effect</span>
+    <span class="legend">
+      <span><i class="kdot common"></i><b>common</b> — shared by most effects</span>
+      <span><i class="kdot spec"></i><b>specific</b> — this generator only</span>
+    </span>
+  </div>
+
+  <!-- ============ derivation ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num base">0</span>
+      <div>
+        <div class="plate-name">What "common" actually is — counted, not assumed</div>
+        <div class="plate-pitch">
+          Counted across the 45 generators in <code>packages/core/src/effects/impl/</code>
+          (<code>grep "key: '…'" | sort | uniq -c</code>). Four params carry the library; everything
+          after <code>speed</code> falls off a cliff. The two rows in accent are the proposed common
+          section; the <code>decay/life</code> family is the interesting middle case — recurrent, but
+          spelled four different ways.
+        </div>
+      </div>
+    </div>
+    <div class="plate-body" style="padding: 0">
+      <table class="derive">
+        <thead><tr><th>Param key</th><th style="text-align:right">Declarations</th><th>Reading</th></tr></thead>
+        <tbody>
+          <tr class="in"><td class="mono">saturation</td><td class="n">49</td><td>Universal. Same range (0–1), same step (0.01), same meaning, everywhere.</td></tr>
+          <tr class="in"><td class="mono">brightness</td><td class="n">49</td><td>Universal, and always the last thing you touch before a show.</td></tr>
+          <tr class="in"><td class="mono">hue</td><td class="n">40</td><td>Plus aliases: <code>baseHue</code> ×4, <code>hueSpread</code> ×4, <code>hueSpan</code>/<code>hueOffset</code>/<code>hueDrift</code> ×2 each, <code>flashHue</code>, <code>warmHue</code>, <code>tipHue</code>. The <em>concept</em> is universal; the key is not.</td></tr>
+          <tr class="in"><td class="mono">speed</td><td class="n">30</td><td>Units diverge hard: <code>°/s</code>, <code>mm/ms</code>, <code>rev/beat</code>. Shared gesture, unshared scale.</td></tr>
+          <tr><td class="mono">decayMs</td><td class="n">9</td><td rowspan="4" style="vertical-align: middle">The decay/life family: 16 declarations across ~15 effects, in four spellings and three units (ms, beats, unitless). Common enough to want a shared home, inconsistent enough that giving it one is a core change, not a UI change.</td></tr>
+          <tr><td class="mono">lifeMs</td><td class="n">4</td></tr>
+          <tr><td class="mono">lifeBeats</td><td class="n">2</td></tr>
+          <tr><td class="mono">life</td><td class="n">1</td></tr>
+          <tr><td class="mono">width</td><td class="n">6</td><td rowspan="2" style="vertical-align: middle">Below this line everything is ≤6 and genuinely per-effect. This is the specific section.</td></tr>
+          <tr><td class="mono">scale · reach · rate · …</td><td class="n">≤4</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="plate-foot">
+      <div><b>Also always present, from the node not the generator</b> — Preset, Play mode, Layer, Scope + Target. They are common to every play node regardless of effect, and today they sit <em>above</em> the params. Each option below has to decide whether they join the common section or stay node chrome.</div>
+      <div><b>The hue caveat.</b> A common colour block that only binds <code>hue</code> silently skips Confetti Burst (<code>baseHue</code> + <code>hueSpan</code>) and Temp Sweep (<code>warmHue</code>). Either the core normalises the keys, or the common section maps aliases. Option 4 is the only one below that degrades gracefully without that fix.</div>
+    </div>
+  </section>
+
+  <div class="grid2">
+
+    <!-- ============ option 1 ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">1</span>
+        <div>
+          <div class="plate-name">Fixed common header</div>
+          <div class="plate-pitch">
+            Colour · Time · Motion pinned at the top and <em>never scrolled away</em>; the effect's own
+            params scroll underneath. The four things you always want stay under the cursor no matter how
+            long the specific list gets.
+          </div>
+          <span class="ref">Forced from: an Ableton device header / a console's fixed strip top.</span>
+        </div>
+      </div>
+      <div class="plate-body"><div class="insp" id="opt1"></div></div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — muscle memory is absolute: brightness is always in the same pixel. Scroll only ever moves the part that differs.</div>
+        <div><b>Costs</b> — the header eats ~150px of a 320px-wide panel before the effect gets a word in. Confetti Burst's 8 params scroll in a 200px window.</div>
+      </div>
+    </section>
+
+    <!-- ============ option 2 ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">2</span>
+        <div>
+          <div class="plate-name">Tabbed — Common / This effect</div>
+          <div class="plate-pitch">
+            Two tabs over one full-height body. Each side gets the whole panel. The tab you were on
+            persists as you switch effects, so "I am tuning colour across four effects" stays a single
+            mode.
+          </div>
+          <span class="ref">Forced from: Photoshop's Layer Style dialog / devtools panes — full-height panes, one at a time.</span>
+        </div>
+      </div>
+      <div class="plate-body"><div class="insp" id="opt2"></div></div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — most room per param of the four; nothing is ever cramped. Effect-hopping while staying on Common is genuinely fast.</div>
+        <div><b>Costs</b> — you cannot see hue and the effect's own hue-spread at the same time, which is exactly when you need both. A tab is a hidden half.</div>
+      </div>
+    </section>
+
+    <!-- ============ option 3 ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">3</span>
+        <div>
+          <div class="plate-name">Channel strip</div>
+          <div class="plate-pitch">
+            A module rail down the left (Colour, Time, Motion, then the effect's own modules), content on
+            the right. The common modules occupy the same rail slots for every effect; only the modules
+            below the divider change. Reads as a device rack, not a form.
+          </div>
+          <span class="ref">Forced from: a mixing-console channel strip — fixed slots, swappable contents.</span>
+        </div>
+      </div>
+      <div class="plate-body"><div class="insp" id="opt3"></div></div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — the only option where "what changed when I swapped effect" is visible as a shape: the top of the rail is identical, the bottom is not. Scales to a 12-param effect without scrolling the common set.</div>
+        <div><b>Costs</b> — 84px of rail off an already-narrow panel; one more click to reach any param. Two-level navigation for what is often 5 controls.</div>
+      </div>
+    </section>
+
+    <!-- ============ option 4 ============ -->
+    <section class="plate" style="margin-bottom: 0">
+      <div class="plate-head">
+        <span class="plate-num">4</span>
+        <div>
+          <div class="plate-name">Progressive disclosure + filter</div>
+          <div class="plate-pitch">
+            One list, no modes. Common params always visible at the top; the effect's own params sit in a
+            fold that remembers whether you left it open. A filter box above narrows both. Degrades
+            perfectly when an effect has odd keys — an unmatched common param simply is not rendered.
+          </div>
+          <span class="ref">Forced from: macOS System Settings / Blender's collapsible panels — one column, disclosure instead of navigation.</span>
+        </div>
+      </div>
+      <div class="plate-body"><div class="insp" id="opt4"></div></div>
+      <div class="plate-foot">
+        <div><b>Wins</b> — least structure invented, least to learn, and the only one that survives the <code>baseHue</code>/<code>warmHue</code> mess without a core change first. The filter box is the fastest path on a 20-effect night.</div>
+        <div><b>Costs</b> — barely a "layout rethink"; it is the current flat list with a fold. Fold state is one more thing to persist per effect (or not — and then it flaps).</div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============ verdict ============ -->
+  <section class="verdict" id="verdict" style="margin-top: var(--space-5)">
+    <div class="vhead">
+      <h2>Verdict</h2>
+      <span class="saved" id="saved">not saved</span>
+    </div>
+    <div class="vbody" id="vbody"></div>
+    <div class="vactions">
+      <button type="button" id="clear">Clear verdict</button>
+      <span style="font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled)">
+        Saved to this browser's localStorage — key <code>ledrums.proto.effect-inspector</code>
+      </span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bot">
+  <span>params verbatim from impl/comet-trails.ts, radial-wash.ts, confetti-burst.ts</span>
+  <span class="sep">│</span>
+  <span>switch effect at the top — all four panels follow</span>
+</footer>
+
+<script>
+'use strict';
+
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+
+function hsv(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  const i = Math.floor(h / 60) % 6;
+  if (i === 0) { r = c; g = x; } else if (i === 1) { r = x; g = c; }
+  else if (i === 2) { g = c; b = x; } else if (i === 3) { g = x; b = c; }
+  else if (i === 4) { r = x; b = c; } else { r = c; b = x; }
+  return `rgb(${Math.round((r + m) * 255)} ${Math.round((g + m) * 255)} ${Math.round((b + m) * 255)})`;
+}
+
+/* ===========================================================================
+   REAL paramSpecs, copied from packages/core/src/effects/impl/*.ts.
+   `group` is the proposal under test, not something the core declares today.
+   =========================================================================== */
+const EFFECTS = {
+  comet: {
+    id: 'comet-trails', name: 'Comet Trails', category: 'particle',
+    blurb: 'Comets streak around each drum\'s hoops leaving fading tails.',
+    params: [
+      { key: 'comets', label: 'Comets', type: 'number', def: 4, min: 1, max: 32, step: 1, unit: '', group: 'specific' },
+      { key: 'speed', label: 'Speed', type: 'number', def: 180, min: 0, max: 1080, unit: '°/s', group: 'motion' },
+      { key: 'tail', label: 'Tail', type: 'number', def: 120, min: 5, max: 350, unit: '°', group: 'specific' },
+      { key: 'hue', label: 'Hue', type: 'number', def: 190, min: 0, max: 360, unit: '°', group: 'colour' },
+      { key: 'saturation', label: 'Saturation', type: 'number', def: 1, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+      { key: 'brightness', label: 'Brightness', type: 'number', def: 1, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+    ],
+  },
+  wash: {
+    id: 'radial-wash', name: '3D Radial Wash', category: 'wave',
+    blurb: 'An expanding wave of colour sweeps out from the hit, or collapses inward, or bounces.',
+    params: [
+      { key: 'hue', label: 'Hue', type: 'number', def: 280, min: 0, max: 360, unit: '°', group: 'colour' },
+      { key: 'saturation', label: 'Saturation', type: 'number', def: 1, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+      { key: 'brightness', label: 'Brightness', type: 'number', def: 0.9, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+      { key: 'mode', label: 'Mode', type: 'enum', def: 'out', options: ['out', 'in', 'bounce'], group: 'specific' },
+      { key: 'speed', label: 'Speed', type: 'number', def: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms', group: 'motion' },
+      { key: 'width', label: 'Width', type: 'number', def: 180, min: 10, max: 800, unit: 'mm', group: 'specific' },
+      { key: 'reach', label: 'Reach', type: 'number', def: 1200, min: 100, max: 4000, unit: 'mm', group: 'specific' },
+      { key: 'decayMs', label: 'Decay', type: 'number', def: 500, min: 50, max: 4000, unit: 'ms', group: 'time' },
+    ],
+  },
+  confetti: {
+    id: 'confetti-burst', name: 'Confetti Burst', category: 'particle',
+    blurb: 'Each hit throws a cloud of coloured particles, launched every direction and pulled down by gravity.',
+    params: [
+      { key: 'count', label: 'Particles / Hit', type: 'number', def: 24, min: 1, max: 256, step: 1, unit: '', group: 'specific' },
+      { key: 'spread', label: 'Spread', type: 'number', def: 1.4, min: 0.05, max: 8, step: 0.05, unit: 'mm/ms', group: 'specific' },
+      { key: 'gravity', label: 'Gravity', type: 'number', def: 0.004, min: 0, max: 0.05, step: 0.001, unit: 'mm/ms²', group: 'specific' },
+      { key: 'life', label: 'Life', type: 'number', def: 1200, min: 100, max: 6000, unit: 'ms', group: 'time' },
+      { key: 'baseHue', label: 'Base Hue', type: 'number', def: 0, min: 0, max: 360, unit: '°', group: 'colour' },
+      { key: 'hueSpan', label: 'Hue Span', type: 'number', def: 360, min: 0, max: 360, unit: '°', group: 'colour' },
+      { key: 'saturation', label: 'Saturation', type: 'number', def: 1, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+      { key: 'brightness', label: 'Brightness', type: 'number', def: 1, min: 0, max: 1, step: 0.01, unit: '', group: 'colour' },
+    ],
+  },
+};
+
+const GROUP_LABEL = { colour: 'Colour', time: 'Time', motion: 'Motion', specific: 'This effect' };
+const COMMON_GROUPS = ['colour', 'time', 'motion'];
+
+/* live values, per effect, so edits survive switching back */
+const VALUES = {};
+Object.entries(EFFECTS).forEach(([k, e]) => {
+  VALUES[k] = {};
+  e.params.forEach((p) => (VALUES[k][p.key] = p.def));
+});
+
+let current = 'comet';
+/* per-option UI state that must survive an effect switch */
+const uiState = { tab: 'common', module: 'colour', foldOpen: true, filter: '' };
+
+function fmtVal(p, v) {
+  if (p.type === 'enum') return String(v);
+  if (p.max <= 1) return Number(v).toFixed(p.step && p.step < 0.01 ? 3 : 2);
+  return Math.round(v) + (p.unit || '');
+}
+
+function railFor(p, get, set) {
+  const r = el('div', 'rail');
+  const fill = el('div', 'fill');
+  const knob = el('div', 'knob');
+  r.append(fill, knob);
+  const paint = () => {
+    const t = (get() - p.min) / (p.max - p.min);
+    fill.style.right = (100 - t * 100) + '%';
+    knob.style.left = (t * 100) + '%';
+  };
+  const at = (e) => {
+    const b = r.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (e.clientX - b.left) / b.width));
+    set(p.min + t * (p.max - p.min));
+    paint();
+  };
+  r.addEventListener('pointerdown', (e) => { r.setPointerCapture(e.pointerId); at(e); });
+  r.addEventListener('pointermove', (e) => { if (r.hasPointerCapture(e.pointerId)) at(e); });
+  paint();
+  return r;
+}
+
+/** one param row, tagged common/spec so the dot legend reads */
+function paramRow(p) {
+  const row = el('div', 'prow ' + (p.group === 'specific' ? 'spec' : 'common'));
+  const val = el('span', 'v', fmtVal(p, VALUES[current][p.key]));
+  const get = () => VALUES[current][p.key];
+  const set = (v) => { VALUES[current][p.key] = v; val.textContent = fmtVal(p, v); repaintAll(); };
+  const kLabel = el('span', 'k', p.label);
+  kLabel.title = `${p.label} — key "${p.key}", ${p.min ?? ''}–${p.max ?? ''}${p.unit ? ' ' + p.unit : ''}`;
+  row.append(kLabel);
+  if (p.type === 'enum') {
+    const s = document.createElement('select');
+    s.className = 'enumsel';
+    p.options.forEach((o) => {
+      const opt = document.createElement('option');
+      opt.value = o; opt.textContent = o;
+      s.append(opt);
+    });
+    s.value = get();
+    s.onchange = () => { VALUES[current][p.key] = s.value; val.textContent = s.value; };
+    row.append(s, val);
+  } else {
+    row.append(railFor(p, get, set), val);
+  }
+  return row;
+}
+
+/** the colour block — the thing a common section exists to give you */
+function colourBlock() {
+  const e = EFFECTS[current];
+  const v = VALUES[current];
+  const hueKey = e.params.find((p) => p.key === 'hue') ? 'hue' : e.params.find((p) => p.key === 'baseHue') ? 'baseHue' : null;
+  const wrap = el('div');
+  const sw = el('div', 'swatch');
+  const paint = () => {
+    sw.style.background = hueKey
+      ? hsv(v[hueKey], v.saturation ?? 1, v.brightness ?? 1)
+      : 'repeating-linear-gradient(45deg, var(--surface-3) 0 6px, var(--surface-2) 6px 12px)';
+    if (!hueKey) sw.title = 'this effect declares no hue key';
+  };
+  paint();
+  sw.dataset.paint = '1';
+  sw._paint = paint;
+  wrap.append(sw);
+  return wrap;
+}
+
+const repaintHooks = [];
+function repaintAll() { repaintHooks.forEach((f) => f()); }
+
+function paramsIn(group) {
+  return EFFECTS[current].params.filter((p) => p.group === group);
+}
+function specificParams() { return paramsIn('specific'); }
+function commonParams() { return COMMON_GROUPS.flatMap((g) => paramsIn(g)); }
+
+function inspHead() {
+  const e = EFFECTS[current];
+  const v = VALUES[current];
+  const h = el('div', 'insp-head');
+  const th = el('div', 'th');
+  const hueKey = e.params.find((p) => p.key === 'hue') ? 'hue' : 'baseHue';
+  th.style.background = `linear-gradient(100deg, ${hsv(v[hueKey] ?? 0, v.saturation ?? 1, v.brightness ?? 1)}, transparent 78%), var(--surface-inset)`;
+  const t = el('div');
+  t.append(el('h3', '', e.name));
+  h.append(th, t, el('span', 'cat', e.category));
+  return h;
+}
+
+function sect(label, nodes, opts) {
+  const s = el('div', 'sect');
+  const eb = el('div', 'eyebrow' + (opts && opts.accent ? ' acc' : ''), label);
+  if (opts && opts.count != null) eb.append(el('span', 'count', opts.count + ' params'));
+  s.append(eb);
+  nodes.forEach((n) => s.append(n));
+  return s;
+}
+
+/* ---- OPTION 1 — fixed common header ------------------------------------- */
+function renderOpt1() {
+  const host = document.getElementById('opt1');
+  host.innerHTML = '';
+  host.append(inspHead());
+
+  const fixed = el('div', 'insp-fixed');
+  const cb = colourBlock();
+  repaintHooks.push(() => cb.querySelector('.swatch')._paint());
+  const colour = sect('Colour', [cb, ...paramsIn('colour').map(paramRow)], { accent: true });
+  fixed.append(colour);
+  const timeMotion = [...paramsIn('time'), ...paramsIn('motion')];
+  if (timeMotion.length) fixed.append(sect('Time · Motion', timeMotion.map(paramRow), { accent: true }));
+  host.append(fixed);
+
+  const scroll = el('div', 'insp-scroll');
+  scroll.append(sect('This effect · ' + EFFECTS[current].name, specificParams().map(paramRow), { count: specificParams().length }));
+  scroll.append(sect('Node', nodeRows()));
+  host.append(scroll);
+}
+
+/* ---- OPTION 2 — tabbed --------------------------------------------------- */
+function renderOpt2() {
+  const host = document.getElementById('opt2');
+  host.innerHTML = '';
+  host.append(inspHead());
+
+  const bar = el('div', 'tabbar');
+  const body = el('div', 'insp-scroll');
+  const TABS = [['common', 'Common'], ['specific', 'This effect'], ['node', 'Node']];
+  TABS.forEach(([id, label]) => {
+    const b = el('button', '', label + (id === 'specific' ? ` (${specificParams().length})` : ''));
+    b.setAttribute('aria-pressed', String(uiState.tab === id));
+    b.onclick = () => { uiState.tab = id; renderOpt2(); };
+    bar.append(b);
+  });
+  host.append(bar, body);
+
+  if (uiState.tab === 'common') {
+    const cb = colourBlock();
+    repaintHooks.push(() => cb.querySelector('.swatch')._paint());
+    body.append(sect('Colour', [cb, ...paramsIn('colour').map(paramRow)], { accent: true }));
+    const t = paramsIn('time'), m = paramsIn('motion');
+    if (t.length) body.append(sect('Time', t.map(paramRow), { accent: true }));
+    if (m.length) body.append(sect('Motion', m.map(paramRow), { accent: true }));
+    if (!t.length && !m.length) {
+      const d = el('div', 'sect');
+      d.append(el('div', 'eyebrow', 'Time · Motion'));
+      const p = el('div', '', 'This effect declares neither. The section is absent, not empty — the tab silently shrinks.');
+      p.style.cssText = 'font-size:var(--text-2xs);color:var(--text-disabled);line-height:1.6';
+      d.append(p);
+      body.append(d);
+    }
+  } else if (uiState.tab === 'specific') {
+    body.append(sect(EFFECTS[current].name, specificParams().map(paramRow), { count: specificParams().length }));
+    const b = el('div', 'sect');
+    const p = el('div', '', EFFECTS[current].blurb);
+    p.style.cssText = 'font-size:var(--text-2xs);color:var(--text-faint);line-height:1.6';
+    b.append(p);
+    body.append(b);
+  } else {
+    body.append(sect('Node', nodeRows()));
+  }
+}
+
+/* ---- OPTION 3 — channel strip -------------------------------------------- */
+function renderOpt3() {
+  const host = document.getElementById('opt3');
+  host.innerHTML = '';
+  host.append(inspHead());
+
+  const strip = el('div', 'strip');
+  const rail = el('div', 'modules');
+  const pane = el('div', 'pane');
+  strip.append(rail, pane);
+  host.append(strip);
+
+  const modules = [];
+  COMMON_GROUPS.forEach((g) => {
+    if (paramsIn(g).length || g === 'colour') modules.push({ id: g, label: GROUP_LABEL[g], common: true });
+  });
+  modules.push({ divider: true });
+  specificParams().forEach((p) => modules.push({ id: 'p:' + p.key, label: p.label, param: p }));
+  modules.push({ divider: true });
+  modules.push({ id: 'node', label: 'Node' });
+
+  if (!modules.some((m) => m.id === uiState.module)) uiState.module = 'colour';
+
+  modules.forEach((m) => {
+    if (m.divider) { rail.append(el('div', 'hr')); return; }
+    const b = el('button', '', m.label);
+    b.setAttribute('aria-pressed', String(uiState.module === m.id));
+    b.onclick = () => { uiState.module = m.id; renderOpt3(); };
+    rail.append(b);
+  });
+
+  if (uiState.module === 'colour') {
+    const cb = colourBlock();
+    repaintHooks.push(() => cb.querySelector('.swatch')._paint());
+    pane.append(sect('Colour', [cb, ...paramsIn('colour').map(paramRow)], { accent: true }));
+  } else if (uiState.module === 'time' || uiState.module === 'motion') {
+    const rows = paramsIn(uiState.module);
+    pane.append(sect(GROUP_LABEL[uiState.module], rows.length ? rows.map(paramRow) : [noneNote()], { accent: true }));
+  } else if (uiState.module === 'node') {
+    pane.append(sect('Node', nodeRows()));
+  } else {
+    const key = uiState.module.slice(2);
+    const p = EFFECTS[current].params.find((x) => x.key === key);
+    pane.append(sect(p.label, [paramRow(p), rangeNote(p)]));
+  }
+}
+
+function noneNote() {
+  const p = el('div', '', 'This effect declares none.');
+  p.style.cssText = 'font-size:var(--text-2xs);color:var(--text-disabled)';
+  return p;
+}
+function rangeNote(p) {
+  const d = el('div', '', `range ${p.min}–${p.max}${p.unit ? ' ' + p.unit : ''} · default ${p.def}`);
+  d.style.cssText = 'font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-disabled);margin-top:8px';
+  return d;
+}
+
+/* ---- OPTION 4 — progressive disclosure + filter --------------------------- */
+function renderOpt4() {
+  const host = document.getElementById('opt4');
+  host.innerHTML = '';
+  host.append(inspHead());
+
+  const search = el('div', 'searchrow');
+  const input = document.createElement('input');
+  input.placeholder = 'filter params…';
+  input.value = uiState.filter;
+  input.oninput = () => { uiState.filter = input.value; renderOpt4(); input.focus(); };
+  search.append(input);
+  host.append(search);
+
+  const q = uiState.filter.trim().toLowerCase();
+  const match = (p) => !q || p.label.toLowerCase().includes(q) || p.key.toLowerCase().includes(q);
+
+  const body = el('div', 'insp-scroll');
+  const common = commonParams().filter(match);
+  if (common.length) {
+    const cb = colourBlock();
+    repaintHooks.push(() => cb.querySelector('.swatch')._paint());
+    body.append(sect('Common', [...(q ? [] : [cb]), ...common.map(paramRow)], { accent: true, count: common.length }));
+  }
+
+  const spec = specificParams().filter(match);
+  const details = document.createElement('details');
+  details.className = 'fold';
+  details.open = uiState.foldOpen || !!q;
+  details.ontoggle = () => { if (!q) uiState.foldOpen = details.open; };
+  const sum = document.createElement('summary');
+  sum.innerHTML = `${EFFECTS[current].name} <span class="count">${spec.length}</span>`;
+  details.append(sum);
+  const inner = el('div', 'sect');
+  if (spec.length) spec.forEach((p) => inner.append(paramRow(p)));
+  else inner.append(noneNote());
+  details.append(inner);
+  body.append(details);
+
+  const nodeFold = document.createElement('details');
+  nodeFold.className = 'fold';
+  const ns = document.createElement('summary');
+  ns.innerHTML = 'Node <span class="count">4</span>';
+  nodeFold.append(ns);
+  const ni = el('div', 'sect');
+  nodeRows().forEach((r) => ni.append(r));
+  nodeFold.append(ni);
+  body.append(nodeFold);
+
+  host.append(body);
+}
+
+/* node-level rows — identical for every effect, from the node not the generator */
+function nodeRows() {
+  const rows = [
+    ['Preset', 'Punch'],
+    ['Mode', 'one-shot'],
+    ['Layer', 'trigger'],
+    ['Scope', 'triggering drum'],
+  ];
+  return rows.map(([k, v]) => {
+    const r = el('div', 'prow');
+    r.append(el('span', 'k', k));
+    const box = el('div', '', v);
+    box.style.cssText = 'font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text);background:var(--surface-inset);border:1px solid var(--border);border-radius:var(--radius-1);padding:2px 6px;';
+    r.append(box, el('span', 'v', ''));
+    return r;
+  });
+}
+
+function renderAll() {
+  repaintHooks.length = 0;
+  renderOpt1();
+  renderOpt2();
+  renderOpt3();
+  renderOpt4();
+}
+
+/* ---- effect switcher ------------------------------------------------------ */
+(function switcher() {
+  const bar = document.getElementById('switcher');
+  const legend = bar.querySelector('.legend');
+  Object.entries(EFFECTS).forEach(([k, e]) => {
+    const b = el('button', 'effbtn');
+    const dot = el('span', 'dot');
+    const hueKey = e.params.find((p) => p.key === 'hue') ? 'hue' : 'baseHue';
+    dot.style.background = hsv(VALUES[k][hueKey] ?? 0, 1, 1);
+    b.append(dot, document.createTextNode(e.name));
+    b.setAttribute('aria-pressed', String(k === current));
+    b.onclick = () => {
+      current = k;
+      bar.querySelectorAll('.effbtn').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      renderAll();
+    };
+    bar.insertBefore(b, legend);
+  });
+})();
+
+renderAll();
+
+/* ---- verdict -------------------------------------------------------------- */
+(function verdict() {
+  const KEY = 'ledrums.proto.effect-inspector';
+  const OPTS = [
+    ['fixed', '1 · Fixed common header', 'Colour/Time/Motion pinned; specifics scroll under. Absolute muscle memory, expensive vertically.'],
+    ['tabs', '2 · Tabbed common / specific', 'Full-height panes. Most room per param, but half is always hidden.'],
+    ['strip', '3 · Channel strip', 'Module rail; common slots identical across effects. Best "what changed", costs width + a click.'],
+    ['fold', '4 · Progressive disclosure', 'One list, common on top, specifics in a fold, filter box. Least invented, least dramatic.'],
+    ['none', 'None — keep the flat list', 'The split is not worth it; fix the param names instead.'],
+  ];
+  const body = document.getElementById('vbody');
+  const savedTag = document.getElementById('saved');
+  const state = JSON.parse(localStorage.getItem(KEY) || '{"winner":null,"notes":{}}');
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    savedTag.textContent = 'saved ' + new Date().toLocaleTimeString();
+    savedTag.classList.add('on');
+  }
+  OPTS.forEach(([id, name, pitch]) => {
+    const l = document.createElement('label');
+    l.className = 'vopt' + (state.winner === id ? ' win' : '');
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'winner'; r.value = id; r.checked = state.winner === id;
+    const d = el('div');
+    d.append(el('div', 'vname', name), el('div', 'vnote', pitch));
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes on ' + name + '…';
+    ta.value = state.notes[id] || '';
+    ta.oninput = () => { state.notes[id] = ta.value; save(); };
+    ta.onclick = (e) => e.preventDefault();
+    r.onchange = () => {
+      state.winner = id;
+      body.querySelectorAll('.vopt').forEach((x) => x.classList.remove('win'));
+      l.classList.add('win');
+      save();
+    };
+    l.append(r, d, ta);
+    body.append(l);
+  });
+  if (state.winner) { savedTag.textContent = 'restored'; savedTag.classList.add('on'); }
+  document.getElementById('clear').onclick = () => { localStorage.removeItem(KEY); location.reload(); };
+})();
+</script>
+</body>
+</html>

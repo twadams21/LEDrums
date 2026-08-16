@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Inspector as a right slideover</title>
+<!--
+  ============================================================================
+  THROWAWAY PROTOTYPE — no build step, no dependencies, open with file://.
+  Design question: the Inspector moves into a right slideover. WHICH slideover?
+  The four stages below differ in BEHAVIOUR (overlay vs push, what "closed"
+  means, what selection does, how wide) — not in decoration. Drive them:
+  click a node, click empty canvas, hit the pin, press Escape.
+  ============================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    --bg: oklch(0.124 0.011 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+
+    --role-content: oklch(0.700 0.165 300);
+    --role-effect: oklch(0.785 0.150 68);
+    --role-layer: oklch(0.745 0.150 152);
+    --role-output: oklch(0.720 0.120 205);
+    --role-mod: oklch(0.760 0.130 330);
+
+    --warn: oklch(0.810 0.150 80);
+
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Geist Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+
+    --tracking-label: 0.04em;
+
+    --space-0_5: 2px;
+    --space-1: 4px;
+    --space-1_5: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    --radius-1: 3px;
+    --radius-2: 5px;
+    --radius-3: 8px;
+    --radius-pill: 999px;
+    --control-h: 26px;
+
+    --dur-90: 90ms;
+    --dur-120: 120ms;
+    --dur-220: 220ms;
+    --ease-control: cubic-bezier(0.2, 0, 0, 1);
+    --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header.top {
+    position: sticky; top: 0; z-index: 40;
+    display: flex; align-items: center; gap: var(--space-4);
+    padding: 0 var(--space-4); height: 44px;
+    background: var(--surface); border-bottom: 1px solid var(--border-faint);
+  }
+  .proto-tag {
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label); text-transform: uppercase;
+    color: var(--warn);
+    border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent);
+    background: color-mix(in oklch, var(--warn) 12%, transparent);
+    padding: 2px 6px; border-radius: var(--radius-1); flex: none;
+  }
+  .top .title { font-size: var(--text-sm); font-weight: 500; color: var(--ink); letter-spacing: -0.011em; }
+  .top .question { font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; text-align: right; }
+
+  main { padding: var(--space-5) var(--space-4) 64px; max-width: 1240px; margin: 0 auto; }
+
+  .plate { background: var(--surface); border: 1px solid var(--border-faint); border-radius: var(--radius-3); margin-bottom: var(--space-5); overflow: hidden; }
+  .plate-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-faint); background: var(--surface-2); }
+  .plate-num { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--accent); border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent); background: var(--accent-soft); border-radius: var(--radius-1); height: 24px; display: grid; place-items: center; }
+  .plate-num.base { color: var(--text-disabled); border-color: var(--border); background: var(--surface-inset); }
+  .plate-name { font-size: var(--text-base); font-weight: 700; color: var(--ink); letter-spacing: -0.011em; }
+  .plate-pitch { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.55; margin-top: 2px; text-wrap: pretty; }
+  .ref { display: inline-block; margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); border-left: 2px solid var(--border-strong); padding-left: var(--space-2); }
+  .plate-body { padding: var(--space-4); }
+  .plate-foot { display: flex; flex-wrap: wrap; gap: var(--space-4); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-faint); background: var(--surface-inset); font-size: var(--text-2xs); line-height: 1.6; color: var(--text-faint); }
+  .plate-foot b { color: var(--text-muted); font-weight: 500; }
+  .plate-foot > div { flex: 1 1 240px; }
+
+  /* ---- the app-shell mock ------------------------------------------------- */
+  .shell {
+    position: relative;
+    height: 400px;
+    display: flex;
+    background: var(--bg);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    user-select: none;
+  }
+  .canvas {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    background:
+      radial-gradient(circle at 1px 1px, oklch(0.240 0.012 256) 1px, transparent 0) 0 0 / 16px 16px,
+      var(--surface-inset);
+    transition: margin-right var(--dur-220) var(--ease-drawer);
+  }
+  .canvas svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .canvas svg.wires path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+  .hint {
+    position: absolute; left: var(--space-3); bottom: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled);
+    pointer-events: none;
+  }
+
+  /* node card (mirrors NodeCard.svelte) */
+  .card {
+    /* 208px, not the bare 176: NodeCard.svelte grows to fit its thumbnail
+       (`.card.has-thumb`, min 176 / max 260) and these all carry one. */
+    position: absolute; width: 208px; text-align: left;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-3); box-shadow: var(--shadow-1); cursor: pointer;
+  }
+  .card:hover { border-color: var(--accent-bright); }
+  .card.sel { border-color: var(--accent); }
+  .card-head {
+    position: relative; display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'icon title thumb' 'icon sub thumb';
+    align-items: center; column-gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  }
+  .chip { grid-area: icon; width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--radius-2); color: var(--tint, var(--accent)); background: color-mix(in oklch, var(--tint, var(--accent)) 14%, var(--surface-3)); border: 1px solid color-mix(in oklch, var(--tint, var(--accent)) 40%, transparent); font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+  .card .title { grid-area: title; font-size: var(--text-sm); font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .sub { grid-area: sub; font-size: var(--text-2xs); color: var(--text-faint); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .thumb { grid-area: thumb; width: 56px; height: 32px; border-radius: var(--radius-1); background: var(--surface-inset); border: 1px solid var(--border-faint); overflow: hidden; position: relative; }
+  .card .thumb i { position: absolute; inset: 0; }
+  .port { position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-3); border: 1.5px solid var(--border-strong); top: 50%; transform: translateY(-50%); }
+  .port.in { left: -6px; }
+  .port.out { right: -6px; }
+
+  /* ---- drawer ------------------------------------------------------------- */
+  .drawer {
+    position: absolute; top: 0; right: 0; bottom: 0;
+    width: var(--dw, 320px);
+    display: flex; flex-direction: column;
+    background: var(--surface);
+    border-left: 1px solid var(--border-faint);
+    box-shadow: -12px 0 28px rgb(0 0 0 / 0.35);
+    transform: translateX(100%);
+    transition: transform var(--dur-220) var(--ease-drawer);
+    z-index: 10;
+  }
+  .drawer.open { transform: none; }
+  .drawer.docked { box-shadow: none; }
+  .dhead {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-faint);
+    flex: none;
+  }
+  .dhead .dt { font-size: var(--text-sm); font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dhead .ds { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); }
+  .dhead .spacer { flex: 1; }
+  .iconbtn {
+    appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
+    border-radius: var(--radius-1); border: 1px solid transparent; background: transparent;
+    color: var(--text-faint); cursor: pointer; font-size: 13px; line-height: 1;
+    transition: color var(--dur-90) var(--ease-control), background-color var(--dur-90) var(--ease-control);
+  }
+  .iconbtn:hover { color: var(--ink); background: var(--surface-3); }
+  .iconbtn[aria-pressed='true'] { color: var(--accent-bright); background: var(--accent-soft); border-color: color-mix(in oklch, var(--accent) 40%, transparent); }
+  .dbody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+  .dempty { color: var(--text-disabled); font-size: var(--text-xs); line-height: 1.6; padding: var(--space-2); }
+
+  .tabs { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--surface-inset); }
+  .tabs button { appearance: none; border: 0; background: transparent; color: var(--text-faint); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); padding: 3px 8px; cursor: pointer; }
+  .tabs button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-bright); }
+
+  .mrow { display: grid; grid-template-columns: 62px minmax(0, 1fr) 50px; align-items: center; gap: var(--space-2); height: 22px; }
+  .mrow .k { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); letter-spacing: var(--tracking-label); }
+  .mrow .v { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .rail { position: relative; height: 4px; border-radius: var(--radius-pill); background: var(--surface-inset); border: 1px solid var(--border-faint); cursor: ew-resize; touch-action: none; }
+  .rail .fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--accent) 70%, transparent); }
+  .rail .knob { position: absolute; top: 50%; width: 10px; height: 10px; margin-left: -5px; transform: translateY(-50%); border-radius: 50%; background: var(--surface-3); border: 1.5px solid var(--accent); }
+  .eyebrow { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-disabled); margin: var(--space-2) 0 var(--space-1); }
+
+  /* peek rail (option 2, closed state) */
+  .peek {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 44px;
+    background: var(--surface); border-left: 1px solid var(--border-faint);
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) 0;
+    z-index: 9;
+  }
+  .peek .vlabel {
+    writing-mode: vertical-rl;
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    color: var(--text-faint);
+    margin-top: var(--space-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-height: 220px;
+  }
+  .peek .pchip { width: 26px; height: 26px; display: grid; place-items: center; border-radius: var(--radius-2); color: var(--tint, var(--accent)); background: color-mix(in oklch, var(--tint, var(--accent)) 14%, var(--surface-3)); border: 1px solid color-mix(in oklch, var(--tint, var(--accent)) 40%, transparent); font-family: var(--font-mono); font-size: 11px; }
+
+  /* scrim (option 3) */
+  .scrim {
+    position: absolute; inset: 0; background: rgb(0 0 0 / 0.42);
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--dur-220) var(--ease-drawer);
+    z-index: 8;
+  }
+  .scrim.on { opacity: 1; pointer-events: auto; }
+
+  /* the behaviour matrix */
+  table.matrix { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+  table.matrix th, table.matrix td { text-align: left; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-faint); vertical-align: top; }
+  table.matrix th { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-disabled); font-weight: 400; }
+  table.matrix td:first-child { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  table.matrix tr td.hi { color: var(--ink); }
+
+  /* verdict */
+  .verdict { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-3); overflow: hidden; }
+  .verdict .vhead { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); background: var(--surface-2); border-bottom: 1px solid var(--border-faint); }
+  .verdict h2 { margin: 0; font-size: var(--text-base); color: var(--ink); font-weight: 700; letter-spacing: -0.011em; }
+  .verdict .saved { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+  .verdict .saved.on { color: var(--accent); }
+  .vbody { padding: var(--space-4); display: grid; gap: var(--space-3); }
+  .vopt { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start; padding: var(--space-3); border: 1px solid var(--border-faint); border-radius: var(--radius-2); background: var(--surface-inset); cursor: pointer; transition: border-color var(--dur-90) var(--ease-control); }
+  .vopt:hover { border-color: var(--border-strong); }
+  .vopt.win { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset)); }
+  .vopt input { accent-color: var(--accent); margin-top: 3px; }
+  .vopt .vname { font-size: var(--text-sm); color: var(--ink); font-weight: 500; }
+  .vopt .vnote { font-size: var(--text-2xs); color: var(--text-faint); margin-top: 2px; }
+  .vopt textarea { grid-column: 2; width: 100%; min-height: 46px; resize: vertical; margin-top: var(--space-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-1); color: var(--text); font-family: var(--font-sans); font-size: var(--text-xs); padding: var(--space-2); outline: none; }
+  .vopt textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .vactions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+  .vactions button { appearance: none; height: var(--control-h); padding: 0 var(--space-3); border-radius: var(--radius-1); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); cursor: pointer; }
+  .vactions button:hover { border-color: var(--border-strong); color: var(--ink); }
+
+  footer.bot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); background: var(--surface); border-top: 1px solid var(--border-faint); font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); color: var(--text-disabled); }
+  footer.bot .sep { color: var(--border-strong); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="proto-tag">Prototype</span>
+  <span class="title">Inspector as a right slideover</span>
+  <span class="question">Design question: overlay or push? what does "closed" mean? does selecting a node open it?</span>
+</header>
+
+<main>
+
+  <!-- ============ baseline ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num base">0</span>
+      <div>
+        <div class="plate-name">Baseline — today's docked Node Editor</div>
+        <div class="plate-pitch">
+          What ships now (<code>NodeEditor.svelte</code> + <code>Splitter</code>): a permanent full-height
+          panel beside the canvas, two tabs (Add / Inspector), user-resizable, never closes. Selecting a
+          node flips the tab to Inspector. Included so every option below is judged against the thing it
+          would replace, not against a memory of it.
+        </div>
+        <span class="ref">Reference point: the app as merged. Not an option — the control.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="shell" id="shell0"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>The complaint this prototype answers</b> — the panel is always there whether or not you are editing, so the canvas is permanently ~320px narrower than the window.</div>
+      <div><b>The thing it gets right</b> — no motion, no state, no surprise. The Add palette and the Inspector are one object with one position.</div>
+    </div>
+  </section>
+
+  <!-- ============ option 1 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">1</span>
+      <div>
+        <div class="plate-name">Auto Overlay — selection opens it, canvas click dismisses it</div>
+        <div class="plate-pitch">
+          Closed means <em>gone</em>: full canvas width, nothing on the right edge. Click a node and the
+          panel slides over the canvas (it does not reflow — the graph never moves under your cursor).
+          Click empty canvas, or press Escape, and it slides away. Selection <em>is</em> the open state.
+        </div>
+        <span class="ref">Forced from: a mobile sheet / Gmail's contextual side panel — summoned by content, dismissed by tapping away.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="shell" id="shell1"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — the canvas is full width the whole time you are wiring. Zero chrome when you are not editing. Overlay means the graph layout never shifts, so nothing jumps under the pointer.</div>
+      <div><b>Costs</b> — it covers the right third of the graph, which is exactly where a node you just wired often sits. "Select to inspect" and "select to multi-drag" now fight for the same gesture.</div>
+      <div><b>Try</b> — click a node, then click empty canvas. Then click a node and press Escape.</div>
+    </div>
+  </section>
+
+  <!-- ============ option 2 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">2</span>
+      <div>
+        <div class="plate-name">Peek Rail — push when pinned, overlay when not, never fully gone</div>
+        <div class="plate-pitch">
+          Closed collapses to a 44px rail that still tells you what is selected (its icon chip + name,
+          vertical). Click the rail to open. The pin decides the mechanic: <strong>pinned</strong> pushes the
+          canvas (nothing is ever hidden, the graph reflows), <strong>unpinned</strong> overlays it and
+          auto-closes when you click away.
+        </div>
+        <span class="ref">Forced from: VS Code's activity bar + Linear's issue panel — a persistent edge that is a control, not just a wall.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="shell" id="shell2"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — the only option where "what is selected" survives closing the panel. The pin gives you both mechanics without a settings screen. Pinned-push guarantees no node is ever occluded.</div>
+      <div><b>Costs</b> — the most state of the four (open × pinned = 4 combinations to design and remember). The rail is a permanent 44px tax. Push means the graph slides when you open it.</div>
+      <div><b>Try</b> — toggle the pin, then select a node. Compare how the canvas behaves in each mode.</div>
+    </div>
+  </section>
+
+  <!-- ============ option 3 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">3</span>
+      <div>
+        <div class="plate-name">Focus Panel — selection does nothing; you summon it deliberately</div>
+        <div class="plate-pitch">
+          Selecting a node selects a node. To edit, you ask: double-click, or press Enter. Then a wide
+          (460px) panel comes over a dimmed canvas — a deliberate mode with room for the full effect
+          inspector, not a squeezed column. Escape or a click on the scrim leaves the mode.
+        </div>
+        <span class="ref">Forced from: Notion's peek modal / a Figma "open in full" — editing is a mode you enter, not a side effect of clicking.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="shell" id="shell3"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — select and edit stop competing, so click-select stays cheap and fast. The panel can be wide enough for a real effect inspector (which is the other half of this initiative). Scrim makes the mode unmistakable.</div>
+      <div><b>Costs</b> — a whole extra gesture on the most common task. The scrim blocks the canvas, so you cannot tweak a param and immediately re-wire. Worst option for "nudge decay while the drummer plays".</div>
+      <div><b>Try</b> — single-click a node (nothing opens), then double-click it or press Enter.</div>
+    </div>
+  </section>
+
+  <!-- ============ matrix ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num base">≡</span>
+      <div>
+        <div class="plate-name">Behaviour matrix</div>
+        <div class="plate-pitch">The differences that actually matter, side by side.</div>
+      </div>
+    </div>
+    <div class="plate-body" style="padding: 0">
+      <table class="matrix">
+        <thead>
+          <tr><th></th><th>0 · Docked</th><th>1 · Auto overlay</th><th>2 · Peek rail</th><th>3 · Focus panel</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Canvas geometry</td><td>always −320px</td><td class="hi">never changes</td><td>−44px, −320 when pinned+open</td><td class="hi">never changes</td></tr>
+          <tr><td>Node-select</td><td>flips tab</td><td class="hi">opens panel</td><td>opens panel</td><td>nothing</td></tr>
+          <tr><td>Canvas-click</td><td>clears selection</td><td>closes panel</td><td>closes (unpinned only)</td><td>clears selection</td></tr>
+          <tr><td>Closed shows</td><td>n/a — never closes</td><td>nothing</td><td class="hi">selected node identity</td><td>nothing</td></tr>
+          <tr><td>Occludes graph</td><td>no</td><td>yes, right third</td><td>only when unpinned</td><td>yes + dims all</td></tr>
+          <tr><td>Escape</td><td>—</td><td>closes</td><td>closes</td><td>leaves the mode</td></tr>
+          <tr><td>Width</td><td>280–460 drag</td><td>320</td><td>320 (44 closed)</td><td class="hi">460</td></tr>
+          <tr><td>Add-node palette</td><td>tab in the same panel</td><td>homeless — needs a decision</td><td>second rail icon</td><td>stays docked / separate</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="plate-foot">
+      <div><b>The unresolved question in all three.</b> Today the Add palette shares the panel with the Inspector. A slideover keyed to <em>selection</em> has no natural home for "add a node when nothing is selected". Option 2 is the only one that answers it without a new surface.</div>
+    </div>
+  </section>
+
+  <!-- ============ verdict ============ -->
+  <section class="verdict" id="verdict">
+    <div class="vhead">
+      <h2>Verdict</h2>
+      <span class="saved" id="saved">not saved</span>
+    </div>
+    <div class="vbody" id="vbody"></div>
+    <div class="vactions">
+      <button type="button" id="clear">Clear verdict</button>
+      <span style="font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled)">
+        Saved to this browser's localStorage — key <code>ledrums.proto.inspector-drawer</code>
+      </span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bot">
+  <span>drawer motion: 220ms cubic-bezier(0.32,0.72,0,1)</span>
+  <span class="sep">│</span>
+  <span>honours prefers-reduced-motion</span>
+  <span class="sep">│</span>
+  <span>Escape works in every stage</span>
+</footer>
+
+<script>
+'use strict';
+
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+
+function hsv(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  const i = Math.floor(h / 60) % 6;
+  if (i === 0) { r = c; g = x; } else if (i === 1) { r = x; g = c; }
+  else if (i === 2) { g = c; b = x; } else if (i === 3) { g = x; b = c; }
+  else if (i === 4) { r = x; b = c; } else { r = c; b = x; }
+  return `rgb(${Math.round((r + m) * 255)} ${Math.round((g + m) * 255)} ${Math.round((b + m) * 255)})`;
+}
+
+/* --- the graph the stages share (real node kinds, real effects) ----------- */
+const NODES = [
+  { id: 'trig', x: 16, y: 40, title: 'Trigger', sub: 'Kick · head', glyph: '⚡', tint: 'var(--accent)', hasIn: false },
+  { id: 'rnd', x: 16, y: 200, title: 'Random', sub: 'no-repeat', glyph: '⤨', tint: 'var(--role-effect)' },
+  { id: 'wd', x: 244, y: 40, title: 'Whole Drum', sub: 'Punch', glyph: '✦', tint: 'var(--role-content)', hue: 12 },
+  { id: 'ct', x: 244, y: 200, title: 'Comet Trails', sub: 'Default', glyph: '✦', tint: 'var(--role-content)', hue: 190 },
+  { id: 'out', x: 472, y: 120, title: 'Output', sub: 'PixLite A4', glyph: '◉', tint: 'var(--role-output)', hasOut: false },
+];
+const WIRES = [
+  [[224, 67], [244, 67]],
+  [[224, 227], [244, 227]],
+  [[452, 67], [472, 147]],
+  [[452, 227], [472, 147]],
+];
+
+/* the inspector body each drawer renders for a node */
+const PARAMS = {
+  wd: [['Hue', 12, 0, 360, '°'], ['Sat', 1, 0, 1, ''], ['Bright', 1, 0, 1, ''], ['Decay', 220, 10, 4000, 'ms']],
+  ct: [['Comets', 4, 1, 32, ''], ['Speed', 180, 0, 1080, '°/s'], ['Tail', 120, 5, 350, '°'], ['Hue', 190, 0, 360, '°']],
+  rnd: [],
+  trig: [],
+  out: [],
+};
+
+function railFor(min, max, v0, onSet) {
+  const r = el('div', 'rail');
+  const fill = el('div', 'fill');
+  const knob = el('div', 'knob');
+  r.append(fill, knob);
+  let v = v0;
+  const paint = () => {
+    const t = (v - min) / (max - min);
+    fill.style.right = (100 - t * 100) + '%';
+    knob.style.left = (t * 100) + '%';
+  };
+  const at = (e) => {
+    const b = r.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (e.clientX - b.left) / b.width));
+    v = min + t * (max - min);
+    paint(); onSet(v);
+  };
+  r.addEventListener('pointerdown', (e) => { e.stopPropagation(); r.setPointerCapture(e.pointerId); at(e); });
+  r.addEventListener('pointermove', (e) => { if (r.hasPointerCapture(e.pointerId)) at(e); });
+  paint();
+  return r;
+}
+
+function inspectorBody(nodeId) {
+  const wrap = el('div');
+  const n = NODES.find((x) => x.id === nodeId);
+  if (!n) {
+    wrap.append(el('div', 'dempty', 'Nothing selected. Click a node on the canvas.'));
+    return wrap;
+  }
+  const rows = PARAMS[nodeId] || [];
+  if (!rows.length) {
+    wrap.append(el('div', 'eyebrow', n.title));
+    wrap.append(el('div', 'dempty',
+      nodeId === 'trig' ? 'Source binding: Kick · head. Learn from MIDI, or pick a drum · zone.'
+      : nodeId === 'rnd' ? 'Fans one hit to one child at random. No-repeat is on.'
+      : 'Renders the composited frame to the PixLite A4. Universe map lives here.'));
+    return wrap;
+  }
+  wrap.append(el('div', 'eyebrow', 'Effect · ' + n.title));
+  const sw = el('div');
+  sw.style.cssText = 'height:22px;border-radius:var(--radius-1);border:1px solid var(--border);margin-bottom:8px;background:' + hsv(n.hue, 1, 1);
+  wrap.append(sw);
+  rows.forEach(([label, v, min, max, unit]) => {
+    const row = el('div', 'mrow');
+    const val = el('span', 'v', max <= 1 ? v.toFixed(2) : Math.round(v) + unit);
+    row.append(el('span', 'k', label), railFor(min, max, v, (nv) => {
+      val.textContent = max <= 1 ? nv.toFixed(2) : Math.round(nv) + unit;
+    }), val);
+    wrap.append(row);
+  });
+  wrap.append(el('div', 'eyebrow', 'Node'));
+  ['Preset · Punch', 'Mode · one-shot', 'Layer · trigger', 'Scope · triggering drum'].forEach((t) => {
+    const d = el('div', '', t);
+    d.style.cssText = 'font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-faint);padding:3px 0';
+    wrap.append(d);
+  });
+  return wrap;
+}
+
+/** Build a canvas with the shared graph. onSelect(id|null), onOpen(id) for double-click. */
+function buildCanvas(host, onSelect, onOpen, hintText) {
+  const canvas = el('div', 'canvas');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'wires');
+  WIRES.forEach(([a, b]) => {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const dx = Math.max(30, (b[0] - a[0]) * 0.6);
+    p.setAttribute('d', `M ${a[0]} ${a[1]} C ${a[0] + dx} ${a[1]}, ${b[0] - dx} ${b[1]}, ${b[0]} ${b[1]}`);
+    svg.append(p);
+  });
+  canvas.append(svg);
+
+  NODES.forEach((n) => {
+    const c = el('div', 'card');
+    c.dataset.id = n.id;
+    c.style.left = n.x + 'px';
+    c.style.top = n.y + 'px';
+    const head = el('div', 'card-head');
+    const chip = el('span', 'chip', n.glyph);
+    chip.style.setProperty('--tint', n.tint);
+    head.append(chip, el('span', 'title', n.title), el('span', 'sub', n.sub));
+    if (n.hue != null) {
+      const t = el('span', 'thumb');
+      const i = el('i');
+      i.style.background = `linear-gradient(90deg, ${hsv(n.hue, 1, 1)}, transparent)`;
+      t.append(i); head.append(t);
+    }
+    if (n.hasIn !== false) head.append(el('span', 'port in'));
+    if (n.hasOut !== false) head.append(el('span', 'port out'));
+    c.append(head);
+    canvas.append(c);
+  });
+
+  if (hintText) canvas.append(el('div', 'hint', hintText));
+
+  canvas.addEventListener('click', (e) => {
+    const c = e.target.closest('.card');
+    canvas.querySelectorAll('.card').forEach((n) => n.classList.toggle('sel', n === c));
+    onSelect(c ? c.dataset.id : null);
+  });
+  canvas.addEventListener('dblclick', (e) => {
+    const c = e.target.closest('.card');
+    if (c && onOpen) onOpen(c.dataset.id);
+  });
+
+  host.append(canvas);
+  return canvas;
+}
+
+function drawerShell(width) {
+  const d = el('div', 'drawer');
+  d.style.setProperty('--dw', width + 'px');
+  const head = el('div', 'dhead');
+  const t = el('span', 'dt', 'Inspector');
+  const s = el('span', 'ds', '');
+  head.append(t, s, el('span', 'spacer'));
+  const body = el('div', 'dbody');
+  d.append(head, body);
+  d.setNode = (id) => {
+    const n = NODES.find((x) => x.id === id);
+    t.textContent = n ? n.title : 'Inspector';
+    s.textContent = n ? n.sub : '';
+    body.innerHTML = '';
+    body.append(inspectorBody(id));
+  };
+  d.head = head;
+  return d;
+}
+
+/* ===========================================================================
+   0 — Baseline: docked, resizable, two tabs, never closes
+   =========================================================================== */
+(function baseline() {
+  const shell = document.getElementById('shell0');
+  const drawer = drawerShell(320);
+  drawer.classList.add('open', 'docked');
+  drawer.style.position = 'relative';
+  drawer.style.flex = '0 0 320px';
+
+  const tabs = el('div', 'tabs');
+  ['Add node', 'Inspector'].forEach((label, i) => {
+    const b = el('button', '', label);
+    b.setAttribute('aria-pressed', String(i === 1));
+    b.onclick = () => {
+      tabs.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      drawer.querySelector('.dbody').innerHTML = '';
+      drawer.querySelector('.dbody').append(i === 0
+        ? el('div', 'dempty', 'Add-node palette — search, then drag onto the canvas.')
+        : inspectorBody(shell.dataset.sel || null));
+    };
+    tabs.append(b);
+  });
+  drawer.head.append(tabs);
+
+  buildCanvas(shell, (id) => {
+    shell.dataset.sel = id || '';
+    tabs.querySelectorAll('button')[1].click();
+  }, null, 'panel is permanent · drag the divider to resize (not wired here)');
+  shell.append(drawer);
+  drawer.setNode(null);
+})();
+
+/* ===========================================================================
+   1 — Auto overlay
+   =========================================================================== */
+(function autoOverlay() {
+  const shell = document.getElementById('shell1');
+  const drawer = drawerShell(320);
+  const close = el('button', 'iconbtn', '✕');
+  close.title = 'Close (Esc)';
+  close.onclick = () => { drawer.classList.remove('open'); shell.querySelectorAll('.card').forEach((c) => c.classList.remove('sel')); };
+  drawer.head.append(close);
+
+  buildCanvas(shell, (id) => {
+    if (id) { drawer.setNode(id); drawer.classList.add('open'); }
+    else drawer.classList.remove('open');
+  }, null, 'click a node to open · click empty canvas or press Esc to dismiss');
+  shell.append(drawer);
+
+  shell.tabIndex = 0;
+  shell.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { drawer.classList.remove('open'); shell.querySelectorAll('.card').forEach((c) => c.classList.remove('sel')); }
+  });
+})();
+
+/* ===========================================================================
+   2 — Peek rail: pinned = push, unpinned = overlay; closed = 44px identity rail
+   =========================================================================== */
+(function peekRail() {
+  const shell = document.getElementById('shell2');
+  const drawer = drawerShell(320);
+  let pinned = true;
+  let selected = null;
+
+  const pin = el('button', 'iconbtn', '⌗');
+  pin.title = 'Pin — pinned pushes the canvas, unpinned overlays it';
+  pin.setAttribute('aria-pressed', 'true');
+  const close = el('button', 'iconbtn', '›');
+  close.title = 'Collapse to the rail';
+  drawer.head.append(pin, close);
+
+  const peek = el('div', 'peek');
+  const pchip = el('span', 'pchip', '·');
+  const vlabel = el('div', 'vlabel', 'nothing selected');
+  peek.append(pchip, vlabel);
+  peek.title = 'Click to open the Inspector';
+
+  const canvas = buildCanvas(shell, (id) => {
+    selected = id;
+    paintPeek();
+    if (id) { drawer.setNode(id); open(); } else if (!pinned) collapse();
+  }, null, 'pin = push · unpin = overlay · click the rail to reopen');
+  shell.append(peek, drawer);
+
+  function paintPeek() {
+    const n = NODES.find((x) => x.id === selected);
+    pchip.textContent = n ? n.glyph : '·';
+    pchip.style.setProperty('--tint', n ? n.tint : 'var(--border-strong)');
+    vlabel.textContent = n ? n.title : 'nothing selected';
+  }
+  function open() {
+    drawer.classList.add('open');
+    drawer.classList.toggle('docked', pinned);
+    canvas.style.marginRight = pinned ? '276px' : '0px'; /* 320 drawer − 44 rail */
+  }
+  function collapse() {
+    drawer.classList.remove('open');
+    canvas.style.marginRight = '0px';
+  }
+  pin.onclick = () => {
+    pinned = !pinned;
+    pin.setAttribute('aria-pressed', String(pinned));
+    if (drawer.classList.contains('open')) open();
+  };
+  close.onclick = collapse;
+  peek.onclick = () => { drawer.setNode(selected); open(); };
+
+  shell.tabIndex = 0;
+  shell.addEventListener('keydown', (e) => { if (e.key === 'Escape') collapse(); });
+
+  canvas.style.marginRight = '44px';
+  paintPeek();
+  drawer.setNode(null);
+})();
+
+/* ===========================================================================
+   3 — Focus panel: summoned by Enter / double-click, over a scrim
+   =========================================================================== */
+(function focusPanel() {
+  const shell = document.getElementById('shell3');
+  const scrim = el('div', 'scrim');
+  const drawer = drawerShell(460);
+  const close = el('button', 'iconbtn', '✕');
+  close.title = 'Leave the mode (Esc)';
+  drawer.head.append(close);
+
+  let selected = null;
+  const canvas = buildCanvas(shell, (id) => { selected = id; }, (id) => openFor(id),
+    'single-click selects · double-click or Enter opens · Esc leaves');
+  shell.append(scrim, drawer);
+
+  const badge = el('div', 'hint', '');
+  badge.style.cssText = 'position:absolute;right:12px;top:10px;left:auto;bottom:auto;color:var(--accent)';
+  canvas.append(badge);
+
+  function openFor(id) {
+    if (!id) return;
+    drawer.setNode(id);
+    drawer.classList.add('open');
+    scrim.classList.add('on');
+    badge.textContent = '';
+  }
+  function leave() { drawer.classList.remove('open'); scrim.classList.remove('on'); }
+  close.onclick = leave;
+  scrim.onclick = leave;
+
+  shell.tabIndex = 0;
+  shell.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') leave();
+    if (e.key === 'Enter' && selected) openFor(selected);
+  });
+  canvas.addEventListener('click', () => {
+    badge.textContent = selected ? 'selected — press Enter or double-click to edit' : '';
+  });
+  drawer.setNode(null);
+})();
+
+/* A closed drawer sits at translateX(100%), which is real overflow to the right of
+   the shell. Focusing anything inside an overflow:hidden box lets the browser scroll
+   it — which silently slid the whole mock canvas sideways. Pin it back. */
+document.querySelectorAll('.shell').forEach((s) => {
+  s.addEventListener('scroll', () => { s.scrollLeft = 0; s.scrollTop = 0; });
+});
+
+/* ===========================================================================
+   Verdict panel
+   =========================================================================== */
+(function verdict() {
+  const KEY = 'ledrums.proto.inspector-drawer';
+  const OPTS = [
+    ['docked', '0 · Keep it docked', 'The baseline wins; the slideover is not worth the state.'],
+    ['overlay', '1 · Auto overlay', 'Selection opens it, canvas click dismisses. Full-width canvas the rest of the time.'],
+    ['peek', '2 · Peek rail', 'Push when pinned, overlay when not, always shows what is selected.'],
+    ['focus', '3 · Focus panel', 'Deliberate mode, wide, scrimmed. Select and edit stop competing.'],
+  ];
+  const body = document.getElementById('vbody');
+  const savedTag = document.getElementById('saved');
+  const state = JSON.parse(localStorage.getItem(KEY) || '{"winner":null,"notes":{}}');
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    savedTag.textContent = 'saved ' + new Date().toLocaleTimeString();
+    savedTag.classList.add('on');
+  }
+  OPTS.forEach(([id, name, pitch]) => {
+    const l = document.createElement('label');
+    l.className = 'vopt' + (state.winner === id ? ' win' : '');
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'winner'; r.value = id; r.checked = state.winner === id;
+    const d = el('div');
+    d.append(el('div', 'vname', name), el('div', 'vnote', pitch));
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes on ' + name + '…';
+    ta.value = state.notes[id] || '';
+    ta.oninput = () => { state.notes[id] = ta.value; save(); };
+    ta.onclick = (e) => e.preventDefault();
+    r.onchange = () => {
+      state.winner = id;
+      body.querySelectorAll('.vopt').forEach((x) => x.classList.remove('win'));
+      l.classList.add('win');
+      save();
+    };
+    l.append(r, d, ta);
+    body.append(l);
+  });
+  if (state.winner) { savedTag.textContent = 'restored'; savedTag.classList.add('on'); }
+  document.getElementById('clear').onclick = () => { localStorage.removeItem(KEY); location.reload(); };
+})();
+</script>
+</body>
+</html>

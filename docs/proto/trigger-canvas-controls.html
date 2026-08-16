@@ -1,0 +1,1227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PROTOTYPE — Trigger graph: on-canvas controls</title>
+<!--
+  ============================================================================
+  THROWAWAY PROTOTYPE — no build step, no dependencies, open with file://.
+  Design question: which trigger-graph controls should live ON the canvas
+  instead of only in the Inspector, and what shape should they take?
+  Four divergent mechanisms, each forced from a different reference point.
+  ============================================================================
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+
+    /* ---- lifted from apps/web/src/styles/tokens.css (subset) -------------- */
+    --bg: oklch(0.124 0.011 256);
+    --surface: oklch(0.152 0.012 256);
+    --surface-2: oklch(0.184 0.013 256);
+    --surface-3: oklch(0.224 0.014 256);
+    --surface-inset: oklch(0.108 0.010 256);
+
+    --border-faint: oklch(0.240 0.012 256);
+    --border: oklch(0.300 0.015 256);
+    --border-strong: oklch(0.430 0.022 256);
+
+    --ink: oklch(0.967 0.004 256);
+    --text: oklch(0.905 0.005 256);
+    --text-muted: oklch(0.770 0.009 256);
+    --text-faint: oklch(0.668 0.011 256);
+    --text-disabled: oklch(0.560 0.009 256);
+
+    --accent: oklch(0.845 0.190 128);
+    --accent-bright: oklch(0.900 0.195 128);
+    --accent-dim: oklch(0.560 0.120 130);
+    --accent-soft: oklch(0.845 0.190 128 / 0.15);
+    --on-accent: oklch(0.210 0.050 130);
+
+    --role-input: oklch(0.720 0.130 245);
+    --role-content: oklch(0.700 0.165 300);
+    --role-effect: oklch(0.785 0.150 68);
+    --role-layer: oklch(0.745 0.150 152);
+    --role-output: oklch(0.720 0.120 205);
+    --role-mod: oklch(0.760 0.130 330);
+    --role-modulation: oklch(0.820 0.130 195);
+
+    --warn: oklch(0.810 0.150 80);
+
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Geist Mono', 'Cascadia Code', Menlo, monospace;
+
+    --text-2xs: 0.75rem;
+    --text-xs: 0.8125rem;
+    --text-sm: 0.875rem;
+    --text-base: 0.9375rem;
+
+    --tracking-label: 0.04em;
+
+    --space-0_5: 2px;
+    --space-1: 4px;
+    --space-1_5: 6px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+
+    --radius-1: 3px;
+    --radius-2: 5px;
+    --radius-3: 8px;
+    --radius-pill: 999px;
+    --control-h: 26px;
+
+    --dur-90: 90ms;
+    --dur-120: 120ms;
+    --ease-control: cubic-bezier(0.2, 0, 0, 1);
+    --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- top chrome --------------------------------------------------------- */
+  header.top {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: 0 var(--space-4);
+    height: 44px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .proto-tag {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--warn);
+    border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent);
+    background: color-mix(in oklch, var(--warn) 12%, transparent);
+    padding: 2px 6px;
+    border-radius: var(--radius-1);
+    flex: none;
+  }
+  .top .title { font-size: var(--text-sm); font-weight: 500; color: var(--ink); letter-spacing: -0.011em; }
+  .top .question { font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; text-align: right; }
+
+  main { padding: var(--space-5) var(--space-4) 64px; max-width: 1240px; margin: 0 auto; }
+
+  /* ---- shared plate ------------------------------------------------------- */
+  .plate {
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-3);
+    margin-bottom: var(--space-5);
+    overflow: hidden;
+  }
+  .plate-head {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-faint);
+    background: var(--surface-2);
+  }
+  .plate-num {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--accent);
+    border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
+    background: var(--accent-soft);
+    border-radius: var(--radius-1);
+    height: 24px;
+    display: grid;
+    place-items: center;
+  }
+  .plate-name { font-size: var(--text-base); font-weight: 700; color: var(--ink); letter-spacing: -0.011em; }
+  .plate-pitch { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.55; margin-top: 2px; text-wrap: pretty; }
+  .ref {
+    display: inline-block;
+    margin-top: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    color: var(--text-disabled);
+    border-left: 2px solid var(--border-strong);
+    padding-left: var(--space-2);
+  }
+  .plate-body { padding: var(--space-4); }
+  .plate-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--border-faint);
+    background: var(--surface-inset);
+    font-size: var(--text-2xs);
+    line-height: 1.6;
+    color: var(--text-faint);
+  }
+  .plate-foot b { color: var(--text-muted); font-weight: 500; }
+  .plate-foot > div { flex: 1 1 240px; }
+
+  /* ---- the mock canvas ---------------------------------------------------- */
+  .stage {
+    position: relative;
+    height: 360px;
+    background:
+      radial-gradient(circle at 1px 1px, oklch(0.240 0.012 256) 1px, transparent 0) 0 0 / 16px 16px,
+      var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    user-select: none;
+    touch-action: none;
+  }
+  .stage svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .stage svg.wires path { fill: none; stroke: var(--border-strong); stroke-width: 1.5; }
+
+  /* ---- node card (mirrors apps/web/src/lib/app/views/NodeCard.svelte) ------ */
+  .card {
+    position: absolute;
+    width: 176px;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-1);
+    cursor: pointer;
+  }
+  /* NodeCard.svelte grows to fit a thumbnail (`.card.has-thumb`, max 260px). These mocks
+     all carry one, so they are drawn at a single 208px width — enough for "Comet Trails"
+     to render without ellipsis, which is what the real card does too. */
+  .card { width: 208px; }
+  .card:hover { border-color: var(--accent-bright); }
+  .card.sel { border-color: var(--accent); }
+  .card-head {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'icon title thumb' 'icon sub thumb';
+    align-items: center;
+    column-gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  }
+  .chip {
+    grid-area: icon;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border-radius: var(--radius-2);
+    color: var(--tint, var(--accent));
+    background: color-mix(in oklch, var(--tint, var(--accent)) 14%, var(--surface-3));
+    border: 1px solid color-mix(in oklch, var(--tint, var(--accent)) 40%, transparent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .card .title { grid-area: title; font-size: var(--text-sm); font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .sub { grid-area: sub; font-size: var(--text-2xs); color: var(--text-faint); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .thumb {
+    grid-area: thumb;
+    width: 56px; height: 32px;
+    border-radius: var(--radius-1);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    overflow: hidden;
+    position: relative;
+  }
+  .card .thumb i { position: absolute; inset: 0; display: block; opacity: 0.9; }
+  .card-footer { padding: var(--space-1_5) var(--space-2) var(--space-2); border-top: 1px solid var(--border-faint); }
+  .port { position: absolute; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-3); border: 1.5px solid var(--border-strong); top: 50%; transform: translateY(-50%); }
+  .port.in { left: -6px; }
+  .port.out { right: -6px; }
+
+  /* ---- mini controls (used by several options) ---------------------------- */
+  .mini { display: flex; flex-direction: column; gap: 4px; }
+  .mrow { display: grid; grid-template-columns: 56px minmax(0, 1fr) 44px; align-items: center; gap: var(--space-2); height: 20px; }
+  .mrow .k { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); letter-spacing: var(--tracking-label); }
+  .mrow .v { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .rail {
+    position: relative;
+    height: 4px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .rail .fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-pill); background: color-mix(in oklch, var(--accent) 70%, transparent); }
+  .rail .knob {
+    position: absolute; top: 50%; width: 10px; height: 10px; margin-left: -5px;
+    transform: translateY(-50%);
+    border-radius: 50%;
+    background: var(--surface-3);
+    border: 1.5px solid var(--accent);
+    box-shadow: var(--shadow-1);
+  }
+  .rail:hover .knob { background: var(--accent); }
+  .rail.tall { height: 6px; }
+
+  .swatchbtn {
+    width: 100%; height: 18px;
+    border-radius: var(--radius-1);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--surface-inset); }
+  .seg button {
+    appearance: none; border: 0; background: transparent;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: color var(--dur-90) var(--ease-control), background-color var(--dur-90) var(--ease-control);
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-bright); }
+
+  .firebtn {
+    appearance: none;
+    display: inline-flex; align-items: center; gap: var(--space-1_5);
+    height: 22px; padding: 0 var(--space-2);
+    border-radius: var(--radius-1);
+    border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+    background: var(--accent-soft);
+    color: var(--accent-bright);
+    font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label);
+    cursor: pointer;
+    transition: background-color var(--dur-90) var(--ease-control);
+  }
+  .firebtn:hover { background: color-mix(in oklch, var(--accent) 26%, transparent); }
+  .firebtn.assumed { border-style: dashed; }
+
+  /* ---- option 2: satellite cluster ---------------------------------------- */
+  .satellite {
+    position: absolute;
+    width: 196px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-3);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+    padding: var(--space-2);
+    z-index: 5;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+    pointer-events: none;
+    transition: opacity var(--dur-120) var(--ease-control), transform var(--dur-120) var(--ease-control);
+  }
+  .satellite.on { opacity: 1; transform: none; pointer-events: auto; }
+  .satellite .sat-head {
+    display: flex; align-items: center; gap: var(--space-1_5);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label); text-transform: uppercase;
+    color: var(--text-disabled);
+    margin-bottom: var(--space-1_5);
+  }
+  .satellite .tail {
+    position: absolute; left: 18px; bottom: -5px;
+    width: 8px; height: 8px; rotate: 45deg;
+    background: var(--surface-3);
+    border-right: 1px solid var(--border-strong);
+    border-bottom: 1px solid var(--border-strong);
+  }
+  /* flipped below the card: the tail points up instead */
+  .satellite.below .tail {
+    bottom: auto; top: -5px;
+    border: 0;
+    border-left: 1px solid var(--border-strong);
+    border-top: 1px solid var(--border-strong);
+  }
+
+  /* ---- option 3: wire tap ------------------------------------------------- */
+  .tap {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    z-index: 4;
+    display: flex; align-items: center; gap: var(--space-1);
+    height: 22px; padding: 0 var(--space-1_5);
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-pill);
+    box-shadow: var(--shadow-1);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-muted);
+    cursor: ew-resize;
+    touch-action: none;
+    white-space: nowrap;
+  }
+  .tap:hover { border-color: var(--accent); color: var(--ink); }
+  .tap .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tint, var(--accent)); }
+  .tap.open { border-radius: var(--radius-3); height: auto; flex-direction: column; align-items: stretch; padding: var(--space-2); width: 168px; cursor: default; }
+
+  /* ---- option 4: corner HUD ----------------------------------------------- */
+  .hud {
+    position: absolute;
+    left: var(--space-3); bottom: var(--space-3);
+    width: 300px;
+    background: color-mix(in oklch, var(--surface) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+    z-index: 6;
+  }
+  .hud-head {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .hud-head .nm { font-size: var(--text-sm); font-weight: 700; color: var(--ink); }
+  .hud-head .sb { font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-faint); margin-left: auto; }
+  .hud-body { padding: var(--space-2) var(--space-3) var(--space-3); display: flex; flex-direction: column; gap: var(--space-1_5); }
+  .hud .mrow { grid-template-columns: 64px minmax(0, 1fr) 52px; height: 22px; }
+
+  /* ---- candidate-controls table ------------------------------------------- */
+  table.cands { width: 100%; border-collapse: collapse; font-size: var(--text-xs); }
+  table.cands th, table.cands td { text-align: left; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-faint); vertical-align: top; }
+  table.cands th { font-family: var(--font-mono); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-disabled); font-weight: 400; }
+  table.cands td.mono { font-family: var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+  table.cands td.src { color: var(--text-disabled); font-size: var(--text-2xs); }
+  .tag-assumed { color: var(--warn); font-family: var(--font-mono); font-size: var(--text-2xs); }
+
+  /* ---- verdict panel ------------------------------------------------------ */
+  .verdict {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    overflow: hidden;
+  }
+  .verdict .vhead {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-faint);
+  }
+  .verdict h2 { margin: 0; font-size: var(--text-base); color: var(--ink); font-weight: 700; letter-spacing: -0.011em; }
+  .verdict .saved { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled); }
+  .verdict .saved.on { color: var(--accent); }
+  .vbody { padding: var(--space-4); display: grid; gap: var(--space-3); }
+  .vopt {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+    padding: var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    background: var(--surface-inset);
+    cursor: pointer;
+    transition: border-color var(--dur-90) var(--ease-control);
+  }
+  .vopt:hover { border-color: var(--border-strong); }
+  .vopt.win { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset)); }
+  .vopt input { accent-color: var(--accent); margin-top: 3px; }
+  .vopt .vname { font-size: var(--text-sm); color: var(--ink); font-weight: 500; }
+  .vopt .vnote { font-size: var(--text-2xs); color: var(--text-faint); margin-top: 2px; }
+  .vopt textarea {
+    grid-column: 2;
+    width: 100%;
+    min-height: 46px;
+    resize: vertical;
+    margin-top: var(--space-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-1);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--text-xs);
+    padding: var(--space-2);
+    outline: none;
+  }
+  .vopt textarea:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .vactions { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+  .vactions button {
+    appearance: none;
+    height: var(--control-h);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-1);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    cursor: pointer;
+  }
+  .vactions button:hover { border-color: var(--border-strong); color: var(--ink); }
+
+  footer.bot {
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface);
+    border-top: 1px solid var(--border-faint);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    letter-spacing: var(--tracking-label);
+    color: var(--text-disabled);
+  }
+  footer.bot .sep { color: var(--border-strong); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <span class="proto-tag">Prototype</span>
+  <span class="title">Trigger graph — on-canvas controls</span>
+  <span class="question">Design question: which controls leave the Inspector for the canvas, and in what shape?</span>
+</header>
+
+<main>
+
+  <!-- ============ what is even a candidate ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">0</span>
+      <div>
+        <div class="plate-name">Candidate controls — read out of the real Trigger view</div>
+        <div class="plate-pitch">
+          Before deciding <em>where</em>, decide <em>what</em>. These are the controls that live in the
+          Inspector today and are touched often enough to earn canvas space. Sourced from
+          <code>PlayNodeInspector.svelte</code>, <code>trigger-node-meta.ts</code> and the effect
+          <code>paramSpec</code>s in <code>packages/core/src/effects/impl/</code>. One row is an
+          <span class="tag-assumed">assumption</span>, not a found requirement — it is marked as such.
+        </div>
+      </div>
+    </div>
+    <div class="plate-body" style="padding: 0">
+      <table class="cands">
+        <thead>
+          <tr><th>Control</th><th>Node kinds</th><th>Why it earns canvas space</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">Colour (hue&nbsp;/&nbsp;sat&nbsp;/&nbsp;bri)</td>
+            <td class="mono">play · effect</td>
+            <td>49 of ~45 effects declare saturation + brightness, 40 declare hue. It is the single most-shared triplet in the library and the one you nudge while watching the kit.</td>
+            <td class="src">grep of <code>impl/*.ts</code> paramSpec</td>
+          </tr>
+          <tr>
+            <td class="mono">Decay / Life</td>
+            <td class="mono">play · effect</td>
+            <td>How long a hit hangs. <code>decayMs</code> ×9, <code>life</code>/<code>lifeMs</code>/<code>lifeBeats</code> ×7 — and it is the param you tune against a groove, not against a number.</td>
+            <td class="src">radial-wash, whole-drum, confetti-burst</td>
+          </tr>
+          <tr>
+            <td class="mono">Speed</td>
+            <td class="mono">play · effect</td>
+            <td>30 effects declare it; units differ (°/s, mm/ms, rev/beat) but the gesture is identical.</td>
+            <td class="src">comet-trails, chase-bands, radial-wash</td>
+          </tr>
+          <tr>
+            <td class="mono">Chance&nbsp;%</td>
+            <td class="mono">chance</td>
+            <td>Already printed on the card sub line (<code>kindSummary</code> → "45%") — reading it there but editing it three panels away is the exact friction this explores.</td>
+            <td class="src"><code>trigger-node-meta.ts</code></td>
+          </tr>
+          <tr>
+            <td class="mono">Delay time</td>
+            <td class="mono">delay</td>
+            <td>Same story: the card already says <code>120ms</code> or <code>1/8</code>.</td>
+            <td class="src"><code>kindSummary</code> case 'delay'</td>
+          </tr>
+          <tr>
+            <td class="mono">Bypass</td>
+            <td class="mono">modifier</td>
+            <td>A single boolean with a whole-node visual consequence (the card already dims to 0.55 opacity).</td>
+            <td class="src"><code>TriggerNode.svelte</code> <code>.bypassed</code></td>
+          </tr>
+          <tr>
+            <td class="mono">Play mode / Layer</td>
+            <td class="mono">play · effect</td>
+            <td>Segmented, 3 values, set-once-then-rarely. Weak candidate — listed so the "no" is on record.</td>
+            <td class="src"><code>MODE_OPTS</code>, <code>store.buses</code></td>
+          </tr>
+          <tr>
+            <td class="mono">Fire (test one hit) <span class="tag-assumed">ASSUMED</span></td>
+            <td class="mono">trigger · play</td>
+            <td>There is <strong>no</strong> fire-to-test affordance on <code>main</code> today — no <code>fireNode</code>, no mute, no solo anywhere in the trigger store. Included because the brief names it, and because every option below is more valuable if you can hear the change. Treat as a proposal, not a port.</td>
+            <td class="src"><span class="tag-assumed">assumed — brief only</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="plate-foot">
+      <div><b>Not candidates.</b> Scope + target (a dropdown of every drum · hoop), preset select, and the modulation-target rows — those already have their place and their space.</div>
+      <div><b>Shared constraint.</b> Whatever lands on the canvas must survive being zoomed out. Options below are drawn at 100%; a real pass has to answer "what happens at 40%".</div>
+    </div>
+  </section>
+
+  <!-- ============ option 1 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">1</span>
+      <div>
+        <div class="plate-name">Face Params — the card grows the controls</div>
+        <div class="plate-pitch">
+          Two or three params are promoted onto the node card itself, in the footer slot the card
+          <em>already has</em> for modulation rows. Always visible, no selection required, no new surface —
+          the graph becomes a rack of small devices you read and adjust in place.
+        </div>
+        <span class="ref">Forced from: the app's own <code>NodeCard</code> footer + an Ableton device rack — the control lives on the device.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="stage" id="stage1"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — zero-click editing, and the graph shows its settings without you selecting anything. Reuses a footer mechanism that already ships.</div>
+      <div><b>Costs</b> — every card gets taller, so the graph gets sparser and zoom-out gets worse. Which 2 params get promoted is per-effect config you now have to author or infer.</div>
+      <div><b>Open</b> — do promoted params also stay in the Inspector (two truths on screen), or vanish from it?</div>
+    </div>
+  </section>
+
+  <!-- ============ option 2 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">2</span>
+      <div>
+        <div class="plate-name">Satellite — a contextual cluster that flies to the selection</div>
+        <div class="plate-pitch">
+          Cards stay exactly as they ship. Selecting a node floats a small cluster beside it with that
+          node's hot params; it follows the selection and dissolves on canvas click. Nothing is
+          permanently on the canvas, so nothing is permanently in the way.
+        </div>
+        <span class="ref">Forced from: Figma's floating selection toolbar — chrome that exists only while something is selected.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="stage" id="stage2"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — card density untouched; the cluster can be as rich as it likes because it is temporary. Reads instantly as "belongs to this node".</div>
+      <div><b>Costs</b> — occludes whatever is behind it (here it deliberately overlaps a wire). Needs collision logic near the canvas edges. You cannot compare two nodes' values at once.</div>
+      <div><b>Open</b> — does it also open on hover (fast, twitchy) or only on click (calm, one extra gesture)?</div>
+    </div>
+  </section>
+
+  <!-- ============ option 3 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">3</span>
+      <div>
+        <div class="plate-name">Wire Tap — the control rides the connection</div>
+        <div class="plate-pitch">
+          The params that describe <em>flow between</em> nodes — chance, delay, modifier bypass — stop being
+          node properties on the canvas and become handles on the wire itself. Drag the pill left/right to
+          scrub the value; click it to open in place. The graph stops being cards-with-settings and starts
+          being a signal path with inline attenuators.
+        </div>
+        <span class="ref">Forced from: Max/MSP patch cords + Blender's reroute nodes — the edge is a first-class editable object.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="stage" id="stage3"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — the truest picture of what the graph does: "60% of the time, 120 ms later". Costs the cards nothing. Scales with graph size instead of node count.</div>
+      <div><b>Costs</b> — only fits gating/timing params. Chance and Delay are <em>nodes</em> today, so this is a model change, not a layout change — a wire tap would have to create/edit a hidden node.</div>
+      <div><b>Open</b> — this is the one option that argues with the data model. Worth it only if wire-level chance is where you actually want to author.</div>
+    </div>
+  </section>
+
+  <!-- ============ option 4 ============ -->
+  <section class="plate">
+    <div class="plate-head">
+      <span class="plate-num">4</span>
+      <div>
+        <div class="plate-name">Corner HUD — one fixed panel, retargeted by selection</div>
+        <div class="plate-pitch">
+          A single translucent panel pinned to the canvas corner. It always shows the selected node's hot
+          controls plus Fire, and never moves — so the muscle memory is positional, not spatial. Nothing
+          is attached to any card; the canvas stays a clean map.
+        </div>
+        <span class="ref">Forced from: a hardware transport / DaVinci-style corner inspector — a fixed cockpit, not floating chrome.</span>
+      </div>
+    </div>
+    <div class="plate-body">
+      <div class="stage" id="stage4"></div>
+    </div>
+    <div class="plate-foot">
+      <div><b>Wins</b> — one position to learn; controls can be big enough to hit while looking at the kit, not the screen. Survives zoom-out completely (it is not in canvas space).</div>
+      <div><b>Costs</b> — it is a small Inspector in a corner, which is close to admitting the Inspector was right. Permanently eats a canvas corner. No node→control adjacency at all.</div>
+      <div><b>Open</b> — if this wins, the honest question is whether it replaces the Inspector rather than joining it (see the drawer prototype).</div>
+    </div>
+  </section>
+
+  <!-- ============ verdict ============ -->
+  <section class="verdict" id="verdict">
+    <div class="vhead">
+      <h2>Verdict</h2>
+      <span class="saved" id="saved">not saved</span>
+    </div>
+    <div class="vbody" id="vbody"></div>
+    <div class="vactions">
+      <button type="button" id="clear">Clear verdict</button>
+      <span style="font-family: var(--font-mono); font-size: var(--text-2xs); color: var(--text-disabled)">
+        Saved to this browser's localStorage — key <code>ledrums.proto.canvas-controls</code>
+      </span>
+    </div>
+  </section>
+
+</main>
+
+<footer class="bot">
+  <span>node card = NodeCard.svelte, 176px, 1.5px border, radius-3</span>
+  <span class="sep">│</span>
+  <span>wires stay grey (deliberate — see graph-wires-stay-grey)</span>
+  <span class="sep">│</span>
+  <span>values are real paramSpec ranges</span>
+</footer>
+
+<script>
+'use strict';
+
+/* ===========================================================================
+   Model — the same four node kinds the real Trigger graph seeds with, carrying
+   REAL params read out of packages/core/src/effects/impl/*.ts:
+     whole-drum   hue 0-360, saturation 0-1, brightness 0-1, decayMs 10-4000
+     comet-trails comets 1-32, speed 0-1080 °/s, tail 5-350°, hue, sat, bri
+   Tints mirror trigger-node-meta.ts `tint`.
+   =========================================================================== */
+
+const P = {
+  wholeDrum: { hue: 0, saturation: 1, brightness: 1, decayMs: 220 },
+  comet: { comets: 4, speed: 180, tail: 120, hue: 190, saturation: 1, brightness: 1 },
+  chance: 0.45,
+  delayMs: 120,
+};
+
+const SPEC = {
+  hue:        { label: 'Hue',    min: 0, max: 360, unit: '°',  step: 1 },
+  saturation: { label: 'Sat',    min: 0, max: 1,   unit: '',   step: 0.01 },
+  brightness: { label: 'Bright', min: 0, max: 1,   unit: '',   step: 0.01 },
+  decayMs:    { label: 'Decay',  min: 10, max: 4000, unit: 'ms', step: 1 },
+  speed:      { label: 'Speed',  min: 0, max: 1080, unit: '°/s', step: 1 },
+  tail:       { label: 'Tail',   min: 5, max: 350, unit: '°',  step: 1 },
+  comets:     { label: 'Comets', min: 1, max: 32,  unit: '',   step: 1 },
+  chance:     { label: 'Chance', min: 0, max: 1,   unit: '%',  step: 0.01 },
+  delayMs:    { label: 'Delay',  min: 0, max: 2000, unit: 'ms', step: 1 },
+};
+
+function fmt(key, v) {
+  const s = SPEC[key];
+  if (!s) return String(v);
+  if (key === 'chance') return Math.round(v * 100) + '%';
+  if (s.max <= 1) return v.toFixed(2);
+  return Math.round(v) + (s.unit && s.unit !== '%' ? s.unit : '');
+}
+
+/** hsv(0..360, 0..1, 0..1) → css color, matching how the engine reads the triplet. */
+function hsv(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  const i = Math.floor(h / 60) % 6;
+  if (i === 0) { r = c; g = x; } else if (i === 1) { r = x; g = c; }
+  else if (i === 2) { g = c; b = x; } else if (i === 3) { g = x; b = c; }
+  else if (i === 4) { r = x; b = c; } else { r = c; b = x; }
+  return `rgb(${Math.round((r + m) * 255)} ${Math.round((g + m) * 255)} ${Math.round((b + m) * 255)})`;
+}
+
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html != null) n.innerHTML = html;
+  return n;
+};
+
+/** A draggable rail. Returns a `set(v)` so external edits repaint it. */
+function rail(min, max, get, set, opts) {
+  const r = el('div', 'rail' + (opts && opts.tall ? ' tall' : ''));
+  const fill = el('div', 'fill');
+  const knob = el('div', 'knob');
+  r.append(fill, knob);
+  const paint = () => {
+    const t = (get() - min) / (max - min);
+    fill.style.right = (100 - t * 100) + '%';
+    knob.style.left = (t * 100) + '%';
+  };
+  const at = (e) => {
+    const b = r.getBoundingClientRect();
+    const t = Math.max(0, Math.min(1, (e.clientX - b.left) / b.width));
+    set(min + t * (max - min));
+    paint();
+  };
+  r.addEventListener('pointerdown', (e) => { r.setPointerCapture(e.pointerId); at(e); });
+  r.addEventListener('pointermove', (e) => { if (r.hasPointerCapture(e.pointerId)) at(e); });
+  paint();
+  r.repaint = paint;
+  return r;
+}
+
+/** label · rail · readout */
+function mrow(key, get, set, onChange) {
+  const s = SPEC[key];
+  const row = el('div', 'mrow');
+  const k = el('span', 'k', s.label);
+  const v = el('span', 'v', fmt(key, get()));
+  const rl = rail(s.min, s.max, get, (x) => { set(x); v.textContent = fmt(key, get()); onChange && onChange(); }, {});
+  row.append(k, rl, v);
+  row.sync = () => { v.textContent = fmt(key, get()); rl.repaint(); };
+  return row;
+}
+
+/* --- node card ------------------------------------------------------------ */
+function card(o) {
+  const c = el('div', 'card' + (o.wide ? ' wide' : ''));
+  c.style.left = o.x + 'px';
+  c.style.top = o.y + 'px';
+  c.dataset.id = o.id;
+  const head = el('div', 'card-head');
+  const chip = el('span', 'chip', o.glyph);
+  chip.style.setProperty('--tint', o.tint);
+  head.append(chip, el('span', 'title', o.title), el('span', 'sub', o.sub));
+  if (o.thumb) {
+    const t = el('span', 'thumb');
+    const i = el('i');
+    t.append(i);
+    head.append(t);
+    c.thumbPaint = o.thumb(i);
+    c.thumbPaint();
+  }
+  if (o.hasIn !== false) head.append(el('span', 'port in'));
+  if (o.hasOut !== false) head.append(el('span', 'port out'));
+  c.append(head);
+  c.setSub = (s) => { head.querySelector('.sub').textContent = s; };
+  return c;
+}
+
+function wires(stage, pairs) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'wires');
+  pairs.forEach(([a, b]) => {
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const dx = Math.max(36, (b[0] - a[0]) * 0.5);
+    p.setAttribute('d', `M ${a[0]} ${a[1]} C ${a[0] + dx} ${a[1]}, ${b[0] - dx} ${b[1]}, ${b[0]} ${b[1]}`);
+    svg.append(p);
+  });
+  stage.prepend(svg);
+  return svg;
+}
+
+/* ===========================================================================
+   OPTION 1 — Face Params
+   =========================================================================== */
+(function option1() {
+  const stage = document.getElementById('stage1');
+
+  const trig = card({ id: 'trig', x: 24, y: 44, title: 'Trigger', sub: 'Kick · head', glyph: '⚡', tint: 'var(--accent)', hasIn: false });
+  const rnd = card({ id: 'rnd', x: 244, y: 44, title: 'Random', sub: 'no-repeat', glyph: '⤨', tint: 'var(--role-effect)' });
+
+  const wd = card({
+    id: 'wd', x: 470, y: 22, wide: true, title: 'Whole Drum', sub: 'Punch', glyph: '✦', tint: 'var(--role-content)',
+    thumb: (i) => () => { i.style.background = `linear-gradient(90deg, ${hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness)}, transparent)`; },
+  });
+  const ct = card({
+    id: 'ct', x: 470, y: 196, wide: true, title: 'Comet Trails', sub: 'Default', glyph: '✦', tint: 'var(--role-content)',
+    thumb: (i) => () => { i.style.background = `linear-gradient(90deg, transparent, ${hsv(P.comet.hue, P.comet.saturation, P.comet.brightness)})`; },
+  });
+
+  // the promoted params — rendered in the card's own footer slot
+  function footer(host, rows) {
+    const f = el('div', 'card-footer');
+    const m = el('div', 'mini');
+    rows.forEach((r) => m.append(r));
+    f.append(m);
+    host.append(f);
+  }
+
+  footer(wd, [
+    (() => {
+      const row = el('div', 'mrow');
+      row.append(el('span', 'k', 'Colour'));
+      const b = el('button', 'swatchbtn');
+      b.style.background = hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness);
+      b.title = 'Click to cycle hue — stands in for the real ColorSwatch popover';
+      b.onclick = (e) => {
+        e.stopPropagation();
+        P.wholeDrum.hue = (P.wholeDrum.hue + 40) % 360;
+        b.style.background = hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness);
+        wd.thumbPaint();
+      };
+      row.append(b, el('span', 'v', 'h/s/v'));
+      return row;
+    })(),
+    mrow('decayMs', () => P.wholeDrum.decayMs, (v) => (P.wholeDrum.decayMs = v)),
+  ]);
+
+  footer(ct, [
+    mrow('speed', () => P.comet.speed, (v) => (P.comet.speed = v)),
+    mrow('tail', () => P.comet.tail, (v) => (P.comet.tail = v)),
+  ]);
+
+  stage.append(trig, rnd, wd, ct);
+  wires(stage, [
+    [[232, 71], [244, 71]],
+    [[452, 71], [470, 49]],
+    [[452, 71], [470, 223]],
+  ]);
+
+  stage.addEventListener('click', (e) => {
+    const c = e.target.closest('.card');
+    stage.querySelectorAll('.card').forEach((n) => n.classList.toggle('sel', n === c));
+  });
+})();
+
+/* ===========================================================================
+   OPTION 2 — Satellite cluster
+   =========================================================================== */
+(function option2() {
+  const stage = document.getElementById('stage2');
+
+  const nodes = [
+    card({ id: 'trig', x: 24, y: 150, title: 'Trigger', sub: 'Snare · head', glyph: '⚡', tint: 'var(--accent)', hasIn: false }),
+    card({ id: 'chance', x: 252, y: 150, title: 'Chance', sub: '45%', glyph: '⚂', tint: 'var(--role-mod)' }),
+    card({
+      id: 'wd', x: 480, y: 60, title: 'Whole Drum', sub: 'Punch', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, ${hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness)}, transparent)`; },
+    }),
+    card({
+      id: 'ct', x: 480, y: 244, title: 'Comet Trails', sub: 'Default', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, transparent, ${hsv(P.comet.hue, P.comet.saturation, P.comet.brightness)})`; },
+    }),
+  ];
+  nodes.forEach((n) => stage.append(n));
+  wires(stage, [
+    [[232, 177], [252, 177]],
+    [[460, 177], [480, 87]],
+    [[460, 177], [480, 271]],
+  ]);
+
+  const sat = el('div', 'satellite');
+  sat.append(el('div', 'tail'));
+  const head = el('div', 'sat-head');
+  sat.append(head);
+  const body = el('div', 'mini');
+  sat.append(body);
+  stage.append(sat);
+
+  const CLUSTERS = {
+    chance: (b) => {
+      b.append(mrow('chance', () => P.chance, (v) => { P.chance = v; nodes[1].setSub(Math.round(P.chance * 100) + '%'); }));
+      const f = el('div', 'mrow');
+      f.style.gridTemplateColumns = 'minmax(0,1fr)';
+      const btn = el('button', 'firebtn assumed', '▶ Fire once');
+      btn.title = 'ASSUMED control — no fire-to-test exists on main today';
+      f.append(btn);
+      b.append(f);
+    },
+    wd: (b) => {
+      b.append(mrow('hue', () => P.wholeDrum.hue, (v) => { P.wholeDrum.hue = v; nodes[2].thumbPaint(); }));
+      b.append(mrow('brightness', () => P.wholeDrum.brightness, (v) => { P.wholeDrum.brightness = v; nodes[2].thumbPaint(); }));
+      b.append(mrow('decayMs', () => P.wholeDrum.decayMs, (v) => (P.wholeDrum.decayMs = v)));
+    },
+    ct: (b) => {
+      b.append(mrow('speed', () => P.comet.speed, (v) => (P.comet.speed = v)));
+      b.append(mrow('tail', () => P.comet.tail, (v) => (P.comet.tail = v)));
+      b.append(mrow('comets', () => P.comet.comets, (v) => (P.comet.comets = Math.round(v))));
+    },
+    trig: (b) => {
+      const f = el('div', 'mrow');
+      f.style.gridTemplateColumns = 'minmax(0,1fr)';
+      const btn = el('button', 'firebtn assumed', '▶ Fire once');
+      btn.title = 'ASSUMED control — no fire-to-test exists on main today';
+      f.append(btn);
+      b.append(f);
+      b.append(el('div', 'mrow', '<span class="k" style="grid-column:1/-1">Trigger nodes carry a source, not params — thin cluster on purpose.</span>'));
+    },
+  };
+
+  function open(node) {
+    const id = node.dataset.id;
+    body.innerHTML = '';
+    head.textContent = node.querySelector('.title').textContent;
+    CLUSTERS[id](body);
+    const x = parseFloat(node.style.left);
+    const y = parseFloat(node.style.top);
+    sat.style.left = Math.max(8, Math.min(stage.clientWidth - 204, x - 6)) + 'px';
+    /* flip below the card when there isn't room above — the collision logic this
+       mechanism needs for real, in its cheapest form */
+    const above = y > 150;
+    sat.classList.toggle('below', !above);
+    if (above) {
+      sat.style.top = 'auto';
+      sat.style.bottom = (stage.clientHeight - y + 10) + 'px';
+    } else {
+      sat.style.bottom = 'auto';
+      sat.style.top = (node.offsetHeight + y + 10) + 'px';
+    }
+    sat.classList.add('on');
+  }
+
+  stage.addEventListener('click', (e) => {
+    const c = e.target.closest('.card');
+    nodes.forEach((n) => n.classList.toggle('sel', n === c));
+    if (c) open(c);
+    else if (!e.target.closest('.satellite')) sat.classList.remove('on');
+  });
+
+  // open one by default so the mechanism is visible without a click
+  nodes[2].classList.add('sel');
+  open(nodes[2]);
+})();
+
+/* ===========================================================================
+   OPTION 3 — Wire Tap
+   =========================================================================== */
+(function option3() {
+  const stage = document.getElementById('stage3');
+
+  const nodes = [
+    card({ id: 'trig', x: 20, y: 150, title: 'Trigger', sub: 'Tom 1 · head', glyph: '⚡', tint: 'var(--accent)', hasIn: false }),
+    card({ id: 'all', x: 268, y: 150, title: 'All', sub: 'all at once', glyph: '≡', tint: 'var(--role-layer)' }),
+    card({
+      id: 'wd', x: 516, y: 62, title: 'Whole Drum', sub: 'Punch', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, ${hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness)}, transparent)`; },
+    }),
+    card({
+      id: 'ct', x: 516, y: 240, title: 'Comet Trails', sub: 'Default', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, transparent, ${hsv(P.comet.hue, P.comet.saturation, P.comet.brightness)})`; },
+    }),
+  ];
+  nodes.forEach((n) => stage.append(n));
+  wires(stage, [
+    [[228, 177], [268, 177]],
+    [[476, 177], [516, 89]],
+    [[476, 177], [516, 267]],
+  ]);
+
+  /* a tap: drag horizontally to scrub, click to expand in place */
+  function tap(x, y, label, key, get, set, tint) {
+    const t = el('div', 'tap');
+    t.style.left = x + 'px';
+    t.style.top = y + 'px';
+    t.style.setProperty('--tint', tint);
+    const dot = el('span', 'dot');
+    const txt = el('span', 'txt', `${label} ${fmt(key, get())}`);
+    t.append(dot, txt);
+
+    let dragged = false, startX = 0, startV = 0;
+    t.addEventListener('pointerdown', (e) => {
+      if (t.classList.contains('open')) return;
+      t.setPointerCapture(e.pointerId);
+      dragged = false; startX = e.clientX; startV = get();
+      e.stopPropagation();
+    });
+    t.addEventListener('pointermove', (e) => {
+      if (!t.hasPointerCapture(e.pointerId)) return;
+      const s = SPEC[key];
+      const d = (e.clientX - startX) / 160 * (s.max - s.min);
+      if (Math.abs(e.clientX - startX) > 2) dragged = true;
+      set(Math.max(s.min, Math.min(s.max, startV + d)));
+      txt.textContent = `${label} ${fmt(key, get())}`;
+    });
+    t.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (dragged) return;
+      if (t.classList.contains('open')) { collapse(); return; }
+      t.classList.add('open');
+      t.innerHTML = '';
+      const h = el('div', 'sat-head', label);
+      const m = el('div', 'mini');
+      m.append(mrow(key, get, (v) => set(v)));
+      const close = el('button', 'firebtn', 'done');
+      close.style.marginTop = '6px';
+      close.onclick = (ev) => { ev.stopPropagation(); collapse(); };
+      t.append(h, m, close);
+    });
+    function collapse() {
+      t.classList.remove('open');
+      t.innerHTML = '';
+      const d2 = el('span', 'dot');
+      const x2 = el('span', 'txt', `${label} ${fmt(key, get())}`);
+      t.append(d2, x2);
+      txt.textContent = `${label} ${fmt(key, get())}`;
+    }
+    stage.append(t);
+    return t;
+  }
+
+  tap(250, 177, 'chance', 'chance', () => P.chance, (v) => (P.chance = v), 'var(--role-mod)');
+  tap(498, 128, 'delay', 'delayMs', () => P.delayMs, (v) => (P.delayMs = v), 'var(--role-mod)');
+  tap(498, 224, 'chance', 'chance', () => P.chance, (v) => (P.chance = v), 'var(--role-mod)');
+
+  const note = el('div', '', 'drag a pill sideways to scrub · click to open it in place');
+  note.style.cssText = 'position:absolute;right:12px;bottom:10px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-disabled)';
+  stage.append(note);
+
+  stage.addEventListener('click', (e) => {
+    const c = e.target.closest('.card');
+    nodes.forEach((n) => n.classList.toggle('sel', n === c));
+  });
+})();
+
+/* ===========================================================================
+   OPTION 4 — Corner HUD
+   =========================================================================== */
+(function option4() {
+  const stage = document.getElementById('stage4');
+
+  const nodes = [
+    card({ id: 'trig', x: 24, y: 36, title: 'Trigger', sub: 'Kick · head', glyph: '⚡', tint: 'var(--accent)', hasIn: false }),
+    card({ id: 'seq', x: 252, y: 36, title: 'Sequence', sub: 'in order', glyph: '⋮', tint: 'var(--role-output)' }),
+    card({
+      id: 'wd', x: 480, y: 20, title: 'Whole Drum', sub: 'Punch', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, ${hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness)}, transparent)`; },
+    }),
+    card({
+      id: 'ct', x: 480, y: 124, title: 'Comet Trails', sub: 'Default', glyph: '✦', tint: 'var(--role-content)',
+      thumb: (i) => () => { i.style.background = `linear-gradient(90deg, transparent, ${hsv(P.comet.hue, P.comet.saturation, P.comet.brightness)})`; },
+    }),
+  ];
+  nodes.forEach((n) => stage.append(n));
+  wires(stage, [
+    [[232, 63], [252, 63]],
+    [[460, 63], [480, 47]],
+    [[460, 63], [480, 151]],
+  ]);
+
+  const hud = el('div', 'hud');
+  const hhead = el('div', 'hud-head');
+  const nm = el('span', 'nm', '—');
+  const sb = el('span', 'sb', 'no selection');
+  const fire = el('button', 'firebtn assumed', '▶ Fire');
+  fire.title = 'ASSUMED control — no fire-to-test exists on main today';
+  hhead.append(nm, fire, sb);
+  const hbody = el('div', 'hud-body');
+  hud.append(hhead, hbody);
+  stage.append(hud);
+
+  const HUD = {
+    wd: (b) => {
+      const row = el('div', 'mrow');
+      row.append(el('span', 'k', 'Colour'));
+      const sw = el('button', 'swatchbtn');
+      const paint = () => { sw.style.background = hsv(P.wholeDrum.hue, P.wholeDrum.saturation, P.wholeDrum.brightness); };
+      paint();
+      sw.onclick = () => { P.wholeDrum.hue = (P.wholeDrum.hue + 40) % 360; paint(); nodes[2].thumbPaint(); };
+      row.append(sw, el('span', 'v', Math.round(P.wholeDrum.hue) + '°'));
+      b.append(row);
+      b.append(mrow('brightness', () => P.wholeDrum.brightness, (v) => { P.wholeDrum.brightness = v; paint(); nodes[2].thumbPaint(); }));
+      b.append(mrow('decayMs', () => P.wholeDrum.decayMs, (v) => (P.wholeDrum.decayMs = v)));
+    },
+    ct: (b) => {
+      b.append(mrow('speed', () => P.comet.speed, (v) => (P.comet.speed = v)));
+      b.append(mrow('tail', () => P.comet.tail, (v) => (P.comet.tail = v)));
+      b.append(mrow('comets', () => P.comet.comets, (v) => (P.comet.comets = Math.round(v))));
+    },
+    seq: (b) => {
+      const row = el('div', 'mrow');
+      row.style.gridTemplateColumns = '64px minmax(0,1fr)';
+      row.append(el('span', 'k', 'Order'));
+      const seg = el('div', 'seg');
+      ['in order', 'reverse', 'ping-pong'].forEach((o, i) => {
+        const btn = el('button', '', o);
+        btn.setAttribute('aria-pressed', String(i === 0));
+        btn.onclick = () => {
+          seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+          btn.setAttribute('aria-pressed', 'true');
+          nodes[1].setSub(o);
+        };
+        seg.append(btn);
+      });
+      row.append(seg);
+      b.append(row);
+    },
+    trig: (b) => {
+      b.append(el('div', 'mrow', '<span class="k" style="grid-column:1/-1">Source: Kick · head — bound in the Inspector, not here.</span>'));
+    },
+  };
+
+  function retarget(node) {
+    hbody.innerHTML = '';
+    if (!node) { nm.textContent = '—'; sb.textContent = 'no selection'; return; }
+    nm.textContent = node.querySelector('.title').textContent;
+    sb.textContent = node.querySelector('.sub').textContent;
+    HUD[node.dataset.id](hbody);
+  }
+
+  stage.addEventListener('click', (e) => {
+    if (e.target.closest('.hud')) return;
+    const c = e.target.closest('.card');
+    nodes.forEach((n) => n.classList.toggle('sel', n === c));
+    retarget(c);
+  });
+
+  nodes[2].classList.add('sel');
+  retarget(nodes[2]);
+})();
+
+/* ===========================================================================
+   Verdict panel — localStorage-backed. Radio = the winner, textarea = notes.
+   =========================================================================== */
+(function verdict() {
+  const KEY = 'ledrums.proto.canvas-controls';
+  const OPTS = [
+    ['face', 'Face Params', 'Controls in the card footer. Zero-click, always visible, taller cards.'],
+    ['satellite', 'Satellite', 'Floating cluster beside the selection. Rich, temporary, occludes.'],
+    ['wiretap', 'Wire Tap', 'Chance / delay ride the wire. Truest picture, argues with the model.'],
+    ['hud', 'Corner HUD', 'One fixed corner panel, retargeted by selection. Positional muscle memory.'],
+    ['none', 'None of these', 'The Inspector was right; look elsewhere.'],
+  ];
+  const body = document.getElementById('vbody');
+  const savedTag = document.getElementById('saved');
+  const state = JSON.parse(localStorage.getItem(KEY) || '{"winner":null,"notes":{}}');
+
+  function save() {
+    localStorage.setItem(KEY, JSON.stringify(state));
+    savedTag.textContent = 'saved ' + new Date().toLocaleTimeString();
+    savedTag.classList.add('on');
+  }
+
+  OPTS.forEach(([id, name, pitch]) => {
+    const l = document.createElement('label');
+    l.className = 'vopt' + (state.winner === id ? ' win' : '');
+    const r = document.createElement('input');
+    r.type = 'radio'; r.name = 'winner'; r.value = id; r.checked = state.winner === id;
+    const d = el('div');
+    d.append(el('div', 'vname', name), el('div', 'vnote', pitch));
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes on ' + name + '…';
+    ta.value = state.notes[id] || '';
+    ta.oninput = () => { state.notes[id] = ta.value; save(); };
+    ta.onclick = (e) => e.preventDefault();
+    r.onchange = () => {
+      state.winner = id;
+      body.querySelectorAll('.vopt').forEach((x) => x.classList.remove('win'));
+      l.classList.add('win');
+      save();
+    };
+    l.append(r, d, ta);
+    body.append(l);
+  });
+
+  if (state.winner) { savedTag.textContent = 'restored'; savedTag.classList.add('on'); }
+
+  document.getElementById('clear').onclick = () => {
+    localStorage.removeItem(KEY);
+    location.reload();
+  };
+})();
+</script>
+</body>
+</html>
