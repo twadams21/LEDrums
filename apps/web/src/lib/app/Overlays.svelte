@@ -1,21 +1,19 @@
 <script lang="ts">
   /* Overlay layer — the summoned-on-demand drawers + modals (Effect Gallery,
-     Clip / Graph Settings, Envelope Editor) plus the window-right Inspector
-     slideover. Each reads its own open state off the engine store (the slideover
-     off the shell selection), so this is just a single mount point shared by both
-     shells. Mounting here is what lets the slideover paint above the docks and
-     chrome bars instead of inside a view's grid. */
+     Clip / Graph Settings, Envelope Editor). Each reads its own open state off the
+     engine store, so this is just a single mount point shared by both shells.
+
+     The Inspector slideover is NOT here: it is anchored to the graph canvas's right edge
+     (F2) so the drum preview and the docks stay visible — and interactive — beside it,
+     which means it mounts inside `views/TriggerGraphView.svelte`, not at the shell layer. */
   import type { TriggerLab } from '../trigger-lab/store.svelte';
-  import type { ShellStore } from './shell-store.svelte';
   import EffectGallery from '../trigger-lab/EffectGallery.svelte';
   import ClipSettings from '../trigger-lab/ClipSettings.svelte';
   import EnvelopeEditor from '../trigger-lab/EnvelopeEditor.svelte';
-  import InspectorSlideover from './InspectorSlideover.svelte';
 
-  let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+  let { store }: { store: TriggerLab } = $props();
 </script>
 
-<InspectorSlideover {store} {shell} />
 <EffectGallery {store} />
 <ClipSettings {store} />
 <EnvelopeEditor {store} />

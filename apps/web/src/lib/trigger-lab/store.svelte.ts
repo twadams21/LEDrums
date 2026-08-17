@@ -3406,6 +3406,35 @@ export class TriggerLab {
     node.env = {};
   }
 
+  /** Re-type an effect node to another COLLECTION in place (F3 item 11) — the inspector
+      companion to the Add-node menu's Effect group, which adds a node by collection and
+      seeds that collection's first effect. Re-typing does the same to a node that already
+      exists: canvas selects a scene, every other collection routes through the SAME
+      {@link pickEffect} swap the gallery uses, so preset / params / scope / layer reset
+      exactly as a gallery swap does rather than through a second, drifting path.
+      No-op when the node is already that collection, or when the library has nothing in it
+      (a collection with no non-deprecated effect cannot be entered). */
+  setPlayCollection(node: GraphNode, playType: PlayType): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!isEffectNode(node)) return;
+    if (this.playCollectionOf(node) === playType) return;
+
+    if (playType === 'canvas') {
+      const sceneId = this.allCanvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
+      this.setCanvasScene(node, sceneId);
+      return;
+    }
+    const eff = this.selectableEffects.find((e) => !e.deprecated && e.playType === playType);
+    if (!eff) return;
+    this.pickEffect(node, eff.id);
+  }
+
+  /** An effect node's collection — its own, or the effect's when the node predates D3. */
+  playCollectionOf(node: GraphNode): PlayType {
+    if (!isEffectNode(node)) return 'ambient';
+    return node.playType ?? this.effectOf(node)?.playType ?? 'ambient';
+  }
+
   // --- canvas scenes (U5) --------------------------------------------------
 
   /** Create a new authored canvas scene, returning its id. */

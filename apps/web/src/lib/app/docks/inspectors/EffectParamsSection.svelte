@@ -133,6 +133,9 @@
       <div class="rows">
         {#if showSwatch}
           <div class="swatchrow">
+            <!-- no face affordance: the swatch is a shortcut that writes three declared params,
+                 not a param of its own. The empty cell keeps its label on the ParamRow grid. -->
+            <span class="facespace"></span>
             <span class="plabel">Colour</span>
             <ColorSwatch
               hue={num(live['hue'], 0)}
@@ -257,9 +260,14 @@
   }
   .swatchrow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: auto 84px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
+  }
+  /* exactly the IconButton box the ParamRow face affordance renders in, so the swatch's
+     label starts on the same column as every param label below it */
+  .facespace {
+    width: var(--control-icon-size);
   }
   .plabel {
     font-size: var(--text-xs);

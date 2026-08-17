@@ -181,3 +181,73 @@ describe('modulated rows', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+/* F3 items 4 + 6: the row carries a real slider rail, and a wheel over the control edits it
+   in place. The rail is ABSOLUTE (press lands where you pressed); the wheel is one step per
+   tick and must preventDefault, or the pane scrolls out from under the gesture. */
+
+describe('number — rail', () => {
+  it('renders a rail whose fill and thumb track the value', () => {
+    const { container } = render(FaceParamControl, {
+      props: { ...numberProps, value: 0.25, display: '0.25', onChange: () => {} },
+    });
+    expect((container.querySelector('.fill') as HTMLElement).style.width).toBe('25%');
+    expect((container.querySelector('.thumb') as HTMLElement).style.left).toBe('25%');
+  });
+
+  it('omits the rail for a param with no declared range — there is no position to map', () => {
+    const { container } = render(FaceParamControl, {
+      props: { kind: 'number' as const, value: 4, display: '4', step: 1, ariaLabel: 'Steps', onChange: () => {} },
+    });
+    expect(container.querySelector('.rail')).toBeNull();
+  });
+
+  it('jumps to where it is pressed and brackets the press as one gesture', () => {
+    const onChange = vi.fn();
+    const onGestureStart = vi.fn();
+    const onGestureEnd = vi.fn();
+    const { container } = render(FaceParamControl, {
+      props: { ...numberProps, value: 0, onChange, onGestureStart, onGestureEnd },
+    });
+    const rail = container.querySelector('.rail') as HTMLElement & { setPointerCapture: (id: number) => void };
+    rail.setPointerCapture = () => {};
+    // jsdom lays nothing out, so pin the rail's box
+    rail.getBoundingClientRect = () => ({ left: 0, width: 100, right: 100, top: 0, bottom: 16, height: 16, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+
+    fireEvent.pointerDown(rail, { button: 0, clientX: 75, pointerId: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(0.75);
+    fireEvent.pointerMove(rail, { clientX: 20, pointerId: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(0.2);
+    fireEvent.pointerUp(rail, { pointerId: 1 });
+
+    expect(onGestureStart).toHaveBeenCalledTimes(1);
+    expect(onGestureEnd).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('number — wheel', () => {
+  it('steps the value one step per tick over the value field', () => {
+    const onChange = vi.fn();
+    const { getByRole } = render(FaceParamControl, { props: { ...numberProps, value: 0.5, onChange } });
+    fireEvent.wheel(getByRole('slider'), { deltaY: -100 });
+    expect(onChange).toHaveBeenLastCalledWith(0.51);
+    fireEvent.wheel(getByRole('slider'), { deltaY: 100 });
+    expect(onChange).toHaveBeenLastCalledWith(0.49);
+  });
+
+  it('steps over the rail too, and cancels the page scroll it rode in on', () => {
+    const onChange = vi.fn();
+    const { container } = render(FaceParamControl, { props: { ...numberProps, value: 0.5, onChange } });
+    const ev = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    container.querySelector('.rail')!.dispatchEvent(ev);
+    expect(onChange).toHaveBeenLastCalledWith(0.51);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+
+  it('does not edit a read-only viewer’s value', () => {
+    const onChange = vi.fn();
+    const { getByRole } = render(FaceParamControl, { props: { ...numberProps, disabled: true, onChange } });
+    fireEvent.wheel(getByRole('slider'), { deltaY: -100 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
