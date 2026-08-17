@@ -1,20 +1,20 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
-import Circle from '@lucide/svelte/icons/circle';
 import AddNodePopover from './AddNodePopover.svelte';
-import type { AddGroup } from './AddPalette.svelte';
-
-const groups: AddGroup[] = [
-  { key: 'route', label: 'Route', icon: Circle, items: [{ id: 'switch', name: 'Switch', icon: Circle, hint: 'branch logic' }] },
-];
+import { ADD_NODE_TYPES } from './add-node-taxonomy';
+import type { NodeKind } from '../../trigger-lab/sim';
 
 function mount(at = { x: 40, y: 60 }, bounds = { w: 1000, h: 700 }) {
-  const onAdd = vi.fn<(id: string, groupKey: string) => void>();
+  const onAdd = vi.fn<(kind: NodeKind) => void>();
   const onClose = vi.fn();
-  const view = render(AddNodePopover, { props: { at, bounds, groups, onAdd, onClose } });
+  const view = render(AddNodePopover, { props: { at, bounds, onAdd, onClose } });
   return { onAdd, onClose, popover: screen.getByRole('group', { name: 'Add node palette' }), ...view };
 }
+
+/** The declared footprint the placement math uses: 264 wide, header + one row per type. */
+const W = 264;
+const H = 48 + ADD_NODE_TYPES.length * 32;
 
 describe('AddNodePopover', () => {
   it('paints at the invoke point', () => {
@@ -25,20 +25,50 @@ describe('AddNodePopover', () => {
 
   it('flips back from an invoke point near the far edges', () => {
     const { popover } = mount({ x: 900, y: 650 }, { w: 1000, h: 700 });
-    expect(popover.style.left).toBe('600px'); // 900 − 300 wide
-    // the canvas is tall enough (700 − 16 > 400) that the box keeps its full height.
-    expect(popover.style.top).toBe('250px'); // 650 − 400 tall
+    expect(popover.style.left).toBe(`${900 - W}px`);
+    expect(popover.style.top).toBe(`${650 - H}px`);
+  });
+
+  it('lists every node type as its own one-click row', () => {
+    mount();
+    for (const t of ADD_NODE_TYPES) {
+      expect(screen.getByTitle(`Add ${t.label}`)).toBeTruthy();
+    }
+    expect(screen.queryByLabelText('Search nodes')).toBeNull();
+  });
+
+  it('adds on the first click and then dismisses itself', async () => {
+    const { onAdd, onClose } = mount();
+    await fireEvent.click(screen.getByTitle('Add Switch'));
+    expect(onAdd).toHaveBeenCalledWith('switch');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the family default for Modulate', async () => {
+    const { onAdd } = mount();
+    await fireEvent.click(screen.getByTitle('Add Modulate'));
+    expect(onAdd).toHaveBeenCalledWith('envelope');
+  });
+
+  it('adds nothing for a read-only viewer', async () => {
+    const onAdd = vi.fn();
+    render(AddNodePopover, { props: { at: { x: 0, y: 0 }, bounds: { w: 900, h: 700 }, disabled: true, onAdd, onClose: vi.fn() } });
+    await fireEvent.click(screen.getByTitle('Add Mix'));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('lands focus on the first row, then walks the list with the arrow keys', async () => {
+    mount();
+    await new Promise((r) => setTimeout(r, 0)); // the mount effect focuses row 0 on the next tick
+    const first = screen.getByTitle('Add Effect');
+    expect(document.activeElement).toBe(first);
+    await fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTitle('Add All'));
   });
 
   it('closes on Escape', async () => {
     const { onClose } = mount();
     await fireEvent.keyDown(window, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('closes on Escape raised from its own search field — nothing there to revert', async () => {
-    const { onClose } = mount();
-    await fireEvent.keyDown(screen.getByLabelText('Search nodes'), { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -57,14 +87,6 @@ describe('AddNodePopover', () => {
     await fireEvent.pointerDown(popover);
     expect(onClose).not.toHaveBeenCalled();
     await fireEvent.pointerDown(document.body);
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('adds through the palette and then dismisses itself', async () => {
-    const { onAdd, onClose } = mount();
-    await fireEvent.click(screen.getByRole('button', { name: /Route/ }));
-    await fireEvent.click(screen.getByTitle('Add Switch'));
-    expect(onAdd).toHaveBeenCalledWith('switch', 'route');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

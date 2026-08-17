@@ -7,14 +7,12 @@
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
   import AddNodePopover from '../../app/views/AddNodePopover.svelte';
-  import type { AddGroup } from '../../app/views/AddPalette.svelte';
   import type { FlowApi } from '../../app/views/FlowHandle.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
-  import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
+  import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from '../../app/views/add-node-taxonomy';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
@@ -115,9 +113,6 @@
     edges = hover.decorate(edges);
   }
 
-  // Add-node popover groups: the Stage 1 chooser is exactly 2x2
-  // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
-  const addGroups = $derived<AddGroup[]>(buildAddGroups());
   // The popover is summoned at the invoke point and the node lands there — the same
   // capture-at-invoke mechanism the real view uses (FlowHandle → screenToFlowPosition).
   let flowApi = $state<FlowApi | null>(null);
@@ -137,19 +132,15 @@
       spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
     };
   }
-  function handleAdd(id: string, groupKey: string): void {
+  function handleAdd(kind: NodeKind): void {
     const c = addPopover?.spawn;
     if (!c) return;
-    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
-    else if (groupKey === EFFECT_GROUP_KEY) add('effect', c.x, c.y);
-    else if (id.startsWith('envelope:')) add('envelope', c.x, c.y);
-    else if (id.startsWith('lfo:')) add('lfo', c.x, c.y);
-    else add(id as NodeKind, c.x, c.y);
+    add(kind, c.x, c.y);
   }
 
   let nid = 0;
   const demoSubs: Partial<Record<NodeKind, string>> = {
-    play: 'from palette',
+    effect: 'from palette',
     all: 'all at once',
     random: 'repeat',
     sequence: 'in order',
@@ -157,6 +148,10 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '120ms',
+    modifier: 'add · smear',
+    mix: 'normal',
+    scope: 'whole kit',
+    envelope: 'modulation source',
   };
   function add(kind: NodeKind, cx: number, cy: number): void {
     nodes = [
@@ -166,18 +161,6 @@
         type: 'demo',
         position: { x: cx - 88, y: cy - 24 },
         data: face(kind, demoSubs[kind] ?? ''),
-      },
-    ];
-  }
-  /** Add a modifier node from the category palette (titled with the registry display name). */
-  function addMod(modifierId: string, cx: number, cy: number): void {
-    nodes = [
-      ...nodes,
-      {
-        id: `n${++nid}`,
-        type: 'demo',
-        position: { x: cx - 88, y: cy - 24 },
-        data: { ...face('modifier', 'modifier'), title: modifierName(modifierId) },
       },
     ];
   }
@@ -197,12 +180,12 @@
     src={[
       'lib/app/views/GraphCanvas',
       'lib/app/views/AddNodePopover',
-      'lib/app/views/AddPalette',
+      'lib/app/views/add-node-taxonomy',
       'lib/app/views/popover-placement',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
-    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
+    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. It is a FLAT list of node types and ONE click adds — no search, no taxonomy to browse, no second click; the families that differ only by subtype (Effect / Modifier / Modulate) land on their default and are re-typed in the node's inspector. Rows read their glyph and tint from the node registry (add-node-taxonomy → trigger-node-meta), arrow keys walk them, and a row can also be dragged onto the canvas to place at the drop point. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
     wide
   >
     <div class="canvas-demo" bind:this={canvasWrap}>
@@ -237,7 +220,6 @@
         <AddNodePopover
           at={addPopover.at}
           bounds={canvasBox}
-          groups={addGroups}
           onAdd={handleAdd}
           onClose={() => (addPopover = null)}
         />
@@ -248,7 +230,7 @@
   <DemoCard
     title="Inspector slideover (store-free stub)"
     src={['lib/app/InspectorSlideover', 'lib/app/overlay-dismiss']}
-    note="A faithful markup stub of the window-right Inspector slideover — the live one is fixed to the window edge and reads the shell selection, so it cannot be mounted inline here. It is an OVERLAY, never a push: it paints at --z-overlay (above the docks and chrome bars, below --z-modal-backdrop) and the graph canvas geometry never changes when it opens. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
+    note="A faithful markup stub of the Inspector slideover — the live one mounts inside the graph canvas and reads the shell selection, so it cannot be mounted inline here. It is pinned to the CANVAS's right edge, not the window's (F2): the drum preview and the Buses / Layers docks stay visible and interactive beside it, and a clip layer keeps the slide inside the canvas box. It is an OVERLAY, never a push — it floats on the canvas surface (above the drop ring and lint strip, below the summoned add-node popover) and the canvas geometry never changes when it opens; the canvas's own furniture (the + affordance, the lint strip) steps inboard instead. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
   >
     <div class="slideover-stub">
       <PanelHeader icon={SlidersHorizontal} title="Inspector">
@@ -345,7 +327,7 @@
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
+      <li><strong>Adding and inspecting are both on-canvas overlays, never columns.</strong> Right-click the canvas (or press <code>+</code>) to summon the Add-node popover AT that point — a flat list of node types, one click each — and the node lands where it was summoned. Selecting a node opens the Inspector slideover pinned to the canvas's right edge; the canvas geometry never changes for either, and the drum preview and docks stay visible and usable beside them.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
     </ul>
   </div>
@@ -370,8 +352,9 @@
     grid-template-rows: auto auto;
     width: 340px;
     background: var(--surface);
-    border-left: 1px solid var(--border-faint);
-    box-shadow: -12px 0 28px rgb(0 0 0 / 0.35);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-3);
     overflow: hidden;
   }
   .insp-hint {

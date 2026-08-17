@@ -6,9 +6,9 @@
      autosaves, so every canvas edit flows through its mutators; the xyflow arrays are
      a derived projection (rebuilt on graph switch / structure change), with xyflow
      owning live node positions during a drag. The nodes here are display-only: per-node
-     editing lives in the window-right Inspector slideover (mounted at the shell layer, see
-     `app/InspectorSlideover.svelte`) and adding lives in the on-canvas Add-node popover.
-     Neither takes a grid column, so the canvas keeps the full width at all times. */
+     editing lives in the Inspector slideover and adding in the Add-node popover — both
+     overlays pinned INSIDE this canvas region (F2), so the drum preview and the docks stay
+     visible beside them and the canvas keeps its full width at all times. */
   import { setContext, untrack } from 'svelte';
   import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -25,7 +25,7 @@
   import { GraphLintIndex, GRAPH_LINT_KEY } from './graph-lint-index.svelte';
   import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
-  import { voice, type PlayType } from '@ledrums/core';
+  import { voice } from '@ledrums/core';
   import {
     graphToFlowEdges,
     type TriggerFlowEdge,
@@ -52,9 +52,8 @@
   import { computeAlignment, type AlignRect, type GuideLine } from './align-guides';
   import type { FlowApi } from './FlowHandle.svelte';
   import AddNodePopover from './AddNodePopover.svelte';
-  import type { AddGroup } from './AddPalette.svelte';
-  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
-  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
+  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-node-taxonomy';
+  import InspectorSlideover, { INSPECTOR_PANE } from '../InspectorSlideover.svelte';
   import TriggerGraphsRail from './TriggerGraphsRail.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Splitter from '../../ui/Splitter.svelte';
@@ -88,7 +87,17 @@
     store.paneSizes = { ...store.paneSizes, [RAIL_W.key]: v };
   };
 
-  const addGroups = $derived<AddGroup[]>(buildAddGroups());
+  // Inspector slideover (F2): it lives INSIDE this canvas region, so the canvas insets its own
+  // furniture — the `+` affordance, the lint strip, and the add-popover's placement bounds — by
+  // the panel's width while it is open. Nothing reflows: the canvas surface keeps its geometry,
+  // only the overlaid furniture steps aside.
+  /** The canvas's own edge inset — `--space-3` in px, the gap every piece of canvas furniture
+      (this panel included) keeps from the surface edge. */
+  const CANVAS_PAD = 12;
+  const inspectorOpen = $derived(shell.selection?.kind === 'node');
+  const inspectorW = $derived(store.paneSizes[INSPECTOR_PANE.key] ?? INSPECTOR_PANE.def);
+  /** Horizontal px the open slideover claims from the canvas's right edge (panel + its gap). */
+  const inspectorInset = $derived(inspectorOpen ? inspectorW + CANVAS_PAD : 0);
 
   // Placement: new nodes land at a free spot near the visible canvas centre. The
   // flow instance arrives via GraphCanvas's FlowHandle; the wrapper element gives
@@ -102,20 +111,21 @@
   const dropActive = $derived(dragActive || (import.meta.env.DEV && canvasDropPreview.current));
 
   // ---- Add-node popover ------------------------------------------------------
-  // The palette lists everything the graph can gain in one searchable surface: node kinds,
-  // then modulation sources, then the modifier registry grouped by category (registry-
-  // driven, so a newly registered modifier appears with no edit here). It is summoned ON
-  // the canvas — right-click at the spot, or the `+` affordance for the visible centre —
-  // and the node lands where it was summoned, so the palette costs the canvas no width.
+  // A flat list of node TYPES, one click each (F2): the families that differ only by subtype
+  // (Effect / Modifier / Modulate) land on the store's default and are re-typed in the node's
+  // inspector. It is summoned ON the canvas — right-click at the spot, or the `+` affordance
+  // for the visible centre — and the node lands where it was summoned, so it costs no width.
   //
   // `at` is canvas-local px (where to paint the popover); `spawn` is the matching FLOW
   // position (where the node goes). Both are captured at invoke time so a pan/zoom while
   // the palette is open can never land the node somewhere else than it was summoned.
   let addPopover = $state<{ at: { x: number; y: number }; spawn: { x: number; y: number } } | null>(null);
+  // The popover stays inside the canvas MINUS whatever the open inspector covers, so it can
+  // never be summoned underneath the panel.
   const canvasBox = $derived.by(() => {
     addPopover; // re-measure each time the popover opens
     const r = canvasWrap?.getBoundingClientRect();
-    return { w: r?.width ?? 0, h: r?.height ?? 0 };
+    return { w: Math.max(0, (r?.width ?? 0) - inspectorInset), h: r?.height ?? 0 };
   });
   /** Open the palette at a screen point (a right-click), or at the canvas centre (the `+`). */
   function openAddPopover(screen?: { x: number; y: number }): void {
@@ -136,22 +146,10 @@
     });
   });
   /** Palette pick → a node at the position the palette was summoned at. */
-  function handleAdd(id: string, groupKey: string): void {
+  function handleAdd(kind: NodeKind): void {
     const spawn = addPopover?.spawn;
     if (!spawn) return;
-    handleAddAt(id, groupKey, spawn.x, spawn.y);
-  }
-  function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
-    if (groupKey === EFFECT_GROUP_KEY) addPlayNodeAt(id as PlayType, x, y);
-    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, x, y);
-    else if (id.startsWith('envelope:')) addEnvelopeNodeAt(id.slice('envelope:'.length), x, y);
-    else if (id.startsWith('lfo:')) addLfoNodeAt(id.slice('lfo:'.length), x, y);
-    else addNodeAt(id as NodeKind, x, y);
-  }
-  /** Add a typed play node (D3) near the palette-supplied flow centre. */
-  function addPlayNodeAt(playType: PlayType, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addPlayNode(playType, p.x, p.y);
+    addNodeAt(kind, spawn.x, spawn.y);
   }
   /** Estimated canvas footprint per existing node — the card plus room for mod rows /
       band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */
@@ -180,19 +178,6 @@
     const p = spawnAt(cx, cy);
     store.addNode(kind, p.x, p.y);
   }
-  function addEnvelopeNodeAt(preset: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addNode('envelope', p.x, p.y, { envelopePreset: preset });
-  }
-  function addLfoNodeAt(waveform: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addNode('lfo', p.x, p.y, { lfoWaveform: waveform });
-  }
-  /** Add a specific modifier node (category palette) near the palette-supplied flow centre. */
-  function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addModifierNode(modifierId, p.x, p.y);
-  }
   function onPaletteDragOver(e: DragEvent): void {
     const dt = e.dataTransfer;
     if (!dt || !Array.from(dt.types).includes(ADD_NODE_DRAG_TYPE)) return;
@@ -208,11 +193,11 @@
   }
   function onPaletteDrop(e: DragEvent): void {
     dragActive = false;
-    const payload = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
-    if (!payload || !flowApi) return;
+    const kind = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
+    if (!kind || !flowApi) return;
     e.preventDefault();
     const p = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    handleAddAt(payload.id, payload.groupKey, p.x, p.y);
+    addNodeAt(kind, p.x, p.y);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -649,6 +634,7 @@
   <div
     class="gwrap"
     bind:this={canvasWrap}
+    style:--inspector-inset={`${inspectorInset}px`}
     role="region"
     aria-label="Trigger graph canvas"
     ondragover={onPaletteDragOver}
@@ -719,19 +705,21 @@
       <AddNodePopover
         at={addPopover.at}
         bounds={canvasBox}
-        groups={addGroups}
         disabled={!store.canEdit}
         onAdd={handleAdd}
         onClose={() => (addPopover = null)}
       />
     {/if}
+    <!-- The inspector: an overlay pinned to the canvas's right edge (F2) — the drum preview
+         and the docks stay visible and usable beside it, and the canvas never reflows. -->
+    <InspectorSlideover {store} {shell} />
   </div>
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    /* Two tracks only: the inspector left the grid for a window-right slideover, so the
+    /* Two tracks only: the inspector left the grid for an in-canvas slideover, so the
        canvas keeps that width permanently — opening the inspector never reflows it. */
     grid-template-columns: var(--rail-w) minmax(0, 1fr);
     gap: var(--shell-gap);
@@ -769,20 +757,24 @@
     position: absolute;
     top: var(--space-3);
     left: var(--space-3);
-    right: var(--space-3);
+    /* steps aside for the inspector rather than running under it */
+    right: calc(var(--space-3) + var(--inspector-inset, 0px));
     z-index: 5;
     display: flex;
     pointer-events: none;
+    transition: right var(--dur-120) var(--ease-control);
   }
   .lint-overlay > :global(*) {
     pointer-events: auto;
   }
-  /* `+` add affordance — pinned to the canvas's top-right, opposite the lint strip. */
+  /* `+` add affordance — pinned to the canvas's top-right, opposite the lint strip. It slides
+     inboard of the inspector when that opens, so adding never needs the panel closed first. */
   .add-affordance {
     position: absolute;
     top: var(--space-3);
-    right: var(--space-3);
-    z-index: 6;
+    right: calc(var(--space-3) + var(--inspector-inset, 0px));
+    z-index: 8;
+    transition: right var(--dur-120) var(--ease-control);
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {
