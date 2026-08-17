@@ -531,6 +531,14 @@ export interface GraphNode {
   spliceReleaseMs?: number;
   /** Curve the attack rises on. Absent → linear. */
   spliceAttackEase?: EaseSpec;
+  /**
+   * What a hit does to a splice that is ALREADY looping. `'stop'` (the default) makes the node
+   * self-toggling — hit to start, hit again to stop — which is the only way to end a loop
+   * without a separate Toggle node, and also stops repeated hits stacking loops forever.
+   * `'restart'` re-syncs it from the top instead, superseding the running voice.
+   * Meaningless on a one-shot, which ends by itself.
+   */
+  spliceLoopRetrigger?: 'stop' | 'restart';
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes

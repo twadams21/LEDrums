@@ -45,6 +45,26 @@ export const spliceOffsetDivisionOptions = (divisions: Array<{ value: string; la
   ...divisions,
 ];
 
+/**
+ * Play modes a splice offers. `hold` is deliberately absent: nothing in the engine or the server
+ * branches on it — only `oneshot` vs not — so it and `loop` were the same thing under two names.
+ * A persisted `hold` still resolves (it is "not oneshot"); the editor just shows it as Loop.
+ */
+export const SPLICE_PLAY_OPTS: Array<{ value: 'oneshot' | 'loop'; label: string }> = [
+  { value: 'oneshot', label: 'One-shot' },
+  { value: 'loop', label: 'Loop' },
+];
+
+export const SPLICE_LOOP_RETRIGGER_OPTS: Array<{ value: 'stop' | 'restart'; label: string }> = [
+  { value: 'stop', label: 'Stop' },
+  { value: 'restart', label: 'Restart' },
+];
+
+export const SPLICE_LOOP_RETRIGGER_HINTS: Record<'stop' | 'restart', string> = {
+  stop: 'Hit again to stop the loop — the node toggles itself, so repeated hits never stack loops.',
+  restart: 'Hit again to re-sync the loop from the top, replacing the one already running.',
+};
+
 export const SPLICE_OFFSET_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
   { value: 'beats', label: 'Division' },
   { value: 'time', label: 'Time' },

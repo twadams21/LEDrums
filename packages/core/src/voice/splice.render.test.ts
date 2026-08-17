@@ -771,6 +771,46 @@ describe('splice — play mode', () => {
     expect(once(400), 'and then nothing').toBe(0);
   });
 
+  it('stops a running loop when it is hit again', () => {
+    const graph = spliceGraph([{ color: '#ff0000' }], { mode: 'loop', spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 });
+    const model = testModel();
+    const engine = createVoiceBusEngine();
+    engine.setModel(model);
+    engine.setShow(show(graph, []));
+    engine.applyInput(hit(0));
+    runTo(engine, 300);
+    const lit = engine.frame()[0]!;
+    expect(lit, 'looping').toBeGreaterThan(0);
+
+    engine.applyInput(hit(300));
+    runTo(engine, 700, 300);
+    expect(engine.frame()[0], 'the second hit stopped it').toBe(0);
+
+    // …and a third hit starts it again, so the node really is a toggle.
+    engine.applyInput(hit(700));
+    runTo(engine, 800, 700);
+    expect(engine.frame()[0], 'the third hit started it again').toBeGreaterThan(0);
+  });
+
+  it('never stacks loops — one voice per node, however many hits', () => {
+    const graph = spliceGraph([{ color: '#ff0000' }], {
+      mode: 'loop',
+      spliceLoopRetrigger: 'restart',
+      spliceAttackMs: 10,
+      spliceHoldMs: 50,
+      spliceReleaseMs: 20,
+    });
+    const model = testModel();
+    const engine = createVoiceBusEngine();
+    engine.setModel(model);
+    engine.setShow(show(graph, []));
+    for (const t of [0, 200, 400, 600]) {
+      engine.applyInput(hit(t));
+      runTo(engine, t + 200, t);
+    }
+    expect(engine.stats().voices.filter((v) => !v.releasing)).toHaveLength(1);
+  });
+
   it('loop and hold stay up past where a one-shot would have ended', () => {
     expect(litSum(held('loop', 400).rgb), 'loop is still lit').toBeGreaterThan(0);
     expect(litSum(held('hold', 400).rgb), 'hold is still lit').toBeGreaterThan(0);

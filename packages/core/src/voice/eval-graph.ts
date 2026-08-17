@@ -492,7 +492,24 @@ function evalGraphGen3FromPlan(
         via.set(node.id, labelFor(node, 'Splice'));
         if (firedEffects.has(node.id)) break;
         firedEffects.add(node.id);
-        const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        let latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        // A LOOPING splice owns its own voice, because nothing else would ever end it: a loop
+        // never releases, so without this a second hit stacks another endless voice and there is
+        // no way to stop either short of a separate Toggle node. Same latch machinery the
+        // `toggle` case uses, applied to the node itself.
+        if (node.mode !== 'oneshot') {
+          const current = state.latched.get(sk);
+          const alive = current ? state.isVoiceAlive(current) : false;
+          if (alive && current) {
+            if ((node.spliceLoopRetrigger ?? 'stop') === 'stop') {
+              state.latched.set(sk, null);
+              actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Splice off') });
+              break;
+            }
+            draft.supersedePriorVoice = true; // restart: re-sync rather than stack
+          }
+          latchKey = sk;
+        }
         pushKids(node, { kind: 'play', play: draft }, latchKey);
         break;
       }

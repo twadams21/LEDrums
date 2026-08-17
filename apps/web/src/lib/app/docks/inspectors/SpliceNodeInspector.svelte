@@ -26,7 +26,10 @@
     SPLICE_CHASE_OPTS,
     SPLICE_MOTION_MODE_HINTS,
     SPLICE_MOTION_MODE_OPTS,
+    SPLICE_LOOP_RETRIGGER_HINTS,
+    SPLICE_LOOP_RETRIGGER_OPTS,
     SPLICE_OFFSET_MODE_OPTS,
+    SPLICE_PLAY_OPTS,
     SPLICE_WAIT_MODE_HINTS,
     SPLICE_WAIT_MODE_OPTS,
     SPLICE_NO_DIVISION,
@@ -42,7 +45,7 @@
     spliceRows,
     spliceUnitNoun,
   } from '../../views/splice-options';
-  import { MODE_OPTS, SCOPE_OPTS } from '../../views/node-options';
+  import { SCOPE_OPTS } from '../../views/node-options';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
@@ -61,6 +64,7 @@
   const drumOffsetMode = $derived(node.spliceDrumOffsetMode ?? 'beats');
   const waitMode = $derived(node.spliceWaitMode ?? 'lit');
   const colorOffsetMode = $derived(node.spliceColorOffsetMode ?? 'beats');
+  const loopRetrigger = $derived(node.spliceLoopRetrigger ?? 'stop');
   // The drum axis is only separate from the primary one when cutting per HOOP — cutting per
   // drum already cascades drum by drum, and per scope there is a single unit.
   const canCascadeDrums = $derived(partition === 'hoop' && node.scope !== 'drum' && node.scope !== 'hoop');
@@ -441,12 +445,24 @@
 
       <Field layout="row" label="Play">
         <SegmentedControl
-          value={node.mode}
-          options={MODE_OPTS}
-          onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop' | 'hold')}
+          value={node.mode === 'oneshot' ? 'oneshot' : 'loop'}
+          options={SPLICE_PLAY_OPTS}
+          onChange={(v) => store.setMode(node, v as 'oneshot' | 'loop')}
           ariaLabel="Splice play mode"
         />
       </Field>
+
+      {#if node.mode !== 'oneshot'}
+        <Field layout="row" label="Hit again">
+          <SegmentedControl
+            value={loopRetrigger}
+            options={SPLICE_LOOP_RETRIGGER_OPTS}
+            onChange={(v) => store.setSpliceSetting(node, { spliceLoopRetrigger: v as 'stop' | 'restart' })}
+            ariaLabel="Splice loop retrigger"
+          />
+        </Field>
+        <p class="hint">{SPLICE_LOOP_RETRIGGER_HINTS[loopRetrigger]}</p>
+      {/if}
 
       <Field layout="row" label="Attack" unit="ms">
         <CommitInput
