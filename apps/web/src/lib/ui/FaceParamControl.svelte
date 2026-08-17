@@ -1,10 +1,15 @@
 <script lang="ts">
   /* The compact in-place param control that rides a node-face row (S5).
 
-     A node card is 176–260px wide, so this is NOT a slider: a number is a drag/wheel field
-     that shows only its value, an enum is a cycle chip, a bool is a small switch. All three
-     are one control height (16px) so a row of any type stays 22px and the card stays legible
-     at graph zoom.
+     A node card is 176–260px wide, so a number rides a COMPACT slider — a 48px rail plus its
+     value field — rather than the inspector's full-width one; an enum is a cycle chip, a bool
+     is a small switch. All are one control height (16px) so a row of any type stays 22px and
+     the card stays legible at graph zoom.
+
+     The number has two gestures, deliberately: the rail is ABSOLUTE (press jumps to where you
+     pressed, the slider contract every DAW shares), the value field is RELATIVE (grab and
+     sweep, `ew-resize`). A param with no declared range has no rail — there is no position to
+     map — so it falls back to the field alone.
 
      Interaction contract (locked, memory `graph-interaction-prefs`): no lift, no click
      animation — colour/border state changes are instant. The wrapper carries xyflow's
@@ -20,7 +25,7 @@
      BASE value — the wire animates around it — with a badge so a static-looking number is
      never mistaken for the whole story. */
   import { wheelStep } from './wheel-step';
-  import { dragNumber } from './drag-number';
+  import { dragNumber, railValue, railFraction } from './drag-number';
   import Spline from '@lucide/svelte/icons/spline';
 
   interface Props {
@@ -62,10 +67,15 @@
 
   const numeric = $derived(typeof value === 'number' && Number.isFinite(value) ? value : min ?? 0);
 
-  // --- number: drag + wheel + keyboard -------------------------------------
+  // --- number: rail + drag + wheel + keyboard ------------------------------
+  /** A rail needs a range to map a position onto; an open-ended param gets the field alone. */
+  const ranged = $derived(min !== undefined && max !== undefined && max > min);
+  const fillPct = $derived(ranged ? railFraction(numeric, min!, max!) * 100 : 0);
+
   let dragging = $state(false);
   let anchorX = 0;
   let anchorValue = 0;
+  let railEl = $state<HTMLElement>();
 
   /** Close the open gesture exactly once, whatever ended it (up / cancel / destroy). */
   function closeGesture(): void {
@@ -96,6 +106,31 @@
       fine: e.shiftKey,
     });
     if (next !== numeric) onChange(next);
+  }
+
+  // --- number: the rail (absolute — press jumps, drag tracks) --------------
+  function railAt(clientX: number): number | null {
+    if (!ranged || !railEl) return null;
+    const r = railEl.getBoundingClientRect();
+    if (r.width <= 0) return null;
+    return railValue({ fraction: (clientX - r.left) / r.width, min: min!, max: max!, step });
+  }
+
+  function onRailDown(e: PointerEvent): void {
+    if (disabled || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragging = true;
+    onGestureStart?.();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const next = railAt(e.clientX);
+    if (next !== null && next !== numeric) onChange(next);
+  }
+
+  function onRailMove(e: PointerEvent): void {
+    if (!dragging) return;
+    const next = railAt(e.clientX);
+    if (next !== null && next !== numeric) onChange(next);
   }
 
   function onWheel(e: WheelEvent): void {
@@ -180,6 +215,26 @@
   {:else}
     <!-- number (and `color`, which no effect declares yet — it falls through to the numeric
          field rather than rendering nothing, so a future colour param is still legible). -->
+    {#if ranged}
+      <!-- The rail is the affordance the inspector's slider carries, shrunk to card width. It
+           is decoration for assistive tech — the `.num` field below is the labelled
+           role="slider", so a screen reader gets ONE control, not two for the same value. -->
+      <span
+        class="rail"
+        class:dragging
+        bind:this={railEl}
+        aria-hidden="true"
+        onpointerdown={onRailDown}
+        onpointermove={onRailMove}
+        onpointerup={closeGesture}
+        onpointercancel={closeGesture}
+        onlostpointercapture={closeGesture}
+        onwheel={onWheel}
+      >
+        <span class="fill" style={`width:${fillPct}%`}></span>
+        <span class="thumb" style={`left:${fillPct}%`}></span>
+      </span>
+    {/if}
     <span
       class="num"
       class:dragging
@@ -214,7 +269,7 @@
   .facectl {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     flex: none;
     line-height: 0;
   }
@@ -223,14 +278,62 @@
     pointer-events: none;
   }
 
-  /* numeric drag field — value only, no rail: at 176px of card there is no room for one,
-     and the drag IS the affordance (cursor + hover border say so). */
+  /* the compact rail — 48px is the smallest span that still reads as a slider at graph zoom
+     and still leaves a legible value field beside it inside a 176px card. */
+  .rail {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 16px;
+    flex: none;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .rail::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    top: 50%;
+    height: 4px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-pill);
+    background: var(--surface-inset);
+    box-shadow: inset 0 0 0 1px var(--border-faint);
+  }
+  .fill {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 4px;
+    transform: translateY(-50%);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+  }
+  .thumb {
+    position: absolute;
+    top: 50%;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: var(--ink);
+    transform: translateY(-50%);
+  }
+  /* instant, no transition — the locked node interaction contract */
+  .rail:hover::before {
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .rail.dragging .thumb {
+    background: var(--accent);
+  }
+
+  /* numeric field — the readout, and a relative drag/wheel target in its own right */
   .num {
     display: inline-flex;
     align-items: center;
     justify-content: flex-end;
-    min-width: 40px;
-    max-width: 72px;
+    min-width: 38px;
+    max-width: 62px;
     height: 16px;
     padding: 0 4px;
     border-radius: var(--radius-1);

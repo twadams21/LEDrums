@@ -18,7 +18,6 @@
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
-  import ParamRowTick from '../../app/views/ParamRowTick.svelte';
   import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
@@ -27,7 +26,6 @@
   import Plus from '@lucide/svelte/icons/plus';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
-  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import { makeNode } from '../../trigger-lab/sim';
   import { graphThumb } from '../../app/views/graph-thumb';
   import { voice } from '@ledrums/core';
@@ -43,8 +41,6 @@
     demoCcTable.set(voice.ccKey(1, null), v);
     return v;
   };
-  const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
-  const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
 
   // S5 face-param demo: the three control types a node-face row can carry, live-editable here
   // exactly as they are on a node card (the same component, no copied markup).
@@ -268,10 +264,9 @@
   </DemoCard>
 
   <DemoCard
-    title="Signal previews · node-face live ticks"
+    title="Signal previews · node-face live signals"
     src={[
       'lib/app/views/NodeSignalPreview',
-      'lib/app/views/ParamRowTick',
       'lib/trigger-lab/SignalFace',
       'lib/trigger-lab/signal-preview',
     ]}
@@ -289,21 +284,16 @@
         <NodeSignalPreview kind="cc" ccValue={demoCc} />
         <span class="sig-label">CC · live value bar + readout</span>
       </div>
-      <div class="sig-cell">
-        <span class="sig-row"><span class="sig-plabel">brightness</span><ParamRowTick sample={demoTick} /></span>
-        <span class="sig-label">Param row · live value tick</span>
-      </div>
     </div>
   </DemoCard>
 
   <DemoCard
     title="Face param control · in-place editing on a node row"
     src={['lib/ui/FaceParamControl', 'lib/ui/drag-number', 'lib/trigger-lab/store/face-params']}
-    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row edits in place with a type-appropriate control rather than a slider: number = drag / scroll / arrow keys, enum = cycle chip (shift-click reverses), bool = a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
+    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row carries a COMPACT slider: a 48px rail (press jumps, drag tracks) plus a value field (grab and sweep, scroll, arrow keys); an enum is a cycle chip (shift-click reverses), a bool a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
   >
     <ul class="face-demo">
       <li class="face-row">
-        <span class="pdot" aria-hidden="true"></span>
         <span class="sig-plabel">size</span>
         <FaceParamControl
           kind="number"
@@ -315,10 +305,8 @@
           ariaLabel="Size"
           onChange={(v) => (faceSize = v as number)}
         />
-        <ParamRowTick sample={demoTick} />
       </li>
       <li class="face-row">
-        <span class="pdot" aria-hidden="true"></span>
         <span class="sig-plabel">depth</span>
         <FaceParamControl
           kind="number"
@@ -331,10 +319,8 @@
           ariaLabel="Depth"
           onChange={(v) => (faceSize = v as number)}
         />
-        <ParamRowTick sample={demoTick} />
       </li>
       <li class="face-row">
-        <span class="pdot flat" aria-hidden="true"></span>
         <span class="sig-plabel">blend</span>
         <FaceParamControl
           kind="enum"
@@ -346,7 +332,6 @@
         />
       </li>
       <li class="face-row">
-        <span class="pdot flat" aria-hidden="true"></span>
         <span class="sig-plabel">mirror</span>
         <FaceParamControl
           kind="bool"
@@ -472,15 +457,6 @@
     color: var(--text-faint);
     font-family: var(--font-mono);
   }
-  .sig-row {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-1);
-  }
   .sig-plabel {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
@@ -513,16 +489,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .face-row .pdot {
-    width: 6px;
-    height: 6px;
-    flex: none;
-    border-radius: 50%;
-    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
-  }
-  .face-row .pdot.flat {
-    border-color: var(--border-faint);
   }
   .contract {
     margin-top: var(--space-5);

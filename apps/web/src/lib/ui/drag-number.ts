@@ -36,6 +36,37 @@ function places(step: number): number {
   return text.includes('.') ? text.split('.')[1]?.length ?? 0 : 0;
 }
 
+export interface RailValueOptions {
+  /** Pointer position along the rail, 0 (left end) … 1 (right end). Clamped. */
+  fraction: number;
+  min: number;
+  max: number;
+  /** Declared step; the result is snapped to it. Defaults to 1. */
+  step?: number;
+}
+
+/**
+ * The value a click/drag at `fraction` along a rail produces — ABSOLUTE positioning, the
+ * inspector slider's contract, as opposed to {@link dragNumber}'s relative sweep. The face
+ * row carries both: the rail jumps to where you press, the number field sweeps from where
+ * you grabbed it.
+ */
+export function railValue(o: RailValueOptions): number {
+  const step = o.step && o.step > 0 ? o.step : 1;
+  const t = Math.min(1, Math.max(0, Number.isFinite(o.fraction) ? o.fraction : 0));
+  const raw = o.min + t * (o.max - o.min);
+  const snapped = o.min + Math.round((raw - o.min) / step) * step;
+  const out = Number(snapped.toFixed(places(step) + 2));
+  return Math.min(o.max, Math.max(o.min, out));
+}
+
+/** Where a value sits along its rail, 0…1 — the inverse of {@link railValue}, for the fill
+    width and thumb offset. A degenerate range reads as empty rather than dividing by zero. */
+export function railFraction(value: number, min: number, max: number): number {
+  if (!(max > min) || !Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, (value - min) / (max - min)));
+}
+
 /**
  * The value a drag of `dx` px from `start` produces — snapped to `step` and clamped to
  * `[min, max]`. Pure: the caller keeps the anchor and re-evaluates on every pointermove,
