@@ -36,6 +36,29 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**FEEDBACK WAVE F1–F8 DONE, STACK RE-CHAINED, STILL AWAITING TRENT'S MERGE YES (2026-08-17
+afternoon):** Trent's morning review of stack #194 produced 8 amendment slices, all sourced
+verbatim in `docs/plans/2026-08-17-trigger-reimagine-build/F1…F8-*.md` and all landed on their
+PR branches by dispatched agents (F1 #187 persistent now-playing bars · F2 #188 in-canvas
+inspector + flat one-click add menu · F3 #191 face sliders/inspector polish/subtype switchers ·
+F4 #189 notched bipolar bend fader · F5 #192 envelope replaces Brightness+Decay, authoritative
+via `authoredDecay` · F6 #193 S8 adapted to the one core curve module `model/curve.ts` · F8
+#188 wire-drop-in-empty-space summons the filtered add menu and lands the wire). Stack
+physically re-chained bottom-to-top twice (post-F6, post-F8); every PR head pushed; final head
+`feat/velocity-sensitivity` @ 67c6d05 full-swept green by the ORCHESTRATOR (core 1102 /
+protocol 13 / server 462 / web 2248 — workers never sweep, Trent re-affirmed). Trent's live
+preview (tailscale, port 5173) runs `preview/feedback-wave` in the velsens worktree =
+content-identical to the merge candidate. **Incident during the wave:** the F4/F6 curve-schema
+tightening crashed the preview server on Trent's same-morning `profile:'exp'` velocity curve
+(`parseProject` throws at boot) — fixed as DATA (curves rewritten to `bend`, `.pre-bend.bak`
+backups beside the project files), no migration code per the greenfield rule; the schema still
+hard-refuses stale curve values by design. **Tim's Splice #184 is NOT in the stack:** Trent
+paused the prepped F7 chaining ("I'll ask Tim if he's working on it") — brief ready at
+`F7-splice-chain-onto-stack.md`, nothing pushed to Tim's fork; his head was
+`timcoghill-boop/feat/splice-node` @ d8995b0 (he pushed 3 commits this morning; local
+`feat/splice-node` was reset to it, stale pre-rebase copy discarded). Merge = `gh stack merge`
+after Trent's yes, then re-chain Splice on top if/when Tim clears it.
+
 **OVERNIGHT BUILD — stack #194 READY, AWAITING TRENT'S MORNING REVIEW, NOT MERGED (2026-08-17
 ~05:30):** requested by Trent pre-AFK ("the deliverable is all the features we've discussed in
 a PR stack on github that I can preview in the morning"); decisions taken by Trent in-session
