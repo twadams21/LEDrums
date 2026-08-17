@@ -47,9 +47,11 @@ predated stack #185 — so this OTA carries #174–#196: tabbed chrome, graph li
 sidebar, Segments, colour parity, voice-life fix, the F-wave, Splice). Release OTA workflow
 run 32036541139 green; `latest.json` verified reading v0.3.0. Note: #197 is the Splice v2
 SPEC ISSUE, not a PR — Trent briefly conflated it; clarified, still gated on Tim+Trent.
-Post-merge leftovers: merged remote branches not yet pruned (standing
-deferral); Trent's live preview (port 5173) still runs `preview/feedback-wave` — content
-now identical to main pre-bump. Splice v2 = GH #197 (gated on
+Post-merge cleanup DONE (Trent's yes, same evening): 82 merged remote
+branches deleted (ancestor-of-main check; 25 unmerged keeps untouched), preview stack torn
+down (velsens PIDs killed after cwd check, tailscale serve config now empty), drum-elevation
+v3 + this ledger committed on new branch `proto/drum-elevation-v3` (975d3ba, pushed;
+supersedes proto/chrome-tabbed-layout as the working proto branch). Splice v2 = GH #197 (gated on
 Tim + Trent, no longer blocked by this merge). Open PR remaining: #195 (dev port fallback,
 pre-existing).
 
