@@ -20,7 +20,7 @@ import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGra
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { voice } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
-import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
+import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
@@ -109,6 +109,13 @@ export interface ShotSeam {
       over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
       ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
   previewSpliceArmed(): void;
+  /** Pin the F8 pending-wire palette — the Add-node popover as it appears when a connection drag
+      is released in EMPTY canvas: holding that wire, its list filtered to the kinds the wire can
+      land on, and a pick adding the node AND the wire. The live state needs a drag headless
+      Chrome can't drive. Opens the Trigger graph and ensures a source node the wire leaves from.
+      `arg` picks the drag's source: `flow` (an Effect's output, the default), `modifier`, or
+      `mod-source` (an envelope) — each filters the list differently. */
+  previewWireDrop(from?: 'flow' | 'modifier' | 'mod-source'): void;
   /** Pin the R12 canvas drag-over highlight (the accent ring the graph canvas wears while a new
       node is dragged in from the Add pane) so ui-shot can capture it — the live state is drag-only
       and headless Chrome can't drive the gesture. Opens the Trigger graph so the canvas is live. */
@@ -186,6 +193,7 @@ class ShotSeamImpl implements ShotSeam {
     sectionsDndPreview.clear();
     wireInvalidPreview.clear();
     spliceArmedPreview.clear();
+    pendingWirePreview.clear();
     lintPreview.clear();
     canvasDropPreview.clear();
     toastStore.clear();
@@ -430,6 +438,18 @@ class ShotSeamImpl implements ShotSeam {
     const graph = this.store.selectedGraph;
     if (graph && graph.nodes.every((n) => n.kind === 'trigger' || n.kind === 'output')) this.addNode('effect');
     spliceArmedPreview.set(true);
+  }
+
+  previewWireDrop(from: 'flow' | 'modifier' | 'mod-source' = 'flow'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // The palette holds a wire LEAVING a node, so the open graph needs one of that kind. A fresh
+    // Effect auto-wires to Output (R04), which is fine — the pending wire is a second one.
+    const kind: NodeKind = from === 'modifier' ? 'modifier' : from === 'mod-source' ? 'envelope' : 'effect';
+    const graph = this.store.selectedGraph;
+    const source = graph?.nodes.find((n) => n.kind === kind) ?? this.addNode(kind);
+    if (!source) return;
+    pendingWirePreview.set({ nodeId: source.id, type: 'source', handleId: null });
   }
 
   previewCanvasDrop(): void {
@@ -681,6 +701,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'canvas-drop':
         this.previewCanvasDrop();
+        break;
+      case 'wire-drop':
+        this.previewWireDrop(arg === 'modifier' ? 'modifier' : arg === 'mod-source' ? 'mod-source' : 'flow');
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
