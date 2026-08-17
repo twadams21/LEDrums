@@ -634,6 +634,43 @@ describe('splice — colour cascade', () => {
     expectRgb(pulsed.rgb(2), DARK, 'and the second');
   });
 
+  it('fades the FIRST colour in at the same rate as the rest', () => {
+    // The voice has its own global attack ramping 0→1 over the same authored time. The first
+    // colour is revealed at 0, so without care its own fade-in gets MULTIPLIED by that global
+    // ramp — a squared curve — while every later colour (revealed after the global attack has
+    // finished) fades in linearly. Sample each one at the SAME point through its own attack.
+    const over = { spliceWaitMode: 'fade' as const, spliceAttackMs: 200, spliceColorOffsetMode: 'time' as const, spliceColorOffsetMs: 400 };
+    const first = colours(over, 100).rgb(0)[0]; // 100ms into colour 1's attack (revealed at 0)
+    const second = colours(over, 500).rgb(2)[2]; // 100ms into colour 2's attack (revealed at 400)
+    expect(first, 'halfway through its own attack').toBeCloseTo(0.5, 1);
+    expect(first, 'and at the same level the second reaches at the same point').toBeCloseTo(second, 2);
+  });
+
+  it('fades the first colour in at the same rate in pulse too', () => {
+    const over = {
+      spliceWaitMode: 'pulse' as const,
+      spliceAttackMs: 200,
+      spliceHoldMs: 4000,
+      spliceReleaseMs: 200,
+      spliceColorOffsetMode: 'time' as const,
+      spliceColorOffsetMs: 400,
+    };
+    const first = colours(over, 100).rgb(0)[0];
+    const second = colours(over, 500).rgb(2)[2];
+    expect(first, 'halfway through its own attack').toBeCloseTo(0.5, 1);
+    expect(first).toBeCloseTo(second, 2);
+  });
+
+  it('still lives long enough for the last unit, with the attack moved into the hold', () => {
+    // Zeroing the voice's attack must not shorten its life: the last colour is revealed at
+    // 400ms and needs its own 200ms attack after that.
+    const late = colours(
+      { spliceWaitMode: 'fade', spliceAttackMs: 200, spliceColorOffsetMode: 'time', spliceColorOffsetMs: 400 },
+      620,
+    );
+    expectRgb(late.rgb(2), BLUE, 'the second colour reached full');
+  });
+
   it('does nothing while everything is already lit', () => {
     const { rgb } = colours({ spliceWaitMode: 'lit', spliceColorOffsetMode: 'time', spliceColorOffsetMs: 5000 }, 150);
     expectRgb(rgb(0), RED, 'nothing is hidden, so nothing can be staggered');

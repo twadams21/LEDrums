@@ -363,19 +363,31 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   /**
-   * A cascading splice has to OUTLIVE its cascade: the last hoop's turn comes
-   * `maxCascadeDelayMs` after the hit, so a voice whose hold ends before then would be cut off
-   * mid-travel and the far side of the kit would never light at all. Extend the hold by exactly
-   * that span. Done here rather than in the voice pool because the span depends on the MODEL
-   * (how many hoops, how many drums), which only the engine holds.
+   * Shape a freshly spawned splice voice's own envelope around its cascade. Two corrections,
+   * both needing the MODEL (how many hoops, how many drums), which is why this lives in the
+   * engine and not the voice pool:
    *
-   * The authored envelope is untouched on `splice.envelope`, which is what `'pulse'` runs per
-   * unit — so extending the voice does not stretch each unit's own attack/hold/fade.
+   * 1. It has to OUTLIVE its cascade. The last hoop's turn comes `maxCascadeDelayMs` after the
+   *    hit, so a voice whose hold ends before then is cut off mid-travel and the far side of
+   *    the kit never lights at all.
+   * 2. Under a per-unit envelope (`fade`/`pulse`) the voice's own ATTACK must get out of the
+   *    way. Each unit already applies the authored attack itself, so leaving the global one in
+   *    place multiplies the two for whichever unit is revealed at age 0 — that colour ramps on
+   *    a squared curve while every later one, arriving after the global attack has finished,
+   *    ramps linearly. The attack is moved into the hold rather than dropped, so the voice
+   *    still lives exactly as long as the last unit needs.
+   *
+   * The AUTHORED envelope is untouched on `splice.envelope`, which is what the per-unit shaping
+   * reads — so none of this stretches an individual unit's attack/hold/fade.
    */
-  private extendForCascade(voice: Voice | null): void {
+  private shapeCascadeVoice(voice: Voice | null): void {
     if (!voice?.splice || !this.model) return;
     const extra = maxCascadeDelayMs(this.model, voice.splice);
     if (extra > 0) voice.sustainMs += extra;
+    if (voice.splice.waitMode === 'fade' || voice.splice.waitMode === 'pulse') {
+      voice.sustainMs += voice.attackMs;
+      voice.attackMs = 0;
+    }
   }
 
   /**
@@ -780,7 +792,7 @@ class VoiceBusEngine implements RenderEngine {
       if (!effectId) continue;
       const action = this.lookAction(effectId, `Section: ${section.name}`);
       if (!action) continue;
-      this.extendForCascade(
+      this.shapeCascadeVoice(
         this.voices.spawn(action, null, 1, {
           effectsById: this.effectsById,
           busById: this.busById,
@@ -862,7 +874,7 @@ class VoiceBusEngine implements RenderEngine {
       } else if (a.kind === 'pending') {
         this.enqueuePendingFire(a.descriptor);
       } else {
-        this.extendForCascade(
+        this.shapeCascadeVoice(
           this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
             effectsById: this.effectsById,
             busById: this.busById,

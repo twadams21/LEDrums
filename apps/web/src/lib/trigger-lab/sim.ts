@@ -604,8 +604,15 @@ export class Sim {
       originNodeId: a.originNodeId,
     };
     // A cascading splice has to outlive its cascade or the far side of the kit never lights;
-    // mirrors the engine's `extendForCascade`.
+    // mirrors the engine's `shapeCascadeVoice`.
     if (cascadeExtraMs > 0) voice.sustainMs += cascadeExtraMs;
+    // Under a per-unit envelope the voice's own attack must get out of the way, or the unit
+    // revealed at age 0 ramps on a squared curve while later ones ramp linearly. Moved into the
+    // hold rather than dropped, so the voice still outlives the last unit. Mirrors the engine.
+    if (voice.splice?.waitMode === 'fade' || voice.splice?.waitMode === 'pulse') {
+      voice.sustainMs += voice.attackMs;
+      voice.attackMs = 0;
+    }
     this.voices.push(voice);
     if (a.latchKey) this.latched.set(a.latchKey, voice.id);
     return voice;

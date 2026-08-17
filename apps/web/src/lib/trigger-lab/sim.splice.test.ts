@@ -204,6 +204,26 @@ describe('splice — offline preview', () => {
     expect(isDark(rgb(hoopLen)), 'hoop 2 emits nothing until its turn').toBe(true);
   });
 
+  it('fades the first colour in at the same rate as the rest (preview)', () => {
+    const graph = (over: Record<string, unknown>) =>
+      spliceGraph({
+        mode: 'oneshot',
+        splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
+        spliceCount: 2,
+        spliceWaitMode: 'fade',
+        spliceAttackMs: 200,
+        spliceHoldMs: 60000,
+        spliceColorOffsetMode: 'time',
+        spliceColorOffsetMs: 400,
+        ...over,
+      });
+    const first = render(graph({}), 100).rgb(0)[0];
+    const { rgb, hoopLen } = render(graph({}), 500);
+    const second = rgb(Math.round(hoopLen / 2))[2];
+    // Byte values, so compare loosely — the point is they are on the same ramp, not squared.
+    expect(Math.abs(first - second), `${first} vs ${second}`).toBeLessThan(24);
+  });
+
   it('smudges the boundary in the preview too', () => {
     const hard = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2 }));
     const soft = render(spliceGraph({ splices: [{ color: '#ff0000' }, { color: '#0000ff' }], spliceCount: 2, spliceSmudge: 1 }));
