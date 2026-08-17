@@ -15,6 +15,7 @@
   import IconButton from '../../../ui/IconButton.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import FaceExposeButton from './FaceExposeButton.svelte';
+  import ParamLabel from './ParamLabel.svelte';
   import Spline from '@lucide/svelte/icons/spline';
   import Blend from '@lucide/svelte/icons/blend';
 
@@ -64,7 +65,8 @@
     {#each specs as spec (spec.key)}
       {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
-        <span class="plabel">{spec.label}</span>
+        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
+        <ParamLabel label={spec.label} unit={spec.unit} min={spec.min} max={spec.max} />
         {#if spec.type === 'number'}
           <Slider
             value={num(live[spec.key], typeof spec.default === 'number' ? spec.default : 0)}
@@ -73,6 +75,7 @@
             step={spec.step}
             disabled={enveloped}
             format={(v) => (enveloped ? 'swept' : fmtNum(spec, v))}
+            showUnit={false}
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
@@ -98,7 +101,6 @@
         {:else}
           <span class="envspace"></span>
         {/if}
-        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
       </div>
     {/each}
   </div>
@@ -188,14 +190,10 @@
   }
   .prow {
     display: grid;
-    /* label · control · envelope button · face-expose affordance (S5) */
-    grid-template-columns: 84px minmax(0, 1fr) auto auto;
+    /* face-expose affordance (S5, re-seated left by F3 item 1) · label · control · envelope */
+    grid-template-columns: auto 84px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
-  }
-  .plabel {
-    font-size: var(--text-xs);
-    color: var(--text);
   }
   .prow :global(.boolcell) {
     justify-self: start;

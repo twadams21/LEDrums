@@ -11,6 +11,7 @@
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import FaceExposeButton from './FaceExposeButton.svelte';
+  import ParamLabel from './ParamLabel.svelte';
 
   let {
     store,
@@ -26,7 +27,14 @@
 </script>
 
 <div class="prow">
-  <span class="plabel" title={`${spec.label} — key "${spec.key}"`}>{spec.label}</span>
+  <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
+  <ParamLabel
+    label={spec.label}
+    unit={spec.unit}
+    min={spec.min}
+    max={spec.max}
+    title={`${spec.label} — key "${spec.key}"`}
+  />
   {#if spec.kind === 'number'}
     <Slider
       value={num(live[spec.key], 0)}
@@ -34,6 +42,7 @@
       max={spec.max}
       step={spec.step}
       format={(v) => fmt(spec, v)}
+      showUnit={false}
       onChange={(v) => store.setParam(node, spec.key, v)}
       ariaLabel={spec.label}
     />
@@ -55,24 +64,15 @@
       class="boolcell"
     />
   {/if}
-  <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
 </div>
 
 <style>
   .prow {
     display: grid;
-    /* label · control · face-expose affordance (S5) */
-    grid-template-columns: 84px minmax(0, 1fr) auto;
+    /* face-expose affordance (S5, re-seated left by F3 item 1) · label · control */
+    grid-template-columns: auto 84px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
-  }
-  .plabel {
-    font-size: var(--text-xs);
-    color: var(--text);
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .prow :global(.boolcell) {
     justify-self: start;

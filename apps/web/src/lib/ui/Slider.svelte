@@ -5,6 +5,7 @@
      `bind:value` — both work. */
   import { Slider } from 'bits-ui';
   import { wheelStep } from './wheel-step';
+  import { splitValueUnit } from './format-unit';
 
   type Props = {
     value: number;
@@ -18,6 +19,9 @@
     format?: (v: number) => string;
     /** Hide the trailing readout when the caller renders its own. */
     showValue?: boolean;
+    /** Hide the unit beside the input. Inspector rows carry it on the param LABEL instead
+        (an `(i)` tooltip), so every number input in a section aligns to the same column. */
+    showUnit?: boolean;
     ariaLabel?: string;
     class?: string;
   };
@@ -31,6 +35,7 @@
     onChange,
     format,
     showValue = true,
+    showUnit = true,
     ariaLabel,
     class: klass,
   }: Props = $props();
@@ -42,7 +47,15 @@
   const normalizedValue = $derived(normalizeNumber(value, min, max, step));
   const inputValue = $derived(formatNumber(normalizedValue, precision));
   const display = $derived(format ? format(normalizedValue) : inputValue);
-  const unit = $derived(inferUnit(display, inputValue));
+  /* A format that merely dresses the value ("210°", "0.60") prints the SAME number, so the
+     box can show the formatter's own rendering — trailing zeros and all — and the remainder
+     is the unit. A format that TRANSFORMS the value (a 0…1 depth shown as "45%") prints a
+     different number, so the box keeps the real one and the whole read-out reads as the unit:
+     showing "45" in a box that commits 45 would be a lie. */
+  const parsed = $derived(splitValueUnit(display));
+  const literal = $derived(parsed.number !== null && Number(parsed.number) === normalizedValue);
+  const shownValue = $derived(literal ? parsed.number! : inputValue);
+  const unit = $derived(literal ? parsed.unit : display === inputValue ? '' : display);
 
   function decimalPlaces(n: number): number {
     const text = String(n);
@@ -63,14 +76,6 @@
     return Math.min(hi, Math.max(lo, Number(stepped.toFixed(decimalPlaces(inc) + 2))));
   }
 
-  function inferUnit(formatted: string, numeric: string): string {
-    if (formatted === numeric) return '';
-    if (Number.isFinite(Number(formatted.trim()))) return '';
-    if (formatted.startsWith(numeric)) return formatted.slice(numeric.length).trim();
-    if (formatted.endsWith(numeric)) return formatted.slice(0, -numeric.length).trim();
-    return formatted;
-  }
-
   function emit(next: number) {
     const normalized = normalizeNumber(next, min, max, step);
     value = normalized;
@@ -78,7 +83,7 @@
   }
 
   function currentDraft(): string {
-    return editing ? draft : inputValue;
+    return editing ? draft : shownValue;
   }
 
   function commit() {
@@ -156,7 +161,7 @@
         value={currentDraft()}
         {disabled}
         onfocus={() => {
-          draft = inputValue;
+          draft = shownValue;
           editing = true;
         }}
         oninput={(event) => {
@@ -177,7 +182,7 @@
           }
         }}
       />
-      {#if unit}
+      {#if unit && showUnit}
         <span class="unit">{unit}</span>
       {/if}
     </label>
