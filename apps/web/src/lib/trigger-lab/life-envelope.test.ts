@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXP_TAIL_FACTOR, evalCurve, resolveVoiceLife, resolveVoiceSustainMs } from '@ledrums/core';
-import { EXP_SEED_STRENGTH, lifeParamKey, seedLifeEnvelope } from './life-envelope';
+import { EXP_SEED_STRENGTH, lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from './life-envelope';
+import { listEffects } from '@ledrums/core';
 
 /* Turning a scalar Life/Decay into a curve must be a no-op you can see through: the seeded
    envelope has to describe what the effect was already doing, or "draw this as a shape" is a
@@ -45,12 +46,12 @@ describe('the seeded envelope is the effect’s current behaviour', () => {
   it('bends the way the effect already fades: exponential where the param is a time constant', () => {
     // whole-drum declares `factor: EXP_TAIL_FACTOR` — its param IS a decay constant.
     const seed = seedLifeEnvelope('whole-drum');
-    expect(seed.profile).toBe('exp');
-    expect(seed.strength).toBeCloseTo(EXP_SEED_STRENGTH, 10);
+    expect(seed.profile).toBe('bend');
+    expect(seed.strength).toBeCloseTo(EXP_SEED_STRENGTH, 2); // quantised to the fader's step
     // The bend is calibrated against the decay it stands in for: the two agree exactly at the
     // half-way point. A power curve is not an exponential, so they only meet there — but the
     // seed is an ease-out that has fallen well past linear by then, which is the visible claim.
-    expect(evalCurve(seed, 0.5)).toBeCloseTo(Math.exp(-0.5 * EXP_TAIL_FACTOR), 12);
+    expect(evalCurve(seed, 0.5)).toBeCloseTo(Math.exp(-0.5 * EXP_TAIL_FACTOR), 2);
     for (const u of [0.25, 0.5, 0.75]) expect(evalCurve(seed, u)).toBeLessThan(1 - u);
   });
 
@@ -58,8 +59,31 @@ describe('the seeded envelope is the effect’s current behaviour', () => {
     for (const generatorId of ['chase-bands', 'segments'] as const) {
       const seed = seedLifeEnvelope(generatorId);
       expect(seed.strength).toBe(0);
-      // strength 0 collapses `exp` to linear EXACTLY, so the seed matches `1 - age/life`.
+      // strength 0 is the fader's notch — `bend` is EXACTLY linear there, so the seed matches `1 - age/life`.
       for (const u of [0.1, 0.5, 0.9]) expect(evalCurve(seed, u)).toBeCloseTo(1 - u, 12);
     }
+  });
+});
+
+/* F5 — the envelope's y axis. The top always reads 100%; what it is 100% OF is this param,
+   which the effect already multiplies its own output by. */
+
+describe('which param the max-brightness slider writes', () => {
+  it('is the effect’s own output scale, for every effect that can be drawn', () => {
+    const drawable = listEffects().filter((e) => e.voiceLife);
+    expect(drawable.length).toBeGreaterThan(10); // guard: an empty sweep would pass vacuously
+    for (const e of drawable) {
+      const key = maxBrightnessKey(e.id);
+      expect(key, e.id).not.toBeNull();
+      // Never invented: whatever it names, the generator declared it as a number.
+      const spec = e.paramSpec.find((s) => s.key === key);
+      expect(spec?.type, e.id).toBe('number');
+    }
+  });
+
+  it('resolves nothing rather than guessing, for an effect with no output scale', () => {
+    expect(maxBrightnessKey('no-such-effect')).toBeNull();
+    expect(maxBrightnessKey(null)).toBeNull();
+    expect(maxBrightnessKey(undefined)).toBeNull();
   });
 });

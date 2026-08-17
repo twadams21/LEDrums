@@ -131,6 +131,60 @@ describe('Slider', () => {
     expect(onChange).toHaveBeenLastCalledWith(10);
   });
 
+  it('marks the notch and fills from it rather than from min', () => {
+    const { container } = render(Slider, {
+      props: { value: 0.5, min: -1, max: 1, step: 0.01, notchAt: 0, ariaLabel: 'Bipolar' },
+    });
+
+    // The notch sits at the middle of the travel...
+    expect((container.querySelector('.notch') as HTMLElement).style.getPropertyValue('--notch')).toBe('50%');
+    // ...and the fill is the band BETWEEN it and the thumb (50% → 75%), not 0 → 75%.
+    const band = container.querySelector('.band') as HTMLElement;
+    expect(band.style.getPropertyValue('--band-start')).toBe('50%');
+    expect(band.style.getPropertyValue('--band-size')).toBe('25%');
+  });
+
+  it('puts the band on the other side of the notch for a negative value', () => {
+    const { container } = render(Slider, {
+      props: { value: -0.5, min: -1, max: 1, step: 0.01, notchAt: 0, ariaLabel: 'Bipolar' },
+    });
+
+    const band = container.querySelector('.band') as HTMLElement;
+    expect(band.style.getPropertyValue('--band-start')).toBe('25%');
+    expect(band.style.getPropertyValue('--band-size')).toBe('25%');
+  });
+
+  it('leaves a step near the notch exact when no pointer is down — the notch must not trap the thumb', () => {
+    const onChange = vi.fn();
+    const { container } = render(Slider, {
+      props: { value: 0.03, min: -1, max: 1, step: 0.01, notchAt: 0, notchSnap: 0.05, onChange, ariaLabel: 'Bipolar' },
+    });
+
+    container
+      .querySelector('.slider')!
+      .dispatchEvent(new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true }));
+
+    expect(onChange).toHaveBeenLastCalledWith(0.02);
+  });
+
+  it('snaps into the notch while a pointer gesture is in progress, and releases on pointerup', async () => {
+    const onChange = vi.fn();
+    const { container } = render(Slider, {
+      props: { value: 0.03, min: -1, max: 1, step: 0.01, notchAt: 0, notchSnap: 0.05, onChange, ariaLabel: 'Bipolar' },
+    });
+    const root = container.querySelector('.slider')!;
+    const tick = (): void =>
+      void root.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true }));
+
+    await fireEvent.pointerDown(root);
+    tick();
+    expect(onChange).toHaveBeenLastCalledWith(0);
+
+    await fireEvent.pointerUp(window);
+    tick();
+    expect(onChange).toHaveBeenLastCalledWith(-0.01);
+  });
+
   it('ignores the wheel when disabled, leaving the page free to scroll', async () => {
     const onChange = vi.fn();
     const { container } = render(Slider, {

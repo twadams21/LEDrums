@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, type Vec3 } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, pstr, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 interface ScanPlaneData {
   dir: number;
@@ -39,7 +40,7 @@ export const scanPlane: EffectGenerator<ScanPlaneState> = {
     { key: 'speed', label: 'Speed', type: 'number', default: 1000, min: 80, max: 5000, step: 10, unit: 'mm/s' },
     { key: 'width', label: 'Width', type: 'number', default: 160, min: 20, max: 800, step: 10, unit: 'mm' },
     { key: 'afterglow', label: 'Afterglow', type: 'number', default: 0.28, min: 0, max: 1, step: 0.01 },
-    { key: 'lifeMs', label: 'Life', type: 'number', default: 1700, min: 200, max: 6000, step: 50, unit: 'ms' },
+    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1700, min: 200, max: 6000, step: 50, unit: 'ms' },
   ],
   createState(): ScanPlaneState {
     return { em: createEmitterState<ScanPlaneData>() };
@@ -70,7 +71,7 @@ export const scanPlane: EffectGenerator<ScanPlaneState> = {
       const origin = drum ? coord(drum.effectOriginWorld, axis) : (low + high) * 0.5;
       const travel = (speed * em.ageMs) / 1000;
       const head = origin + em.data.dir * travel + em.data.axisOffset;
-      const fade = clamp01(1 - em.ageMs / lifeMs) * em.velocity * bri;
+      const fade = lifeFade(ctx, clamp01(1 - em.ageMs / lifeMs)) * em.velocity * bri;
       if (fade < 0.004) continue;
       for (const p of ctx.model.pixels) {
         const d = Math.abs(coord(p.world, axis) - head);

@@ -10,7 +10,7 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { EffectDef, GraphNode } from '../../../trigger-lab/sim';
   import { resolveVoiceSustainMs, type CurveValue, type Hsv } from '@ledrums/core';
-  import { lifeParamKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
+  import { lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
   import { num } from '../../views/node-options';
   import { groupParamsFiltered } from './param-families';
   import { paramFold } from './param-disclosure.svelte';
@@ -20,9 +20,6 @@
   import Disclosure from '../../../ui/Disclosure.svelte';
   import ColorSwatch from '../../../ui/ColorSwatch.svelte';
   import CurveField from '../../../ui/CurveField.svelte';
-  import IconButton from '../../../ui/IconButton.svelte';
-  import Spline from '@lucide/svelte/icons/spline';
-  import Undo2 from '@lucide/svelte/icons/undo-2';
 
   let { store, node, eff }: { store: TriggerLab; node: GraphNode; eff: EffectDef } = $props();
 
@@ -59,21 +56,46 @@
     store.setParam(node, 'brightness', hsv.v);
   }
 
-  // --- life envelope (S6b, re-seated here when S4's layout landed) ----------
-  // An effect that DECLARES a life param (`EffectGenerator.voiceLife`) can have that scalar
-  // drawn as a shape instead. The curve's x axis is normalised over exactly that declared
-  // life, so `h1.x = 1` is the Life slider's own value and seeding changes nothing visually.
-  // While a filter is active the curve steps aside like the swatch does, and the scalar row
-  // (which still sets the curve's time span) answers the "find this exact param" gesture.
+  // --- decay envelope (S6b; F5 removed the toggle) --------------------------
+  // An effect that DECLARES a decay param (`EffectGenerator.voiceLife`) is edited as a shape,
+  // always — there is no sliders-vs-envelope switch, because the envelope replaces both params
+  // it used to sit beside (Trent, 2026-08-17: "it replaces 100% of their use cases"). The two
+  // axes keep their own sliders inside the block: x is the effect's declared decay time, y is
+  // its output scale, and the curve between them is normalised 0..1 in both directions.
+  //
+  // Neither slider is a new value — they are the effect's OWN params, moved here from the flat
+  // list, so nothing about persistence, undo, modulation or face-exposure changes and the
+  // colour swatch keeps writing the same brightness this slider shows.
+  //
+  // While a filter is active the block steps aside like the swatch does, and the two scalars
+  // reappear as ordinary rows to answer the "find this exact param" gesture.
   const lifeKey = $derived(lifeParamKey(eff.generatorId));
-  const lifeEnvelope = $derived(node.lifeEnvelope ?? null);
+  const maxKey = $derived(maxBrightnessKey(eff.generatorId));
+  const showEnvelope = $derived(!!lifeKey && !filtering);
+  /** The shape being drawn: what the node authored, or the effect's own fade until it does. */
+  const lifeEnvelope = $derived(node.lifeEnvelope ?? seedLifeEnvelope(eff.generatorId));
   /** Real-time width of the envelope's x axis — what the author is actually drawing across. */
   const lifeSpanMs = $derived(resolveVoiceSustainMs(eff.generatorId, live, store.bpm, eff.sustainMs));
   const lifeSpec = $derived(lifeKey ? eff.params.find((p) => p.key === lifeKey) ?? null : null);
+  const maxSpec = $derived(maxKey ? eff.params.find((p) => p.key === maxKey) ?? null : null);
+  /** Rows the envelope block owns — they must not also render in the flat common list. */
+  const envelopeKeys = $derived(showEnvelope ? [lifeKey, maxKey].filter((k): k is string => !!k) : []);
   /** One undo per gesture: the first live frame opens the checkpoint, the rest fold into it. */
   let lifeDragging = $state(false);
 
+  const sameCurve = (a: CurveValue, b: CurveValue): boolean =>
+    a.profile === b.profile &&
+    a.strength === b.strength &&
+    a.h0.x === b.h0.x &&
+    a.h0.y === b.h0.y &&
+    a.h1.x === b.h1.x &&
+    a.h1.y === b.h1.y;
+
   function onLifeChange(v: CurveValue): void {
+    // A change that changes nothing is not an edit. Controls can emit one as they mount
+    // (a fader correcting an off-step value to its nearest step), and with the envelope
+    // always on that would author a curve — and an undo entry — just for opening a node.
+    if (sameCurve(v, lifeEnvelope)) return;
     if (lifeDragging) store.updateLifeEnvelope(node, v);
     else {
       lifeDragging = true;
@@ -122,45 +144,35 @@
             />
           </div>
         {/if}
-        {#each grouped.commonParams.filter((p) => !(lifeEnvelope && p.key === lifeKey && !filtering)) as spec (spec.key)}
-          {#if spec.key === lifeKey && !lifeEnvelope}
-            <ParamRow {store} {node} {spec} {live}>
-              {#snippet trailing()}
-                <IconButton
-                  icon={Spline}
-                  label="Draw {spec.label} as a curve"
-                  variant="soft"
-                  size={14}
-                  onclick={() => store.setLifeEnvelope(node, seedLifeEnvelope(eff.generatorId))}
-                />
-              {/snippet}
-            </ParamRow>
-          {:else}
-            <ParamRow {store} {node} {spec} {live} />
-          {/if}
+        {#each grouped.commonParams.filter((p) => !envelopeKeys.includes(p.key)) as spec (spec.key)}
+          <ParamRow {store} {node} {spec} {live} />
         {/each}
-        {#if lifeEnvelope && !filtering}
+        {#if showEnvelope}
           <div class="lifeenv">
             <div class="lifehead">
-              <span class="plabel">{lifeSpec?.label ?? 'Life'}</span>
+              <!-- An eyebrow, not a param label: it deliberately does NOT carry `.plabel`,
+                   because that class is the registry-wide "every declared param renders exactly
+                   once" assertion's collector and a heading would read as an invented row. It
+                   also cannot borrow the row label column — "Decay" would then appear twice in
+                   the same 84px gutter, once as the block's name and once as its own slider. -->
+              <Eyebrow>Decay envelope</Eyebrow>
               <span class="lifespan">{fmtLifeX(1)}</span>
-              <IconButton
-                icon={Undo2}
-                label="Detach the curve — back to the {lifeSpec?.label ?? 'Life'} slider"
-                variant="soft"
-                size={14}
-                onclick={() => store.setLifeEnvelope(node, null)}
-              />
             </div>
             <CurveField
               value={lifeEnvelope}
               onChange={onLifeChange}
               onCommit={onLifeCommit}
-              xAxis={{ label: 'time', format: fmtLifeX }}
-              yAxis={{ label: 'level', format: (u) => `${Math.round(u * 100)}%` }}
+              xAxis={{ label: 'decay', format: fmtLifeX }}
+              yAxis={{ label: 'brightness', format: (u) => `${Math.round(u * 100)}%` }}
               height={104}
-              ariaLabel="{lifeSpec?.label ?? 'Life'} envelope"
+              ariaLabel="Decay envelope"
             />
+            {#if lifeSpec}
+              <ParamRow {store} {node} spec={lifeSpec} {live} />
+            {/if}
+            {#if maxSpec}
+              <ParamRow {store} {node} spec={maxSpec} {live} />
+            {/if}
           </div>
         {/if}
       </div>
@@ -199,15 +211,14 @@
     padding-top: var(--space-1);
   }
   .lifehead {
-    /* Same column rhythm as a param row, so the Detach button lands in the gutter the
-       draw-as-a-curve button left behind — the swap happens in place, not somewhere new. */
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr) var(--control-icon-size);
-    align-items: center;
+    /* The same eyebrow + right-aligned readout as the section head above it, so the block
+       reads as a titled group rather than a param row that grew a chart. */
+    display: flex;
+    align-items: baseline;
     gap: var(--space-2);
   }
-  .lifehead :global(.ib) {
-    justify-self: center;
+  .lifehead .lifespan {
+    margin-left: auto;
   }
   .lifespan {
     font-size: var(--text-2xs);

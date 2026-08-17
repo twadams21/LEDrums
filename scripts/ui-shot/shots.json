@@ -48,6 +48,14 @@
     "state": "view:trigger,add:effect,select:effect,effect:gen:confetti-burst,param-filter:hue",
     "target": "Inspector"
   },
+  "fx-decay-envelope-exp": {
+    "state": "view:trigger,add:effect,select:effect,effect:gen:whole-drum",
+    "target": "Inspector"
+  },
+  "fx-decay-envelope-linear": {
+    "state": "view:trigger,add:effect,select:effect,effect:gen:segments",
+    "target": "Inspector"
+  },
   "gen3-scope-inspector": {
     "state": "view:trigger,add:scope,select:scope",
     "target": "Inspector"

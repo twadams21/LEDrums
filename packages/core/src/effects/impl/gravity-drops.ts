@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, wrap } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 interface GravityDropData {
   angleDeg: number;
@@ -35,7 +36,7 @@ export const gravityDrops: EffectGenerator<GravityDropsState> = {
     { key: 'gravity', label: 'Gravity', type: 'number', default: 0.7, min: 0, max: 4, step: 0.05, unit: 'drum/s²' },
     { key: 'trail', label: 'Trail', type: 'number', default: 0.22, min: 0.04, max: 0.75, step: 0.01 },
     { key: 'spreadDeg', label: 'Spread', type: 'number', default: 42, min: 8, max: 180, unit: '°' },
-    { key: 'lifeMs', label: 'Life', type: 'number', default: 1900, min: 200, max: 6000, step: 50, unit: 'ms' },
+    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1900, min: 200, max: 6000, step: 50, unit: 'ms' },
   ],
   createState(): GravityDropsState {
     return { em: createEmitterState<GravityDropData>() };
@@ -60,7 +61,7 @@ export const gravityDrops: EffectGenerator<GravityDropsState> = {
       const t = em.ageMs / 1000;
       const fall = t * fallSpeed + 0.5 * gravity * t * t;
       const head = 1 - fall;
-      const fade = clamp01(1 - em.ageMs / lifeMs) * em.velocity * bri;
+      const fade = lifeFade(ctx, clamp01(1 - em.ageMs / lifeMs)) * em.velocity * bri;
       // Widen the trail to at least one hoop gap so the bead never falls "between" hoops
       // unlit (a 4-hoop drum has a normHoop gap of 1/3, larger than the default trail).
       const gap = drum.hoopCount > 1 ? 1 / (drum.hoopCount - 1) : 1;

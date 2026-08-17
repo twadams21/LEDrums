@@ -15,6 +15,19 @@
     /** `vertical` is a fader: it fills upward and stretches to the row's height,
         so a caller must give the wrapper one. Used by CurveField's strength fader. */
     orientation?: 'horizontal' | 'vertical';
+    /** Marks a NEUTRAL value on the rail and fills from there to the thumb instead
+        of from `min`. That is what makes a bipolar control readable: on a −1..1
+        fader a fill starting at the bottom says "30% of the way up", which is not
+        what the value means — a fill starting at the notch says "0.4 below
+        centre", which is. Presentational only; any magnetic snapping belongs to
+        the caller, which owns the value. */
+    notchAt?: number | null;
+    /** Half-width, in value units, of a MAGNETIC zone around `notchAt`: a drag
+        that lands inside it snaps to the notch exactly, so neutral is easy to
+        hit without hunting for a pixel. Deliberately pointer-only — a keyboard
+        or wheel step is already exact, and a magnet wider than one step would
+        trap the thumb on the notch with no way to step off it. */
+    notchSnap?: number;
     /** Fired on every change; use this when `value` isn't a bindable local. */
     onChange?: (v: number) => void;
     /** Formats the trailing readout (e.g. `v => v + 'ms'`). */
@@ -32,6 +45,8 @@
     step = 1,
     disabled = false,
     orientation = 'horizontal',
+    notchAt = null,
+    notchSnap = 0,
     onChange,
     format,
     showValue = true,
@@ -41,12 +56,27 @@
 
   let draft = $state('');
   let editing = $state(false);
+  /* Whether the current change is coming from a pointer drag. Tracked on the
+     window rather than the thumb: the thumb re-renders mid-drag, and a listener
+     on a node that can be replaced is a listener that can be lost. */
+  let dragging = $state(false);
 
   const precision = $derived(decimalPlaces(step));
   const normalizedValue = $derived(normalizeNumber(value, min, max, step));
   const inputValue = $derived(formatNumber(normalizedValue, precision));
   const display = $derived(format ? format(normalizedValue) : inputValue);
   const unit = $derived(inferUnit(display, inputValue));
+
+  /* ---- Notched (bipolar) fill ---------------------------------------------
+     Bits UI's own Range always spans min→value, so a notched slider draws its
+     own band between the notch and the thumb and hides Bits'. Both are the same
+     `.range` element to the eye — one rule set, one colour, no drift. */
+  const notched = $derived(notchAt !== null && notchAt !== undefined);
+  const frac = (v: number): number => (max > min ? (v - min) / (max - min) : 0);
+  const notchFrac = $derived(Math.min(1, Math.max(0, frac(notchAt ?? min))));
+  const valueFrac = $derived(Math.min(1, Math.max(0, frac(normalizedValue))));
+  const bandStart = $derived(Math.min(notchFrac, valueFrac));
+  const bandSize = $derived(Math.abs(valueFrac - notchFrac));
 
   function decimalPlaces(n: number): number {
     const text = String(n);
@@ -76,9 +106,15 @@
   }
 
   function emit(next: number) {
-    const normalized = normalizeNumber(next, min, max, step);
+    const normalized = normalizeNumber(snapToNotch(next), min, max, step);
     value = normalized;
     onChange?.(normalized);
+  }
+
+  /** The magnet, applied only to a pointer drag — see the `notchSnap` prop. */
+  function snapToNotch(next: number): number {
+    if (!dragging || notchAt === null || notchAt === undefined || !(notchSnap > 0)) return next;
+    return Math.abs(next - notchAt) < notchSnap ? notchAt : next;
   }
 
   function currentDraft(): string {
@@ -129,10 +165,29 @@
     emit(Number(next));
   }
 
+  /* Both listeners are attached by hand on the same node: `wheel` because it has
+     to be non-passive, `pointerdown` because a handler in the markup would put an
+     interaction on a wrapper div that has no role of its own. */
   $effect(() => {
     root.addEventListener('wheel', onWheel, { passive: false });
-    return () => root.removeEventListener('wheel', onWheel);
+    root.addEventListener('pointerdown', startPointer);
+    return () => {
+      root.removeEventListener('wheel', onWheel);
+      root.removeEventListener('pointerdown', startPointer);
+    };
   });
+
+  function startPointer(): void {
+    if (disabled) return;
+    dragging = true;
+    const end = (): void => {
+      dragging = false;
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }
 </script>
 
 <div bind:this={root} class={['slider', klass]} class:disabled class:vertical={orientation === 'vertical'}>
@@ -149,7 +204,16 @@
     class="track"
   >
     <span class="rail"></span>
-    <Slider.Range class="range" />
+    {#if notched}
+      <span class="notch" style:--notch={`${notchFrac * 100}%`}></span>
+      <span
+        class="range band"
+        style:--band-start={`${bandStart * 100}%`}
+        style:--band-size={`${bandSize * 100}%`}
+      ></span>
+    {:else}
+      <Slider.Range class="range" />
+    {/if}
     <Slider.Thumb index={0} class="thumb" />
   </Slider.Root>
   {#if showValue}
@@ -337,6 +401,47 @@
   .slider.vertical .value {
     min-width: 0;
     justify-content: center;
+  }
+
+  /* ---- Notch (bipolar) ----------------------------------------------------
+     The mark sits ON the rail rather than beside it, so the neutral point is
+     read in the same glance as the thumb; the band grows out of it in whichever
+     direction the value went. Both are absolutely positioned off the same
+     fraction, so mark and fill can never disagree about where centre is. */
+  .slider .notch {
+    position: absolute;
+    background: var(--text-muted);
+    border-radius: 1px;
+    pointer-events: none;
+    /* Above the fill: the mark is the reference the fill is measured FROM, so it
+       has to stay readable when the fill grows out over it. */
+    z-index: 1;
+    left: var(--notch);
+    top: 50%;
+    width: 1px;
+    height: 11px;
+    transform: translate(-50%, -50%);
+  }
+  .slider .band {
+    position: absolute;
+    left: var(--band-start);
+    width: var(--band-size);
+  }
+  .slider.vertical .notch {
+    left: 50%;
+    top: auto;
+    bottom: var(--notch);
+    width: 13px;
+    height: 1px;
+    transform: translate(-50%, 50%);
+  }
+  .slider.vertical .band {
+    left: 50%;
+    top: auto;
+    bottom: var(--band-start);
+    width: 5px;
+    height: var(--band-size);
+    transform: translateX(-50%);
   }
   .slider.vertical .value input {
     width: 36px;

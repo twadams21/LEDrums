@@ -1,6 +1,7 @@
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR } from '../visibility';
+import { lifeFade } from '../life-fade';
 
 /**
  * Whole Kit: any hit lights every pixel of the entire kit, fading over decayMs
@@ -32,7 +33,7 @@ export const wholeKit: EffectGenerator = {
 
     let intensity = 0;
     for (const trig of ctx.triggers) {
-      intensity = Math.max(intensity, trig.velocity * Math.exp(-trig.ageMs / decay));
+      intensity = Math.max(intensity, trig.velocity * lifeFade(ctx, Math.exp(-trig.ageMs / decay)));
     }
     if (intensity < 0.004) return;
     const rgb = hsvToRgb(hue, sat, bri * intensity);

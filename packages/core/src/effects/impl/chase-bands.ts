@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, wrap } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 export interface ChaseBandsState {
   em: EmitterState;
@@ -32,7 +33,7 @@ export const chaseBands: EffectGenerator<ChaseBandsState> = {
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'speed', label: 'Speed', type: 'number', default: 0.25, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat' },
     { key: 'bandWidth', label: 'Band Width', type: 'number', default: 0.25, min: 0.02, max: 1, step: 0.01, unit: 'hoop' },
-    { key: 'lifeBeats', label: 'Life', type: 'number', default: 4, min: 0.5, max: 16, step: 0.5, unit: 'beats' },
+    { key: 'lifeBeats', label: 'Decay', type: 'number', default: 4, min: 0.5, max: 16, step: 0.5, unit: 'beats' },
     { key: 'twist', label: 'Twist', type: 'number', default: 0, min: -90, max: 90, unit: '°/hoop' },
     { key: 'hueDrift', label: 'Hue Drift', type: 'number', default: 0, min: 0, max: 360, unit: '°/rev' },
   ],
@@ -59,7 +60,7 @@ export const chaseBands: EffectGenerator<ChaseBandsState> = {
       const ageBeats = em.ageMs / msPerBeat;
       const revs = ageBeats * speed;
       const headDeg = revs * 360; // travels with the hoop's winding direction
-      const fade = clamp01(1 - ageBeats / lifeBeats);
+      const fade = lifeFade(ctx, clamp01(1 - ageBeats / lifeBeats));
       const level = fade * em.velocity * bri;
       if (level < 0.004) continue;
       const bandHue = hue + revs * hueDrift;

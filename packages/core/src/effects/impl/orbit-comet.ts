@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, wrap } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 interface OrbitCometData {
   spin: number;
@@ -34,7 +35,7 @@ export const orbitComet: EffectGenerator<OrbitCometState> = {
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'speed', label: 'Speed', type: 'number', default: 0.8, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat' },
     { key: 'tailDeg', label: 'Tail', type: 'number', default: 110, min: 12, max: 360, unit: '°' },
-    { key: 'lifeBeats', label: 'Life', type: 'number', default: 3, min: 0.25, max: 12, step: 0.25, unit: 'beats' },
+    { key: 'lifeBeats', label: 'Decay', type: 'number', default: 3, min: 0.25, max: 12, step: 0.25, unit: 'beats' },
     { key: 'riseDeg', label: 'Hoop Rise', type: 'number', default: 34, min: -120, max: 120, unit: '°/hoop' },
     { key: 'hueDrift', label: 'Hue Drift', type: 'number', default: 70, min: 0, max: 360, unit: '°/rev' },
   ],
@@ -65,7 +66,7 @@ export const orbitComet: EffectGenerator<OrbitCometState> = {
       const ageBeats = em.ageMs / msPerBeat;
       const revs = ageBeats * speed;
       const headDeg = em.data.spin * revs * 360 + em.data.hoopPhase;
-      const fade = clamp01(1 - ageBeats / lifeBeats);
+      const fade = lifeFade(ctx, clamp01(1 - ageBeats / lifeBeats));
       const level = fade * fade * em.velocity * bri;
       if (level < 0.004) continue;
       const end = drum.pixelStart + drum.pixelCount;

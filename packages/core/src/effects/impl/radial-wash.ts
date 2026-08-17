@@ -2,6 +2,7 @@ import { distance } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, pstr, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR } from '../visibility';
+import { lifeFade } from '../life-fade';
 
 export type WashMode = 'out' | 'in' | 'bounce';
 
@@ -63,7 +64,7 @@ export const radialWash: EffectGenerator = {
     for (const trig of ctx.triggers) {
       const drum = ctx.model.drumById.get(trig.drumId);
       if (!drum) continue;
-      const envelope = trig.velocity * Math.exp(-trig.ageMs / decay);
+      const envelope = trig.velocity * lifeFade(ctx, Math.exp(-trig.ageMs / decay));
       if (envelope < 0.004) continue;
       const radius = waveRadius(mode, trig.ageMs, speed, reach);
       const origin = drum.effectOriginWorld;
