@@ -3035,7 +3035,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if ((node.kind !== 'play' && node.kind !== 'effect') || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }

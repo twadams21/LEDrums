@@ -105,6 +105,13 @@ function render(graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rg
   return { model, rgb: (i) => [frame[i * 4]!, frame[i * 4 + 1]!, frame[i * 4 + 2]!] };
 }
 
+/** Total lit brightness of the frame — a proxy for "are the lights still up". */
+const litSum = (rgb: (i: number) => [number, number, number]): number => {
+  let sum = 0;
+  for (let i = 0; i < 16; i++) sum += rgb(i)[0] + rgb(i)[1] + rgb(i)[2];
+  return sum;
+};
+
 const RED: [number, number, number] = [1, 0, 0];
 const BLUE: [number, number, number] = [0, 0, 1];
 const DARK: [number, number, number] = [0, 0, 0];
@@ -699,13 +706,6 @@ describe('splice — colour cascade', () => {
 });
 
 describe('splice — envelope', () => {
-  /** Total lit brightness of the frame — a proxy for "are the lights still up". */
-  const litSum = (rgb: (i: number) => [number, number, number]) => {
-    let sum = 0;
-    for (let i = 0; i < 16; i++) sum += rgb(i)[0] + rgb(i)[1] + rgb(i)[2];
-    return sum;
-  };
-
   it('holds the lights up for the authored time, then fades', () => {
     const graph = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 600, spliceReleaseMs: 200 });
     expect(litSum(render(graph, [], 300).rgb), 'inside the hold').toBeGreaterThan(0);
@@ -718,6 +718,63 @@ describe('splice — envelope', () => {
     const long = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 4000, spliceReleaseMs: 20 });
     expect(litSum(render(short, [], 500).rgb), 'short one is done').toBe(0);
     expect(litSum(render(long, [], 500).rgb), 'long one is still up').toBeGreaterThan(0);
+  });
+});
+
+describe('splice — play mode', () => {
+  const held = (mode: 'oneshot' | 'loop' | 'hold', atMs: number) =>
+    render(spliceGraph([{ color: '#ff0000' }], { mode, spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 }), [], atMs);
+
+  it('a one-shot ends on its own envelope', () => {
+    expect(litSum(held('oneshot', 30).rgb), 'inside its hold').toBeGreaterThan(0);
+    expect(litSum(held('oneshot', 400).rgb), 'long past hold + decay').toBe(0);
+  });
+
+  it('repeats a pulse on a looping voice instead of firing once and going dark', () => {
+    // The dead end this fixes: the voice loops forever but the pulse ran once, so the kit sat
+    // dark for its whole life. Cycle here is 10 + 50 + 20 = 80ms with no cascade.
+    const pulsing = (atMs: number) =>
+      litSum(
+        render(
+          spliceGraph([{ color: '#ff0000' }], {
+            mode: 'loop',
+            spliceWaitMode: 'pulse',
+            spliceAttackMs: 10,
+            spliceHoldMs: 50,
+            spliceReleaseMs: 20,
+          }),
+          [],
+          atMs,
+        ).rgb,
+      );
+    expect(pulsing(30), 'first pulse').toBeGreaterThan(0);
+    expect(pulsing(110), 'second cycle').toBeGreaterThan(0);
+    expect(pulsing(430), 'still pulsing much later').toBeGreaterThan(0);
+  });
+
+  it('leaves a one-shot pulse alone — it fires once and is done', () => {
+    const once = (atMs: number) =>
+      litSum(
+        render(
+          spliceGraph([{ color: '#ff0000' }], {
+            mode: 'oneshot',
+            spliceWaitMode: 'pulse',
+            spliceAttackMs: 10,
+            spliceHoldMs: 50,
+            spliceReleaseMs: 20,
+          }),
+          [],
+          atMs,
+        ).rgb,
+      );
+    expect(once(30), 'its one pulse').toBeGreaterThan(0);
+    expect(once(400), 'and then nothing').toBe(0);
+  });
+
+  it('loop and hold stay up past where a one-shot would have ended', () => {
+    expect(litSum(held('loop', 400).rgb), 'loop is still lit').toBeGreaterThan(0);
+    expect(litSum(held('hold', 400).rgb), 'hold is still lit').toBeGreaterThan(0);
+    expect(litSum(held('loop', 3000).rgb), 'and stays lit indefinitely').toBeGreaterThan(0);
   });
 });
 

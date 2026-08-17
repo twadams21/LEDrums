@@ -133,6 +133,11 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
   const age = sim.timeMs - v.bornAtMs;
   // `continuous` free-runs off the shared clock so a hit resumes where the last stopped;
   // `restart` uses the voice's own age. Mirrors core's compositor.
+  // A pulse on a looping/held voice repeats — mirrors core.
+  const pulseCycleMs =
+    cfg.waitMode === 'pulse' && v.mode !== 'oneshot'
+      ? voice.splicePulseCycleMs(voice.maxCascadeDelayMs(lab.pm, cfg), cfg.envelope)
+      : 0;
   const motionClock =
     cfg.motionMode === 'continuous'
       ? sim.timeMs
@@ -168,9 +173,10 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       // Per-SPLICE reveal (colour cascade on top of the unit's turn), mirroring core.
       const reveal = delay + voice.colorCascadeDelayMs(slot, cfg);
       if (cfg.waitMode !== 'lit' && reveal > 0 && age < reveal) return;
+      const ownAge = pulseCycleMs > 0 ? (age - reveal) % pulseCycleMs : age - reveal;
       const unitLevel =
         cfg.waitMode === 'pulse'
-          ? voice.unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
+          ? voice.unitEnvelopeLevel(ownAge, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
           : cfg.waitMode === 'fade'
             ? voice.unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
             : 1;

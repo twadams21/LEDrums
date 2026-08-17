@@ -212,6 +212,21 @@ describe('layer', () => {
   });
 });
 
+describe('play mode', () => {
+  // Third instance of the kind-guard trap (after setScope and setBus): `setMode` enumerates the
+  // kinds it accepts and did not list 'splice', so Loop and Hold were silent no-ops.
+  it('switches a splice between one-shot, loop and hold', () => {
+    const { store, node } = withSplice();
+    expect(node.mode, 'a fresh splice is a one-shot').toBe('oneshot');
+    store.setMode(node, 'loop');
+    expect(node.mode).toBe('loop');
+    store.setMode(node, 'hold');
+    expect(node.mode).toBe('hold');
+    store.setMode(node, 'oneshot');
+    expect(node.mode).toBe('oneshot');
+  });
+});
+
 describe('envelope + motion mode', () => {
   it('sets how long the lights stay up after a hit', () => {
     const { store, node } = withSplice();

@@ -345,6 +345,20 @@ export function unitFadeInLevel(ownAgeMs: number, attackMs: number, attackEase?:
   return attackEase ? ease(attackEase, ownAgeMs / attackMs) : ownAgeMs / attackMs;
 }
 
+/**
+ * The length of one full pulse cycle: the whole cascade plus one unit's own envelope. Used to
+ * REPEAT a `'pulse'` splice on a looping/held voice — without it the pulse runs once and the kit
+ * sits dark for as long as the voice lives, which is not what Loop means to anyone.
+ *
+ * The cascade span is included so the repeat stays coherent: every unit restarts together one
+ * cycle later, preserving the travelling shape instead of each one free-running on its own.
+ */
+export function splicePulseCycleMs(cascadeSpanMs: number, envelope: { attackMs: number; sustainMs: number; releaseMs: number }): number {
+  const own = envelope.attackMs + envelope.sustainMs + envelope.releaseMs;
+  const cycle = Math.max(0, cascadeSpanMs) + own;
+  return cycle > 0 ? cycle : 0;
+}
+
 /** A unit's total cascade delay: its place on the hoop axis plus its place on the drum axis. */
 export function unitCascadeDelayMs(orderIndex: number, drumOrderIndex: number, cfg: SpliceConfig): number {
   return orderIndex * cfg.offsetMs + drumOrderIndex * cfg.drumOffsetMs;

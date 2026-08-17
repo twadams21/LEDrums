@@ -34,7 +34,9 @@ import {
   forEachPartitionUnit,
   forEachSpliceSegment,
   spliceFeatherPx,
+  maxCascadeDelayMs,
   spliceOrderIndex,
+  splicePulseCycleMs,
   spliceRotationPx,
   spliceTintColour,
   unitCascadeDelayMs,
@@ -335,6 +337,13 @@ export function createDefaultCompositor(): Compositor {
           // movement over; `continuous` runs off the engine clock every voice shares, so a
           // hit picks up exactly where the last one left off. Only the MOTION reads this —
           // the envelope and the modifier chain stay voice-relative either way.
+          // A `pulse` on a looping/held voice repeats: without this it fires once and the kit
+          // stays dark for the voice's whole life. The cycle spans the cascade + one envelope,
+          // so every unit restarts together and the travelling shape is preserved.
+          const pulseCycleMs =
+            cfg.waitMode === 'pulse' && v.mode !== 'oneshot'
+              ? splicePulseCycleMs(maxCascadeDelayMs(model, cfg), cfg.envelope)
+              : 0;
           const motionClock =
             cfg.motionMode === 'continuous'
               ? timeMs
@@ -375,9 +384,11 @@ export function createDefaultCompositor(): Compositor {
               // `pulse` runs the AUTHORED envelope from this splice's own arrival, so the light
               // travels as a pulse instead of a leading edge. The voice's level still multiplies
               // in below, and the voice was extended at spawn to outlive the whole cascade.
+              // Past its first turn a repeating pulse wraps into the next cycle.
+              const ownAge = pulseCycleMs > 0 ? (age - reveal) % pulseCycleMs : age - reveal;
               const unitLevel =
                 cfg.waitMode === 'pulse'
-                  ? unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
+                  ? unitEnvelopeLevel(ownAge, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
                   : cfg.waitMode === 'fade'
                     ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
                     : 1;

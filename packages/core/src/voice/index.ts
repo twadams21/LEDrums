@@ -57,6 +57,7 @@ export {
   resolveSplices,
   spliceDefAt,
   spliceOrderIndex,
+  splicePulseCycleMs,
   spliceRotationPx,
   spliceTintColour,
   maxCascadeDelayMs,
