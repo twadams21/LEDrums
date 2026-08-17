@@ -36,7 +36,24 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**FEEDBACK WAVE F1–F8 DONE, STACK RE-CHAINED, STILL AWAITING TRENT'S MERGE YES (2026-08-17
+**STACK #194 + SPLICE #196 MERGED TO MAIN (2026-08-17 evening, main `1f2a8f3`):** Trent
+(this machine) gave the merge yes; `gh stack link 194 196` grew the stack, local composite
+`git merge-tree` simulation clean, then `gh stack merge 194 --yes --merge` landed all TEN
+PRs atomically (#182 #186 #187 #188 #190 #191 #189 #192 #193 #196). Verified: main contains
+Splice top 46879cb. **OTA v0.3.0 PUBLISHED (2026-08-17 late evening, Trent's explicit yes):** #195 merged
+(28eccbf), bump PR #198 (`pnpm ota prepare --minor`, 0.2.15→0.3.0) merged (main 763c422),
+Release v0.3.0 created with wide dot-point notes covering EVERYTHING since v0.2.15 (which
+predated stack #185 — so this OTA carries #174–#196: tabbed chrome, graph list, settings
+sidebar, Segments, colour parity, voice-life fix, the F-wave, Splice). Release OTA workflow
+run 32036541139 green; `latest.json` verified reading v0.3.0. Note: #197 is the Splice v2
+SPEC ISSUE, not a PR — Trent briefly conflated it; clarified, still gated on Tim+Trent.
+Post-merge leftovers: merged remote branches not yet pruned (standing
+deferral); Trent's live preview (port 5173) still runs `preview/feedback-wave` — content
+now identical to main pre-bump. Splice v2 = GH #197 (gated on
+Tim + Trent, no longer blocked by this merge). Open PR remaining: #195 (dev port fallback,
+pre-existing).
+
+**Prior (all merged above) — FEEDBACK WAVE F1–F8 DONE, STACK RE-CHAINED (2026-08-17
 afternoon):** Trent's morning review of stack #194 produced 8 amendment slices, all sourced
 verbatim in `docs/plans/2026-08-17-trigger-reimagine-build/F1…F8-*.md` and all landed on their
 PR branches by dispatched agents (F1 #187 persistent now-playing bars · F2 #188 in-canvas
@@ -52,12 +69,32 @@ content-identical to the merge candidate. **Incident during the wave:** the F4/F
 tightening crashed the preview server on Trent's same-morning `profile:'exp'` velocity curve
 (`parseProject` throws at boot) — fixed as DATA (curves rewritten to `bend`, `.pre-bend.bak`
 backups beside the project files), no migration code per the greenfield rule; the schema still
-hard-refuses stale curve values by design. **Tim's Splice #184 is NOT in the stack:** Trent
-paused the prepped F7 chaining ("I'll ask Tim if he's working on it") — brief ready at
-`F7-splice-chain-onto-stack.md`, nothing pushed to Tim's fork; his head was
-`timcoghill-boop/feat/splice-node` @ d8995b0 (he pushed 3 commits this morning; local
-`feat/splice-node` was reset to it, stale pre-rebase copy discarded). Merge = `gh stack merge`
-after Trent's yes, then re-chain Splice on top if/when Tim clears it.
+hard-refuses stale curve values by design. **Tim's Splice IS now chained — as PR #196 on twadams21/LEDrums, #184 closed (2026-08-17
+evening):** Tim confirmed to Trent he is done (final fork head fdb4b83: attack curve, Hold
+dropped/loop stop, per-colour fade-in, cut rotation); Trent said "stack it in". F7 executed
+by twux worker `opus-high-f7-splice-chain-ee23cc` (opus/high, worktree `splice`): merged
+stack top 67c6d05 into feat/splice-node (9 conflicts, all resolved Splice→stack), envelope
+precedence locked by test (node-owned attack/hold/release beats effect life; `authoredDecay`
+stays false — Splice's pulse is per-element shaping per life-fade.ts), Splice registered in
+ADD_NODE_TYPES between Scope and Modulate (taste call flagged), `segment={false}` restored
+Tim's deliberate dropdowns over F3's ≤4-segments rule, solid-colour's `color` param got a
+real ColorField row (was a dead OFF toggle — first effect with a color param), shot-seam
+duplicate `case 'fire'` fixed (two presets were capturing a dark kit on the stack branch
+too). HEAD `46879cb`, typecheck 0, targeted vitest green, ui-shot verified incl. new
+`splice-cascade` preset. **Trent decided (this machine): everything lives on his repo, not
+Tim's fork** — the worker's push to the fork was permission-denied and NOT routed around;
+Trent's session pushed 46879cb to origin `feat/splice-node`, opened **PR #196** (base
+`feat/velocity-sensitivity`) superseding #184, closed #184 crediting Tim (his commits keep
+authorship). Worker killed, resumable. Orchestrator full sweep running at 46879cb.
+Merge = `gh stack merge` after Trent's yes, now with #196 as the stack's new top (link it
+into the stack at merge prep). Full orchestrator sweep at 46879cb green (web 207 files/2308)
+and #196 CI green (checks + desktop). **Splice v2 spec filed as GH #197** (Trent's idea,
+2026-08-17: splice count ⇒ N input ports, Effect Nodes wired in, "spatial Mix"; per-band
+modifiers/envelopes via ordinary routes) — labelled `enhancement`, deliberately NOT
+ready-for-agent: it replaces Tim's settled authoring surface, gated on Tim's agreement +
+Trent's go, and blocked on the #194/#196 merge. Known preview caveat (worker-found): under `pnpm dev` the
+viz stage paints the SERVER frame, so any locally-authored graph fires dark — web-only vite
+shows it; documented in ui-shot README.
 
 **OVERNIGHT BUILD — stack #194 READY, AWAITING TRENT'S MORNING REVIEW, NOT MERGED (2026-08-17
 ~05:30):** requested by Trent pre-AFK ("the deliverable is all the features we've discussed in

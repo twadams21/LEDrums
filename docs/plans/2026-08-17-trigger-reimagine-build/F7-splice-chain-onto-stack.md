@@ -1,11 +1,12 @@
 # F7 — chain Tim's Splice node (PR #184) onto the amended stack as its new top
 
 **Trent, 2026-08-17: "the last one to add into the stack is Tim's Splice node."** Worktree
-`/Users/trent/.twux/worktrees/splice`, branch `feat/splice-node` @ d8995b0 (deps installed) —
-this is **Tim Coghill's work**, freshly rebased by him onto main plus three commits from
-today; treat his design decisions as settled and adapt them to the stack's surfaces, never
-redesign them. He may push again while you work — the orchestrator handles re-chaining;
-don't fetch/rebase mid-task.
+`/Users/trent/.twux/worktrees/splice`, branch `feat/splice-node` @ fdb4b83 (deps installed) —
+this is **Tim Coghill's work**, rebased by him onto main; **Tim confirmed 2026-08-17 he is
+done working on it** (his last 6 commits: attack curve + renamed envelope controls, Hold
+dropped / loop stop, per-colour fade-in stagger, cut rotation). Treat his design decisions
+as settled and adapt them to the stack's surfaces, never redesign them. Don't fetch/rebase
+mid-task.
 
 Context you must read first (the surfaces Splice predates):
 - `F2-slideover-in-canvas-flat-add-menu.md` — the flat one-click Add-node list replaced the
@@ -18,8 +19,9 @@ Context you must read first (the surfaces Splice predates):
 
 ## The task
 
-1. `git merge origin/feat/velocity-sensitivity` (8f75e32 — the chained stack top carrying
-   F1–F6). Resolve conflicts adapting SPLICE to the STACK, not the reverse. Known collision
+1. `git merge origin/feat/velocity-sensitivity` (67c6d05 — the re-chained stack top carrying
+   F1–F8, orchestrator-swept green). Resolve conflicts adapting SPLICE to the STACK, not the
+   reverse. Known collision
    areas: the add-node path (Splice registered against the deleted `AddPalette`/taxonomy
    groups — re-register it as a row in `ADD_NODE_TYPES` with its icon/tint from
    `trigger-node-meta`; put it beside Scope, and flag placement as a taste call in your

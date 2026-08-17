@@ -7,10 +7,11 @@
 <!--
   ============================================================================
   THROWAWAY PROTOTYPE — not production code, no build step, no dependencies.
-  Design question: is a 4-view architectural-elevation editor the right way to
-  position drums in 3D space (as a REPLACEMENT for numeric origin fields in the
-  settings modal)?
-  Open with file:// — everything is inline.
+  Design question: is a 4-view architectural-elevation editor (+ an orbit view)
+  the right way to position drums in 3D space, as a REPLACEMENT for numeric
+  origin fields in the settings modal?
+  Open with file:// — everything is inline. v2: adds the orbit view and
+  Illustrator-style transform boxes in the plates.
   ============================================================================
 -->
 <style>
@@ -38,14 +39,12 @@
     --accent-bright: oklch(0.900 0.195 128);
     --accent-dim: oklch(0.560 0.120 130);
     --accent-soft: oklch(0.845 0.190 128 / 0.15);
-    --accent-ring: oklch(0.900 0.195 128 / 0.55);
     --on-accent: oklch(0.210 0.050 130);
 
     --role-input: oklch(0.720 0.130 245);
     --role-content: oklch(0.700 0.165 300);
     --role-effect: oklch(0.785 0.150 68);
     --role-layer: oklch(0.745 0.150 152);
-    --role-output: oklch(0.720 0.120 205);
 
     --warn: oklch(0.810 0.150 80);
 
@@ -56,30 +55,24 @@
     --text-xs: 0.8125rem;
     --text-sm: 0.875rem;
     --text-base: 0.9375rem;
-    --text-lg: 1.125rem;
-
-    --tracking-label: 0.04em;
 
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
     --space-4: 16px;
-    --space-5: 24px;
 
     --radius-1: 3px;
-    --radius-2: 5px;
     --control-h: 26px;
 
     --dur-90: 90ms;
     --ease-control: cubic-bezier(0.2, 0, 0, 1);
+
+    /* Rotate cursor — inline SVG data URI, no external asset. */
+    --cur-rotate: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26'%3E%3Cg fill='none' stroke='black' stroke-opacity='0.75' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 16.5a8 8 0 1 1 5 4.4'/%3E%3Cpath d='M2.8 12.4l3.8 4.5 4.6-2.9'/%3E%3C/g%3E%3Cg fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6.5 16.5a8 8 0 1 1 5 4.4'/%3E%3Cpath d='M2.8 12.4l3.8 4.5 4.6-2.9'/%3E%3C/g%3E%3C/svg%3E") 13 13, crosshair;
   }
 
   * { box-sizing: border-box; }
-
-  html, body {
-    height: 100%;
-    margin: 0;
-  }
+  html, body { height: 100%; margin: 0; }
 
   body {
     background: var(--bg);
@@ -92,7 +85,6 @@
     overflow: hidden;
   }
 
-  /* ---- top chrome --------------------------------------------------------- */
   header {
     display: flex;
     align-items: center;
@@ -103,236 +95,133 @@
     background: var(--surface);
     border-bottom: 1px solid var(--border-faint);
   }
-
-  .title {
-    font-size: var(--text-sm);
-    font-weight: 500;
-    color: var(--ink);
-    letter-spacing: -0.011em;
-  }
-
+  .title { font-size: var(--text-sm); font-weight: 500; color: var(--ink); letter-spacing: -0.011em; }
   .proto-tag {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: var(--tracking-label);
-    text-transform: uppercase;
-    color: var(--warn);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--warn);
     border: 1px solid color-mix(in oklch, var(--warn) 40%, transparent);
     background: color-mix(in oklch, var(--warn) 12%, transparent);
-    padding: 2px 6px;
-    border-radius: var(--radius-1);
+    padding: 2px 6px; border-radius: var(--radius-1);
   }
+  .question { font-size: var(--text-xs); color: var(--text-faint); margin-left: auto; text-align: right; }
 
-  .question {
-    font-size: var(--text-xs);
-    color: var(--text-faint);
-    margin-left: auto;
-    text-align: right;
-  }
-
-  /* ---- shell -------------------------------------------------------------- */
   main {
     flex: 1 1 auto;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 288px;
+    grid-template-columns: minmax(0, 1fr) 300px;
     min-height: 0;
   }
 
   .views {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1.35fr;
     grid-template-rows: 1fr 1fr;
-    min-height: 0;
-    min-width: 0;
+    min-height: 0; min-width: 0;
     background: var(--border-faint);
     gap: 1px;
   }
-
   .view {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
+    position: relative; min-width: 0; min-height: 0;
     background: var(--surface-inset);
-    display: flex;
-    flex-direction: column;
+    display: flex; flex-direction: column;
   }
+  .view.orbit-cell { grid-column: 3; grid-row: 1 / span 2; }
 
   .view-head {
-    position: absolute;
-    top: var(--space-2);
-    left: var(--space-3);
-    z-index: 2;
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-2);
-    pointer-events: none;
+    position: absolute; top: var(--space-2); left: var(--space-3); z-index: 2;
+    display: flex; align-items: baseline; gap: var(--space-2); pointer-events: none;
   }
-
   .view-name {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--text-muted);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-muted);
   }
-
   .view-sub {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.06em;
-    color: var(--text-disabled);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.06em; color: var(--text-disabled);
   }
-
   .view-axes {
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-3);
-    z-index: 2;
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.06em;
-    color: var(--text-disabled);
-    pointer-events: none;
+    position: absolute; top: var(--space-2); right: var(--space-3); z-index: 2;
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.06em; color: var(--text-disabled); pointer-events: none;
+  }
+  .view-foot {
+    position: absolute; bottom: var(--space-2); right: var(--space-3); z-index: 2;
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.06em; color: var(--text-disabled); pointer-events: none;
+    font-variant-numeric: tabular-nums;
   }
 
   svg.plate {
-    flex: 1 1 auto;
-    width: 100%;
-    height: 100%;
-    display: block;
-    touch-action: none;
-    cursor: crosshair;
+    flex: 1 1 auto; width: 100%; height: 100%; display: block;
+    touch-action: none; cursor: crosshair;
   }
-
+  svg.plate.orbit { cursor: grab; }
+  svg.plate.orbit.spinning { cursor: grabbing; }
   svg.plate text { user-select: none; }
 
-  .hit { cursor: grab; }
-  .hit.dragging { cursor: grabbing; }
-
-  /* ---- right rail --------------------------------------------------------- */
   aside {
     background: var(--surface);
     border-left: 1px solid var(--border-faint);
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    overflow-y: auto;
+    display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
   }
-
-  .panel {
-    padding: var(--space-3) var(--space-4) var(--space-4);
-    border-bottom: 1px solid var(--border-faint);
-  }
-
+  .panel { padding: var(--space-3) var(--space-4) var(--space-4); border-bottom: 1px solid var(--border-faint); }
   .panel-title {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--text-faint);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-faint);
     margin-bottom: var(--space-3);
   }
-
   .selected-name {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-base);
-    color: var(--ink);
-    margin-bottom: var(--space-3);
+    display: flex; align-items: center; gap: var(--space-2);
+    font-size: var(--text-base); color: var(--ink); margin-bottom: var(--space-3);
   }
-
-  .swatch {
-    width: 9px;
-    height: 9px;
-    border-radius: 2px;
-    flex: 0 0 auto;
-  }
-
+  .swatch { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
   .selected-meta {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    color: var(--text-disabled);
-    margin-left: auto;
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-disabled); margin-left: auto;
   }
 
-  .field {
-    display: grid;
-    grid-template-columns: 20px 1fr 26px;
-    align-items: center;
-    gap: var(--space-2);
-    margin-bottom: 6px;
+  .sub-label {
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--text-disabled); margin: var(--space-3) 0 6px;
   }
-
-  .field label {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-faint);
-    letter-spacing: 0.04em;
-  }
-
-  .field .unit {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    color: var(--text-disabled);
+  .triple { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+  .cell { display: flex; flex-direction: column; gap: 3px; }
+  .cell label {
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-faint); letter-spacing: 0.04em; padding-left: 2px;
   }
 
   input[type='number'] {
-    height: var(--control-h);
-    width: 100%;
+    height: var(--control-h); width: 100%;
     background: var(--surface-inset);
     border: 1px solid var(--border);
     border-radius: var(--radius-1);
     color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--text-sm);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-    padding: 0 var(--space-2);
-    outline: none;
-    transition: border-color var(--dur-90) var(--ease-control),
-                background-color var(--dur-90) var(--ease-control);
+    font-family: var(--font-mono); font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums; text-align: right;
+    padding: 0 var(--space-2); outline: none;
+    transition: border-color var(--dur-90) var(--ease-control);
     -moz-appearance: textfield;
   }
   input[type='number']::-webkit-outer-spin-button,
-  input[type='number']::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
+  input[type='number']::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
   input[type='number']:hover { border-color: var(--border-strong); }
-  input[type='number']:focus {
-    border-color: var(--accent-dim);
-    box-shadow: 0 0 0 2px var(--accent-soft);
-  }
-  input[type='number']:disabled {
-    color: var(--text-disabled);
-    border-color: var(--border-faint);
-  }
+  input[type='number']:focus { border-color: var(--accent-dim); box-shadow: 0 0 0 2px var(--accent-soft); }
+  input[type='number']:disabled { color: var(--text-disabled); border-color: var(--border-faint); }
 
   .axis-note {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    line-height: 1.55;
-    color: var(--text-disabled);
-    margin-top: var(--space-3);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    line-height: 1.55; color: var(--text-disabled); margin-top: var(--space-3);
   }
 
   .drum-list { display: flex; flex-direction: column; gap: 1px; }
-
   .drum-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: 6px var(--space-2);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-1);
-    color: var(--text-muted);
-    font-family: var(--font-sans);
-    font-size: var(--text-sm);
-    text-align: left;
-    cursor: pointer;
-    width: 100%;
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: 6px var(--space-2); background: transparent;
+    border: 1px solid transparent; border-radius: var(--radius-1);
+    color: var(--text-muted); font-family: var(--font-sans); font-size: var(--text-sm);
+    text-align: left; cursor: pointer; width: 100%;
   }
   .drum-row:hover { background: var(--surface-2); color: var(--text); }
   .drum-row[aria-selected='true'] {
@@ -341,61 +230,46 @@
     color: var(--ink);
   }
   .drum-row .dims {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    color: var(--text-disabled);
-    font-variant-numeric: tabular-nums;
+    margin-left: auto; font-family: var(--font-mono); font-size: var(--text-2xs);
+    color: var(--text-disabled); font-variant-numeric: tabular-nums;
   }
 
-  .hints {
-    font-size: var(--text-xs);
-    line-height: 1.7;
-    color: var(--text-faint);
-  }
+  .hints { font-size: var(--text-xs); line-height: 1.7; color: var(--text-faint); }
   .hints kbd {
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-1);
-    padding: 1px 5px;
-    color: var(--text-muted);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: var(--radius-1);
+    padding: 1px 5px; color: var(--text-muted);
   }
   .hints .row { display: block; }
-
-  .verdict {
-    font-size: var(--text-xs);
-    line-height: 1.65;
-    color: var(--text-disabled);
+  .hints .group {
+    display: block; margin-top: var(--space-3);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-disabled);
   }
+  .hints .group:first-child { margin-top: 0; }
+
+  .verdict { font-size: var(--text-xs); line-height: 1.65; color: var(--text-disabled); }
   .verdict strong { color: var(--text-faint); font-weight: 500; }
 
   footer {
-    flex: 0 0 auto;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    gap: var(--space-4);
-    padding: 0 var(--space-4);
-    background: var(--surface);
-    border-top: 1px solid var(--border-faint);
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    letter-spacing: 0.04em;
-    color: var(--text-disabled);
+    flex: 0 0 auto; height: 26px; display: flex; align-items: center;
+    gap: var(--space-4); padding: 0 var(--space-4);
+    background: var(--surface); border-top: 1px solid var(--border-faint);
+    font-family: var(--font-mono); font-size: var(--text-2xs);
+    letter-spacing: 0.04em; color: var(--text-disabled);
   }
   footer .sep { color: var(--border-strong); }
   footer .live { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  footer .gesture { margin-left: auto; color: var(--accent); font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
 
 <header>
-  <span class="proto-tag">Prototype</span>
-  <span class="title">Drum placement — architectural elevations</span>
-  <span class="question">Design question: do four orthographic elevations beat numeric origin fields for placing drums in 3D?</span>
+  <span class="proto-tag">Prototype v2</span>
+  <span class="title">Drum placement — elevations + orbit</span>
+  <span class="question">Design question: do orthographic elevations with direct manipulation beat numeric origin fields?</span>
 </header>
 
 <main>
@@ -410,20 +284,24 @@
         <span class="selected-meta" id="sel-meta"></span>
       </div>
 
-      <div class="field">
-        <label for="in-x">X</label>
-        <input type="number" id="in-x" data-axis="x" step="1" disabled />
-        <span class="unit">mm</span>
+      <div class="sub-label">Origin · mm</div>
+      <div class="triple">
+        <div class="cell"><label for="in-x">X</label><input type="number" id="in-x" data-k="origin" data-axis="x" disabled /></div>
+        <div class="cell"><label for="in-y">Y</label><input type="number" id="in-y" data-k="origin" data-axis="y" disabled /></div>
+        <div class="cell"><label for="in-z">Z</label><input type="number" id="in-z" data-k="origin" data-axis="z" disabled /></div>
       </div>
-      <div class="field">
-        <label for="in-y">Y</label>
-        <input type="number" id="in-y" data-axis="y" step="1" disabled />
-        <span class="unit">mm</span>
+
+      <div class="sub-label">Rotation · deg</div>
+      <div class="triple">
+        <div class="cell"><label for="rot-x">X</label><input type="number" id="rot-x" data-k="rotation" data-axis="x" disabled /></div>
+        <div class="cell"><label for="rot-y">Y</label><input type="number" id="rot-y" data-k="rotation" data-axis="y" disabled /></div>
+        <div class="cell"><label for="rot-z">Z</label><input type="number" id="rot-z" data-k="rotation" data-axis="z" disabled /></div>
       </div>
-      <div class="field">
-        <label for="in-z">Z</label>
-        <input type="number" id="in-z" data-axis="z" step="1" disabled />
-        <span class="unit">mm</span>
+
+      <div class="sub-label">Shell</div>
+      <div class="triple" style="grid-template-columns: 1fr 1fr">
+        <div class="cell"><label for="in-dia">Ø in</label><input type="number" id="in-dia" data-k="scalar" data-axis="diameterIn" step="0.5" disabled /></div>
+        <div class="cell"><label for="in-depth">depth mm</label><input type="number" id="in-depth" data-k="scalar" data-axis="depth" disabled /></div>
       </div>
 
       <div class="axis-note">
@@ -440,22 +318,40 @@
     <div class="panel">
       <div class="panel-title">Controls</div>
       <div class="hints">
-        <span class="row">Click a drum in any view. It highlights in all four.</span>
-        <span class="row">Drag to move within that view's two axes.</span>
-        <span class="row"><kbd>⌥</kbd> while dragging: snap to 50 mm</span>
-        <span class="row">Hover a number + <kbd>scroll</kbd>: 5 mm steps</span>
-        <span class="row"><kbd>⇧</kbd> + <kbd>scroll</kbd>: 1 mm steps</span>
+        <span class="group">Plates</span>
+        <span class="row">Click a drum anywhere — it lights up in all five views.</span>
+        <span class="row">Drag inside the box to move · handles resize.</span>
+        <span class="row">Hover just outside a corner to rotate.</span>
+        <span class="row"><kbd>⇧</kbd> lock Ø:depth · rotate in 15° steps</span>
+        <span class="row"><kbd>⌥</kbd> resize from centre · snap moves to 50 mm</span>
+
+        <span class="group">Orbit</span>
+        <span class="row">Drag empty space to orbit · click a drum to select.</span>
+        <span class="row"><kbd>scroll</kbd> / <kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd> resets · <kbd>esc</kbd> deselects</span>
+
+        <span class="group">Fields</span>
+        <span class="row">Hover + <kbd>scroll</kbd>: 5 mm / 5° · <kbd>⇧</kbd> for 1</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Gesture → model</div>
+      <div class="verdict">
+        The box is aligned to the drum's own axis, not the screen.<br />
+        <strong>L handles</strong> (along the spindle) → <strong>depth</strong>, the hoop-stack length.<br />
+        <strong>W handles</strong> (across it) → <strong>diameter</strong>.<br />
+        <strong>Corners</strong> → both. <strong>Rotate</strong> in a plate turns the drum about that
+        plate's normal axis (Top→Z, Front→Y, Left/Right→X), composed onto its existing rotation.<br />
+        When a drum's axis points at you, depth is not editable in that plate and its L handles are hidden.
       </div>
     </div>
 
     <div class="panel" style="border-bottom: none">
       <div class="panel-title">Verdict</div>
       <div class="verdict">
-        <strong>Question:</strong> replace the settings-modal origin fields with
-        this? <br /><br />
+        <strong>Question:</strong> replace the settings-modal origin fields with this?<br /><br />
         <strong>Answer:</strong> _______________________________<br />
-        (fill in, then delete this file or fold the decision into the real
-        inspector)
+        (fill in, then delete this file or fold the decision into the real inspector)
       </div>
     </div>
   </aside>
@@ -464,11 +360,10 @@
 <footer>
   <span>1 grid = 100 mm · heavy = 500 mm</span>
   <span class="sep">│</span>
-  <span>identical scale on all four plates</span>
-  <span class="sep">│</span>
-  <span>third-angle projection</span>
+  <span>orthographic · identical scale on all four plates</span>
   <span class="sep">│</span>
   <span class="live" id="status">no selection</span>
+  <span class="gesture" id="gesture"></span>
 </footer>
 
 <script>
@@ -476,92 +371,136 @@
 
 /* ===========================================================================
    Model — mirrors packages/core kit-schema conventions:
-     origin mm {x,y,z}, rotation degrees {x,y,z} (Euler, Z then Y then X)
+     origin mm {x,y,z}, rotation degrees {x,y,z} (Euler, apply Z then Y then X)
      X = lateral, Y = depth (+ away from drummer), Z = height (+ up)
-   A drum is a stack of `hoops` rings of radius r spread over `depth` along the
+   A drum is a stack of `hoops` rings of radius R spread over `depth` along the
    drum's own axis (local +Z, rotated by `rotation`).
    =========================================================================== */
 
 const IN = 25.4;
+const DEG = Math.PI / 180;
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const round = (n) => Math.round(n * 10) / 10;
 
 const drums = [
-  { id: 'kick',  name: 'Kick',   diameterIn: 22, depth: 400, hoops: 4,
+  { id: 'kick',  name: 'Kick',  diameterIn: 22, depth: 400, hoops: 4,
     origin: { x: 0,    y: 430, z: 330 }, rotation: { x: 90, y: 0, z: 0 },
     color: 'var(--role-effect)' },
-  { id: 'snare', name: 'Snare',  diameterIn: 14, depth: 140, hoops: 4,
+  { id: 'snare', name: 'Snare', diameterIn: 14, depth: 140, hoops: 4,
     origin: { x: -230, y: 0,   z: 650 }, rotation: { x: 4,  y: 0, z: -6 },
     color: 'var(--role-input)' },
-  { id: 'tom1',  name: 'Tom 1',  diameterIn: 10, depth: 200, hoops: 4,
+  { id: 'tom1',  name: 'Tom 1', diameterIn: 10, depth: 200, hoops: 4,
     origin: { x: -120, y: 300, z: 840 }, rotation: { x: 18, y: 0, z: 4 },
     color: 'var(--role-content)' },
-  { id: 'tom2',  name: 'Tom 2',  diameterIn: 12, depth: 240, hoops: 4,
+  { id: 'tom2',  name: 'Tom 2', diameterIn: 12, depth: 240, hoops: 4,
     origin: { x: 360,  y: 40,  z: 620 }, rotation: { x: -12, y: 0, z: -8 },
     color: 'var(--role-layer)' },
 ];
 
-const state = { selected: 'snare', hover: null, dragging: null };
+const state = { selected: 'snare', hover: null, drag: null };
+const orbit = { az: 24, el: 20, span: 2200, spinning: false };
 
-/* ===========================================================================
-   Views — four orthographic plates, third-angle-ish.
-   Screen space is measured in millimetres (SVG viewBox is mm), y down.
-     screenX = hSign * world[hAxis]      screenY = vSign * world[vAxis]
-   Both signs are their own inverse, so the same pair maps drags back to world.
-   =========================================================================== */
+/* ---- linear algebra -------------------------------------------------------- */
 
-const PLATE_W = 1900;   // mm visible across every plate — the shared scale
-const PLATE_H = 1425;   // mm visible down every plate (4:3)
+const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross = (a, b) => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x,
+});
+const norm = (a) => {
+  const l = Math.hypot(a.x, a.y, a.z) || 1;
+  return { x: a.x / l, y: a.y / l, z: a.z / l };
+};
 
-const views = [
-  { id: 'top',   name: 'Top',   sub: 'plan',      hAxis: 'x', hSign: 1,  vAxis: 'y', vSign: -1,
-    cx: 60, cy: -215, floor: false, hLab: 'X →', vLab: '↑ Y (back)' },
-  { id: 'front', name: 'Front', sub: 'elevation', hAxis: 'x', hSign: 1,  vAxis: 'z', vSign: -1,
-    cx: 60, cy: -540, floor: true,  hLab: 'X →', vLab: '↑ Z' },
-  { id: 'left',  name: 'Left',  sub: 'elevation', hAxis: 'y', hSign: 1,  vAxis: 'z', vSign: -1,
-    cx: 215, cy: -540, floor: true, hLab: 'Y →', vLab: '↑ Z' },
-  { id: 'right', name: 'Right', sub: 'elevation', hAxis: 'y', hSign: -1, vAxis: 'z', vSign: -1,
-    cx: -215, cy: -540, floor: true, hLab: '← Y', vLab: '↑ Z' },
-];
-
-const viewBox = (v) =>
-  `${v.cx - PLATE_W / 2} ${v.cy - PLATE_H / 2} ${PLATE_W} ${PLATE_H}`;
-
-const project = (v, p) => [v.hSign * p[v.hAxis], v.vSign * p[v.vAxis]];
-
-/* ---- geometry -------------------------------------------------------------- */
-
-const DEG = Math.PI / 180;
-
-/** Euler XYZ (apply Z, then Y, then X) — Three.js order used by the kit model. */
-function rotate(v, r) {
-  let { x, y, z } = v;
-  const cz = Math.cos(r.z * DEG), sz = Math.sin(r.z * DEG);
-  [x, y] = [x * cz - y * sz, x * sz + y * cz];
-  const cy = Math.cos(r.y * DEG), sy = Math.sin(r.y * DEG);
-  [x, z] = [x * cy + z * sy, -x * sy + z * cy];
-  const cx = Math.cos(r.x * DEG), sx = Math.sin(r.x * DEG);
-  [y, z] = [y * cx - z * sx, y * sx + z * cx];
-  return { x, y, z };
+/** Euler XYZ → matrix, order M = Rx·Ry·Rz (apply Z, then Y, then X). */
+function matFromEuler(r) {
+  const ca = Math.cos(r.x * DEG), sa = Math.sin(r.x * DEG);
+  const cb = Math.cos(r.y * DEG), sb = Math.sin(r.y * DEG);
+  const cc = Math.cos(r.z * DEG), sc = Math.sin(r.z * DEG);
+  return [
+    [cb * cc, -cb * sc, sb],
+    [ca * sc + sa * sb * cc, ca * cc - sa * sb * sc, -sa * cb],
+    [sa * sc - ca * sb * cc, sa * cc + ca * sb * sc, ca * cb],
+  ];
 }
 
-const SEG = 56;
+/** Inverse of matFromEuler. */
+function eulerFromMat(m) {
+  const sb = clamp(m[0][2], -1, 1);
+  const b = Math.asin(sb);
+  let a, c;
+  if (Math.abs(sb) < 0.99999) {
+    a = Math.atan2(-m[1][2], m[2][2]);
+    c = Math.atan2(-m[0][1], m[0][0]);
+  } else {
+    a = Math.atan2(m[2][1], m[1][1]);
+    c = 0;
+  }
+  return { x: a / DEG, y: b / DEG, z: c / DEG };
+}
 
-/** World-space rings of one drum: [[{x,y,z}...] per hoop], plus axis endpoints. */
-function drumRings(d) {
-  const r = (d.diameterIn * IN) / 2;
-  const ax = rotate({ x: 1, y: 0, z: 0 }, d.rotation); // local X
-  const ay = rotate({ x: 0, y: 1, z: 0 }, d.rotation); // local Y
-  const n  = rotate({ x: 0, y: 0, z: 1 }, d.rotation); // drum axis
-  const rings = [];
+/** Every XYZ-Euler matrix has two triples that produce it. eulerFromMat always
+    returns the |y| ≤ 90 branch, which after a big rotate gesture reads as a
+    nonsense pair like x 172° / z −180°. Pick whichever branch sits closer to
+    where the drum already was — and only after checking it really is the same
+    orientation. */
+const wrapDeg = (t) => (((t + 180) % 360) + 360) % 360 - 180;
+
+function eulerNear(m, prev) {
+  const e1 = eulerFromMat(m);
+  const e2 = { x: wrapDeg(e1.x + 180), y: wrapDeg(180 - e1.y), z: wrapDeg(e1.z + 180) };
+  const m2 = matFromEuler(e2);
+  let err = 0;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) err += Math.abs(m2[i][j] - m[i][j]);
+  if (err > 1e-6) return e1;                       // not an alias after all
+  const cost = (e) => Math.abs(wrapDeg(e.x - prev.x)) + Math.abs(wrapDeg(e.y - prev.y)) + Math.abs(wrapDeg(e.z - prev.z));
+  return cost(e2) < cost(e1) ? e2 : e1;
+}
+
+const matMul = (A, B) => {
+  const out = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++)
+      out[i][j] = A[i][0] * B[0][j] + A[i][1] * B[1][j] + A[i][2] * B[2][j];
+  return out;
+};
+
+const applyMat = (m, v) => ({
+  x: m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
+  y: m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
+  z: m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
+});
+
+/** Rotation about a world cardinal axis, radians. */
+function axisMat(axis, t) {
+  const c = Math.cos(t), s = Math.sin(t);
+  if (axis === 'x') return [[1, 0, 0], [0, c, -s], [0, s, c]];
+  if (axis === 'y') return [[c, 0, s], [0, 1, 0], [-s, 0, c]];
+  return [[c, -s, 0], [s, c, 0], [0, 0, 1]];
+}
+
+const rotate = (v, r) => applyMat(matFromEuler(r), v);
+
+/* ---- drum geometry --------------------------------------------------------- */
+
+const SEG = 48;
+
+function drumGeo(d) {
+  const R = (d.diameterIn * IN) / 2;
+  const m = matFromEuler(d.rotation);
+  const ax = applyMat(m, { x: 1, y: 0, z: 0 });
+  const ay = applyMat(m, { x: 0, y: 1, z: 0 });
+  const n  = applyMat(m, { x: 0, y: 0, z: 1 });
   const half = d.depth / 2;
+  const rings = [];
   for (let i = 0; i < d.hoops; i++) {
     const t = d.hoops === 1 ? 0 : -half + (d.depth * i) / (d.hoops - 1);
-    const c = {
-      x: d.origin.x + n.x * t, y: d.origin.y + n.y * t, z: d.origin.z + n.z * t,
-    };
+    const c = { x: d.origin.x + n.x * t, y: d.origin.y + n.y * t, z: d.origin.z + n.z * t };
     const pts = [];
     for (let s = 0; s < SEG; s++) {
       const a = (s / SEG) * Math.PI * 2;
-      const ca = Math.cos(a) * r, sa = Math.sin(a) * r;
+      const ca = Math.cos(a) * R, sa = Math.sin(a) * R;
       pts.push({
         x: c.x + ax.x * ca + ay.x * sa,
         y: c.y + ax.y * ca + ay.y * sa,
@@ -574,25 +513,24 @@ function drumRings(d) {
     { x: d.origin.x - n.x * half, y: d.origin.y - n.y * half, z: d.origin.z - n.z * half },
     { x: d.origin.x + n.x * half, y: d.origin.y + n.y * half, z: d.origin.z + n.z * half },
   ];
-  return { rings, axis, radius: r };
+  return { d, R, ax, ay, n, rings, axis };
 }
 
-/** Andrew's monotone chain — the silhouette of a convex body is the hull of its
-    projected end rims. */
+/** Andrew's monotone chain — the silhouette of a convex body is the hull of
+    its projected end rims. */
 function hull(points) {
   const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   if (pts.length < 3) return pts;
-  const cross = (o, a, b) =>
-    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const lower = [];
   for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    while (lower.length >= 2 && cr(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
     lower.push(p);
   }
   const upper = [];
   for (let i = pts.length - 1; i >= 0; i--) {
     const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    while (upper.length >= 2 && cr(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
     upper.push(p);
   }
   lower.pop(); upper.pop();
@@ -600,13 +538,111 @@ function hull(points) {
 }
 
 const poly = (pts) => pts.map((p) => `${round(p[0])},${round(p[1])}`).join(' ');
-const round = (n) => Math.round(n * 10) / 10;
 
 /* ===========================================================================
-   Static chrome — drafting frame, grid, dimension ticks
+   Plates — four orthographic elevations. Screen space is millimetres (the SVG
+   viewBox is mm), y down.
+     screenX = hSign * world[hAxis]      screenY = vSign * world[vAxis]
+   Both signs are their own inverse, so the same pair maps a drag back to world.
+   The plate's normal axis (the one it does not show) is the axis a rotate
+   gesture in that plate turns the drum about.
    =========================================================================== */
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const PLATE_W = 1900;   // mm across every plate — the shared scale
+const PLATE_H = 1425;
+
+const views = [
+  { id: 'top',   name: 'Top',   sub: 'plan',      hAxis: 'x', hSign: 1,  vAxis: 'y', vSign: -1,
+    cx: 60, cy: -215, floor: false, hLab: 'X →', vLab: '↑ Y (back)' },
+  { id: 'front', name: 'Front', sub: 'elevation', hAxis: 'x', hSign: 1,  vAxis: 'z', vSign: -1,
+    cx: 60, cy: -540, floor: true,  hLab: 'X →', vLab: '↑ Z' },
+  { id: 'left',  name: 'Left',  sub: 'elevation', hAxis: 'y', hSign: 1,  vAxis: 'z', vSign: -1,
+    cx: 215, cy: -540, floor: true, hLab: 'Y →', vLab: '↑ Z' },
+  { id: 'right', name: 'Right', sub: 'elevation', hAxis: 'y', hSign: -1, vAxis: 'z', vSign: -1,
+    cx: -215, cy: -540, floor: true, hLab: '← Y', vLab: '↑ Z' },
+];
+
+// Derive each plate's normal axis + sign from its two screen basis vectors, so
+// a clockwise-on-screen drag always means a right-handed turn about that axis.
+for (const v of views) {
+  const unit = (a, s) => ({ x: a === 'x' ? s : 0, y: a === 'y' ? s : 0, z: a === 'z' ? s : 0 });
+  const d = cross(unit(v.hAxis, v.hSign), unit(v.vAxis, v.vSign));
+  v.normAxis = Math.abs(d.x) > 0.5 ? 'x' : Math.abs(d.y) > 0.5 ? 'y' : 'z';
+  v.normSign = Math.sign(d[v.normAxis]);
+}
+
+const viewBoxOf = (v) => `${v.cx - PLATE_W / 2} ${v.cy - PLATE_H / 2} ${PLATE_W} ${PLATE_H}`;
+const project = (v, p) => [v.hSign * p[v.hAxis], v.vSign * p[v.vAxis]];
+
+/* ---- transform-box frame ---------------------------------------------------
+   The box is aligned to the drum's own projected axis:
+     u = projected spindle direction (the "length" axis  → depth)
+     w = perpendicular              (the "width"  axis  → diameter)
+   Half-extents are exact for an orthographic projection of a cylinder:
+     halfU = |axis|/2 + support(u)      halfW = support(w)
+   where support(dir) = R·√((ax·dir)² + (ay·dir)²) is the projected disc's
+   support function. When the spindle points at the viewer, |axis| ≈ 0 and the
+   plate cannot edit depth — u falls back to the projected disc's major axis.
+   ---------------------------------------------------------------------------- */
+
+const AXIAL_MIN = 0.18;
+
+function boxFrame(v, g) {
+  const axp = project(v, g.ax);
+  const ayp = project(v, g.ay);
+  const np  = project(v, g.n);
+  const nLen = Math.hypot(np[0], np[1]);
+  const support = (dir) =>
+    g.R * Math.hypot(axp[0] * dir[0] + axp[1] * dir[1], ayp[0] * dir[0] + ayp[1] * dir[1]);
+
+  const axialEditable = nLen > AXIAL_MIN;
+  let u;
+  if (axialEditable) {
+    u = [np[0] / nLen, np[1] / nLen];
+  } else {
+    const S00 = axp[0] * axp[0] + ayp[0] * ayp[0];
+    const S01 = axp[0] * axp[1] + ayp[0] * ayp[1];
+    const S11 = axp[1] * axp[1] + ayp[1] * ayp[1];
+    const th = 0.5 * Math.atan2(2 * S01, S00 - S11);
+    u = [Math.cos(th), Math.sin(th)];
+  }
+  const w = [-u[1], u[0]];
+  const su = support(u), sw = support(w);
+  return {
+    c: project(v, g.d.origin), u, w, su, sw, nLen, axialEditable, R: g.R,
+    halfU: (nLen * g.d.depth) / 2 + su,
+    halfW: sw,
+  };
+}
+
+/** Write new half-extents back onto the model.
+    `f` is the frame captured when the gesture STARTED, so its support values
+    are per the start radius — never the live one, which is mid-flight. */
+function applyExtents(d, f, halfU, halfW, writeDia, writeDepth) {
+  const unitW = (f.sw / f.R) || 1e-6;   // support of a unit-radius disc along w
+  const unitU = (f.su / f.R) || 1e-6;
+
+  if (!f.axialEditable) {
+    // Depth is not observable in this plate — both extents drive the diameter.
+    const Rw = halfW / unitW, Ru = halfU / unitU;
+    const Rn = clamp(Math.sqrt(Math.max(1, Rw) * Math.max(1, Ru)), 50, 560);
+    d.diameterIn = round((2 * Rn) / IN);
+    return;
+  }
+
+  if (writeDia) {
+    d.diameterIn = round((2 * clamp(halfW / unitW, 50, 560)) / IN);
+  }
+  if (writeDepth) {
+    const R = (d.diameterIn * IN) / 2;
+    d.depth = Math.round(clamp((2 * (halfU - R * unitU)) / f.nLen, 20, 900));
+  }
+}
+
+/* ===========================================================================
+   Static plate chrome — drafting frame, grid, dimension ticks
+   =========================================================================== */
+
 const GRID_MINOR = 100;
 const GRID_MAJOR = 500;
 
@@ -615,7 +651,6 @@ function gridMarkup(v) {
   const y0 = v.cy - PLATE_H / 2, y1 = v.cy + PLATE_H / 2;
   let out = '';
 
-  // minor + major grid
   for (let x = Math.ceil(x0 / GRID_MINOR) * GRID_MINOR; x <= x1; x += GRID_MINOR) {
     const major = Math.abs(x % GRID_MAJOR) < 0.5;
     out += `<line class="${major ? 'grid-major' : 'grid-minor'}" x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/>`;
@@ -625,11 +660,9 @@ function gridMarkup(v) {
     out += `<line class="${major ? 'grid-major' : 'grid-minor'}" x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/>`;
   }
 
-  // world zero axes
   if (0 > x0 && 0 < x1) out += `<line class="axis-zero" x1="0" y1="${y0}" x2="0" y2="${y1}"/>`;
   if (0 > y0 && 0 < y1) out += `<line class="axis-zero" x1="${x0}" y1="0" x2="${x1}" y2="0"/>`;
 
-  // ground plane (Z = 0) on the elevations
   if (v.floor) {
     out += `<line class="floor" x1="${x0}" y1="0" x2="${x1}" y2="0"/>`;
     for (let x = Math.ceil(x0 / 120) * 120; x <= x1; x += 120) {
@@ -638,9 +671,6 @@ function gridMarkup(v) {
     out += `<text class="tick-label floor-label" x="${x0 + 34}" y="-26">GROUND · Z 0</text>`;
   }
 
-  // dimension ticks + labels along bottom and left edges.
-  // Labels are suppressed near a plate edge so they never clip or collide with
-  // the scale note.
   const MARGIN = 220;
   const bottom = y1 - 56;
   for (let x = Math.ceil(x0 / GRID_MINOR) * GRID_MINOR; x <= x1; x += GRID_MINOR) {
@@ -662,15 +692,16 @@ function gridMarkup(v) {
   }
   out += `<line class="dim-line" x1="${leftEdge}" y1="${y0}" x2="${leftEdge}" y2="${y1}"/>`;
 
-  // frame
   out += `<rect class="frame" x="${x0 + 14}" y="${y0 + 14}" width="${PLATE_W - 28}" height="${PLATE_H - 28}"/>`;
   out += `<text class="scale-note" x="${x1 - 40}" y="${bottom - 14}">mm · grid 100</text>`;
   return out;
 }
 
 /* ===========================================================================
-   Build the DOM
+   Shared SVG styling for every plate
    =========================================================================== */
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const plateStyle = `
   .grid-minor { stroke: oklch(0.240 0.012 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -686,23 +717,47 @@ const plateStyle = `
   .floor-label{ fill: oklch(0.560 0.009 256); letter-spacing: 0.12em; }
   .scale-note { fill: oklch(0.560 0.009 256); font-family: var(--font-mono); font-size: 28px; letter-spacing: 0.09em; text-anchor: end; }
 
+  /* Only .hit, .handle and .rotzone are ever pointer targets — every other mark
+     is decoration and must not steal the gesture (the box mid-line used to sit
+     exactly on the drum centre and swallow drag-to-move). */
+  .chrome, .drums, .overlay { pointer-events: none; }
+  .hit, .handle, .rotzone { pointer-events: auto; }
+
   .sil        { stroke-width: 1.5; vector-effect: non-scaling-stroke; fill-opacity: 0.09; }
   .hoop       { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.45; }
   .hoop.end   { opacity: 0.85; }
   .spindle    { stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 18 8 4 8; opacity: 0.6; }
   .origin-x   { stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.85; }
   .drum-label { font-family: var(--font-mono); font-size: 30px; letter-spacing: 0.12em; }
-  .datum      { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 16 8 3 8; opacity: 0.5; }
+  .datum      { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 16 8 3 8; opacity: 0.45; }
   .hit        { fill: transparent; stroke: transparent; stroke-width: 14; vector-effect: non-scaling-stroke; }
+  .shadow     { fill: oklch(0.06 0.01 256 / 0.55); stroke: oklch(0.240 0.012 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
 
-  g.drum { transition: none; }
   g.drum.is-hover .sil { fill-opacity: 0.17; stroke-width: 2; }
   g.drum.is-hover .hoop { opacity: 0.75; }
   g.drum.is-sel .sil { stroke: var(--accent) !important; stroke-width: 2.5; fill-opacity: 0.2; }
   g.drum.is-sel .hoop { stroke: var(--accent) !important; opacity: 0.8; }
   g.drum.is-sel .spindle, g.drum.is-sel .origin-x { stroke: var(--accent) !important; opacity: 1; }
   g.drum.is-sel .drum-label { fill: var(--accent-bright) !important; }
+
+  .tbox      { fill: none; stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.9; }
+  .tbox-mid  { stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.35; stroke-dasharray: 10 8; }
+  .handle    { fill: var(--accent); stroke: oklch(0.10 0.01 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .handle:hover { fill: var(--accent-bright); }
+  .rotzone   { fill: transparent; stroke: none; }
+  .ghost     { fill: none; stroke: var(--accent); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: 0.35; stroke-dasharray: 8 8; }
+
+  .grid3     { stroke: oklch(0.205 0.011 256); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .grid3.maj { stroke: oklch(0.270 0.013 256); }
+  .axis3     { stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .axis3-lab { font-family: var(--font-mono); letter-spacing: 0.08em; }
+  .bar       { stroke: oklch(0.430 0.022 256); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .bar-lab   { fill: oklch(0.560 0.009 256); font-family: var(--font-mono); letter-spacing: 0.08em; }
 `;
+
+/* ===========================================================================
+   Build the DOM
+   =========================================================================== */
 
 const viewsEl = document.getElementById('views');
 const plates = {};
@@ -710,55 +765,66 @@ const plates = {};
 for (const v of views) {
   const wrap = document.createElement('div');
   wrap.className = 'view';
-  wrap.innerHTML = `
-    <div class="view-head">
-      <span class="view-name">${v.name}</span>
-      <span class="view-sub">${v.sub}</span>
-    </div>
-    <div class="view-axes">${v.hLab} &nbsp; ${v.vLab}</div>
-  `;
+  wrap.innerHTML =
+    `<div class="view-head"><span class="view-name">${v.name}</span><span class="view-sub">${v.sub}</span></div>` +
+    `<div class="view-axes">${v.hLab} &nbsp; ${v.vLab}</div>`;
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'plate');
-  svg.setAttribute('viewBox', viewBox(v));
+  svg.setAttribute('viewBox', viewBoxOf(v));
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.innerHTML =
     `<style>${plateStyle}</style>` +
     `<g class="chrome">${gridMarkup(v)}</g>` +
-    `<g class="drums"></g>`;
+    `<g class="drums"></g><g class="overlay"></g>`;
   wrap.appendChild(svg);
   viewsEl.appendChild(wrap);
-  plates[v.id] = { svg, layer: svg.querySelector('.drums'), view: v };
+  plates[v.id] = { svg, view: v, layer: svg.querySelector('.drums'), overlay: svg.querySelector('.overlay') };
   wirePlate(plates[v.id]);
 }
 
+// ---- orbit cell -------------------------------------------------------------
+const orbitWrap = document.createElement('div');
+orbitWrap.className = 'view orbit-cell';
+orbitWrap.innerHTML =
+  `<div class="view-head"><span class="view-name">Orbit</span><span class="view-sub">axonometric</span></div>` +
+  `<div class="view-axes" id="orbit-axes"></div>` +
+  `<div class="view-foot" id="orbit-foot"></div>`;
+const orbitSvg = document.createElementNS(SVG_NS, 'svg');
+orbitSvg.setAttribute('class', 'plate orbit');
+orbitSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+orbitSvg.innerHTML = `<style>${plateStyle}</style><g class="scene"></g>`;
+orbitWrap.appendChild(orbitSvg);
+viewsEl.appendChild(orbitWrap);
+const orbitScene = orbitSvg.querySelector('.scene');
+wireOrbit();
+
 /* ===========================================================================
-   Render
+   Plate render
    =========================================================================== */
 
-function renderPlate(plate) {
+const mmPerPx = (svg) => PLATE_W / (svg.clientWidth || 420);
+
+function renderPlate(plate, geos) {
   const v = plate.view;
   const x0 = v.cx - PLATE_W / 2, x1 = v.cx + PLATE_W / 2;
   const y0 = v.cy - PLATE_H / 2, y1 = v.cy + PLATE_H / 2;
   let out = '';
 
-  for (const d of drums) {
-    const { rings, axis } = drumRings(d);
-    const projRings = rings.map((r) => r.map((p) => project(v, p)));
+  for (const g of geos) {
+    const d = g.d;
+    const projRings = g.rings.map((r) => r.map((p) => project(v, p)));
     const sil = hull(projRings[0].concat(projRings[projRings.length - 1]));
     const o = project(v, d.origin);
-    const a0 = project(v, axis[0]);
-    const a1 = project(v, axis[1]);
+    const a0 = project(v, g.axis[0]);
+    const a1 = project(v, g.axis[1]);
     const isSel = state.selected === d.id;
     const isHover = state.hover === d.id;
 
-    const cls = 'drum' + (isSel ? ' is-sel' : '') + (isHover ? ' is-hover' : '');
-    out += `<g class="${cls}" data-id="${d.id}" style="--c:${d.color}">`;
-
+    out += `<g class="drum${isSel ? ' is-sel' : ''}${isHover ? ' is-hover' : ''}" data-id="${d.id}">`;
     if (isSel) {
       out += `<line class="datum" x1="${x0}" y1="${round(o[1])}" x2="${x1}" y2="${round(o[1])}"/>`;
       out += `<line class="datum" x1="${round(o[0])}" y1="${y0}" x2="${round(o[0])}" y2="${y1}"/>`;
     }
-
     out += `<polygon class="sil" points="${poly(sil)}" fill="${d.color}" stroke="${d.color}"/>`;
     projRings.forEach((r, i) => {
       const end = i === 0 || i === projRings.length - 1;
@@ -767,19 +833,192 @@ function renderPlate(plate) {
     out += `<line class="spindle" x1="${round(a0[0])}" y1="${round(a0[1])}" x2="${round(a1[0])}" y2="${round(a1[1])}" stroke="${d.color}"/>`;
     out += `<line class="origin-x" x1="${round(o[0] - 34)}" y1="${round(o[1])}" x2="${round(o[0] + 34)}" y2="${round(o[1])}" stroke="${d.color}"/>`;
     out += `<line class="origin-x" x1="${round(o[0])}" y1="${round(o[1] - 34)}" x2="${round(o[0])}" y2="${round(o[1] + 34)}" stroke="${d.color}"/>`;
-
-    const labelY = Math.min(...sil.map((p) => p[1])) - 24;
+    const labelY = Math.min(...sil.map((p) => p[1])) - (isSel ? 26 + 16 * mmPerPx(plate.svg) : 26);
     out += `<text class="drum-label" x="${round(o[0])}" y="${round(labelY)}" text-anchor="middle" fill="${d.color}">${d.name.toUpperCase()}</text>`;
-
-    // invisible fat hit target sits last so it wins the pointer
     out += `<polygon class="hit" points="${poly(sil)}" data-id="${d.id}"/>`;
     out += `</g>`;
   }
   plate.layer.innerHTML = out;
+  plate.overlay.innerHTML = transformBoxMarkup(plate, geos);
+}
+
+/* ---- the transform box ------------------------------------------------------ */
+
+function resizeCursor(dx, dy) {
+  let a = (Math.atan2(dy, dx) / DEG) % 180;
+  if (a < 0) a += 180;
+  if (a < 22.5 || a >= 157.5) return 'ew-resize';
+  if (a < 67.5) return 'nwse-resize';
+  if (a < 112.5) return 'ns-resize';
+  return 'nesw-resize';
+}
+
+function transformBoxMarkup(plate, geos) {
+  const g = geos.find((x) => x.d.id === state.selected);
+  if (!g) return '';
+  const v = plate.view;
+  const f = boxFrame(v, g);
+  plate.frame = f;
+
+  const k = mmPerPx(plate.svg);
+  const pad = 6 * k;
+  const HU = f.halfU + pad, HW = f.halfW + pad;
+  const at = (su, sw) => [
+    f.c[0] + f.u[0] * HU * su + f.w[0] * HW * sw,
+    f.c[1] + f.u[1] * HU * su + f.w[1] * HW * sw,
+  ];
+
+  const corners = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
+  let out = `<polygon class="tbox" points="${poly(corners.map((c) => at(c[0], c[1])))}"/>`;
+
+  // faint mid-lines so the box reads as the drum's own frame, not the screen's
+  const mu0 = at(-1, 0), mu1 = at(1, 0);
+  out += `<line class="tbox-mid" x1="${round(mu0[0])}" y1="${round(mu0[1])}" x2="${round(mu1[0])}" y2="${round(mu1[1])}"/>`;
+
+  // rotate zones first so the resize handles sit on top of them
+  const rz = 17 * k;
+  for (const c of corners) {
+    const p = at(c[0], c[1]);
+    const dir = [p[0] - f.c[0], p[1] - f.c[1]];
+    const l = Math.hypot(dir[0], dir[1]) || 1;
+    const q = [p[0] + (dir[0] / l) * rz * 0.7, p[1] + (dir[1] / l) * rz * 0.7];
+    out += `<circle class="rotzone" cx="${round(q[0])}" cy="${round(q[1])}" r="${round(rz)}" style="cursor:var(--cur-rotate)"/>`;
+  }
+
+  const hs = 4.6 * k;
+  const spots = [
+    [1, 1], [1, -1], [-1, -1], [-1, 1],   // corners
+    [1, 0], [-1, 0],                      // along u — depth
+    [0, 1], [0, -1],                      // along w — diameter
+  ];
+  for (const [su, sw] of spots) {
+    if (!f.axialEditable && sw === 0) continue; // depth not observable here
+    const p = at(su, sw);
+    const dir = [p[0] - f.c[0], p[1] - f.c[1]];
+    out += `<rect class="handle" data-hu="${su}" data-hw="${sw}"
+      x="${round(p[0] - hs)}" y="${round(p[1] - hs)}" width="${round(hs * 2)}" height="${round(hs * 2)}"
+      style="cursor:${resizeCursor(dir[0], dir[1])}"/>`;
+  }
+  return out;
+}
+
+/* ===========================================================================
+   Orbit render — hand-rolled orthographic axonometric projection
+   =========================================================================== */
+
+function orbitBasis() {
+  const az = orbit.az * DEG, el = orbit.el * DEG;
+  const dir = norm({
+    x: Math.cos(el) * Math.sin(az),
+    y: -Math.cos(el) * Math.cos(az),
+    z: Math.sin(el),
+  });
+  let right = cross({ x: 0, y: 0, z: 1 }, dir);
+  right = Math.hypot(right.x, right.y, right.z) < 1e-6 ? { x: 1, y: 0, z: 0 } : norm(right);
+  const up = cross(dir, right);
+  return { dir, right, up };
+}
+
+const KIT_CENTRE = { x: 40, y: 200, z: 520 };
+
+function renderOrbit(geos) {
+  const b = orbitBasis();
+  const P = (p) => [dot(p, b.right), -dot(p, b.up)];
+  const depthOf = (p) => dot(p, b.dir);
+
+  const c = P(KIT_CENTRE);
+  const aw = orbitSvg.clientWidth || 620, ah = orbitSvg.clientHeight || 820;
+  const W = orbit.span, H = orbit.span * (ah / aw);
+  const vx = c[0] - W / 2, vy = c[1] - H / 2;
+  orbitSvg.setAttribute('viewBox', `${round(vx)} ${round(vy)} ${W} ${H}`);
+  const fs = W / 64;
+
+  let out = '';
+
+  // ---- ground grid (z = 0)
+  const G = 1500, STEP = 250;
+  for (let i = -G; i <= G; i += STEP) {
+    const maj = i % 1000 === 0;
+    const a = P({ x: i, y: -G, z: 0 }), d2 = P({ x: i, y: G, z: 0 });
+    out += `<line class="grid3${maj ? ' maj' : ''}" x1="${round(a[0])}" y1="${round(a[1])}" x2="${round(d2[0])}" y2="${round(d2[1])}"/>`;
+    const e = P({ x: -G, y: i, z: 0 }), f2 = P({ x: G, y: i, z: 0 });
+    out += `<line class="grid3${maj ? ' maj' : ''}" x1="${round(e[0])}" y1="${round(e[1])}" x2="${round(f2[0])}" y2="${round(f2[1])}"/>`;
+  }
+
+  // ---- origin triad
+  const O = P({ x: 0, y: 0, z: 0 });
+  const triad = [
+    ['x', { x: 420, y: 0, z: 0 }, 'X', 'oklch(0.720 0.130 245)'],
+    ['y', { x: 0, y: 420, z: 0 }, 'Y', 'oklch(0.745 0.150 152)'],
+    ['z', { x: 0, y: 0, z: 420 }, 'Z', 'oklch(0.785 0.150 68)'],
+  ];
+  for (const [, vec, lab, col] of triad) {
+    const p = P(vec);
+    out += `<line class="axis3" x1="${round(O[0])}" y1="${round(O[1])}" x2="${round(p[0])}" y2="${round(p[1])}" stroke="${col}" opacity="0.55"/>`;
+    out += `<text class="axis3-lab" x="${round(p[0])}" y="${round(p[1])}" font-size="${round(fs)}" fill="${col}" opacity="0.8">${lab}</text>`;
+  }
+
+  // ---- ground footprints (plan shadow) — a real depth cue, costs nothing
+  for (const g of geos) {
+    const flat = g.rings[0].concat(g.rings[g.rings.length - 1]).map((p) => P({ x: p.x, y: p.y, z: 0 }));
+    out += `<polygon class="shadow" points="${poly(hull(flat))}"/>`;
+  }
+
+  // ---- drums, painter-sorted far → near so the nearest wins the pointer
+  const sorted = geos.slice().sort((a, z) => depthOf(a.d.origin) - depthOf(z.d.origin));
+  for (const g of sorted) {
+    const d = g.d;
+    const rings = g.rings.map((r) => r.map(P));
+    const sil = hull(rings[0].concat(rings[rings.length - 1]));
+    const o = P(d.origin);
+    const isSel = state.selected === d.id;
+    const isHover = state.hover === d.id;
+    out += `<g class="drum${isSel ? ' is-sel' : ''}${isHover ? ' is-hover' : ''}" data-id="${d.id}">`;
+    out += `<polygon class="sil" points="${poly(sil)}" fill="${d.color}" stroke="${d.color}"/>`;
+    rings.forEach((r, i) => {
+      const end = i === 0 || i === rings.length - 1;
+      out += `<polygon class="hoop${end ? ' end' : ''}" points="${poly(r)}" stroke="${d.color}"/>`;
+    });
+    const a0 = P(g.axis[0]), a1 = P(g.axis[1]);
+    out += `<line class="spindle" x1="${round(a0[0])}" y1="${round(a0[1])}" x2="${round(a1[0])}" y2="${round(a1[1])}" stroke="${d.color}"/>`;
+    if (isSel) {
+      const drop = P({ x: d.origin.x, y: d.origin.y, z: 0 });
+      out += `<line class="ghost" x1="${round(o[0])}" y1="${round(o[1])}" x2="${round(drop[0])}" y2="${round(drop[1])}"/>`;
+      const labY = Math.min(...sil.map((p) => p[1])) - fs * 0.6;
+      out += `<text class="drum-label" x="${round(o[0])}" y="${round(labY)}" font-size="${round(fs)}" text-anchor="middle" fill="${d.color}">${d.name.toUpperCase()}</text>`;
+    }
+    out += `<polygon class="hit" points="${poly(sil)}" data-id="${d.id}"/>`;
+    out += `</g>`;
+  }
+
+  // ---- scale bar — orthographic, so 500 mm is exactly 500 units
+  const bx = vx + W * 0.045, by = vy + H * 0.94;
+  out += `<line class="bar" x1="${round(bx)}" y1="${round(by)}" x2="${round(bx + 500)}" y2="${round(by)}"/>`;
+  out += `<line class="bar" x1="${round(bx)}" y1="${round(by - fs * 0.3)}" x2="${round(bx)}" y2="${round(by + fs * 0.3)}"/>`;
+  out += `<line class="bar" x1="${round(bx + 500)}" y1="${round(by - fs * 0.3)}" x2="${round(bx + 500)}" y2="${round(by + fs * 0.3)}"/>`;
+  out += `<text class="bar-lab" x="${round(bx)}" y="${round(by - fs * 0.55)}" font-size="${round(fs * 0.85)}">500 mm</text>`;
+
+  orbitScene.innerHTML = out;
+  document.getElementById('orbit-axes').textContent =
+    `az ${Math.round(((orbit.az % 360) + 360) % 360)}° · el ${Math.round(orbit.el)}°`;
+  document.getElementById('orbit-foot').textContent = `${Math.round(orbit.span)} mm across`;
+}
+
+/* ===========================================================================
+   Render orchestration
+   =========================================================================== */
+
+let pending = false;
+function scheduleRender() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; renderAll(); });
 }
 
 function renderAll() {
-  for (const id in plates) renderPlate(plates[id]);
+  const geos = drums.map(drumGeo);
+  for (const id in plates) renderPlate(plates[id], geos);
+  renderOrbit(geos);
   renderRail();
 }
 
@@ -787,25 +1026,25 @@ function renderAll() {
    Right rail
    =========================================================================== */
 
-const inputs = {
-  x: document.getElementById('in-x'),
-  y: document.getElementById('in-y'),
-  z: document.getElementById('in-z'),
+const fields = {
+  origin: { x: document.getElementById('in-x'), y: document.getElementById('in-y'), z: document.getElementById('in-z') },
+  rotation: { x: document.getElementById('rot-x'), y: document.getElementById('rot-y'), z: document.getElementById('rot-z') },
+  scalar: { diameterIn: document.getElementById('in-dia'), depth: document.getElementById('in-depth') },
 };
+const allFields = [
+  ...Object.values(fields.origin), ...Object.values(fields.rotation), ...Object.values(fields.scalar),
+];
 const selName = document.getElementById('sel-name');
 const selMeta = document.getElementById('sel-meta');
 const selSwatch = document.getElementById('sel-swatch');
 const statusEl = document.getElementById('status');
+const gestureEl = document.getElementById('gesture');
 const listEl = document.getElementById('drum-list');
 
 listEl.innerHTML = drums
-  .map(
-    (d) => `<button class="drum-row" data-id="${d.id}" aria-selected="false">
-      <span class="swatch" style="background:${d.color}"></span>
-      <span>${d.name}</span>
-      <span class="dims">${d.diameterIn}"</span>
-    </button>`
-  )
+  .map((d) => `<button class="drum-row" data-id="${d.id}" aria-selected="false">
+      <span class="swatch" style="background:${d.color}"></span><span>${d.name}</span>
+      <span class="dims" data-dims="${d.id}">${d.diameterIn}"</span></button>`)
   .join('');
 
 listEl.addEventListener('click', (e) => {
@@ -815,142 +1054,322 @@ listEl.addEventListener('click', (e) => {
   renderAll();
 });
 
-function selectedDrum() {
-  return drums.find((d) => d.id === state.selected) || null;
-}
+const selectedDrum = () => drums.find((d) => d.id === state.selected) || null;
+const pad = (n) => String(Math.round(n)).padStart(5, ' ');
 
 function renderRail() {
   const d = selectedDrum();
   for (const row of listEl.children) {
-    row.setAttribute('aria-selected', String(d && row.dataset.id === d.id));
+    row.setAttribute('aria-selected', String(!!d && row.dataset.id === d.id));
+    const dd = drums.find((x) => x.id === row.dataset.id);
+    row.querySelector('.dims').textContent = `${dd.diameterIn}"`;
   }
   if (!d) {
     selName.textContent = '—';
     selMeta.textContent = '';
     selSwatch.style.background = 'var(--border)';
-    for (const a of ['x', 'y', 'z']) { inputs[a].value = ''; inputs[a].disabled = true; }
+    for (const el of allFields) { el.value = ''; el.disabled = true; }
     statusEl.textContent = 'no selection';
     return;
   }
   selName.textContent = d.name;
-  selMeta.textContent = `${d.diameterIn}" · ${d.hoops} hoops`;
+  selMeta.textContent = `${d.hoops} hoops`;
   selSwatch.style.background = d.color;
+  const put = (el, val) => {
+    el.disabled = false;
+    if (document.activeElement !== el || state.drag) el.value = val;
+  };
   for (const a of ['x', 'y', 'z']) {
-    inputs[a].disabled = false;
-    if (document.activeElement !== inputs[a] || state.dragging) {
-      inputs[a].value = Math.round(d.origin[a]);
-    }
+    put(fields.origin[a], Math.round(d.origin[a]));
+    put(fields.rotation[a], round(d.rotation[a]));
   }
+  put(fields.scalar.diameterIn, round(d.diameterIn));
+  put(fields.scalar.depth, Math.round(d.depth));
+
   statusEl.textContent =
-    `${d.name.toLowerCase()}  x ${pad(d.origin.x)}  y ${pad(d.origin.y)}  z ${pad(d.origin.z)}  mm`;
+    `${d.name.toLowerCase()}  x ${pad(d.origin.x)}  y ${pad(d.origin.y)}  z ${pad(d.origin.z)}  mm   ` +
+    `ø ${round(d.diameterIn)}"  depth ${Math.round(d.depth)}`;
 }
 
-const pad = (n) => String(Math.round(n)).padStart(5, ' ');
-
-for (const axis of ['x', 'y', 'z']) {
-  const el = inputs[axis];
-  el.addEventListener('input', () => {
-    const d = selectedDrum();
-    if (!d) return;
-    const n = Number(el.value);
-    if (!Number.isFinite(n)) return;
-    d.origin[axis] = n;
-    renderAll();
-  });
-  el.addEventListener(
-    'wheel',
-    (e) => {
+for (const kind of ['origin', 'rotation', 'scalar']) {
+  for (const axis in fields[kind]) {
+    const el = fields[kind][axis];
+    const write = (n) => {
+      const d = selectedDrum();
+      if (!d) return;
+      if (kind === 'scalar') {
+        d[axis] = axis === 'diameterIn' ? clamp(n, 4, 44) : clamp(n, 20, 900);
+      } else {
+        d[kind][axis] = n;
+      }
+      scheduleRender();
+    };
+    el.addEventListener('input', () => {
+      const n = Number(el.value);
+      if (Number.isFinite(n)) write(n);
+    });
+    el.addEventListener('wheel', (e) => {
       const d = selectedDrum();
       if (!d) return;
       e.preventDefault();
-      const step = e.shiftKey ? 1 : 5;
-      d.origin[axis] = Math.round(d.origin[axis] - Math.sign(e.deltaY) * step);
-      el.value = Math.round(d.origin[axis]);
-      renderAll();
-    },
-    { passive: false }
-  );
+      const base = kind === 'scalar' && axis === 'diameterIn' ? 0.5 : 5;
+      const step = e.shiftKey ? (base === 0.5 ? 0.1 : 1) : base;
+      const cur = kind === 'scalar' ? d[axis] : d[kind][axis];
+      const next = round(cur - Math.sign(e.deltaY) * step);
+      write(next);
+      el.value = next;
+    }, { passive: false });
+  }
 }
 
 /* ===========================================================================
-   Pointer interaction on a plate
+   Pointer interaction — plates
    =========================================================================== */
 
 function svgPoint(svg, evt) {
   const pt = svg.createSVGPoint();
-  pt.x = evt.clientX;
-  pt.y = evt.clientY;
+  pt.x = evt.clientX; pt.y = evt.clientY;
   const ctm = svg.getScreenCTM();
   if (!ctm) return { x: 0, y: 0 };
   return pt.matrixTransform(ctm.inverse());
 }
 
+const dot2 = (a, b) => a[0] * b[0] + a[1] * b[1];
+
 function wirePlate(plate) {
-  const { svg, view } = plate;
-
-  svg.addEventListener('pointermove', (e) => {
-    if (state.dragging && state.dragging.plate === plate) {
-      const p = svgPoint(svg, e);
-      const drag = state.dragging;
-      const d = drums.find((x) => x.id === drag.id);
-      let h = drag.startH + (p.x - drag.px) * view.hSign;
-      let vv = drag.startV + (p.y - drag.py) * view.vSign;
-      if (e.altKey) {
-        h = Math.round(h / 50) * 50;
-        vv = Math.round(vv / 50) * 50;
-      } else {
-        h = Math.round(h);
-        vv = Math.round(vv);
-      }
-      d.origin[view.hAxis] = h;
-      d.origin[view.vAxis] = vv;
-      renderAll();
-      return;
-    }
-    const hit = e.target.closest('.hit');
-    const id = hit ? hit.dataset.id : null;
-    if (id !== state.hover) {
-      state.hover = id;
-      renderAll();
-    }
-  });
-
-  svg.addEventListener('pointerleave', () => {
-    if (state.hover && !state.dragging) {
-      state.hover = null;
-      renderAll();
-    }
-  });
+  const { svg, view: v } = plate;
 
   svg.addEventListener('pointerdown', (e) => {
-    const hit = e.target.closest('.hit');
-    if (!hit) {
-      if (state.selected) { state.selected = null; renderAll(); }
+    const d = selectedDrum();
+    const p = svgPoint(svg, e);
+
+    const handle = e.target.closest('.handle');
+    if (handle && d) {
+      const f = plate.frame;
+      const hu = Number(handle.dataset.hu), hw = Number(handle.dataset.hw);
+      const k = mmPerPx(svg), padmm = 6 * k;
+      const HU = f.halfU + padmm, HW = f.halfW + padmm;
+      const anchor = [
+        f.c[0] - f.u[0] * HU * hu - f.w[0] * HW * hw,
+        f.c[1] - f.u[1] * HU * hu - f.w[1] * HW * hw,
+      ];
+      state.drag = {
+        mode: 'resize', id: d.id, plate, hu, hw, f, pad: padmm, anchor,
+        c0: f.c.slice(), HU0: HU, HW0: HW,
+        hu0: f.halfU, hw0: f.halfW,   // unpadded — the extents the model owns
+        start: { diameterIn: d.diameterIn, depth: d.depth, origin: { ...d.origin } },
+      };
+      svg.setPointerCapture(e.pointerId);
+      scheduleRender();
       return;
     }
-    const id = hit.dataset.id;
-    const d = drums.find((x) => x.id === id);
-    state.selected = id;
-    const p = svgPoint(svg, e);
-    state.dragging = {
-      id, plate, px: p.x, py: p.y,
-      startH: d.origin[view.hAxis], startV: d.origin[view.vAxis],
+
+    const rz = e.target.closest('.rotzone');
+    if (rz && d) {
+      const f = plate.frame;
+      state.drag = {
+        mode: 'rotate', id: d.id, plate,
+        c: f.c.slice(),
+        a0: Math.atan2(p.y - f.c[1], p.x - f.c[0]),
+        m0: matFromEuler(d.rotation),
+        rot0: { ...d.rotation },
+      };
+      svg.setPointerCapture(e.pointerId);
+      scheduleRender();
+      return;
+    }
+
+    const hit = e.target.closest('.hit');
+    if (!hit) {
+      if (state.selected) { state.selected = null; gestureEl.textContent = ''; renderAll(); }
+      return;
+    }
+    const dd = drums.find((x) => x.id === hit.dataset.id);
+    state.selected = dd.id;
+    state.drag = {
+      mode: 'move', id: dd.id, plate, px: p.x, py: p.y,
+      startH: dd.origin[v.hAxis], startV: dd.origin[v.vAxis],
     };
     svg.setPointerCapture(e.pointerId);
-    svg.classList.add('is-dragging');
     renderAll();
   });
 
+  svg.addEventListener('pointermove', (e) => {
+    const g = state.drag;
+    if (g && g.plate === plate) {
+      const p = svgPoint(svg, e);
+      const d = drums.find((x) => x.id === g.id);
+
+      if (g.mode === 'move') {
+        let h = g.startH + (p.x - g.px) * v.hSign;
+        let w = g.startV + (p.y - g.py) * v.vSign;
+        if (e.altKey) { h = Math.round(h / 50) * 50; w = Math.round(w / 50) * 50; }
+        else { h = Math.round(h); w = Math.round(w); }
+        d.origin[v.hAxis] = h;
+        d.origin[v.vAxis] = w;
+        gestureEl.textContent = `move  ${v.hAxis.toUpperCase()} ${h}  ${v.vAxis.toUpperCase()} ${w}`;
+      } else if (g.mode === 'resize') {
+        applyResizeDrag(d, v, g, p, e);
+        gestureEl.textContent =
+          `resize  ø ${round(d.diameterIn)}"  depth ${Math.round(d.depth)} mm` +
+          (e.altKey ? '  ⌥ centre' : '') + (e.shiftKey ? '  ⇧ locked' : '');
+      } else if (g.mode === 'rotate') {
+        let delta = (Math.atan2(p.y - g.c[1], p.x - g.c[0]) - g.a0) / DEG;
+        if (e.shiftKey) delta = Math.round(delta / 15) * 15;
+        const m = matMul(axisMat(v.normAxis, v.normSign * delta * DEG), g.m0);
+        const r = eulerNear(m, g.rot0);
+        d.rotation = { x: round(r.x), y: round(r.y), z: round(r.z) };
+        gestureEl.textContent =
+          `rotate about ${v.normAxis.toUpperCase()}  ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}°` +
+          (e.shiftKey ? '  ⇧ 15°' : '');
+        state.lastRotDelta = delta;
+      }
+      scheduleRender();
+      return;
+    }
+
+    if (state.drag) return;
+    const hit = e.target.closest('.hit');
+    const id = hit ? hit.dataset.id : null;
+    if (id !== state.hover) { state.hover = id; scheduleRender(); }
+  });
+
+  svg.addEventListener('pointerleave', () => {
+    if (state.hover && !state.drag) { state.hover = null; scheduleRender(); }
+  });
+
   const end = (e) => {
-    if (!state.dragging) return;
-    state.dragging = null;
-    svg.classList.remove('is-dragging');
+    if (!state.drag) return;
+    state.drag = null;
     try { svg.releasePointerCapture(e.pointerId); } catch (_) {}
+    gestureEl.textContent = '';
     renderAll();
   };
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
 }
+
+/* ---- resize maths -----------------------------------------------------------
+   pivot = opposite corner/edge (default) or the centre (⌥).
+   ⇧ constrains to the start proportion by projecting the pointer onto the
+   pivot→handle diagonal, exactly like Illustrator.
+   ---------------------------------------------------------------------------- */
+
+function applyResizeDrag(d, v, g, p, e) {
+  const f = g.f;
+  const pivot = e.altKey ? g.c0 : g.anchor;
+  const rel = [p.x - pivot[0], p.y - pivot[1]];
+  const du = dot2(rel, f.u), dw = dot2(rel, f.w);
+
+  const startU = g.HU0 * (e.altKey ? 1 : 2) * (g.hu === 0 ? 0 : 1);
+  const startW = g.HW0 * (e.altKey ? 1 : 2) * (g.hw === 0 ? 0 : 1);
+
+  let sU = 1, sW = 1;
+  if (e.shiftKey) {
+    // proportional: project onto the start pivot→handle vector
+    const h0 = [
+      g.c0[0] + f.u[0] * g.HU0 * g.hu + f.w[0] * g.HW0 * g.hw,
+      g.c0[1] + f.u[1] * g.HU0 * g.hu + f.w[1] * g.HW0 * g.hw,
+    ];
+    const ref = [h0[0] - pivot[0], h0[1] - pivot[1]];
+    const rl2 = dot2(ref, ref) || 1;
+    sU = sW = Math.max(0.08, dot2(rel, ref) / rl2);
+  } else {
+    if (g.hu !== 0 && startU) sU = Math.max(0.08, (du * g.hu) / startU);
+    if (g.hw !== 0 && startW) sW = Math.max(0.08, (dw * g.hw) / startW);
+  }
+
+  // Scale the UNPADDED extents — the visual padding must not be scaled with
+  // them, or ⇧ would not hold the Ø:depth ratio exactly.
+  const newHU = g.hu0 * sU, newHW = g.hw0 * sW;
+
+  // Which dimensions this handle is allowed to write: an edge handle stays in
+  // its own dimension; a corner (or any ⇧ uniform scale) writes both.
+  const writeDia = e.shiftKey || g.hw !== 0;
+  const writeDepth = e.shiftKey || g.hu !== 0;
+
+  applyExtents(d, f, Math.max(1, newHU), Math.max(1, newHW), writeDia, writeDepth);
+
+  // keep the pivot fixed: recentre, then map the plate centre back to world
+  const rel0 = [g.c0[0] - pivot[0], g.c0[1] - pivot[1]];
+  const cu = dot2(rel0, f.u) * sU, cw = dot2(rel0, f.w) * sW;
+  const nc = [
+    pivot[0] + f.u[0] * cu + f.w[0] * cw,
+    pivot[1] + f.u[1] * cu + f.w[1] * cw,
+  ];
+  d.origin[v.hAxis] = Math.round(nc[0] * v.hSign);
+  d.origin[v.vAxis] = Math.round(nc[1] * v.vSign);
+}
+
+/* ===========================================================================
+   Pointer interaction — orbit
+   =========================================================================== */
+
+function wireOrbit() {
+  let spin = null;
+  orbitSvg.addEventListener('pointerdown', (e) => {
+    const hit = e.target.closest('.hit');
+    spin = {
+      x: e.clientX, y: e.clientY, az: orbit.az, el: orbit.el,
+      candidate: hit ? hit.dataset.id : null, moved: 0,
+    };
+    orbitSvg.setPointerCapture(e.pointerId);
+  });
+
+  orbitSvg.addEventListener('pointermove', (e) => {
+    if (!spin) {
+      const hit = e.target.closest('.hit');
+      const id = hit ? hit.dataset.id : null;
+      if (id !== state.hover && !state.drag) { state.hover = id; scheduleRender(); }
+      return;
+    }
+    const dx = e.clientX - spin.x, dy = e.clientY - spin.y;
+    spin.moved = Math.max(spin.moved, Math.hypot(dx, dy));
+    if (spin.moved > 3) {
+      orbit.spinning = true;
+      orbitSvg.classList.add('spinning');
+      orbit.az = spin.az - dx * 0.32;
+      orbit.el = clamp(spin.el + dy * 0.28, -84, 84);
+      scheduleRender();
+    }
+  });
+
+  const stop = (e) => {
+    if (!spin) return;
+    if (spin.moved <= 3) {
+      state.selected = spin.candidate;   // click-select works in 3D too
+      renderAll();
+    }
+    spin = null;
+    orbit.spinning = false;
+    orbitSvg.classList.remove('spinning');
+    try { orbitSvg.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  orbitSvg.addEventListener('pointerup', stop);
+  orbitSvg.addEventListener('pointercancel', stop);
+  orbitSvg.addEventListener('pointerleave', () => {
+    if (!spin && state.hover) { state.hover = null; scheduleRender(); }
+  });
+
+  orbitSvg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    orbit.span = clamp(orbit.span * (1 + Math.sign(e.deltaY) * 0.12), 900, 7000);
+    scheduleRender();
+  }, { passive: false });
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === '+' || e.key === '=') { orbit.span = clamp(orbit.span * 0.88, 900, 7000); scheduleRender(); }
+  else if (e.key === '-' || e.key === '_') { orbit.span = clamp(orbit.span * 1.14, 900, 7000); scheduleRender(); }
+  else if (e.key === '0') { orbit.az = 24; orbit.el = 20; orbit.span = 2200; scheduleRender(); }
+  else if (e.key === 'Escape') { state.selected = null; renderAll(); }
+});
+
+window.addEventListener('resize', scheduleRender);
+
+/* Debug surface for the headless harness (prototype only). */
+window.__proto = { drums, state, orbit, views, plates, matFromEuler, axisMat, matMul, DEG };
 
 renderAll();
 </script>
