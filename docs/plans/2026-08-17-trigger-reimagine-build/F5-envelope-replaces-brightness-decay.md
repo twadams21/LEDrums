@@ -40,7 +40,27 @@ wire was broken. Original brief: `S6b-envelope-life-decay.md`.
    schema/protocol keys only if they are brand-new on this branch (nothing shipped depends on
    them — greenfield rule), otherwise leave keys and note it.
 
-## Scope fence
+## F4 handoff (read before starting — pushed `6ef4284` on feat/envelope-control)
+
+F4 rebuilt the primitive's value shape: `profile: 'bend'|'sCurve'|'snap'` + `strength: −1..+1`
+(was `linear|exp|sCurve|snap` + `0..1`). Lin/exp/log are one continuum (`base^strength`, bend
+base 8, sCurve 5; strength 0 = exactly linear); the mode word is derived, never stored. Your
+branch must adopt this: update `packages/core/src/curve/curve.ts` (profile enum, `shapeAt`,
+`normalizeCurve`), `curveValueSchema` (`z.enum(['bend','sCurve','snap'])`, strength
+`min(-1).max(1)`), and `seedLifeEnvelope`'s `profile: 'exp'` → `'bend'`
+(`EXP_SEED_STRENGTH` formula unchanged, still `ln k / ln 8`).
+
+Root causes of "the preview fades linearly", on YOUR side:
+1. `apps/web/src/lib/trigger-lab/life-envelope.ts:44-48` seeds
+   `strength: life?.factor ? EXP_SEED_STRENGTH : 0`, and the only generator declaring
+   `voiceLife` (`packages/core/src/effects/impl/segments.ts:135`) has no `factor` — so every
+   envelope Trent opened was seeded at strength 0 = exactly linear.
+2. The authored envelope currently multiplies ON TOP of the effect's internal
+   `1 − ageBeats/lifeBeats` fade (snap at gain 1.0 showed the internal fade untouched).
+   Per Trent's directive ("replaces 100% of their use cases"), the envelope is THE fade:
+   where a voice has an authored envelope, the effect's internal life fade must not
+   double-apply. Make the envelope authoritative and flag this prominently in your report —
+   it is the one product-shaped call in this slice.
 
 May touch: this branch's envelope/voice-life files (web trigger-lab life-envelope, sim,
 EnvelopeEditorView, store), packages/core voice-life / envelope-tick / voice-pool seams it
