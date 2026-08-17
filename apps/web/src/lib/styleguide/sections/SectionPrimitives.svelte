@@ -90,19 +90,30 @@
   let discComets = $state(40);
   let discTail = $state(70);
 
-  /* Curve field demos — one per domain the primitive has to serve. The envelope
-     is time → level; the transfer curve is input velocity → output velocity, and
-     it opens on Linear so the greyed-out (not hidden) strength fader is visible. */
+  /* Curve field demos — one per domain the primitive has to serve, and between
+     them all three states of the notched strength fader: above centre, below it,
+     and greyed. The envelope is time → level; the transfer curves are input
+     velocity → output velocity. */
   let decayCurve = $state<CurveValue>({
     h0: { x: 0, y: 1 },
     h1: { x: 0.72, y: 0 },
-    profile: 'exp',
+    profile: 'bend',
     strength: 0.55,
   });
+  /* Opens BELOW the notch so the fader's lower half — the log/inverted side, the
+     half a unipolar strength control could not reach — is visible at rest. */
   let velocityCurve = $state<CurveValue>({
     h0: { x: 0.12, y: 0 },
     h1: { x: 1, y: 1 },
-    profile: 'linear',
+    profile: 'sCurve',
+    strength: -0.5,
+  });
+  /* A hard gate: snap is the one profile with nothing to bend, so it is what
+     shows the strength fader in its disabled (greyed, never hidden) state. */
+  let gateCurve = $state<CurveValue>({
+    h0: { x: 0.2, y: 0 },
+    h1: { x: 0.55, y: 1 },
+    profile: 'snap',
     strength: 0,
   });
   /* The live-input overlay wants a drummer. The styleguide fakes one on an
@@ -330,11 +341,11 @@
       title="Curve field"
       src={['lib/ui/CurveField', 'lib/ui/CurveFieldMini', 'lib/ui/curve-field']}
       wide
-      note="Two free handles, one profile for the whole curve, and a strength fader that IS that profile's curvature — greyed out (never hidden) for Linear and Snap, which have nothing to bend. Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at node-face size."
+      note="Two free handles, one profile for the whole curve, and a BIPOLAR strength fader with a magnetic notch at centre. The notch is linear; above it Bend goes exponential and below it logarithmic — the inverse shape — so lin/exp/log are one continuum with one neutral position rather than three buttons, and the mode word under the fader is read back off the fader rather than picked. S-curve rides the same fader and goes over centre to invert its shoulders (in-out ↔ out-in); Snap has nothing to bend, so the fader greys out (never hidden). Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 in both axes (strength −1..+1) and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at node-face size."
     >
       <div class="curve-demo">
         <div class="curve-col">
-          <span class="curve-cap">envelope · time → level · exp, with today's decay ghosted</span>
+          <span class="curve-cap">envelope · time → level · exp, decay ghosted</span>
           <CurveField
             value={decayCurve}
             onChange={(v) => (decayCurve = v)}
@@ -345,7 +356,7 @@
           />
         </div>
         <div class="curve-col">
-          <span class="curve-cap">transfer · velocity in → out · linear, strength greyed</span>
+          <span class="curve-cap">transfer · velocity in → out · s-curve, inverted</span>
           <CurveField
             value={velocityCurve}
             onChange={(v) => (velocityCurve = v)}
@@ -357,15 +368,27 @@
             ariaLabel="Velocity sensitivity"
           />
         </div>
+        <div class="curve-col">
+          <span class="curve-cap">gate · velocity in → out · snap, fader greyed</span>
+          <CurveField
+            value={gateCurve}
+            onChange={(v) => (gateCurve = v)}
+            xAxis={{ label: 'in', format: (u) => String(Math.round(u * 127)) }}
+            yAxis={{ label: 'out', format: (u) => String(Math.round(u * 127)) }}
+            showPreview={false}
+            ariaLabel="Velocity gate"
+          />
+        </div>
       </div>
       <div class="curve-minis">
         <span class="curve-cap">node faces (56×32, read-only)</span>
         <CurveFieldMini value={decayCurve} ariaLabel="Decay envelope thumbnail" />
         <CurveFieldMini value={velocityCurve} ariaLabel="Velocity curve thumbnail" />
         <CurveFieldMini
-          value={{ h0: { x: 0.2, y: 1 }, h1: { x: 0.6, y: 0 }, profile: 'snap', strength: 0 }}
-          ariaLabel="Snap thumbnail"
+          value={{ h0: { x: 0, y: 1 }, h1: { x: 0.85, y: 0 }, profile: 'bend', strength: -0.7 }}
+          ariaLabel="Log envelope thumbnail"
         />
+        <CurveFieldMini value={gateCurve} ariaLabel="Snap gate thumbnail" />
       </div>
     </DemoCard>
 

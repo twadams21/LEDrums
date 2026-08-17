@@ -13,14 +13,33 @@
  * `h0` right is a hold (envelope) or a threshold/gate (transfer curve) without
  * a third handle or a mode.
  *
- * `strength` is the curvature of the chosen profile, unipolar: **0 is no
- * curvature at all** (every profile collapses to `linear` there, exactly), 1 is
- * the hardest bend. Profiles with nothing to curve (`linear`, `snap`) report
- * `hasStrength: false` — the view disables the control rather than hiding it.
+ * `strength` is **bipolar, −1..+1, with 0 as the centre notch**: 0 is no
+ * curvature at all (the profile is exactly a straight line there), and the two
+ * directions are inverse bends of each other. That is the whole lin/exp/log
+ * question folded into ONE continuum rather than three buttons (Trent,
+ * 2026-08-17): pushing the fader up from centre bends `bend` exponentially,
+ * pulling it down bends it logarithmically — the exact inverse shape — and the
+ * mode word the view prints is DERIVED from where the fader sits (see
+ * {@link curveModeLabel}), never stored beside it. A profile with nothing to
+ * bend (`snap`) reports `hasStrength: false` and the view disables the fader
+ * rather than hiding it.
+ *
+ * Why a notch and not three modes: a straight line reachable only by picking
+ * "Linear" from a list, while a button labelled "Exp" also draws a straight
+ * line at strength 0, is how the control read as broken — the label promised a
+ * bend the value did not have. With the notch there is exactly one neutral
+ * position, it is in the middle where a fader's neutral belongs, and every
+ * departure from it visibly bends.
  */
 
-/** The fixed profile set (Trent, 2026-08-17 — closed; new shapes need a verdict). */
-export type CurveProfile = 'linear' | 'exp' | 'sCurve' | 'snap';
+/**
+ * The fixed profile set (Trent, 2026-08-17 — closed; new shapes need a verdict).
+ *
+ * `bend` is the lin/exp/log continuum: one profile, signed strength. `sCurve`
+ * and `snap` are the two special cases that a continuum cannot express — an
+ * S has a shoulder at each end, and a step has no shape at all.
+ */
+export type CurveProfile = 'bend' | 'sCurve' | 'snap';
 
 /** A handle position in normalised field space. */
 export interface CurvePoint {
@@ -34,7 +53,12 @@ export interface CurveValue {
   h0: CurvePoint;
   h1: CurvePoint;
   profile: CurveProfile;
-  /** 0..1 curvature of `profile`; ignored where `hasStrength` is false. */
+  /**
+   * −1..+1 curvature of `profile`, 0 = straight. The sign picks the DIRECTION of
+   * the bend (`bend`: + exponential, − logarithmic; `sCurve`: + ease-in-out,
+   * − ease-out-in) and the magnitude picks how hard. Ignored where
+   * {@link profileHasStrength} is false.
+   */
   strength: number;
 }
 
@@ -62,8 +86,7 @@ export interface CurveProfileOption {
 
 /** Single source for the picker's options and the strength control's enablement. */
 export const CURVE_PROFILE_OPTIONS: readonly CurveProfileOption[] = [
-  { value: 'linear', label: 'Linear', hasStrength: false },
-  { value: 'exp', label: 'Exp', hasStrength: true },
+  { value: 'bend', label: 'Bend', hasStrength: true },
   { value: 'sCurve', label: 'S-curve', hasStrength: true },
   { value: 'snap', label: 'Snap', hasStrength: false },
 ] as const;
@@ -77,7 +100,7 @@ export function profileHasStrength(profile: CurveProfile): boolean {
 export const DEFAULT_CURVE: CurveValue = {
   h0: { x: 0, y: 1 },
   h1: { x: 1, y: 0 },
-  profile: 'exp',
+  profile: 'bend',
   strength: 0.5,
 };
 
@@ -85,13 +108,53 @@ export const DEFAULT_CURVE: CurveValue = {
 export const NUDGE = 0.01;
 export const NUDGE_COARSE = 10;
 
-/** Hardest `exp` bend, as the exponent at `strength = 1`. */
-const EXP_MAX_POWER = 8;
-/** Hardest `sCurve` shoulder, as the exponent at `strength = 1`. */
+/** Hardest `bend`, as the exponent at `strength = ±1` (its reciprocal going down). */
+const BEND_MAX_POWER = 8;
+/** Hardest `sCurve` shoulder, as the exponent at `strength = ±1`. */
 const S_MAX_POWER = 5;
+
+/**
+ * Half-width of the fader's magnetic zone around centre. Linear is the one
+ * value an author returns to deliberately, and a bare fader makes hitting an
+ * exact 0 a pixel hunt — so the notch pulls, rather than merely being marked.
+ *
+ * The pull is the {@link Slider}'s `notchSnap`, which applies it to POINTER
+ * drags only: a keyboard or wheel step is already exact, and a magnet several
+ * steps wide would trap the thumb on the notch with no way to step off it.
+ */
+export const STRENGTH_NOTCH = 0.05;
 
 /** NaN (the only value with no place on the axis) reads as 0; ±Infinity clamps. */
 export const clamp01 = (n: number): number => (Number.isNaN(n) ? 0 : n < 0 ? 0 : n > 1 ? 1 : n);
+
+/** The same clamp over the bipolar strength axis. */
+export const clampBipolar = (n: number): number =>
+  Number.isNaN(n) ? 0 : n < -1 ? -1 : n > 1 ? 1 : n;
+
+/**
+ * The mode word for a (profile, strength) pair — DERIVED, never stored. This is
+ * what keeps "which mode am I in" answerable from one control: the fader IS the
+ * mode, and the label always tells the truth about the shape on screen (a
+ * straight line never gets called "Exp").
+ */
+export function curveModeLabel(profile: CurveProfile, strength: number): string {
+  const s = clampBipolar(strength);
+  if (profile === 'snap') return 'Snap';
+  if (s === 0) return 'Linear';
+  if (profile === 'sCurve') return s > 0 ? 'In-out' : 'Out-in';
+  return s > 0 ? 'Exp' : 'Log';
+}
+
+/** One-line description of what the fader is doing, for the control's tooltip. */
+export function curveModeHint(profile: CurveProfile, strength: number): string {
+  if (profile === 'snap') return 'Snap holds the start level, then steps — nothing to bend';
+  const mode = curveModeLabel(profile, strength);
+  if (mode === 'Linear') return 'Linear — the notch. Push up or pull down to bend';
+  if (mode === 'Exp') return 'Exp — fast departure, long tail. Pull below centre for Log';
+  if (mode === 'Log') return 'Log — slow departure, late fall. Push above centre for Exp';
+  if (mode === 'In-out') return 'S-curve, ease-in-out. Pull below centre to invert it';
+  return 'S-curve inverted, ease-out-in. Push above centre to un-invert it';
+}
 
 /**
  * Clamp every field into range and put the handles in x order, so `evalCurve`
@@ -106,8 +169,8 @@ export function normalizeCurve(value: CurveValue): CurveValue {
   return {
     h0: swapped ? b : a,
     h1: swapped ? a : b,
-    profile: isProfile(value.profile) ? value.profile : 'linear',
-    strength: clamp01(value.strength),
+    profile: isProfile(value.profile) ? value.profile : 'bend',
+    strength: clampBipolar(value.strength),
   };
 }
 
@@ -120,28 +183,33 @@ function isProfile(p: unknown): p is CurveProfile {
  * `p` 0..1 in, 0..1 out, always `f(0) = 0` and `f(1) = 1` so the curve meets
  * both handles exactly whatever the strength.
  *
- * `exp` is an ease-OUT — quick departure, slow settle. That is the
- * `exp(−t/τ)` decay the app already paints (and the shape this control exists
- * to beat); on a transfer curve it reads as "lift the quiet hits". The
- * opposite bend is reachable without a second profile by moving a handle: a
- * flat run out to `h0.x` is a hold, or a gate.
+ * Both bendable profiles take their exponent as `base ^ strength`, which is what
+ * makes the fader's two halves exact mirrors of each other: `+s` and `−s` give
+ * reciprocal exponents, so the shapes are inverse functions and the notch at
+ * `s = 0` is `base⁰ = 1`, i.e. dead straight, by arithmetic rather than by a
+ * special case.
+ *
+ * - `bend` above centre is an ease-OUT — quick departure, slow settle: the
+ *   `exp(−t/τ)` decay the app already paints, and on a transfer curve "lift the
+ *   quiet hits". Below centre is its inverse, the logarithmic hold-then-fall.
+ * - `sCurve` above centre is ease-in-out (a shoulder at each end); below centre
+ *   inverts it to ease-out-in — fast off the mark, a plateau through the middle,
+ *   fast into the end.
  */
 export function shapeAt(profile: CurveProfile, p: number, strength: number): number {
   const u = clamp01(p);
-  const s = clamp01(strength);
+  const s = clampBipolar(strength);
   switch (profile) {
-    case 'linear':
-      return u;
     case 'snap':
       // Held at the start level until the end handle, then a step. The caller
       // handles the endpoints, so anything short of 1 is still "before".
       return u >= 1 ? 1 : 0;
-    case 'exp': {
-      const k = Math.pow(EXP_MAX_POWER, s); // s=0 → 1 (linear), s=1 → 8
+    case 'bend': {
+      const k = Math.pow(BEND_MAX_POWER, s); // s=−1 → 1/8 (log), 0 → 1, +1 → 8 (exp)
       return 1 - Math.pow(1 - u, k);
     }
     case 'sCurve': {
-      const k = 1 + s * (S_MAX_POWER - 1); // s=0 → 1 (linear), s=1 → 5
+      const k = Math.pow(S_MAX_POWER, s); // s=−1 → 1/5 (out-in), 0 → 1, +1 → 5 (in-out)
       return u < 0.5 ? 0.5 * Math.pow(u * 2, k) : 1 - 0.5 * Math.pow((1 - u) * 2, k);
     }
   }
