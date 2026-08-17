@@ -54,7 +54,7 @@
   },
   "gen3-envelope-inspector": {
     "state": "view:trigger,new-graph,add:envelope,select:envelope",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "gen3-mix-node": {
     "state": "view:trigger,add:mix,select:mix",
