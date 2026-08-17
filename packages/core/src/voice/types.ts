@@ -362,6 +362,15 @@ export interface SpliceConfig {
   drumOffsetMs: number;
   /** The order drums start moving in when {@link drumOffsetMs} is non-zero. */
   drumOrder: SpliceOrder;
+  /** Milliseconds each SPLICE starts after the one before it, in {@link colorOrder} — so the
+      colours come on one after another rather than all together. Only visible when
+      {@link waitMode} hides them first; 0 = every colour at once. */
+  colorOffsetMs: number;
+  /** The order the colours come on when {@link colorOffsetMs} is set. */
+  colorOrder: SpliceOrder;
+  /** Where the cut sits around the run, in degrees — a phase offset that rotates every band's
+      start. 0 = the run's own start. */
+  rotationDeg: number;
   /** 0..1 — how far each splice's colour bleeds into its neighbours across their shared edge.
       0 is a hard cut. Expressed as a fraction of the average band width, so it reads the same
       on a small hoop and a big kick. */
@@ -490,6 +499,15 @@ export interface GraphNode {
   spliceSmudge?: number;
   /** Whether a hit restarts this splice's motion or it free-runs. Absent → `'restart'`. */
   spliceMotionMode?: SpliceMotionMode;
+  /** Per-SPLICE cascade: the order the colours come on, and how far apart. Needs a
+      {@link spliceWaitMode} other than `'lit'` to be visible — otherwise everything is already
+      lit and there is no arrival to stagger. */
+  spliceColorOffsetMode?: 'time' | 'beats';
+  spliceColorOffsetMs?: number;
+  spliceColorOffsetDivision?: string;
+  spliceColorOrder?: SpliceOrder;
+  /** Rotate the cut around each hoop/drum, 0..360°. Absent → 0. */
+  spliceRotationDeg?: number;
   /** What a unit does before its cascade turn arrives. Absent → `'lit'` (the original
       behaviour: the whole kit lights at once and only the MOVEMENT cascades). */
   spliceWaitMode?: SpliceWaitMode;

@@ -150,25 +150,29 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       cfg,
     );
     // `dark`: nothing until this unit's turn — measured on the voice's age, mirroring core.
-    if (cfg.waitMode !== 'lit' && delay > 0 && age < delay) return;
-    // `pulse` runs the authored envelope per unit, mirroring core.
-    const unitLevel =
-      cfg.waitMode === 'pulse'
-        ? voice.unitEnvelopeLevel(age - delay, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
-        : 1;
-    if (unitLevel <= 0) return;
+
     const unitAge = voice.unitMotionAge(motionClock, delay);
     const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
+    // Rotation is a static phase on the cut, riding the same shift as the chase.
     const shift =
-      cfg.chase === 'smooth'
+      voice.spliceRotationPx(cfg.rotationDeg, len) +
+      (cfg.chase === 'smooth'
         ? voice.chasePixelShift(unitAge, cfg.chaseMs, cfg.direction, len)
         : cfg.chase === 'stagger'
           ? voice.chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
-          : 0;
+          : 0);
     const feather = voice.spliceFeatherPx(cfg.smudge, bands, len);
     voice.forEachSpliceSegment(bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
       const inputIndex = cfg.inputBySlot[slot] ?? -1;
       if (inputIndex < 0) return; // a blank splice shows nothing
+      // Per-SPLICE reveal (colour cascade on top of the unit's turn), mirroring core.
+      const reveal = delay + voice.colorCascadeDelayMs(slot, cfg);
+      if (cfg.waitMode !== 'lit' && reveal > 0 && age < reveal) return;
+      const unitLevel =
+        cfg.waitMode === 'pulse'
+          ? voice.unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
+          : 1;
+      if (unitLevel <= 0) return;
       const src = spliceBytes[inputIndex]!;
       const colour = voice.spliceTintColour(cfg.colors[slot]);
       const span = bandEnd - bandStart;

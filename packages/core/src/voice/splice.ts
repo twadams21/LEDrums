@@ -288,10 +288,25 @@ export function unitMotionAge(ageMs: number, delayMs: number): number {
  * the model's shape rather than by walking units, so the engine can extend a voice at spawn.
  */
 export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number {
-  if (cfg.partition === 'scope' || model.drums.length === 0) return 0;
+  // The colour axis applies even under the `scope` partition, where there is only one unit.
+  const colour = Math.max(0, (cfg.count - 1) * cfg.colorOffsetMs);
+  if (cfg.partition === 'scope' || model.drums.length === 0) return colour;
   const drums = model.drums.length;
   const primary = cfg.partition === 'drum' ? drums : Math.max(...model.drums.map((d) => d.hoopCount));
-  return Math.max(0, (primary - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs);
+  return Math.max(0, (primary - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs) + colour;
+}
+
+/** How long a given SPLICE waits on top of its unit's turn, when the colours are staggered. */
+export function colorCascadeDelayMs(slot: number, cfg: SpliceConfig): number {
+  if (!(cfg.colorOffsetMs > 0)) return 0;
+  return spliceOrderIndex(slot, cfg.count, cfg.colorOrder, cfg.seed) * cfg.colorOffsetMs;
+}
+
+/** The static phase offset, in pixels, that {@link SpliceConfig.rotationDeg} puts on a run of
+    `len` pixels — a hoop is a circle, so degrees are the natural unit for "where the cut sits". */
+export function spliceRotationPx(rotationDeg: number, len: number): number {
+  if (!rotationDeg || len <= 0) return 0;
+  return (rotationDeg / 360) * len;
 }
 
 /**
@@ -508,33 +523,28 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
   // Per-unit cascade offset, resolved here (not per frame) for the same snapshot-stability
   // reason as the chase rate. A `beats` offset with no division chosen is 0: picking an ORDER
   // alone must never start a cascade the author did not ask for.
-  const offsetMs =
-    chase === 'off'
-      ? 0
-      : Math.max(
-          0,
-          (node.spliceOffsetMode ?? 'beats') === 'time'
-            ? (node.spliceOffsetMs ?? 0)
-            : node.spliceOffsetDivision
-              ? computeDelayMs('beats', 0, node.spliceOffsetDivision, bpm > 0 ? bpm : 120, beatsPerBar)
-              : 0,
-        );
-
-  /** Resolve one of the two cascade offsets — a division against the bar, or free ms. A
-      `beats` offset with no division chosen is 0: picking an ORDER alone must never start a
-      cascade the author did not ask for. */
+  /**
+   * Resolve one of the cascade offsets — a division against the bar, or free ms. A `beats`
+   * offset with no division chosen is 0: picking an ORDER alone must never start a cascade the
+   * author did not ask for.
+   *
+   * Deliberately NOT gated on the chase being on. An offset used to be meaningless without
+   * motion, but the wait modes changed that: with `dark` or `pulse` the offset is what makes
+   * the LIGHT travel, and a splice that only arrives hoop by hoop with no chase at all is a
+   * perfectly good look.
+   */
   const cascadeMs = (mode: 'time' | 'beats' | undefined, ms: number | undefined, division: string | undefined): number =>
-    chase === 'off'
-      ? 0
-      : Math.max(
-          0,
-          (mode ?? 'beats') === 'time'
-            ? (ms ?? 0)
-            : division
-              ? computeDelayMs('beats', 0, division, bpm > 0 ? bpm : 120, beatsPerBar)
-              : 0,
-        );
+    Math.max(
+      0,
+      (mode ?? 'beats') === 'time'
+        ? (ms ?? 0)
+        : division
+          ? computeDelayMs('beats', 0, division, bpm > 0 ? bpm : 120, beatsPerBar)
+          : 0,
+    );
+  const offsetMs = cascadeMs(node.spliceOffsetMode, node.spliceOffsetMs, node.spliceOffsetDivision);
   const drumOffsetMs = cascadeMs(node.spliceDrumOffsetMode, node.spliceDrumOffsetMs, node.spliceDrumOffsetDivision);
+  const colorOffsetMs = cascadeMs(node.spliceColorOffsetMode, node.spliceColorOffsetMs, node.spliceColorOffsetDivision);
 
   const colors: (string | null)[] = [];
   const inputBySlot: number[] = [];
@@ -582,6 +592,10 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
       // through would delay every unit twice over.
       drumOffsetMs: (node.splicePartition ?? 'hoop') === 'hoop' ? drumOffsetMs : 0,
       drumOrder: node.spliceDrumOrder ?? 'up',
+      colorOffsetMs,
+      colorOrder: node.spliceColorOrder ?? 'up',
+      // Wrapped, not clamped: 370° is 10°, and a negative rotation reads backwards.
+      rotationDeg: ((node.spliceRotationDeg ?? 0) % 360 + 360) % 360,
       smudge: clamp01(node.spliceSmudge ?? 0),
       motionMode: node.spliceMotionMode ?? 'restart',
       waitMode: node.spliceWaitMode ?? 'lit',

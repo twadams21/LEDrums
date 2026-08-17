@@ -28,6 +28,7 @@
     SPLICE_OFFSET_MODE_OPTS,
     SPLICE_WAIT_MODE_HINTS,
     SPLICE_WAIT_MODE_OPTS,
+    SPLICE_NO_DIVISION,
     SPLICE_ORDER_OPTS,
     SPLICE_DIRECTION_OPTS,
     SPLICE_NO_EFFECT,
@@ -36,6 +37,7 @@
     describeSpliceRow,
     spliceEffectOptions,
     spliceLayerOptions,
+    spliceOffsetDivisionOptions,
     spliceRows,
     spliceUnitNoun,
   } from '../../views/splice-options';
@@ -57,6 +59,7 @@
   const canCascade = $derived(partition !== 'scope');
   const drumOffsetMode = $derived(node.spliceDrumOffsetMode ?? 'beats');
   const waitMode = $derived(node.spliceWaitMode ?? 'lit');
+  const colorOffsetMode = $derived(node.spliceColorOffsetMode ?? 'beats');
   // The drum axis is only separate from the primary one when cutting per HOOP — cutting per
   // drum already cascades drum by drum, and per scope there is a single unit.
   const canCascadeDrums = $derived(partition === 'hoop' && node.scope !== 'drum' && node.scope !== 'hoop');
@@ -125,6 +128,18 @@
         />
       </Field>
 
+      <Field layout="row" label="Rotate" unit="°">
+        <CommitInput
+          type="number"
+          value={node.spliceRotationDeg ?? 0}
+          min={0}
+          max={360}
+          step={1}
+          onCommit={(v) => store.setSpliceSetting(node, { spliceRotationDeg: Number(v) })}
+          ariaLabel="Splice rotation degrees"
+        />
+      </Field>
+
       <Field layout="row" label="Random lengths">
         <Slider
           value={jitter}
@@ -176,6 +191,9 @@
         />
       </Field>
 
+      <!-- Motion-only controls. The CASCADE block below is deliberately outside this gate:
+           an offset used to need motion to mean anything, but a dark/pulse wait makes the
+           offset itself the thing that travels, with no chase running at all. -->
       {#if chase !== 'off'}
         <Field label="On each hit">
           <SegmentedControl
@@ -242,6 +260,9 @@
           />
         </Field>
 
+        <p class="hint">{SPLICE_CHASE_HINTS[chase]}</p>
+      {/if}
+
         {#if canCascade}
           <Field layout="row" label="{unitNoun} offset">
             <SegmentedControl
@@ -255,9 +276,9 @@
           {#if offsetMode === 'beats'}
             <Field layout="row" label="Division">
               <Select
-                value={node.spliceOffsetDivision ?? ''}
-                options={[{ value: '', label: 'None (together)' }, ...DIVISION_OPTS]}
-                onChange={(v) => store.setSpliceSetting(node, { spliceOffsetDivision: v || undefined })}
+                value={node.spliceOffsetDivision ?? SPLICE_NO_DIVISION}
+                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
+                onChange={(v) => store.setSpliceSetting(node, { spliceOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
                 ariaLabel="{unitNoun} offset division"
               />
             </Field>
@@ -288,7 +309,7 @@
         {/if}
 
         {#if canCascade}
-          <Field layout="row" label="Before its turn">
+          <Field label="Before its turn">
             <SegmentedControl
               value={waitMode}
               options={SPLICE_WAIT_MODE_OPTS}
@@ -297,6 +318,54 @@
             />
           </Field>
           <p class="hint">{SPLICE_WAIT_MODE_HINTS[waitMode]}</p>
+        {/if}
+
+        {#if waitMode !== 'lit'}
+          <Field layout="row" label="Colour offset">
+            <SegmentedControl
+              value={colorOffsetMode}
+              options={SPLICE_OFFSET_MODE_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetMode: v as 'beats' | 'time' })}
+              ariaLabel="Colour offset mode"
+            />
+          </Field>
+
+          {#if colorOffsetMode === 'beats'}
+            <Field layout="row" label="Division">
+              <Select
+                value={node.spliceColorOffsetDivision ?? SPLICE_NO_DIVISION}
+                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
+                onChange={(v) => store.setSpliceSetting(node, { spliceColorOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
+                ariaLabel="Colour offset division"
+              />
+            </Field>
+          {:else}
+            <Field layout="row" label="Time" unit="ms">
+              <CommitInput
+                type="number"
+                value={node.spliceColorOffsetMs ?? 0}
+                min={0}
+                max={60000}
+                step={1}
+                onCommit={(v) => store.setSpliceSetting(node, { spliceColorOffsetMs: Number(v) })}
+                ariaLabel="Colour offset milliseconds"
+              />
+            </Field>
+          {/if}
+
+          <Field layout="row" label="Colour order">
+            <Select
+              value={node.spliceColorOrder ?? 'up'}
+              options={SPLICE_ORDER_OPTS}
+              onChange={(v) => store.setSpliceSetting(node, { spliceColorOrder: v as voice.SpliceOrder })}
+              ariaLabel="Colour order"
+            />
+          </Field>
+
+          <p class="hint">
+            Brings the colours on one after another instead of all together, in the order above. With
+            Pulse each one fades in and out on its own.
+          </p>
         {/if}
 
         {#if canCascadeDrums}
@@ -312,9 +381,9 @@
           {#if drumOffsetMode === 'beats'}
             <Field layout="row" label="Division">
               <Select
-                value={node.spliceDrumOffsetDivision ?? ''}
-                options={[{ value: '', label: 'None (together)' }, ...DIVISION_OPTS]}
-                onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetDivision: v || undefined })}
+                value={node.spliceDrumOffsetDivision ?? SPLICE_NO_DIVISION}
+                options={spliceOffsetDivisionOptions(DIVISION_OPTS)}
+                onChange={(v) => store.setSpliceSetting(node, { spliceDrumOffsetDivision: v === SPLICE_NO_DIVISION ? undefined : v })}
                 ariaLabel="Drum offset division"
               />
             </Field>
@@ -355,7 +424,6 @@
             {unitNoun.toLowerCase()} moving together.
           </p>
         {/if}
-      {/if}
     </section>
 
     <section class="group">

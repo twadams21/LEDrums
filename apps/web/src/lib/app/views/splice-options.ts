@@ -35,6 +35,16 @@ export const SPLICE_DIRECTION_OPTS: Array<{ value: string; label: string }> = [
   { value: '-1', label: 'Reverse' },
 ];
 
+/** Sentinel for "no offset division". An empty string reads as UNSET to the Select, which then
+    shows its placeholder instead of the option's own label. */
+export const SPLICE_NO_DIVISION = '@none';
+
+/** Division options for a cascade offset, with an explicit "no offset" entry first. */
+export const spliceOffsetDivisionOptions = (divisions: Array<{ value: string; label: string }>): Array<{ value: string; label: string }> => [
+  { value: SPLICE_NO_DIVISION, label: 'None (together)' },
+  ...divisions,
+];
+
 export const SPLICE_OFFSET_MODE_OPTS: Array<{ value: 'beats' | 'time'; label: string }> = [
   { value: 'beats', label: 'Division' },
   { value: 'time', label: 'Time' },

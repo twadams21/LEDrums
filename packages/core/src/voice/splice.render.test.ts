@@ -537,6 +537,80 @@ describe('splice — drum cascade', () => {
   });
 });
 
+describe('splice — rotation', () => {
+  it('rotates where the cut sits around each hoop', () => {
+    // 4-pixel hoops, 2 splices: at 0° red is 0-1 and blue 2-3. A quarter turn moves the cut
+    // one pixel along; a half turn swaps the two colours outright.
+    const at = (deg: number) => render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
+    expectRgb(at(0).rgb(0), RED, '0°');
+    expectRgb(at(90).rgb(0), BLUE, '90° — the wrapped tail of the blue band');
+    expectRgb(at(90).rgb(1), RED, '90° — red has moved one pixel along');
+    expectRgb(at(180).rgb(0), BLUE, '180° — the colours have swapped');
+    expectRgb(at(180).rgb(2), RED, '180°');
+  });
+
+  it('wraps rather than clamping, so 360° is 0° and negatives read backwards', () => {
+    const at = (deg: number) => render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
+    for (let i = 0; i < 4; i++) expectRgb(at(360).rgb(i), at(0).rgb(i), `pixel ${i}`);
+    for (let i = 0; i < 4; i++) expectRgb(at(-180).rgb(i), at(180).rgb(i), `pixel ${i}`);
+  });
+
+  it('rotates every hoop of the kit, not just the first', () => {
+    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: 180 }));
+    for (const hoopStart of [0, 4, 8, 12]) expectRgb(rgb(hoopStart), BLUE, `hoop@${hoopStart}`);
+  });
+});
+
+describe('splice — colour cascade', () => {
+  const colours = (over: Partial<GraphNode>, atMs: number) =>
+    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+      spliceWaitMode: 'dark',
+      spliceHoldMs: 60000,
+      ...over,
+    }), [], atMs);
+
+  it('brings the colours on one after another instead of together', () => {
+    const { rgb } = colours({ spliceColorOffsetMode: 'time', spliceColorOffsetMs: 200, spliceColorOrder: 'up' }, 150);
+    expectRgb(rgb(0), RED, 'the first colour is up');
+    expectRgb(rgb(2), DARK, 'the second has not arrived yet');
+  });
+
+  it('brings the second one on when its turn comes', () => {
+    const { rgb } = colours({ spliceColorOffsetMode: 'time', spliceColorOffsetMs: 200, spliceColorOrder: 'up' }, 260);
+    expectRgb(rgb(0), RED, 'first colour');
+    expectRgb(rgb(2), BLUE, 'second colour has arrived');
+  });
+
+  it('reverses which colour leads', () => {
+    const { rgb } = colours({ spliceColorOffsetMode: 'time', spliceColorOffsetMs: 200, spliceColorOrder: 'down' }, 150);
+    expectRgb(rgb(0), DARK, 'the first colour now waits');
+    expectRgb(rgb(2), BLUE, 'the last one leads');
+  });
+
+  it('stacks on top of the hoop cascade rather than replacing it', () => {
+    // Hoop offset 400ms, colour offset 100ms. At 150ms hoop 1 has both colours (0ms and 100ms)
+    // but hoop 2 has neither (400ms and 500ms).
+    const { rgb } = colours(
+      {
+        spliceOffsetMode: 'time',
+        spliceOffsetMs: 400,
+        spliceColorOffsetMode: 'time',
+        spliceColorOffsetMs: 100,
+      },
+      150,
+    );
+    expectRgb(rgb(0), RED, 'hoop 1 colour 1');
+    expectRgb(rgb(2), BLUE, 'hoop 1 colour 2');
+    expectRgb(rgb(4), DARK, 'hoop 2 has not had its turn at all');
+  });
+
+  it('does nothing while everything is already lit', () => {
+    const { rgb } = colours({ spliceWaitMode: 'lit', spliceColorOffsetMode: 'time', spliceColorOffsetMs: 5000 }, 150);
+    expectRgb(rgb(0), RED, 'nothing is hidden, so nothing can be staggered');
+    expectRgb(rgb(2), BLUE, 'both colours up from the start');
+  });
+});
+
 describe('splice — envelope', () => {
   /** Total lit brightness of the frame — a proxy for "are the lights still up". */
   const litSum = (rgb: (i: number) => [number, number, number]) => {

@@ -29,11 +29,13 @@ import {
   chasePixelShift,
   chaseStaggerShift,
   chaseStepOffset,
+  colorCascadeDelayMs,
   computeSpliceBands,
   forEachPartitionUnit,
   forEachSpliceSegment,
   spliceFeatherPx,
   spliceOrderIndex,
+  spliceRotationPx,
   spliceTintColour,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
@@ -349,28 +351,34 @@ export function createDefaultCompositor(): Compositor {
             // rather than the movement travelling through already-lit hoops. Measured against
             // the voice's own age, not the motion clock — `continuous` has no zero to count a
             // delay from, and a hit should always cascade from the moment it was struck.
-            if (cfg.waitMode !== 'lit' && delay > 0 && age < delay) continue;
-            // `pulse` runs the AUTHORED envelope per unit, started at this unit's turn, so the
-            // light travels as a pulse instead of a leading edge. The voice's own level still
-            // multiplies in below (it handles the bus, deck gain and any steal), and the voice
-            // was extended at spawn so the far side of the kit is not cut off mid-cascade.
-            const unitLevel =
-              cfg.waitMode === 'pulse'
-                ? unitEnvelopeLevel(age - delay, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
-                : 1;
-            if (unitLevel <= 0) continue;
+
             const unitAge = unitMotionAge(motionClock, delay);
             const stepOffset = cfg.chase === 'step' ? chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
+            // Rotation is a STATIC phase on the cut, so it rides the same shift the chase uses.
             const shift =
-              cfg.chase === 'smooth'
+              spliceRotationPx(cfg.rotationDeg, len) +
+              (cfg.chase === 'smooth'
                 ? chasePixelShift(unitAge, cfg.chaseMs, cfg.direction, len)
                 : cfg.chase === 'stagger'
                   ? chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
-                  : 0;
+                  : 0);
             const feather = spliceFeatherPx(cfg.smudge, unit.bands, len);
             forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
               const inputIndex = cfg.inputBySlot[slot] ?? -1;
               if (inputIndex < 0) return; // a blank splice shows nothing
+              // The reveal is per SPLICE, not just per unit: a colour offset staggers when each
+              // colour arrives on top of when its hoop's turn came. The MOTION clock deliberately
+              // ignores it — the colours arrive in order, they do not each chase at a different phase.
+              const reveal = delay + colorCascadeDelayMs(slot, cfg);
+              if (cfg.waitMode !== 'lit' && reveal > 0 && age < reveal) return;
+              // `pulse` runs the AUTHORED envelope from this splice's own arrival, so the light
+              // travels as a pulse instead of a leading edge. The voice's level still multiplies
+              // in below, and the voice was extended at spawn to outlive the whole cascade.
+              const unitLevel =
+                cfg.waitMode === 'pulse'
+                  ? unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
+                  : 1;
+              if (unitLevel <= 0) return;
               const src = buffers[inputIndex]!.rgba;
               const colour = spliceTintColour(cfg.colors[slot]);
               const span = bandEnd - bandStart;
