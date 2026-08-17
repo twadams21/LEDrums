@@ -39,6 +39,7 @@ import {
   spliceTintColour,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
+  unitFadeInLevel,
   unitMotionAge,
   tintPixel,
   type SpliceBand,
@@ -377,7 +378,9 @@ export function createDefaultCompositor(): Compositor {
               const unitLevel =
                 cfg.waitMode === 'pulse'
                   ? unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
-                  : 1;
+                  : cfg.waitMode === 'fade'
+                    ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs)
+                    : 1;
               if (unitLevel <= 0) return;
               const src = buffers[inputIndex]!.rgba;
               const colour = spliceTintColour(cfg.colors[slot]);

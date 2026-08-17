@@ -122,7 +122,7 @@ describe('divisions', () => {
 
 describe('wait mode options', () => {
   it('offers all three, and explains the difference', () => {
-    expect(SPLICE_WAIT_MODE_OPTS.map((o) => o.value)).toEqual(['lit', 'dark', 'pulse']);
+    expect(SPLICE_WAIT_MODE_OPTS.map((o) => o.value)).toEqual(['lit', 'dark', 'fade', 'pulse']);
     for (const opt of SPLICE_WAIT_MODE_OPTS) expect(SPLICE_WAIT_MODE_HINTS[opt.value], opt.value).not.toBe('');
   });
 });

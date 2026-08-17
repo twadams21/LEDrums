@@ -171,7 +171,9 @@ function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, l
       const unitLevel =
         cfg.waitMode === 'pulse'
           ? voice.unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
-          : 1;
+          : cfg.waitMode === 'fade'
+            ? voice.unitFadeInLevel(age - reveal, cfg.envelope.attackMs)
+            : 1;
       if (unitLevel <= 0) return;
       const src = spliceBytes[inputIndex]!;
       const colour = voice.spliceTintColour(cfg.colors[slot]);

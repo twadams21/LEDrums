@@ -297,14 +297,18 @@ export type SpliceMotionMode = 'restart' | 'continuous' | 'latched';
  * - `'dark'` — it emits nothing at all until its turn comes, so the light itself travels
  *              across the hoops (or drums) rather than the movement travelling through
  *              already-lit ones. Once lit it stays up for the rest of the voice.
- * - `'pulse'` — as `'dark'`, and it runs its OWN attack/hold/fade as the cascade reaches it,
+ * - `'fade'`  — as `'dark'`, but it fades UP over the attack time as its turn arrives and then
+ *               stays lit. Without this only the first arrival ever fades, because the fade a
+ *               `'dark'` unit appears to have is really the VOICE's global attack — which is
+ *               long finished by the time the second one is revealed.
+ * - `'pulse'` — as `'fade'`, and it also holds and fades back OUT as the cascade reaches it,
  *               then goes dark again: a pulse of light travelling across the kit rather than
  *               a leading edge that leaves everything lit behind it.
  * Timed against the VOICE's age, not the motion clock, so it means the same thing under all
  * three {@link SpliceMotionMode}s — including `continuous`, whose clock has no zero to
  * measure a delay from.
  */
-export type SpliceWaitMode = 'lit' | 'dark' | 'pulse';
+export type SpliceWaitMode = 'lit' | 'dark' | 'fade' | 'pulse';
 
 /**
  * One splice — what renders inside one band of the partition. Every field is optional

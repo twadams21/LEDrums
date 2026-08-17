@@ -604,6 +604,36 @@ describe('splice — colour cascade', () => {
     expectRgb(rgb(4), DARK, 'hoop 2 has not had its turn at all');
   });
 
+  it('fades EVERY colour in, not just the first', () => {
+    // The bug this mode exists for: in `dark` the only fade is the voice's global attack, so the
+    // first colour eases in and every later one snaps. Here both are mid-fade at the same point
+    // through their own arrival.
+    const at = (mode: 'dark' | 'fade', atMs: number) =>
+      colours(
+        { spliceWaitMode: mode, spliceAttackMs: 200, spliceColorOffsetMode: 'time', spliceColorOffsetMs: 400 },
+        atMs,
+      );
+    // 100ms into the SECOND colour's arrival (it is revealed at 400ms), halfway through a 200ms attack.
+    const fading = at('fade', 500).rgb(2);
+    expect(fading[2], 'second colour is part-way up').toBeGreaterThan(0.1);
+    expect(fading[2], 'and not yet at full').toBeLessThan(0.9);
+    // The same instant in `dark`: it snapped straight to full.
+    expect(at('dark', 500).rgb(2)[2], 'dark mode gives it no fade at all').toBeCloseTo(1, 2);
+  });
+
+  it('stays lit once faded in, where pulse would have gone dark again', () => {
+    // The voice's own hold stays long (the helper's default) so this isolates the UNIT's
+    // behaviour: `fade` leaves it up, `pulse` takes it back down after its own hold + fade.
+    const over = { spliceAttackMs: 20, spliceColorOffsetMode: 'time' as const, spliceColorOffsetMs: 100 };
+    const faded = colours({ ...over, spliceWaitMode: 'fade' }, 600);
+    expectRgb(faded.rgb(0), RED, 'first colour still up');
+    expectRgb(faded.rgb(2), BLUE, 'and the second');
+
+    const pulsed = colours({ ...over, spliceWaitMode: 'pulse', spliceHoldMs: 60, spliceReleaseMs: 40 }, 600);
+    expectRgb(pulsed.rgb(0), DARK, 'pulse has taken the first colour back down');
+    expectRgb(pulsed.rgb(2), DARK, 'and the second');
+  });
+
   it('does nothing while everything is already lit', () => {
     const { rgb } = colours({ spliceWaitMode: 'lit', spliceColorOffsetMode: 'time', spliceColorOffsetMs: 5000 }, 150);
     expectRgb(rgb(0), RED, 'nothing is hidden, so nothing can be staggered');

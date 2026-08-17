@@ -62,6 +62,7 @@ export {
   maxCascadeDelayMs,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
+  unitFadeInLevel,
   unitMotionAge,
   tintPixel,
   wrapIndex,

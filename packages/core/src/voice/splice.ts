@@ -325,6 +325,18 @@ export function unitEnvelopeLevel(ownAgeMs: number, attackMs: number, sustainMs:
   return out > 0 ? out : 0;
 }
 
+/**
+ * One unit's fade-in level 0..1 in `'fade'`: it rises over `attackMs` from the moment its turn
+ * came and then STAYS up. Distinct from {@link unitEnvelopeLevel}, which also holds and fades
+ * back out — this is for a cascade that should leave the kit lit behind it, with each arrival
+ * easing in rather than snapping.
+ */
+export function unitFadeInLevel(ownAgeMs: number, attackMs: number): number {
+  if (!(ownAgeMs > 0)) return 0;
+  if (!(attackMs > 0)) return 1;
+  return ownAgeMs >= attackMs ? 1 : ownAgeMs / attackMs;
+}
+
 /** A unit's total cascade delay: its place on the hoop axis plus its place on the drum axis. */
 export function unitCascadeDelayMs(orderIndex: number, drumOrderIndex: number, cfg: SpliceConfig): number {
   return orderIndex * cfg.offsetMs + drumOrderIndex * cfg.drumOffsetMs;
