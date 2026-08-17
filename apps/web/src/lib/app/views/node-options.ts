@@ -60,6 +60,13 @@ export const POLY_OPTS = [
 // is never a conversion target either.
 export const KIND_OPTS = NODE_KINDS.filter((k) => !voice.isModSourceKind(k) && k !== 'output').map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
 
+/** Modulation SOURCE kinds, as an in-place switcher (F3 item 11) — the Add-node menu's
+    Modulate group at KIND level. The group's palette items go one level finer (an envelope
+    shape preset, an LFO waveform), but those dimensions already have their own control inside
+    each source's own editor, so a switcher offering them would be a second way to set the same
+    thing. Icons and tints are the palette's own. */
+export const MOD_SOURCE_OPTS = NODE_KINDS.filter((k) => voice.isModSourceKind(k)).map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
+
 export const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
   { value: 'value', label: 'value' },
   { value: 'section', label: 'section' },

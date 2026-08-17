@@ -138,6 +138,16 @@
     { value: 'artnet', label: 'Art-Net', icon: Cable },
     { value: 'sacn', label: 'sACN', icon: Radio },
   ];
+  // ≥5 entries, so this one stays a dropdown — the same component, the other branch of the rule
+  const collectionOptions = [
+    { value: 'hits', label: 'Hits' },
+    { value: 'waves', label: 'Waves & Ripples' },
+    { value: 'particles', label: 'Particles & Air' },
+    { value: 'textures', label: 'Textures' },
+    { value: 'ambient', label: 'Ambient & Base' },
+    { value: 'meters', label: 'Meters & Utility' },
+  ];
+  let collection = $state('hits');
   const modeOptions = [
     { value: 'perform', label: 'Perform' },
     { value: 'arrange', label: 'Arrange' },
@@ -315,10 +325,17 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Selection" src={['lib/ui/Select', 'lib/ui/SegmentedControl', 'lib/ui/Tabs']}>
+    <DemoCard
+      title="Selection"
+      src={['lib/ui/Select', 'lib/ui/SegmentedControl', 'lib/ui/Tabs']}
+      note="Select decides its OWN shape: four options or fewer render as a segmented control (every choice visible, one click to switch), five or more stay a dropdown — so a registry that grows past four reverts by itself and no call site has to choose. Two exclusions: an ACTION picker sitting on a placeholder (&quot;Add parameter…&quot;) has no state to segment, and a list of names the app did not author — user presets, effect and scene names, network interfaces — opts out with segment=&#123;false&#125;, because a segment clips where a trigger ellipsises. An open dropdown may use 80% of the viewport before it scrolls."
+    >
       <div class="comp-stack">
         <Field label="Protocol">
           <Select bind:value={protocol} options={protocolOptions} ariaLabel="Protocol" />
+        </Field>
+        <Field label="Collection">
+          <Select bind:value={collection} options={collectionOptions} ariaLabel="Collection" />
         </Field>
         <SegmentedControl value={mode} options={modeOptions} onChange={(v) => (mode = v)} ariaLabel="Mode" />
         <SegmentedControl value={layerBus} options={busOptions} onChange={(v) => (layerBus = v)} ariaLabel="Layer bus" />
@@ -392,12 +409,17 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Toggles · Slider" src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider']}>
+    <DemoCard
+      title="Toggles · Slider"
+      src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider', 'lib/ui/format-unit']}
+      note="The Slider's box shows the FORMATTER's own rendering of the number (a 0.01-step param reads 0.60, trailing zero included) and splitValueUnit peels the unit off the end — it used to slice the formatted text at the length of its own rendering, which left a stray 0 sitting outside the box. A format that RESCALES the value (0…1 shown as a percentage) keeps the real value in the box, because the box commits what it shows. Pass showUnit=&#123;false&#125; where the caller carries the unit elsewhere — inspector rows put it on the param label, so every number input in a section shares one column."
+    >
       <div class="comp-row">
         <Toggle bind:pressed={armed} onLabel="armed" offLabel="safe" ariaLabel="Arm output" />
         <Switch bind:checked={broadcast} ariaLabel="Broadcast" />
       </div>
       <Slider bind:value={opacity} min={0} max={100} ariaLabel="Opacity" format={(v) => `${v}%`} />
+      <Slider value={0.6} min={0} max={1} step={0.01} ariaLabel="Depth" format={(v) => `${v.toFixed(2)}×`} />
     </DemoCard>
 
     <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">

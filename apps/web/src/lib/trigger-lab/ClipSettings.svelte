@@ -47,7 +47,7 @@
     <div class="bar">
       <span class="preset">
         <span class="plead">Preset</span>
-        <Select value={block.presetId} options={presetOptions} onChange={(v) => store.selectPreset(block, v)} ariaLabel="Preset" />
+        <Select value={block.presetId} options={presetOptions} segment={false} onChange={(v) => store.selectPreset(block, v)} ariaLabel="Preset" />
       </span>
       <span class="spacer"></span>
       <div class="presetActions">

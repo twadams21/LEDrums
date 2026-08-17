@@ -1,9 +1,25 @@
 <script lang="ts">
   /* Project-styled single select on Bits UI. The dropdown is portaled to the
      body (sits above dialogs via z-index) and composes with Bits Dialog's
-     dismiss/focus layers. Pass `value` + `onChange`, or `bind:value`. */
+     dismiss/focus layers. Pass `value` + `onChange`, or `bind:value`.
+
+     A SHORT choice is not a dropdown (F3 item 10, Trent): four options or fewer render as a
+     segmented control instead — every choice visible, one click to switch, no menu to open
+     and dismiss to read three words. That decision lives HERE rather than at each call site
+     so it holds everywhere the app offers a choice, and so a registry that grows past four
+     entries turns back into a dropdown by itself.
+
+     Two cases are deliberately NOT segmented: an ACTION picker whose value is a placeholder
+     ("Add parameter…" — it commands rather than shows state, and has no selected segment to
+     render), and any site that opts out with `segment={false}`.
+
+     The line for opting out: a FIXED vocabulary segments (Art-Net / sACN, Gate / Velocity,
+     None / X / Y — short, and the app chose the words). A list of names the app did NOT
+     choose — user-authored presets, effect and scene names, a machine's network interfaces —
+     stays a dropdown, because a segment clips where a trigger ellipsises. */
   import { Select } from 'bits-ui';
   import { type Component } from 'svelte';
+  import SegmentedControl from './SegmentedControl.svelte';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
 
@@ -16,6 +32,8 @@
     placeholder?: string;
     ariaLabel?: string;
     class?: string;
+    /** Opt out of the ≤4-options segmented rendering and stay a dropdown. */
+    segment?: boolean;
   };
 
   let {
@@ -26,11 +44,32 @@
     placeholder = 'Select…',
     ariaLabel,
     class: klass,
+    segment = true,
   }: Props = $props();
 
   const selected = $derived(options.find((o) => o.value === value));
+  /** Short, stateful, opted-in → a segmented control. See the header note for the exclusions. */
+  const SEGMENT_MAX = 4;
+  const segmented = $derived(segment && options.length > 1 && options.length <= SEGMENT_MAX && !!selected);
+
+  function choose(v: string): void {
+    value = v;
+    onChange?.(v);
+  }
 </script>
 
+{#if segmented}
+  <!-- Labels only: SegmentedControl renders an icon INSTEAD of its label, and a row of bare
+       glyphs is only legible where the call site chose icons deliberately (play mode, layer). -->
+  <SegmentedControl
+    {value}
+    options={options.map((o) => ({ value: o.value, label: o.label, disabled: o.disabled }))}
+    onChange={choose}
+    {disabled}
+    {ariaLabel}
+    class={['sel-as-seg', klass].filter(Boolean).join(' ')}
+  />
+{:else}
 <span class={['sel', klass]}>
   <Select.Root type="single" bind:value items={options} onValueChange={onChange} {disabled}>
     <Select.Trigger class="sel-trigger" aria-label={ariaLabel}>
@@ -59,8 +98,21 @@
     </Select.Portal>
   </Select.Root>
 </span>
+{/if}
 
 <style>
+  /* A segmented Select inherits the caller's sizing class, so wherever a dropdown filled its
+     column the segments do too — the substitution must not change the row's shape. */
+  :global(.sel-as-seg .seg-row) {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+  }
+  :global(.sel-as-seg .seg-btn) {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
   .sel {
     display: inline-flex;
     min-width: 0;
@@ -113,7 +165,9 @@
   :global(.lab-sel-content) {
     z-index: var(--z-toast);
     min-width: var(--bits-select-anchor-width, 9rem);
-    max-height: 18rem;
+    /* F3 item 9: 18rem made a list of eight scroll on a tall screen for no reason. A dropdown
+       may use 80% of the viewport before it has to scroll anything. */
+    max-height: 80vh;
     overflow-y: auto;
     padding: var(--space-1);
     background: var(--surface-2);

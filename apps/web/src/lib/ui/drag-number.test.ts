@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dragNumber, DRAG_TRAVEL_PX, DRAG_UNRANGED_PX_PER_STEP } from './drag-number';
+import { dragNumber, railValue, railFraction, DRAG_TRAVEL_PX, DRAG_UNRANGED_PX_PER_STEP } from './drag-number';
 
 /* The drag rule for the compact numeric face field. The property that matters most is
    idempotence: the caller re-evaluates from the SAME anchor on every pointermove, so a drag
@@ -64,5 +64,48 @@ describe('dragNumber — unranged params', () => {
 
   it('recovers from a non-finite anchor rather than producing NaN', () => {
     expect(dragNumber({ start: Number.NaN, dx: 8, min: 0, max: 10, step: 1 })).toBe(0);
+  });
+});
+
+/* The rail rule (F3 item 4): the face row's 48px slider is ABSOLUTE — press at a fraction of
+   the rail and the value lands there — so it must round-trip against railFraction. */
+
+describe('railValue', () => {
+  it('maps a fraction across the declared range', () => {
+    expect(railValue({ fraction: 0, min: 0, max: 1, step: 0.01 })).toBe(0);
+    expect(railValue({ fraction: 0.5, min: 0, max: 1, step: 0.01 })).toBe(0.5);
+    expect(railValue({ fraction: 1, min: 0, max: 1, step: 0.01 })).toBe(1);
+    expect(railValue({ fraction: 0.25, min: 100, max: 500, step: 1 })).toBe(200);
+  });
+
+  it('clamps a press that overshoots either end of the rail', () => {
+    expect(railValue({ fraction: -0.4, min: 20, max: 80, step: 1 })).toBe(20);
+    expect(railValue({ fraction: 1.9, min: 20, max: 80, step: 1 })).toBe(80);
+  });
+
+  it('snaps to the step lattice anchored at min, without float noise', () => {
+    expect(railValue({ fraction: 0.5, min: 1, max: 10, step: 0.5 })).toBe(5.5);
+    expect(railValue({ fraction: 0.6, min: 0, max: 1, step: 0.1 })).toBe(0.6);
+  });
+
+  it('defaults to a step of 1 and survives a non-finite fraction', () => {
+    expect(railValue({ fraction: 0.5, min: 0, max: 10 })).toBe(5);
+    expect(railValue({ fraction: Number.NaN, min: 3, max: 9, step: 1 })).toBe(3);
+  });
+});
+
+describe('railFraction', () => {
+  it('is railValue inverted for any position on the rail', () => {
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      const v = railValue({ fraction: t, min: 0, max: 1, step: 0.01 });
+      expect(railFraction(v, 0, 1)).toBeCloseTo(t, 6);
+    }
+  });
+
+  it('clamps an out-of-range value and refuses to divide by a degenerate range', () => {
+    expect(railFraction(-5, 0, 10)).toBe(0);
+    expect(railFraction(50, 0, 10)).toBe(1);
+    expect(railFraction(5, 10, 10)).toBe(0);
+    expect(railFraction(Number.NaN, 0, 10)).toBe(0);
   });
 });

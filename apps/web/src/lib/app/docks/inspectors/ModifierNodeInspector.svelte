@@ -8,6 +8,8 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode } from '../../../trigger-lab/sim';
   import { listModifiers, type ParamSpec as CoreParamSpec } from '@ledrums/core';
+  import { subtypeOptions, MODIFIER_GROUP_PREFIX } from '../../views/add-node-taxonomy';
+  import SubtypeSwitcher from './SubtypeSwitcher.svelte';
   import { num } from '../../views/node-options';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -15,13 +17,13 @@
   import IconButton from '../../../ui/IconButton.svelte';
   import ModulationParamsSection from './ModulationParamsSection.svelte';
   import FaceExposeButton from './FaceExposeButton.svelte';
+  import ParamLabel from './ParamLabel.svelte';
   import Spline from '@lucide/svelte/icons/spline';
   import Blend from '@lucide/svelte/icons/blend';
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const MODS = listModifiers();
-  const MOD_OPTS = MODS.map((m) => ({ value: m.id, label: m.name }));
   const def = $derived(MODS.find((m) => m.id === node.modifierId) ?? null);
   const specs = $derived<CoreParamSpec[]>(def?.paramSpec ?? []);
   const live = $derived(node.params);
@@ -43,16 +45,17 @@
   </div>
 </header>
 
+<!-- Subtype switcher (F3 item 11): the same modifier list the Add-node menu's Modify group
+     adds from, carrying its icons and tint, so the thing you picked there is recognisable
+     here. `setModifierId` reseeds the new modifier's declared defaults. -->
 <div class="bar">
-  <label class="lblrow">
-    <span class="k">Modifier</span>
-    <Select
-      value={node.modifierId ?? ''}
-      options={MOD_OPTS}
-      onChange={(v) => store.setModifierId(node, v)}
-      ariaLabel="Modifier type"
-    />
-  </label>
+  <SubtypeSwitcher
+    label="Modifier"
+    value={node.modifierId ?? ''}
+    options={subtypeOptions(`${MODIFIER_GROUP_PREFIX}all`)}
+    onChange={(v) => store.setModifierId(node, v)}
+    ariaLabel="Modifier type"
+  />
   <label class="bypass">
     <span class="k">Bypass</span>
     <Toggle pressed={!!node.bypass} onChange={(v) => store.setModifierBypass(node, v)} ariaLabel="Bypass modifier" />
@@ -64,7 +67,8 @@
     {#each specs as spec (spec.key)}
       {@const enveloped = store.isEnveloped(node, spec.key)}
       <div class="prow">
-        <span class="plabel">{spec.label}</span>
+        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
+        <ParamLabel label={spec.label} unit={spec.unit} min={spec.min} max={spec.max} />
         {#if spec.type === 'number'}
           <Slider
             value={num(live[spec.key], typeof spec.default === 'number' ? spec.default : 0)}
@@ -73,6 +77,7 @@
             step={spec.step}
             disabled={enveloped}
             format={(v) => (enveloped ? 'swept' : fmtNum(spec, v))}
+            showUnit={false}
             onChange={(v) => store.setParam(node, spec.key, v)}
             ariaLabel={spec.label}
           />
@@ -98,7 +103,6 @@
         {:else}
           <span class="envspace"></span>
         {/if}
-        <FaceExposeButton {store} {node} param={spec.key} label={spec.label} />
       </div>
     {/each}
   </div>
@@ -158,17 +162,6 @@
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
   }
-  .lblrow {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 1;
-    min-width: 0;
-  }
-  .lblrow :global(.select-trigger) {
-    flex: 1;
-    min-width: 0;
-  }
   .bypass {
     display: inline-flex;
     align-items: center;
@@ -188,14 +181,10 @@
   }
   .prow {
     display: grid;
-    /* label · control · envelope button · face-expose affordance (S5) */
-    grid-template-columns: 84px minmax(0, 1fr) auto auto;
+    /* face-expose affordance (S5, re-seated left by F3 item 1) · label · control · envelope */
+    grid-template-columns: auto 84px minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-2);
-  }
-  .plabel {
-    font-size: var(--text-xs);
-    color: var(--text);
   }
   .prow :global(.boolcell) {
     justify-self: start;
