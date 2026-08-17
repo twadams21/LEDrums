@@ -96,9 +96,8 @@ export interface ShotSeam {
       the popover's open state is TriggerGraphView-local, so this drives the real affordance
       rather than duplicating the placement math. Opens the Trigger view first. */
   openAddPopover(): void;
-  /** Type a query into the Add palette's search field (drives the flat grouped
-      results state). The field's value is component-local, so this drives the
-      real input rather than a store method. */
+  /** Type a query into the Effect Gallery's search field. The field's value is
+      component-local, so this drives the real input rather than a store method. */
   setSearch(query: string): void;
   /** Type a query into the effect inspector's param filter (S4). Like `setSearch`, the
       field's value is component-local, so this drives the real input. */
@@ -386,13 +385,10 @@ class ShotSeamImpl implements ShotSeam {
   }
 
   setSearch(query: string): void {
-    // The Add palette's search value is AddPalette-local state (not the store), so
-    // drive the real input and fire `input` for Svelte's bind:value to pick up.
-    // The effect gallery owns a second field with the same job; when it is open it is the
-    // one on screen, so search there rather than at a hidden pane behind the dialog.
-    const input =
-      document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]') ??
-      document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    // The Effect Gallery's search value is component-local state (not the store), so drive the
+    // real input and fire `input` for Svelte's bind:value to pick up. (The Add-node popover has
+    // no search since F2 — it is a flat, one-click list of node types.)
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]');
     if (!input) return;
     input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));

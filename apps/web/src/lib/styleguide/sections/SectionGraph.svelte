@@ -7,18 +7,15 @@
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
   import AddNodePopover from '../../app/views/AddNodePopover.svelte';
-  import type { AddGroup } from '../../app/views/AddPalette.svelte';
   import type { FlowApi } from '../../app/views/FlowHandle.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
-  import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
+  import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from '../../app/views/add-node-taxonomy';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
-  import ParamRowTick from '../../app/views/ParamRowTick.svelte';
   import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
@@ -27,7 +24,6 @@
   import Plus from '@lucide/svelte/icons/plus';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
-  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import { makeNode } from '../../trigger-lab/sim';
   import { graphThumb } from '../../app/views/graph-thumb';
   import { voice } from '@ledrums/core';
@@ -43,8 +39,6 @@
     demoCcTable.set(voice.ccKey(1, null), v);
     return v;
   };
-  const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
-  const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
 
   // S5 face-param demo: the three control types a node-face row can carry, live-editable here
   // exactly as they are on a node card (the same component, no copied markup).
@@ -84,8 +78,8 @@
     edges: [{ from: 't', to: 'p' }],
   });
   const railCards = [
-    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0 },
-    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3 },
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0, playing: true },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3, playing: false },
   ];
 
   const face = (kind: NodeKind, sub: string) => ({
@@ -124,9 +118,6 @@
     edges = hover.decorate(edges);
   }
 
-  // Add-node popover groups: the Stage 1 chooser is exactly 2x2
-  // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
-  const addGroups = $derived<AddGroup[]>(buildAddGroups());
   // The popover is summoned at the invoke point and the node lands there — the same
   // capture-at-invoke mechanism the real view uses (FlowHandle → screenToFlowPosition).
   let flowApi = $state<FlowApi | null>(null);
@@ -146,19 +137,15 @@
       spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
     };
   }
-  function handleAdd(id: string, groupKey: string): void {
+  function handleAdd(kind: NodeKind): void {
     const c = addPopover?.spawn;
     if (!c) return;
-    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
-    else if (groupKey === EFFECT_GROUP_KEY) add('effect', c.x, c.y);
-    else if (id.startsWith('envelope:')) add('envelope', c.x, c.y);
-    else if (id.startsWith('lfo:')) add('lfo', c.x, c.y);
-    else add(id as NodeKind, c.x, c.y);
+    add(kind, c.x, c.y);
   }
 
   let nid = 0;
   const demoSubs: Partial<Record<NodeKind, string>> = {
-    play: 'from palette',
+    effect: 'from palette',
     all: 'all at once',
     random: 'repeat',
     sequence: 'in order',
@@ -166,6 +153,10 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '120ms',
+    modifier: 'add · smear',
+    mix: 'normal',
+    scope: 'whole kit',
+    envelope: 'modulation source',
   };
   function add(kind: NodeKind, cx: number, cy: number): void {
     nodes = [
@@ -175,18 +166,6 @@
         type: 'demo',
         position: { x: cx - 88, y: cy - 24 },
         data: face(kind, demoSubs[kind] ?? ''),
-      },
-    ];
-  }
-  /** Add a modifier node from the category palette (titled with the registry display name). */
-  function addMod(modifierId: string, cx: number, cy: number): void {
-    nodes = [
-      ...nodes,
-      {
-        id: `n${++nid}`,
-        type: 'demo',
-        position: { x: cx - 88, y: cy - 24 },
-        data: { ...face('modifier', 'modifier'), title: modifierName(modifierId) },
       },
     ];
   }
@@ -206,12 +185,12 @@
     src={[
       'lib/app/views/GraphCanvas',
       'lib/app/views/AddNodePopover',
-      'lib/app/views/AddPalette',
+      'lib/app/views/add-node-taxonomy',
       'lib/app/views/popover-placement',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
-    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
+    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. It is a FLAT list of node types and ONE click adds — no search, no taxonomy to browse, no second click; the families that differ only by subtype (Effect / Modifier / Modulate) land on their default and are re-typed in the node's inspector. Rows read their glyph and tint from the node registry (add-node-taxonomy → trigger-node-meta), arrow keys walk them, and a row can also be dragged onto the canvas to place at the drop point. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
     wide
   >
     <div class="canvas-demo" bind:this={canvasWrap}>
@@ -246,7 +225,6 @@
         <AddNodePopover
           at={addPopover.at}
           bounds={canvasBox}
-          groups={addGroups}
           onAdd={handleAdd}
           onClose={() => (addPopover = null)}
         />
@@ -257,7 +235,7 @@
   <DemoCard
     title="Inspector slideover (store-free stub)"
     src={['lib/app/InspectorSlideover', 'lib/app/overlay-dismiss']}
-    note="A faithful markup stub of the window-right Inspector slideover — the live one is fixed to the window edge and reads the shell selection, so it cannot be mounted inline here. It is an OVERLAY, never a push: it paints at --z-overlay (above the docks and chrome bars, below --z-modal-backdrop) and the graph canvas geometry never changes when it opens. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
+    note="A faithful markup stub of the Inspector slideover — the live one mounts inside the graph canvas and reads the shell selection, so it cannot be mounted inline here. It is pinned to the CANVAS's right edge, not the window's (F2): the drum preview and the Buses / Layers docks stay visible and interactive beside it, and a clip layer keeps the slide inside the canvas box. It is an OVERLAY, never a push — it floats on the canvas surface (above the drop ring and lint strip, below the summoned add-node popover) and the canvas geometry never changes when it opens; the canvas's own furniture (the + affordance, the lint strip) steps inboard instead. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
   >
     <div class="slideover-stub">
       <PanelHeader icon={SlidersHorizontal} title="Inspector">
@@ -268,10 +246,9 @@
   </DemoCard>
 
   <DemoCard
-    title="Signal previews · node-face live ticks"
+    title="Signal previews · node-face live signals"
     src={[
       'lib/app/views/NodeSignalPreview',
-      'lib/app/views/ParamRowTick',
       'lib/trigger-lab/SignalFace',
       'lib/trigger-lab/signal-preview',
     ]}
@@ -289,21 +266,16 @@
         <NodeSignalPreview kind="cc" ccValue={demoCc} />
         <span class="sig-label">CC · live value bar + readout</span>
       </div>
-      <div class="sig-cell">
-        <span class="sig-row"><span class="sig-plabel">brightness</span><ParamRowTick sample={demoTick} /></span>
-        <span class="sig-label">Param row · live value tick</span>
-      </div>
     </div>
   </DemoCard>
 
   <DemoCard
     title="Face param control · in-place editing on a node row"
     src={['lib/ui/FaceParamControl', 'lib/ui/drag-number', 'lib/trigger-lab/store/face-params']}
-    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row edits in place with a type-appropriate control rather than a slider: number = drag / scroll / arrow keys, enum = cycle chip (shift-click reverses), bool = a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
+    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row carries a COMPACT slider: a 48px rail (press jumps, drag tracks) plus a value field (grab and sweep, scroll, arrow keys); an enum is a cycle chip (shift-click reverses), a bool a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
   >
     <ul class="face-demo">
       <li class="face-row">
-        <span class="pdot" aria-hidden="true"></span>
         <span class="sig-plabel">size</span>
         <FaceParamControl
           kind="number"
@@ -315,10 +287,8 @@
           ariaLabel="Size"
           onChange={(v) => (faceSize = v as number)}
         />
-        <ParamRowTick sample={demoTick} />
       </li>
       <li class="face-row">
-        <span class="pdot" aria-hidden="true"></span>
         <span class="sig-plabel">depth</span>
         <FaceParamControl
           kind="number"
@@ -331,10 +301,8 @@
           ariaLabel="Depth"
           onChange={(v) => (faceSize = v as number)}
         />
-        <ParamRowTick sample={demoTick} />
       </li>
       <li class="face-row">
-        <span class="pdot flat" aria-hidden="true"></span>
         <span class="sig-plabel">blend</span>
         <FaceParamControl
           kind="enum"
@@ -346,7 +314,6 @@
         />
       </li>
       <li class="face-row">
-        <span class="pdot flat" aria-hidden="true"></span>
         <span class="sig-plabel">mirror</span>
         <FaceParamControl
           kind="bool"
@@ -378,7 +345,7 @@
   <DemoCard
     title="Graphs rail (store-free stub)"
     src="lib/app/views/TriggerGraphsRail"
-    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store: the fire indicator rides store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there) and ticks a quiet accent marker in the card's left edge, decaying over --dur-150; right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. One accent bar inside each card's left edge (shown lit on the first card) carries both live states: a fire flashes it and decays over --dur-150, riding store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there), while a graph still holding loop/hold voices (store.playingGraphs) HOLDS it lit until release. Same bar, two lifetimes — never a second mark. Right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
     <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">
@@ -397,6 +364,7 @@
             </svg>
             <span class="stub-scrim"></span>
             <span class="stub-meta"><span class="stub-name">{cItem.name}</span><span class="stub-sub">{cItem.sub}</span></span>
+            {#if cItem.playing}<span class="stub-bar"></span>{/if}
           </button>
         {/each}
         <button type="button" class="stub-new">+ Add graph</button>
@@ -418,7 +386,7 @@
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
       <li><strong>A face param row and a modulation target row are the same row.</strong> "Put this param on the node face" ≡ "expose it for modulation" — one gesture, one list (<code>node.modInputs</code>), rendered as face rows on the card and as the Parameters section in the inspector. The row is editable in place (<code>FaceParamControl</code>: number drag / enum cycle chip / bool switch), and one drag is one undo. A NUMBER row also carries the <code>param:&#123;key&#125;</code> handle; an enum or bool row does not, because nothing can modulate it. A wired row keeps its control and badges the modulation — the value shown is the BASE, as on <code>ColorSwatch</code>.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
+      <li><strong>Adding and inspecting are both on-canvas overlays, never columns.</strong> Right-click the canvas (or press <code>+</code>) to summon the Add-node popover AT that point — a flat list of node types, one click each — and the node lands where it was summoned. Selecting a node opens the Inspector slideover pinned to the canvas's right edge; the canvas geometry never changes for either, and the drum preview and docks stay visible and usable beside them.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
     </ul>
   </div>
@@ -443,8 +411,9 @@
     grid-template-rows: auto auto;
     width: 340px;
     background: var(--surface);
-    border-left: 1px solid var(--border-faint);
-    box-shadow: -12px 0 28px rgb(0 0 0 / 0.35);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-3);
     overflow: hidden;
   }
   .insp-hint {
@@ -471,15 +440,6 @@
     font-size: var(--text-2xs);
     color: var(--text-faint);
     font-family: var(--font-mono);
-  }
-  .sig-row {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-1);
   }
   .sig-plabel {
     font-size: var(--text-2xs);
@@ -513,16 +473,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .face-row .pdot {
-    width: 6px;
-    height: 6px;
-    flex: none;
-    border-radius: 50%;
-    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
-  }
-  .face-row .pdot.flat {
-    border-color: var(--border-faint);
   }
   .contract {
     margin-top: var(--space-5);
@@ -596,6 +546,18 @@
   }
   .stub-card:hover {
     border-color: var(--border-strong);
+  }
+  /* the now-playing / fire bar, shown held (the live rail fades it in and out) */
+  .stub-bar {
+    position: absolute;
+    left: 5px;
+    top: 12px;
+    bottom: 12px;
+    z-index: 2;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    opacity: 0.85;
   }
   .stub-card.sel {
     border-color: var(--accent);

@@ -23,10 +23,8 @@
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import NodeSignalPreview from './NodeSignalPreview.svelte';
   import NodeStatePreview from './NodeStatePreview.svelte';
-  import ParamRowTick from './ParamRowTick.svelte';
   import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import { faceParamValue, formatFaceValue, isModulatable } from '../../trigger-lab/store/face-params';
-  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
   import Tooltip from '../../ui/Tooltip.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
   import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
@@ -300,9 +298,6 @@
       <li class="modrow" class:wired>
         {#if isModulatable(row.spec)}
           <Handle type="target" position={Position.Left} id={`param:${row.param}`} class="param-handle" aria-label={`Modulation in: ${row.label}`} />
-          <span class="pdot" aria-hidden="true"></span>
-        {:else}
-          <span class="pdot flat" aria-hidden="true"></span>
         {/if}
         <span class="plabel" title={row.label}>{row.label}</span>
         {#if row.spec && row.value !== undefined}
@@ -320,11 +315,6 @@
             onChange={(v) => setFaceParam(row.param, v as ParamValue)}
             onGestureStart={() => store.beginGesture()}
             onGestureEnd={() => store.endGesture()}
-          />
-        {/if}
-        {#if isModulatable(row.spec)}
-          <ParamRowTick
-            sample={(tMs) => paramRowSignal(row.sources, previewCtx(tMs, store.bpm, store.liveCcTable, store.liveOscTable))}
           />
         {/if}
       </li>
@@ -457,26 +447,13 @@
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-1);
   }
-  /* An editable row packs dot · label · control · tick into ≤226px of card, so it trades the
-     row gap down to `space-1`. Height stays 22px — the card must not grow taller per param. */
+  /* An editable row packs label · rail · value into ≤226px of card, so it trades the row gap
+     down to `space-1`. Height stays 22px — the card must not grow taller per param. */
   .modrow {
     gap: var(--space-1);
   }
   .mixrow {
     background: color-mix(in oklch, var(--role-mod) 10%, var(--surface-inset));
-  }
-  .pdot {
-    width: 6px;
-    height: 6px;
-    flex: none;
-    border-radius: 50%;
-    border: 1px solid color-mix(in oklch, var(--role-modulation) 60%, var(--border));
-    background: transparent;
-  }
-  /* A non-modulatable row (enum / bool) keeps the dot's ALIGNMENT so labels line up, but
-     drops the modulation tint — it has no handle and nothing can wire into it. */
-  .pdot.flat {
-    border-color: var(--border-faint);
   }
   .ldot {
     width: 6px;
@@ -486,9 +463,10 @@
     background: var(--role-mod);
     box-shadow: 0 0 0 1px color-mix(in oklch, var(--role-mod) 65%, transparent);
   }
-  .modrow.wired .pdot {
-    background: var(--role-modulation);
-    border-color: var(--role-modulation);
+  /* a wired row tints its own left edge — the dot that used to say this is gone (the handle
+     already sits there and says it better) */
+  .modrow.wired {
+    border-color: color-mix(in oklch, var(--role-modulation) 45%, var(--border-faint));
   }
   .plabel {
     flex: 1;
@@ -511,11 +489,12 @@
   }
   /* the scoped modulation input handle rides the row's left edge */
 .modrow :global(.param-handle) {
-  /* Same base CSS as every handle (translate(-50%) centres ON `left`); the only difference
-     is the containing block — the ROW, inset from the card by 1px row border + 8px footer
-     padding + 1.5px card border. Compensate exactly that, so the centre lands on the card's
-     left edge like the normal input handles. */
-  left: -10.5px;
+  /* Same base CSS as every handle (translate(-50%) centres ON `left`); the only difference is
+     the containing block — the ROW's padding box, inset from the card's CONTENT box by 8px
+     footer padding + 1px row border. Compensating those two (and NOT the card's own 1.5px
+     border, which the head handles' containing block already excludes) lands this handle on
+     exactly the same x as the flow handles above it, ON the border rather than beside it. */
+  left: -9px;
   background: var(--role-modulation);
   border-color: color-mix(in oklch, var(--role-modulation) 70%, var(--surface));
 }
@@ -527,7 +506,7 @@
    those always sat right. Only role colours differ, owned by GraphCanvas. */
 
 .mixrow :global(.mix-handle) {
-  left: -10.5px; /* same row→card inset compensation as .param-handle above */
+  left: -9px; /* same row→card inset compensation as .param-handle above */
 }
   /* small "N in chain" modify badge riding the card's top-right edge */
   .modcount {

@@ -10,7 +10,7 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { EffectDef, GraphNode } from '../../../trigger-lab/sim';
   import { resolveVoiceSustainMs, type CurveValue, type Hsv } from '@ledrums/core';
-  import { lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
+  import { decaySpanHint, lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
   import { num } from '../../views/node-options';
   import { groupParamsFiltered } from './param-families';
   import { paramFold } from './param-disclosure.svelte';
@@ -133,6 +133,9 @@
       <div class="rows">
         {#if showSwatch}
           <div class="swatchrow">
+            <!-- no face affordance: the swatch is a shortcut that writes three declared params,
+                 not a param of its own. The empty cell keeps its label on the ParamRow grid. -->
+            <span class="facespace"></span>
             <span class="plabel">Colour</span>
             <ColorSwatch
               hue={num(live['hue'], 0)}
@@ -156,7 +159,10 @@
                    also cannot borrow the row label column — "Decay" would then appear twice in
                    the same 84px gutter, once as the block's name and once as its own slider. -->
               <Eyebrow>Decay envelope</Eyebrow>
-              <span class="lifespan">{fmtLifeX(1)}</span>
+              <!-- "total", not a bare number: this and the Decay slider below it are two
+                   different quantities (a time CONSTANT vs the span the eye actually sees),
+                   and side by side without the word they read as a unit bug. -->
+              <span class="lifespan" title={decaySpanHint(eff.generatorId, lifeSpec)}>{fmtLifeX(1)} total</span>
             </div>
             <CurveField
               value={lifeEnvelope}
@@ -254,9 +260,14 @@
   }
   .swatchrow {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: auto 84px minmax(0, 1fr);
     align-items: center;
     gap: var(--space-2);
+  }
+  /* exactly the IconButton box the ParamRow face affordance renders in, so the swatch's
+     label starts on the same column as every param label below it */
+  .facespace {
+    width: var(--control-icon-size);
   }
   .plabel {
     font-size: var(--text-xs);
