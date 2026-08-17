@@ -4,10 +4,13 @@
      graphs as cards: each wears its hotkey badge (keys 1–9 and 0 fire graphs 1–10 —
      handled globally in App.svelte), a mini-map of the real graph tinted by node kind,
      a linked badge when the graph is placed in more than one section, the graph name
-     and its trigger source. Clicking a card opens it on the canvas. Firing ticks a quiet
-     accent marker in the card's left edge, keyed off store.graphFireAt (the one fire signal:
-     keyboard, local hit and SERVER engine fires all land there, so a hit traces to its card
-     in both modes). Right-click carries the card's verbs; "+ Add graph" opens the library
+     and its trigger source. Clicking a card opens it on the canvas. ONE bar in the card's left
+     edge carries both live states, because they are the same question at two timescales:
+     firing flashes it for 150ms, keyed off store.graphFireAt (the one fire signal: keyboard,
+     local hit and SERVER engine fires all land there, so a hit traces to its card in both
+     modes), and a graph whose loop/hold voices are still sounding HOLDS it lit until they
+     release — so the kit's current light always traces back to a card.
+     Right-click carries the card's verbs; "+ Add graph" opens the library
      picker. Section switching lives outside the rail (the shell's sections bar and the global
      ←/→ hotkeys), so this pane is just the active section's graphs. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -109,6 +112,7 @@
         {@const thumb = g ? graphThumb(g) : null}
         {@const links = placements(key)}
         {@const firedAt = store.graphFireAt[key]}
+        {@const playing = store.playingGraphs.has(key)}
         {#if renaming === key}
           <div class="gcard gedit">
             <CommitInput
@@ -155,12 +159,18 @@
                 <span class="gn">{store.graphLabel(key)}</span>
                 <span class="gt">{sourceSub(key)}</span>
               </span>
-              <!-- Fire marker. Re-keying on the fire epoch restarts it, so a drum roll reads as
-                   repeated hits rather than one stuck bar. It sits well inside the card, so the
-                   card's own `overflow: hidden` never clips it. -->
-              {#if firedRecently(firedAt)}
-                {#key firedAt}<span class="gfire" aria-hidden="true"></span>{/key}
+              <!-- Left-edge bar, one geometry, two lifetimes. The NOW-PLAYING bar is always
+                   mounted so CSS can ease it in on the first sustained voice and ease it back
+                   out on release; the FIRE flash is a separate keyed element, because re-keying
+                   on the fire epoch is what restarts the decay (a drum roll must read as
+                   repeated hits, not one stuck bar). The flash is suppressed while the bar is
+                   already held lit — stacking them would only make the lit bar flicker.
+                   Both sit well inside the card, so its `overflow: hidden` never clips them. -->
+              <span class="gbar hold" class:lit={playing} aria-hidden="true"></span>
+              {#if !playing && firedRecently(firedAt)}
+                {#key firedAt}<span class="gbar fire" aria-hidden="true"></span>{/key}
               {/if}
+              {#if playing}<span class="sr-only">Playing</span>{/if}
             </button>
           </ContextMenu>
         {/if}
@@ -359,11 +369,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* FIRE — one quiet marker, no wash, no halo, no ring (Trent, live preview: the burst read as
-     too intense). A bar floated INSIDE the card's left edge, never on it: a selected card
+  /* THE LEFT BAR — one quiet marker, no wash, no halo, no ring (Trent, live preview: the burst
+     read as too intense). Floated INSIDE the card's left edge, never on it: a selected card
      already wears an accent border, and a marker sitting on that border would read as part of
-     the selection ring. Decays over `--dur-150`. */
-  .gfire {
+     the selection ring. */
+  .gbar {
     position: absolute;
     left: 5px;
     top: 12px;
@@ -373,6 +383,9 @@
     border-radius: 3px;
     background: var(--accent);
     pointer-events: none;
+  }
+  /* FIRE — the transient. Decays over `--dur-150`. */
+  .gbar.fire {
     animation: fire-decay var(--dur-150) linear forwards;
   }
   @keyframes fire-decay {
@@ -382,6 +395,18 @@
     to {
       opacity: 0;
     }
+  }
+  /* NOW PLAYING — the same bar, held. It is the sustained answer to the transient's question,
+     so it must not read as a second affordance: identical geometry, identical accent, only the
+     lifetime differs. Held a touch under full so a fire on top of a playing card still lands as
+     a brighter tick. Off is opacity 0 rather than an unmount, which buys the ease-out on
+     release for free; `--dur-220` collapses to 0ms under reduced motion, cutting cleanly. */
+  .gbar.hold {
+    opacity: 0;
+    transition: opacity var(--dur-220) var(--ease-out-quart);
+  }
+  .gbar.hold.lit {
+    opacity: 0.85;
   }
   .newcard {
     flex: none;
@@ -404,6 +429,18 @@
   .newcard:active {
     scale: 0.98;
   }
+  /* The bar is decoration to a screen reader; this is the state it cannot see. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
   .none {
     margin: 0;
     padding: var(--space-2);
@@ -413,8 +450,9 @@
   @media (prefers-reduced-motion: reduce) {
     /* Nothing here moves any more — the marker only fades. But tokens.css zeroes every --dur-*
        under this query, and a zero-length decay would DELETE the indicator rather than calm it,
-       so hold the marker for the same beat and cut it without the fade. */
-    .gfire {
+       so hold the marker for the same beat and cut it without the fade. The held bar needs no
+       such guard: a 0ms transition just snaps it on and off, which is the point. */
+    .gbar.fire {
       animation: fire-decay 150ms step-end forwards;
     }
     .newcard:active {

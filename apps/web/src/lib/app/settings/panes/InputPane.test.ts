@@ -16,6 +16,7 @@ const INPUT_MAP = {
   oscMap: [],
   zones: [],
   globalControls: {},
+  velocityCurves: {},
 } as unknown as InputMap;
 
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {

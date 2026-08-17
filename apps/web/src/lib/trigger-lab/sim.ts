@@ -21,7 +21,19 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, voice as coreVoice, type BlendMode, type PixelModel, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
+import {
+  lifeEnvelopeGain,
+  resolveVoiceLife,
+  voice,
+  voice as coreVoice,
+  type BlendMode,
+  type CurveValue,
+  type PixelModel,
+  type EffectCategory,
+  type EffectTag,
+  type PlayType,
+  type ResolvedModifier,
+} from '@ledrums/core';
 import { type EaseSpec, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
@@ -228,6 +240,10 @@ export interface Voice {
   attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
+  /** authored amplitude-over-life curve + the real-time width of its x axis, both resolved at
+      spawn through the SAME core helper the engine uses. Mirrors the core Voice fields. */
+  lifeEnvelope?: CurveValue | null;
+  lifeSpanMs?: number;
   phase: VoicePhase;
   level: number;
   bornAtMs: number;
@@ -530,6 +546,9 @@ export class Sim {
     // generator effects differ per fire yet replay exactly given the same inputs.
     // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
     const seed = deriveSeedFromCounter(this.voiceSeq + 1);
+    // Dwell + amplitude curve, resolved by the SAME core function the engine's pool calls —
+    // the two paths agree by construction rather than by two copies of the arithmetic.
+    const life = resolveVoiceLife(effect.generatorId, a.params, this.bpm, effect.sustainMs, a.lifeEnvelope);
     /** Realise a composite member (Mix branch or splice) into a sub-voice — the offline
         mirror of core `VoicePool.spawn`'s `toMember`. */
     const toMember = (input: voice.MixInputDraft, index: number): voice.MixInput | null => {
@@ -594,7 +613,14 @@ export class Sim {
       // A node-owned envelope wins over the hosting effect's, mirroring core's VoicePool.
       attackMs: a.attackMs ?? effect.attackMs,
       attackEase: a.attackEase,
-      sustainMs: a.sustainMs ?? effect.sustainMs,
+      // Sustain follows the effect's OWN life param when it declares one, and an authored
+      // `lifeEnvelope` takes over from there (mirrors core VoicePool.spawn through the same
+      // core helper) — otherwise the category envelope reaps the voice before the effect's
+      // internal fade finishes and its Decay slider looks inert. A splice's own hold beats
+      // both: that voice's dwell is authored on the node.
+      sustainMs: a.sustainMs ?? life.sustainMs,
+      lifeEnvelope: life.envelope,
+      lifeSpanMs: life.spanMs,
       releaseMs: a.releaseMs ?? effect.releaseMs,
       phase: 'attack',
       level: 0,
@@ -727,17 +753,21 @@ export class Sim {
 
     for (const v of this.voices) {
       const age = this.timeMs - v.bornAtMs;
+      // The authored life envelope multiplies the attack/sustain level and nothing else —
+      // release already ramps from where the curve left the voice. Byte-identical to the
+      // pre-envelope tick when `lifeEnvelope` is absent. Mirrors core `advanceEnvelopes`.
       if (v.phase === 'attack') {
         // Eased like the engine's `advanceEnvelopes`, so a curve reads the same in the preview.
         const t = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
         v.level = v.attackEase ? coreVoice.ease(v.attackEase, t) : t;
         if (v.level >= 1) v.phase = 'sustain';
+        v.level *= lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
       } else if (v.phase === 'sustain') {
         if (v.mode === 'oneshot') {
-          v.level = 1;
+          v.level = lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
           if (age >= v.attackMs + v.sustainMs) this.release(v);
         } else {
-          v.level = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480));
+          v.level = (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480))) * lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
         }
       } else {
         const bus = this.bus(v.busId);

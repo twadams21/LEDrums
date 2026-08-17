@@ -16,6 +16,8 @@ export * from './color/color';
 export * from './color/blend';
 
 // Model
+export * from './model/curve';
+export * from './model/velocity-curve';
 export * from './model/project-schema';
 export * from './model/global-controls';
 export * from './model/integrity';
@@ -34,10 +36,14 @@ export * from './canvas/scene';
 export * from './canvas/registry';
 export * from './canvas/presets';
 
+
 // Effects
 export * from './effects/types';
 export * from './effects/emitter';
 export * from './effects/registry';
+export * from './effects/visibility';
+export * from './effects/voice-life';
+export * from './effects/life-fade';
 export * from './effects/vocabulary';
 export * from './effects/metadata';
 export * from './effects/aliases';

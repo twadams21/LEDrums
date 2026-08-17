@@ -8,6 +8,7 @@
  * (the engine, which owns transport), never read from a global clock.
  */
 import { canvasEffectId } from '../canvas/ids';
+import { resolveVoiceLife } from '../effects/voice-life';
 import type { MixInputDraft, PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
 import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
@@ -23,6 +24,9 @@ export interface SpawnDeps {
   busById: Map<string, Bus>;
   latched: Map<string, string | null>;
   timeMs: number;
+  /** Transport bpm at spawn — converts a `beats`-unit life declaration to ms, the same way
+      the effect converts internally. See {@link resolveVoiceLife}. */
+  bpm: number;
   /** Eval state prefix (pad / slot key) the spawning action belongs to — tagged onto the
       voice so origin-keyed liveness scans (R13 delay-overlap Mix) can be pad-scoped. `''`
       for non-graph spawns (section looks). */
@@ -219,10 +223,19 @@ export class VoicePool {
     slot.params = { ...a.params };
     slot.mixBlendMode = a.mixBlendMode;
     slot.specs = effect.params;
-    // A node-owned envelope wins over the hosting effect's — see `PlayAction.attackMs`.
+    // A node-owned envelope wins over the hosting effect's — see `PlayAction.attackMs`. A
+    // splice authors its own attack/hold/release for the composite voice, so neither the
+    // effect's category envelope nor its life param gets a say in that voice's dwell.
     slot.attackMs = a.attackMs ?? effect.attackMs;
     slot.attackEase = a.attackEase;
-    slot.sustainMs = a.sustainMs ?? effect.sustainMs;
+    // Sustain follows the effect's OWN life param when it declares one, so the voice outlives
+    // the fade the effect is drawing; attack/release stay on the category envelope (the
+    // internal fade has reached ~0 by release, so the short tail renders nothing anyway).
+    // An authored `lifeEnvelope` takes over from there: its end handle is the voice's end.
+    const life = resolveVoiceLife(slot.generatorId, slot.params, deps.bpm, effect.sustainMs, a.lifeEnvelope);
+    slot.sustainMs = a.sustainMs ?? life.sustainMs;
+    slot.lifeEnvelope = life.envelope;
+    slot.lifeSpanMs = life.spanMs;
     slot.releaseMs = a.releaseMs ?? effect.releaseMs;
     slot.phase = 'attack';
     slot.level = 0;
@@ -267,6 +280,8 @@ function makeVoiceSlot(): Voice {
     attackEase: undefined,
     sustainMs: 0,
     releaseMs: 0,
+    lifeEnvelope: null,
+    lifeSpanMs: 0,
     phase: 'attack',
     level: 0,
     bornAtMs: 0,

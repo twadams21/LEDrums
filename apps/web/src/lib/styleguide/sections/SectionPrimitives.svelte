@@ -7,6 +7,8 @@
   import Select from '../../ui/Select.svelte';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import EasePicker, { type EaseSpec } from '../../ui/EasePicker.svelte';
+  import CurveField, { type CurveHit, type CurveValue } from '../../ui/CurveField.svelte';
+  import CurveFieldMini from '../../ui/CurveFieldMini.svelte';
   import Tabs from '../../ui/Tabs.svelte';
   import Toggle from '../../ui/Toggle.svelte';
   import Switch from '../../ui/Switch.svelte';
@@ -17,6 +19,7 @@
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
+  import Disclosure from '../../ui/Disclosure.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
   import Pill from '../../ui/Pill.svelte';
@@ -86,11 +89,68 @@
   let railW = $state(160);
   let mdSelected = $state('songs');
   let demoEase = $state<EaseSpec>({ fn: 'cubic', dir: 'inOut' });
+  let discOpen = $state(true);
+  let discComets = $state(40);
+  let discTail = $state(70);
+
+  /* Curve field demos — one per domain the primitive has to serve, and between
+     them all three states of the notched strength fader: above centre, below it,
+     and greyed. The envelope is time → level; the transfer curves are input
+     velocity → output velocity. */
+  let decayCurve = $state<CurveValue>({
+    h0: { x: 0, y: 1 },
+    h1: { x: 0.72, y: 0 },
+    profile: 'bend',
+    strength: 0.55,
+  });
+  /* Opens BELOW the notch so the fader's lower half — the log/inverted side, the
+     half a unipolar strength control could not reach — is visible at rest. */
+  let velocityCurve = $state<CurveValue>({
+    h0: { x: 0.12, y: 0 },
+    h1: { x: 1, y: 1 },
+    profile: 'sCurve',
+    strength: -0.5,
+  });
+  /* A hard gate: snap is the one profile with nothing to bend, so it is what
+     shows the strength fader in its disabled (greyed, never hidden) state. */
+  let gateCurve = $state<CurveValue>({
+    h0: { x: 0.2, y: 0 },
+    h1: { x: 0.55, y: 1 },
+    profile: 'snap',
+    strength: 0,
+  });
+  /* The live-input overlay wants a drummer. The styleguide fakes one on an
+     interval so the markers are visible without a kit plugged in — in the app
+     the hits come from the real input feed. */
+  let demoHits = $state<CurveHit[]>([]);
+  $effect(() => {
+    let n = 0;
+    const id = setInterval(() => {
+      n += 1;
+      // A rough four-on-the-floor spread rather than pure noise, so the markers
+      // read as playing rather than as static.
+      const x = [0.86, 0.42, 0.71, 0.55, 0.94][n % 5]!;
+      demoHits = [...demoHits.slice(-11), { x, at: performance.now() }];
+    }, 420);
+    return () => clearInterval(id);
+  });
+  /** Today's `exp(−t/τ)` decay — the shape the curve control exists to beat. */
+  const todayDecay = (x: number): number => Math.exp(-x * 3.9);
 
   const protocolOptions = [
     { value: 'artnet', label: 'Art-Net', icon: Cable },
     { value: 'sacn', label: 'sACN', icon: Radio },
   ];
+  // ≥5 entries, so this one stays a dropdown — the same component, the other branch of the rule
+  const collectionOptions = [
+    { value: 'hits', label: 'Hits' },
+    { value: 'waves', label: 'Waves & Ripples' },
+    { value: 'particles', label: 'Particles & Air' },
+    { value: 'textures', label: 'Textures' },
+    { value: 'ambient', label: 'Ambient & Base' },
+    { value: 'meters', label: 'Meters & Utility' },
+  ];
+  let collection = $state('hits');
   const modeOptions = [
     { value: 'perform', label: 'Perform' },
     { value: 'arrange', label: 'Arrange' },
@@ -268,10 +328,17 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Selection" src={['lib/ui/Select', 'lib/ui/SegmentedControl', 'lib/ui/Tabs']}>
+    <DemoCard
+      title="Selection"
+      src={['lib/ui/Select', 'lib/ui/SegmentedControl', 'lib/ui/Tabs']}
+      note="Select decides its OWN shape: four options or fewer render as a segmented control (every choice visible, one click to switch), five or more stay a dropdown — so a registry that grows past four reverts by itself and no call site has to choose. Two exclusions: an ACTION picker sitting on a placeholder (&quot;Add parameter…&quot;) has no state to segment, and a list of names the app did not author — user presets, effect and scene names, network interfaces — opts out with segment=&#123;false&#125;, because a segment clips where a trigger ellipsises. An open dropdown may use 80% of the viewport before it scrolls."
+    >
       <div class="comp-stack">
         <Field label="Protocol">
           <Select bind:value={protocol} options={protocolOptions} ariaLabel="Protocol" />
+        </Field>
+        <Field label="Collection">
+          <Select bind:value={collection} options={collectionOptions} ariaLabel="Collection" />
         </Field>
         <SegmentedControl value={mode} options={modeOptions} onChange={(v) => (mode = v)} ariaLabel="Mode" />
         <SegmentedControl value={layerBus} options={busOptions} onChange={(v) => (layerBus = v)} ariaLabel="Layer bus" />
@@ -290,12 +357,72 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Toggles · Slider" src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider']}>
+    <DemoCard
+      title="Curve field"
+      src={['lib/ui/CurveField', 'lib/ui/CurveFieldMini', 'lib/ui/curve-field']}
+      wide
+      note="Two free handles, one profile for the whole curve, and a BIPOLAR strength fader with a magnetic notch at centre. The notch is linear; above it Bend goes exponential and below it logarithmic — the inverse shape — so lin/exp/log are one continuum with one neutral position rather than three buttons, and the mode word under the fader is read back off the fader rather than picked. S-curve rides the same fader and goes over centre to invert its shoulders (in-out ↔ out-in); Snap has nothing to bend, so the fader greys out (never hidden). Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 in both axes (strength −1..+1) and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at node-face size."
+    >
+      <div class="curve-demo">
+        <div class="curve-col">
+          <span class="curve-cap">envelope · decay → brightness · bend, today ghosted</span>
+          <CurveField
+            value={decayCurve}
+            onChange={(v) => (decayCurve = v)}
+            xAxis={{ label: 'decay', format: (u) => `${Math.round(u * 1200)} ms` }}
+            yAxis={{ label: 'level' }}
+            ghost={todayDecay}
+            ariaLabel="Decay envelope"
+          />
+        </div>
+        <div class="curve-col">
+          <span class="curve-cap">transfer · velocity in → out · s-curve, inverted</span>
+          <CurveField
+            value={velocityCurve}
+            onChange={(v) => (velocityCurve = v)}
+            xAxis={{ label: 'in', format: (u) => String(Math.round(u * 127)) }}
+            yAxis={{ label: 'out', format: (u) => String(Math.round(u * 127)) }}
+            hits={demoHits}
+            hitFadeMs={2400}
+            showPreview={false}
+            ariaLabel="Velocity sensitivity"
+          />
+        </div>
+        <div class="curve-col">
+          <span class="curve-cap">gate · velocity in → out · snap, fader greyed</span>
+          <CurveField
+            value={gateCurve}
+            onChange={(v) => (gateCurve = v)}
+            xAxis={{ label: 'in', format: (u) => String(Math.round(u * 127)) }}
+            yAxis={{ label: 'out', format: (u) => String(Math.round(u * 127)) }}
+            showPreview={false}
+            ariaLabel="Velocity gate"
+          />
+        </div>
+      </div>
+      <div class="curve-minis">
+        <span class="curve-cap">node faces (56×32, read-only)</span>
+        <CurveFieldMini value={decayCurve} ariaLabel="Decay envelope thumbnail" />
+        <CurveFieldMini value={velocityCurve} ariaLabel="Velocity curve thumbnail" />
+        <CurveFieldMini
+          value={{ h0: { x: 0, y: 1 }, h1: { x: 0.85, y: 0 }, profile: 'bend', strength: -0.7 }}
+          ariaLabel="Log envelope thumbnail"
+        />
+        <CurveFieldMini value={gateCurve} ariaLabel="Snap gate thumbnail" />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Toggles · Slider"
+      src={['lib/ui/Toggle', 'lib/ui/Switch', 'lib/ui/Slider', 'lib/ui/format-unit']}
+      note="The Slider's box shows the FORMATTER's own rendering of the number (a 0.01-step param reads 0.60, trailing zero included) and splitValueUnit peels the unit off the end — it used to slice the formatted text at the length of its own rendering, which left a stray 0 sitting outside the box. A format that RESCALES the value (0…1 shown as a percentage) keeps the real value in the box, because the box commits what it shows. Pass showUnit=&#123;false&#125; where the caller carries the unit elsewhere — inspector rows put it on the param label, so every number input in a section shares one column."
+    >
       <div class="comp-row">
         <Toggle bind:pressed={armed} onLabel="armed" offLabel="safe" ariaLabel="Arm output" />
         <Switch bind:checked={broadcast} ariaLabel="Broadcast" />
       </div>
       <Slider bind:value={opacity} min={0} max={100} ariaLabel="Opacity" format={(v) => `${v}%`} />
+      <Slider value={0.6} min={0} max={1} step={0.01} ariaLabel="Depth" format={(v) => `${v.toFixed(2)}×`} />
     </DemoCard>
 
     <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
@@ -442,6 +569,25 @@
           renameLabel="Layer name"
           onclick={() => {}}
         />
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Disclosure"
+      src="lib/ui/Disclosure"
+      wide
+      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by the effect inspector to fold an effect's own params under its always-visible common section."
+    >
+      <div class="disc-demo">
+        <Disclosure label="Comet Trails" count={4} open={discOpen} onToggle={(v) => (discOpen = v)}>
+          <div class="disc-rows">
+            <Slider value={discComets} min={0} max={100} onChange={(v) => (discComets = v)} ariaLabel="Comets" />
+            <Slider value={discTail} min={0} max={100} onChange={(v) => (discTail = v)} ariaLabel="Tail" />
+          </div>
+        </Disclosure>
+        <Disclosure label="Empty group" count={0} open={false}>
+          <div class="disc-rows"><span class="disc-none">This effect has no parameters of its own.</span></div>
+        </Disclosure>
       </div>
     </DemoCard>
 
@@ -595,6 +741,24 @@
     width: 100%;
     min-width: 0;
   }
+  /* Disclosure draws its own top border — show it inside a panel surface so it reads as a
+     section divider, the way it does in the inspector. */
+  .disc-demo {
+    background: var(--surface);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-card);
+    overflow: hidden;
+  }
+  .disc-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: 0 var(--space-3) var(--space-3);
+  }
+  .disc-none {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+  }
   /* PanelHeader sits atop a panel — show it in a bordered surface so its border-bottom reads. */
   .ph-demo {
     background: var(--surface);
@@ -689,5 +853,32 @@
   .ov-text {
     font-size: var(--text-sm);
     color: var(--text-muted);
+  }
+
+  /* Curve field demo — two domains side by side, each capped near the inspector
+     width the control actually has to survive at. */
+  .curve-demo {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-5);
+  }
+  .curve-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: 1 1 300px;
+    min-width: 0;
+    max-width: 340px;
+  }
+  .curve-cap {
+    font-size: var(--text-2xs);
+    color: var(--text-faint);
+    letter-spacing: var(--tracking-label);
+  }
+  .curve-minis {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
   }
 </style>

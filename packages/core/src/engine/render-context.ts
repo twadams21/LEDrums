@@ -38,4 +38,14 @@ export interface RenderContext {
   transport: TransportState;
   /** Active/recent triggers, newest last. */
   triggers: readonly Trigger[];
+  /**
+   * True when the hosting voice carries an authored decay envelope, i.e. the author has drawn
+   * the fade and it is applied once, at the voice level. An effect whose own decay is a
+   * function of the voice's age must then hand that term to {@link import('../effects/voice-life').lifeFade}
+   * so it does not multiply a second fade underneath the authored one (F5).
+   *
+   * Optional and defaulting to false, so every other host — layers, thumbnails, tests — keeps
+   * the effect's own decay untouched.
+   */
+  authoredDecay?: boolean;
 }

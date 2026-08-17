@@ -74,6 +74,7 @@ const serverVoice = (over: Partial<VoiceStat> = {}): VoiceStat => ({
   hue: 30,
   releasing: false,
   via: 'server-via',
+  pad: 'graph:1',
   ...over,
 });
 

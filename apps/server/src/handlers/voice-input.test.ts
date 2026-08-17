@@ -174,3 +174,56 @@ describe('handleVoiceInput — releaseBus routes to the engine input queue', () 
     expect(handleVoiceInput({ t: 'releaseBus' }, { voiceHost: null, broadcastJson: () => {} })).toBe(true);
   });
 });
+
+/* S8 — the input echo carries the drum the zone-map claimed, so a per-drum velocity editor can
+   plot the hit under the right curve. Resolved here rather than parsed back out of the label,
+   and always the PRE-curve value: echoing the shaped one would draw the hits on top of the
+   curve instead of under it. */
+describe('handleVoiceInput — the input echo names the drum', () => {
+  const echoes = (msgs: ServerMessage[]): Array<Extract<ServerMessage, { t: 'input' }>> =>
+    msgs.filter((m): m is Extract<ServerMessage, { t: 'input' }> => m.t === 'input');
+
+  it('attaches the zone-mapped drum to a MIDI hit, with the raw 0..1 velocity', () => {
+    const host = makeHost();
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+    // defaultProject maps note 36 → kick.
+    handleVoiceInput({ t: 'midi', note: 36, velocity: 64, on: true, channel: 0 }, deps);
+
+    expect(echoes(broadcasts)).toHaveLength(1);
+    expect(echoes(broadcasts)[0]!.drumId).toBe('kick');
+    expect(echoes(broadcasts)[0]!.value).toBeCloseTo(64 / 127, 6);
+  });
+
+  it('leaves the drum off an unclaimed note', () => {
+    const host = makeHost();
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+    handleVoiceInput({ t: 'midi', note: 99, velocity: 64, on: true, channel: 0 }, deps);
+
+    expect(echoes(broadcasts)[0]!.drumId).toBeUndefined();
+  });
+
+  it('names the drum a pad hit already carries', () => {
+    const host = makeHost();
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+    handleVoiceInput({ t: 'key', drumId: 'snare', zone: '0', velocity: 0.7 }, deps);
+
+    expect(echoes(broadcasts)[0]!.drumId).toBe('snare');
+    expect(echoes(broadcasts)[0]!.value).toBe(0.7);
+  });
+
+  it('attaches the drum a zone-mapped OSC address belongs to', () => {
+    const host = makeHost();
+    const project = defaultProject();
+    host.setInputMap({ ...project.inputMap, oscMap: [{ address: '/sp/kick', drumId: 'kick', slot: 0 }] });
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+    handleVoiceInput({ t: 'osc', address: '/sp/kick', value: 0.9 }, deps);
+
+    expect(echoes(broadcasts)[0]!.drumId).toBe('kick');
+    handleVoiceInput({ t: 'osc', address: '/unclaimed', value: 0.9 }, deps);
+    expect(echoes(broadcasts)[1]!.drumId).toBeUndefined();
+  });
+});

@@ -26,6 +26,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, mulberry32, wrap } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, pstr, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 /** Hard ceiling on wedge count — also the size of the cached order buffers. */
 export const MAX_SEGMENTS = 32;
@@ -132,6 +133,9 @@ export const segments: EffectGenerator<SegmentsState> = {
     'Slices the struck drum into angular wedges and fires them — all at once, chasing in order, every second one, bouncing, or in a seeded random order. Colours come from a generator (alternate, sweep, hue-step, cycle, random) so twenty wedges is still one hue and one spread, never twenty pickers. Set Fire to "single" and one node owns one wedge, so a sequence node steps wedges per hit and stacked nodes give hand-picked colours.',
   tags: ['band', 'hit', 'per-drum', 'hoop-aware', 'beat-synced', 'emission', 'seeded'],
   timebase: 'voice',
+  // Its wedges fade on a hard `1 - ageBeats / lifeBeats`, so the host voice must live that
+  // long or the Life slider looks inert (flagged 2026-08-16, landed with S6b).
+  voiceLife: { key: 'lifeBeats', unit: 'beats' },
   paramSpec: [
     // --- segmentation ---
     { key: 'segments', label: 'Segments', type: 'number', default: 8, min: 2, max: MAX_SEGMENTS, step: 1 },
@@ -165,7 +169,7 @@ export const segments: EffectGenerator<SegmentsState> = {
     { key: 'segmentOffset', label: 'Start Segment', type: 'number', default: 0, min: 0, max: MAX_SEGMENTS - 1, step: 1 },
     { key: 'direction', label: 'Direction', type: 'enum', default: 'cw', options: ['cw', 'ccw'] },
     // --- expression ---
-    { key: 'lifeBeats', label: 'Life', type: 'number', default: 3, min: 0.25, max: 16, step: 0.25, unit: 'beats' },
+    { key: 'lifeBeats', label: 'Decay', type: 'number', default: 3, min: 0.25, max: 16, step: 0.25, unit: 'beats' },
     { key: 'stagger', label: 'Stagger', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '× life' },
     { key: 'falloff', label: 'Falloff', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
     { key: 'radial', label: 'Radial Tilt', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
@@ -233,8 +237,8 @@ export const segments: EffectGenerator<SegmentsState> = {
       const drum = ctx.model.drumById.get(em.drumId);
       if (!drum) continue;
       const ageBeats = em.ageMs / msPerBeat;
-      const lifeFade = clamp01(1 - ageBeats / lifeBeats);
-      const gain = lifeFade * em.velocity * bri;
+      const fade = lifeFade(ctx, clamp01(1 - ageBeats / lifeBeats));
+      const gain = fade * em.velocity * bri;
       if (gain < 0.004) continue;
 
       const head = ageBeats * speed;

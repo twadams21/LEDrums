@@ -9,7 +9,7 @@ import GlobalControlsPane from './GlobalControlsPane.svelte';
    Input any more) and a Learn arm still reaches the store from this pane — the seam the
    modal's close path disarms. */
 
-const INPUT_MAP = { midiNotes: [], midiChannel: null, oscMap: [], zones: [], globalControls: {} } as unknown as InputMap;
+const INPUT_MAP = { midiNotes: [], midiChannel: null, oscMap: [], zones: [], globalControls: {}, velocityCurves: {} } as unknown as InputMap;
 
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   return {

@@ -1,5 +1,6 @@
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 /**
  * Follow Hoop: a hit lights hoop 0 immediately; each higher hoop lights after a
@@ -15,6 +16,9 @@ export const followHoop: EffectGenerator = {
   name: 'Follow Hoop',
   category: 'trigger',
   timebase: 'voice',
+  // Not a cutoff: each hoop fades on exp(-age/decayMs), the last one starting a per-hoop delay late,
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 140, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

@@ -31,6 +31,7 @@ import { resolveNodeModulations } from './modulation-graph';
 import { compileRenderPlan, type RenderPlan, type RenderPlanCache, type RenderPlanChild } from './render-plan';
 import { intersectScopeTargets } from './scope';
 import type { BlendMode } from '../color/blend';
+import type { CurveValue } from '../model/curve';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -51,6 +52,10 @@ export interface PlayAction {
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
+  /** Authored amplitude-over-life curve, carried verbatim from
+      {@link GraphNode.lifeEnvelope} to the spawned voice (S6b). Absent → the voice takes its
+      dwell from the effect's declared life param, exactly as before. */
+  lifeEnvelope?: CurveValue;
   /**
    * Resolved modifier chain for this play node's `mod` input (S28 seam). Carried verbatim to
    * the spawned voice. Populated by graph resolution in S29 (walk `mod` edges, order by
@@ -267,6 +272,7 @@ function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): 
     targetId: node.targetId,
     busId: node.busId,
     params: node.params,
+    lifeEnvelope: node.lifeEnvelope,
     modifiers: mods.length ? mods : undefined,
     modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
     originNodeId: node.id,

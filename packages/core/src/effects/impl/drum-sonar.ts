@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, wrap } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 interface DrumSonarData {
   angleOffset: number;
@@ -20,6 +21,8 @@ export const drumSonar: EffectGenerator<DrumSonarState> = {
   name: 'Drum Sonar',
   category: 'trigger',
   timebase: 'voice',
+  // Its emission is a hard cutoff at `age >= lifeMs`, so the host voice must live that long.
+  voiceLife: { key: 'lifeMs', unit: 'ms' },
   description:
     'Every hit pings the struck drum with expanding hoop-level sonar rings and a faint angular sweep, turning the shell into a radar display.',
   tags: ['wave', 'hit', 'per-drum', 'hoop-aware', 'emission'],
@@ -30,7 +33,7 @@ export const drumSonar: EffectGenerator<DrumSonarState> = {
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'drum/s' },
     { key: 'ringWidth', label: 'Ring Width', type: 'number', default: 0.12, min: 0.02, max: 0.5, step: 0.01 },
     { key: 'sweepWidth', label: 'Sweep Width', type: 'number', default: 70, min: 10, max: 240, unit: '°' },
-    { key: 'lifeMs', label: 'Life', type: 'number', default: 1500, min: 150, max: 5000, step: 50, unit: 'ms' },
+    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1500, min: 150, max: 5000, step: 50, unit: 'ms' },
     { key: 'echoes', label: 'Echoes', type: 'number', default: 3, min: 1, max: 5, step: 1 },
   ],
   createState(): DrumSonarState {
@@ -53,7 +56,7 @@ export const drumSonar: EffectGenerator<DrumSonarState> = {
       const age = em.ageMs / 1000;
       const head = age * speed;
       const sweepHead = em.data.angleOffset + age * 220;
-      const fade = clamp01(1 - em.ageMs / lifeMs) * em.velocity * bri;
+      const fade = lifeFade(ctx, clamp01(1 - em.ageMs / lifeMs)) * em.velocity * bri;
       if (fade < 0.004) continue;
       const end = drum.pixelStart + drum.pixelCount;
       for (let i = drum.pixelStart; i < end; i++) {

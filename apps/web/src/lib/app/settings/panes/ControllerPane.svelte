@@ -126,10 +126,14 @@
             />
           </Field>
           <Field label="Interface" info="The NIC the PixLite is on.">
+            <!-- Stays a dropdown however few NICs this machine has: an option label is a
+                 device name plus its address ("utun0 · 100.69.50.1"), long and unbounded, and
+                 segments clip rather than ellipsis. -->
             <Select
               value={out.iface || AUTO}
               options={ifaceOptions}
               disabled={!project}
+              segment={false}
               onChange={(v) => store.setOutput({ iface: v === AUTO ? '' : v })}
               ariaLabel="Source interface (network adapter)"
             />

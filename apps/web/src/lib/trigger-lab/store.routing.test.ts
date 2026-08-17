@@ -206,7 +206,7 @@ describe('setInputMap / setOutput', () => {
     const sent: ClientMessage[] = [];
     const store = connected(sent);
     const inputMap = { midiChannel: null,
-    globalControls: {}, zones: [], midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
+    globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [{ note: 60, drumId: store.project!.kit.drums[0]!.id, slot: 0 }], oscMap: [] };
     store.setInputMap(inputMap);
     expect(store.project!.inputMap).toBe(inputMap);
     expect(sent).toContainEqual({ t: 'setInputMap', inputMap });

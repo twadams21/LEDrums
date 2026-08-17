@@ -115,6 +115,11 @@ export interface VoiceStat {
   /** True while the voice is in its release (fade-out) phase. */
   releasing: boolean;
   via: string;
+  /** The eval STATE PREFIX this voice was spawned under — the firing graph's key, with a
+   * `#<slotIndex>` suffix on section-slot fires (see {@link RenderEngine} resolve paths).
+   * Empty string when the spawn path supplied none (ad-hoc previews). Clients strip the
+   * suffix to attribute a live voice back to the graph that is playing it. */
+  pad: string;
 }
 
 export interface EngineStats {
@@ -798,6 +803,7 @@ class VoiceBusEngine implements RenderEngine {
           busById: this.busById,
           latched: this.latched,
           timeMs: this.timeMs,
+          bpm: this.bpm,
         }),
       );
     }
@@ -880,6 +886,7 @@ class VoiceBusEngine implements RenderEngine {
             busById: this.busById,
             latched: this.latched,
             timeMs: this.timeMs,
+            bpm: this.bpm,
             pad,
           }),
         );
@@ -1011,6 +1018,7 @@ class VoiceBusEngine implements RenderEngine {
         hue: typeof v.params.hue === 'number' ? v.params.hue : 0,
         releasing: v.phase === 'release',
         via: v.via,
+        pad: v.pad ?? '',
       });
     }
     return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices, perf: this.perf };

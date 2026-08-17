@@ -360,6 +360,9 @@ function renderGeneratorVoice(
       playing: true,
     },
     triggers: genTriggers,
+    // Parity with the core bridge (generator-bridge.ts): an authored envelope owns the voice's
+    // decay, so the generator suppresses its own age fade instead of doubling up under it.
+    authoredDecay: v.lifeEnvelope != null,
   };
 
   genScratch.clear();

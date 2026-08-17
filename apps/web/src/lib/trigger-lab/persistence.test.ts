@@ -101,6 +101,29 @@ describe('serializeAuthored / deserializeAuthored round-trip', () => {
   });
 });
 
+describe('S6b — an authored life envelope survives the round trip', () => {
+  const curve = { h0: { x: 0.1, y: 1 }, h1: { x: 0.7, y: 0.35 }, profile: 'sCurve' as const, strength: 0.8 };
+
+  it('persists on the node it was drawn on, exactly', () => {
+    const state = authored();
+    state.graphs['kick:1']!.nodes.push(
+      makeNode('effect', 'fx', 200, 0, { effectId: 'flash', params: { hue: 10 }, lifeEnvelope: curve }),
+    );
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    const node = restored?.graphs?.['kick:1']?.nodes.find((n) => n.id === 'fx');
+    expect(node?.lifeEnvelope).toEqual(curve);
+  });
+
+  it('and a node without one comes back without one — no default is invented on load', () => {
+    const state = authored();
+    state.graphs['kick:1']!.nodes.push(makeNode('effect', 'fx', 200, 0, { effectId: 'flash' }));
+    const restored = deserializeAuthored(JSON.parse(JSON.stringify(serializeAuthored(state))));
+    const node = restored?.graphs?.['kick:1']?.nodes.find((n) => n.id === 'fx');
+    expect(node).toBeDefined();
+    expect(node?.lifeEnvelope).toBeUndefined();
+  });
+});
+
 describe('version gate', () => {
   it('returns null on a version mismatch (so a stale blob never wedges boot)', () => {
     const env = serializeAuthored(authored());

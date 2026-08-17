@@ -2,6 +2,7 @@ import { mulberry32 } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import type { PixelModel } from '../../geometry/pixel-model';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
 
 export interface PixelAccumState {
   intensity: Float32Array;
@@ -20,6 +21,9 @@ export const pixelAccum: EffectGenerator<PixelAccumState> = {
   id: 'pixel-accum',
   name: 'Pixel Accumulation',
   category: 'trigger',
+  // Not a cutoff: the accumulation buffer decays by exp(-dt/decayMs) each frame,
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

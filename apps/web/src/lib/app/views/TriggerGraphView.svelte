@@ -5,8 +5,10 @@
      canvas, and highlight it. The store stays the source of truth and
      autosaves, so every canvas edit flows through its mutators; the xyflow arrays are
      a derived projection (rebuilt on graph switch / structure change), with xyflow
-     owning live node positions during a drag. All per-node editing lives in the
-     right-dock Inspector — the nodes here are display-only. */
+     owning live node positions during a drag. The nodes here are display-only: per-node
+     editing lives in the Inspector slideover and adding in the Add-node popover — both
+     overlays pinned INSIDE this canvas region (F2), so the drum preview and the docks stay
+     visible beside them and the canvas keeps its full width at all times. */
   import { setContext, untrack } from 'svelte';
   import type { Connection, EdgeTypes, NodeTypes, OnConnectEnd } from '@xyflow/svelte';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -16,14 +18,14 @@
   import { wireRejectionMessage } from '../../trigger-lab/store/wire-toasts';
   import { pushToast } from '../../ui/toast.svelte';
   import type { WireDragFrom } from './WireDragValidity.svelte';
-  import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { wireInvalidPreview, spliceArmedPreview, pendingWirePreview } from './wire-preview.svelte';
   import { canvasDropPreview } from './canvas-drop-preview.svelte';
   import { lintPreview } from './lint-preview.svelte';
   import { lintEntries, lintEntriesByNode } from './graph-lint';
   import { GraphLintIndex, GRAPH_LINT_KEY } from './graph-lint-index.svelte';
   import GraphLintStrip from './GraphLintStrip.svelte';
   import { edgeUnderNode, type NodeRect } from './splice-geometry';
-  import { voice, type PlayType } from '@ledrums/core';
+  import { voice } from '@ledrums/core';
   import {
     graphToFlowEdges,
     type TriggerFlowEdge,
@@ -40,7 +42,8 @@
   } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
   import { findFreePosition, type Rect } from './node-placement';
-  import { nodeIdAtEvent } from './flow-dom';
+  import { nodeIdAtEvent, pointOfEvent } from './flow-dom';
+  import { toPortOf, typesForPendingWire, type PendingWire } from './pending-wire';
   import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
   import TriggerNode from './TriggerNode.svelte';
@@ -49,13 +52,13 @@
   import AlignGuides from './AlignGuides.svelte';
   import { computeAlignment, type AlignRect, type GuideLine } from './align-guides';
   import type { FlowApi } from './FlowHandle.svelte';
-  import NodeEditor, { type NodeEditorTab } from './NodeEditor.svelte';
-  import AddPalette, { type AddGroup } from './AddPalette.svelte';
-  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-pane';
-  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from './add-node-taxonomy';
+  import AddNodePopover from './AddNodePopover.svelte';
+  import { ADD_NODE_DRAG_TYPE, ADD_NODE_TYPES, decodeAddDragPayload } from './add-node-taxonomy';
+  import InspectorSlideover, { INSPECTOR_PANE } from '../InspectorSlideover.svelte';
   import TriggerGraphsRail from './TriggerGraphsRail.svelte';
-  import Inspector from '../docks/Inspector.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
   import Splitter from '../../ui/Splitter.svelte';
+  import Plus from '@lucide/svelte/icons/plus';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -77,29 +80,25 @@
   const lintIndex = new GraphLintIndex();
   setContext(GRAPH_LINT_KEY, lintIndex);
 
-  // ---- Node Editor drawer (wave-3 shell): Add palette + Inspector -----------
-  // The Add tab lists everything the graph can gain in one searchable surface:
-  // node kinds, then modulation sources, then the modifier registry grouped by
-  // category (registry-driven, so a newly registered modifier appears with no
-  // edit here). Selecting a node flips the drawer to its Inspector tab.
-  let neTab = $state<NodeEditorTab>('add');
-  $effect(() => {
-    neTab = shell.selection?.kind === 'node' ? 'inspector' : 'add';
-  });
-  const EDITOR_W = { key: 'triggerNodeEditorW', min: 280, max: 520, def: 340 };
-  const editorW = $derived(store.paneSizes[EDITOR_W.key] ?? EDITOR_W.def);
-  const setEditorW = (v: number): void => {
-    store.paneSizes = { ...store.paneSizes, [EDITOR_W.key]: v };
-  };
   // Graphs rail (S3): the left pane hosting the active section's graph cards —
-  // same persisted-size pattern as the Node Editor drawer opposite.
+  // the one remaining resizable column now that the editor drawer has left the grid.
   const RAIL_W = { key: 'triggerGraphsRailW', min: 180, max: 340, def: 240 };
   const railW = $derived(store.paneSizes[RAIL_W.key] ?? RAIL_W.def);
   const setRailW = (v: number): void => {
     store.paneSizes = { ...store.paneSizes, [RAIL_W.key]: v };
   };
 
-  const addGroups = $derived<AddGroup[]>(buildAddGroups());
+  // Inspector slideover (F2): it lives INSIDE this canvas region, so the canvas insets its own
+  // furniture — the `+` affordance, the lint strip, and the add-popover's placement bounds — by
+  // the panel's width while it is open. Nothing reflows: the canvas surface keeps its geometry,
+  // only the overlaid furniture steps aside.
+  /** The canvas's own edge inset — `--space-3` in px, the gap every piece of canvas furniture
+      (this panel included) keeps from the surface edge. */
+  const CANVAS_PAD = 12;
+  const inspectorOpen = $derived(shell.selection?.kind === 'node');
+  const inspectorW = $derived(store.paneSizes[INSPECTOR_PANE.key] ?? INSPECTOR_PANE.def);
+  /** Horizontal px the open slideover claims from the canvas's right edge (panel + its gap). */
+  const inspectorInset = $derived(inspectorOpen ? inspectorW + CANVAS_PAD : 0);
 
   // Placement: new nodes land at a free spot near the visible canvas centre. The
   // flow instance arrives via GraphCanvas's FlowHandle; the wrapper element gives
@@ -111,26 +110,90 @@
   // headless Chrome can't drive the HTML5 drag.
   let dragActive = $state(false);
   const dropActive = $derived(dragActive || (import.meta.env.DEV && canvasDropPreview.current));
-  function canvasCentre(): { x: number; y: number } {
+
+  // ---- Add-node popover ------------------------------------------------------
+  // A flat list of node TYPES, one click each (F2): the families that differ only by subtype
+  // (Effect / Modifier / Modulate) land on the store's default and are re-typed in the node's
+  // inspector. It is summoned ON the canvas — right-click at the spot, or the `+` affordance
+  // for the visible centre — and the node lands where it was summoned, so it costs no width.
+  //
+  // `at` is canvas-local px (where to paint the popover); `spawn` is the matching FLOW
+  // position (where the node goes). Both are captured at invoke time so a pan/zoom while
+  // the palette is open can never land the node somewhere else than it was summoned.
+  //
+  // F8: it is also summoned by RELEASING a connection drag in empty space, in which case it
+  // holds that pending wire — the picked node lands AND takes the wire, and the list is
+  // filtered to the kinds the wire can reach.
+  let addPopover = $state<{
+    at: { x: number; y: number };
+    spawn: { x: number; y: number };
+    /** The wire a released drag is still holding (F8), else null for a plain add. */
+    pending: PendingWire | null;
+  } | null>(null);
+  // The popover stays inside the canvas MINUS whatever the open inspector covers, so it can
+  // never be summoned underneath the panel.
+  const canvasBox = $derived.by(() => {
+    addPopover; // re-measure each time the popover opens
     const r = canvasWrap?.getBoundingClientRect();
-    if (!flowApi) return { x: 0, y: 0 };
-    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    return { w: Math.max(0, (r?.width ?? 0) - inspectorInset), h: r?.height ?? 0 };
+  });
+  /** Open the palette at a screen point (a right-click / a wire released in empty space), or at
+      the canvas centre (the `+`). `pending` carries the wire a released drag is holding (F8). */
+  function openAddPopover(screen?: { x: number; y: number }, pending: PendingWire | null = null): void {
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!rect) return;
+    const point = screen ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    addPopover = {
+      at: { x: point.x - rect.left, y: point.y - rect.top },
+      spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
+      pending,
+    };
   }
-  function handleAdd(id: string, groupKey: string): void {
-    const c = canvasCentre();
-    handleAddAt(id, groupKey, c.x, c.y);
-  }
-  function handleAddAt(id: string, groupKey: string, x: number, y: number): void {
-    if (groupKey === EFFECT_GROUP_KEY) addPlayNodeAt(id as PlayType, x, y);
-    else if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addModifierNodeAt(id, x, y);
-    else if (id.startsWith('envelope:')) addEnvelopeNodeAt(id.slice('envelope:'.length), x, y);
-    else if (id.startsWith('lfo:')) addLfoNodeAt(id.slice('lfo:'.length), x, y);
-    else addNodeAt(id as NodeKind, x, y);
-  }
-  /** Add a typed play node (D3) near the palette-supplied flow centre. */
-  function addPlayNodeAt(playType: PlayType, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addPlayNode(playType, p.x, p.y);
+  /** The types the palette offers: every kind, or — while it holds a pending wire — only the
+      kinds that wire can actually land on, probed against the store's own wiring predicate
+      (`pending-wire`), so the palette can never offer a pick that adds a node with no wire. */
+  const addTypes = $derived.by(() => {
+    const g = store.selectedGraph;
+    const pending = addPopover?.pending;
+    return g && pending ? typesForPendingWire(g, pending, ADD_NODE_TYPES) : ADD_NODE_TYPES;
+  });
+  // A graph switch invalidates the captured spawn point — close rather than drop a node into
+  // the graph the user just left.
+  $effect(() => {
+    store.selectedPadKey;
+    untrack(() => {
+      addPopover = null;
+    });
+  });
+  // DEV/ui-shot only: the pending-wire palette is reachable only by a live connection drag, which
+  // headless Chrome can't drive. When the shot seam pins a wire, open the palette at the canvas
+  // centre holding it (the real state, filtered list and all); clearing it closes the palette.
+  // Tree-shaken outside DEV.
+  $effect(() => {
+    if (!import.meta.env.DEV) return;
+    const pinned = pendingWirePreview.current;
+    untrack(() => {
+      if (pinned) openAddPopover(undefined, pinned);
+      else if (addPopover?.pending) addPopover = null;
+    });
+  });
+  /** Palette pick → a node at the position the palette was summoned at, plus — when the palette
+      is holding a wire a drag released in empty space (F8) — that wire, landed on the new node.
+      The wire goes through the SAME `dropConnect` a wire released ON a node body takes (one
+      mutation path, one validity table), folded into the add's undo checkpoint so a single
+      Ctrl/Z pops the node and its wire together. */
+  function handleAdd(kind: NodeKind): void {
+    const open = addPopover;
+    if (!open) return;
+    const pending = open.pending;
+    if (!pending) {
+      addNodeAt(kind, open.spawn.x, open.spawn.y);
+      return;
+    }
+    const p = spawnAt(open.spawn.x, open.spawn.y);
+    store.addNodeWired(kind, p.x, p.y, (node) =>
+      dropConnect(pending.nodeId, pending.type, pending.handleId, node.id),
+    );
   }
   /** Estimated canvas footprint per existing node — the card plus room for mod rows /
       band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */
@@ -159,19 +222,6 @@
     const p = spawnAt(cx, cy);
     store.addNode(kind, p.x, p.y);
   }
-  function addEnvelopeNodeAt(preset: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addNode('envelope', p.x, p.y, { envelopePreset: preset });
-  }
-  function addLfoNodeAt(waveform: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addNode('lfo', p.x, p.y, { lfoWaveform: waveform });
-  }
-  /** Add a specific modifier node (category palette) near the palette-supplied flow centre. */
-  function addModifierNodeAt(modifierId: string, cx: number, cy: number): void {
-    const p = spawnAt(cx, cy);
-    store.addModifierNode(modifierId, p.x, p.y);
-  }
   function onPaletteDragOver(e: DragEvent): void {
     const dt = e.dataTransfer;
     if (!dt || !Array.from(dt.types).includes(ADD_NODE_DRAG_TYPE)) return;
@@ -187,11 +237,11 @@
   }
   function onPaletteDrop(e: DragEvent): void {
     dragActive = false;
-    const payload = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
-    if (!payload || !flowApi) return;
+    const kind = decodeAddDragPayload(e.dataTransfer?.getData(ADD_NODE_DRAG_TYPE) ?? '');
+    if (!kind || !flowApi) return;
     e.preventDefault();
     const p = flowApi.screenToFlowPosition({ x: e.clientX, y: e.clientY });
-    handleAddAt(payload.id, payload.groupKey, p.x, p.y);
+    addNodeAt(kind, p.x, p.y);
   }
 
   // ---- xyflow projection of the store graph ---------------------------------
@@ -432,12 +482,6 @@
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
-  /** The target handle id (`mod`, a `param:<key>` modulation row, or the default flow input)
-      as a store `toPort`. A dropped param handle must pass through so its mapping edge lands. */
-  function toPortOf(handle: string | null | undefined): ToPort {
-    if (handle === 'mod') return 'mod';
-    return handle && voice.paramKeyOf(handle as ToPort) !== null ? (handle as `param:${string}`) : undefined;
-  }
   /** Surface a refused wire as one plain-language error toast naming the reason (R03 / doc 1.1).
       A `null` reason (accepted, or a viewer/no-graph no-op) says nothing. */
   function toastRejection(reason: WireRejection | null): void {
@@ -527,9 +571,28 @@
   }
   const onConnectEnd: OnConnectEnd = (event, conn) => {
     if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+    const from: PendingWire = {
+      nodeId: conn.fromHandle.nodeId,
+      type: conn.fromHandle.type,
+      handleId: conn.fromHandle.id ?? null,
+    };
     const toId = nodeIdAtEvent(event);
-    if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
+    if (toId) {
+      dropConnect(from.nodeId, from.type, from.handleId, toId);
+      return;
+    }
+    openPendingAdd(event, from);
   };
+  /** A wire released in EMPTY canvas (F8): keep it pending and summon the palette at the release
+      point, listing only the kinds it can land on — the pick then adds that node AND lands the
+      wire. Nothing valid to offer (or a viewer / no graph) → the drag just cancels, as today. */
+  function openPendingAdd(event: MouseEvent | TouchEvent, from: PendingWire): void {
+    const g = store.selectedGraph;
+    if (!g || !store.canEdit) return;
+    if (typesForPendingWire(g, from, ADD_NODE_TYPES).length === 0) return;
+    const at = pointOfEvent(event);
+    if (at) openAddPopover(at, from);
+  }
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
       cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
@@ -542,13 +605,15 @@
     return store.selectedGraph?.nodes.find((n) => n.id === id)?.kind;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` should land on: the target's
-      first exposed row, else auto-expose its first numeric param (a sensible default so a drop
-      onto a bare node still lands). Undefined when the target has no modulatable params. */
+      first exposed NUMBER row, else auto-expose its first numeric param (a sensible default so
+      a drop onto a bare node still lands). Since S5 a face row may be an enum or a bool, which
+      nothing can modulate — `modDropTarget` skips those. Undefined when the target has no
+      modulatable params. */
   function paramPortFor(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    let key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
-    if (key && !store.modInputsOf(to).some((r) => r.param === key)) store.addModInput(to, key);
+    const key = store.modDropTarget(to);
+    if (key && !store.isParamOnFace(to, key)) store.addModInput(to, key);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** The `param:<key>` port a modulation-source drop on `toId` WOULD land on — the read-only
@@ -557,7 +622,7 @@
   function predictParamPort(toId: string): ToPort {
     const to = store.selectedGraph?.nodes.find((n) => n.id === toId);
     if (!to) return undefined;
-    const key = store.modInputsOf(to)[0]?.param ?? store.availableModParams(to)[0]?.key;
+    const key = store.modDropTarget(to);
     return key ? (`param:${key}` as const) : undefined;
   }
   /** Would dropping the in-progress wire on `toId` (optionally the precise handle under the
@@ -611,7 +676,7 @@
   }
 </script>
 
-<div class="trigger-view" style:--rail-w={`${railW}px`} style:--editor-w={`${editorW}px`}>
+<div class="trigger-view" style:--rail-w={`${railW}px`}>
   <div class="rail-wrap">
     <TriggerGraphsRail {store} {shell} />
     <Splitter
@@ -628,6 +693,7 @@
   <div
     class="gwrap"
     bind:this={canvasWrap}
+    style:--inspector-inset={`${inspectorInset}px`}
     role="region"
     aria-label="Trigger graph canvas"
     ondragover={onPaletteDragOver}
@@ -648,6 +714,10 @@
       onNodeClick={(id) => shell.select({ kind: 'node', nodeId: id })}
       onEdgeClick={() => shell.clearSelection()}
       onPaneClick={() => shell.clearSelection()}
+      onPaneContextMenu={(e) => {
+        e.preventDefault();
+        openAddPopover({ x: e.clientX, y: e.clientY });
+      }}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
       onNodeDrag={guard('drag-live', onDrag)}
@@ -678,34 +748,41 @@
     {#if dropActive}
       <div class="drop-ring" aria-hidden="true"></div>
     {/if}
-  </div>
-
-  <div class="editor-wrap">
-    <Splitter
-      orientation="vertical"
-      size={editorW}
-      min={EDITOR_W.min}
-      max={EDITOR_W.max}
-      invert
-      label="Resize node editor"
-      onResize={setEditorW}
-      style="left: calc(var(--shell-gap) * -0.5); top: 0; bottom: 0;"
-    />
-    <NodeEditor bind:tab={neTab}>
-      {#snippet add()}
-        <AddPalette groups={addGroups} onAdd={handleAdd} disabled={!store.canEdit} />
-      {/snippet}
-      {#snippet inspector()}
-        <Inspector {store} {shell} />
-      {/snippet}
-    </NodeEditor>
+    <!-- The `+` affordance: the discoverable half of the add gesture (right-click being the
+         fast half). Pinned top-right of the canvas, out of the lint strip's row. -->
+    <div class="add-affordance">
+      <IconButton
+        icon={Plus}
+        label="Add node"
+        variant="soft"
+        tooltipSide="left"
+        disabled={!store.selectedGraph}
+        onclick={() => openAddPopover()}
+      />
+    </div>
+    {#if addPopover}
+      <AddNodePopover
+        at={addPopover.at}
+        bounds={canvasBox}
+        types={addTypes}
+        wiring={!!addPopover.pending}
+        disabled={!store.canEdit}
+        onAdd={handleAdd}
+        onClose={() => (addPopover = null)}
+      />
+    {/if}
+    <!-- The inspector: an overlay pinned to the canvas's right edge (F2) — the drum preview
+         and the docks stay visible and usable beside it, and the canvas never reflows. -->
+    <InspectorSlideover {store} {shell} />
   </div>
 </div>
 
 <style>
   .trigger-view {
     display: grid;
-    grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--editor-w);
+    /* Two tracks only: the inspector left the grid for an in-canvas slideover, so the
+       canvas keeps that width permanently — opening the inspector never reflows it. */
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
     gap: var(--shell-gap);
     min-height: 0;
     height: 100%;
@@ -741,18 +818,24 @@
     position: absolute;
     top: var(--space-3);
     left: var(--space-3);
-    right: var(--space-3);
+    /* steps aside for the inspector rather than running under it */
+    right: calc(var(--space-3) + var(--inspector-inset, 0px));
     z-index: 5;
     display: flex;
     pointer-events: none;
+    transition: right var(--dur-120) var(--ease-control);
   }
   .lint-overlay > :global(*) {
     pointer-events: auto;
   }
-  .editor-wrap {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
+  /* `+` add affordance — pinned to the canvas's top-right, opposite the lint strip. It slides
+     inboard of the inspector when that opens, so adding never needs the panel closed first. */
+  .add-affordance {
+    position: absolute;
+    top: var(--space-3);
+    right: calc(var(--space-3) + var(--inspector-inset, 0px));
+    z-index: 8;
+    transition: right var(--dur-120) var(--ease-control);
   }
   /* the "select a graph" placeholder, centred by GraphCanvas's empty slot */
   .thint {

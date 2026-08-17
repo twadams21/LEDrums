@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { TriggerLab } from '../../../trigger-lab/store.svelte';
 import type { InputMap } from '@ledrums/core';
@@ -10,12 +10,24 @@ import DrumZonesPane from './DrumZonesPane.svelte';
    and the Inspector's fieldset read-only gate for viewers. The list's own editing behaviour
    is DrumZonesList's (shared with the Trigger-graph source editor), not re-tested here. */
 
+/* The pane now also renders each drum's velocity `CurveField`, which measures its own width
+   (Slider.test.ts idiom — jsdom has no ResizeObserver). */
+beforeAll(() => {
+  class ResizeObserverMock {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+});
+
 const INPUT_MAP = {
   midiNotes: [],
   midiChannel: null,
   oscMap: [],
   zones: [],
   globalControls: {},
+  velocityCurves: {},
 } as unknown as InputMap;
 
 const DRUMS = [
@@ -35,6 +47,7 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     midiLearnTarget: null,
     oscLearnTarget: null,
     inputBadge: () => null,
+    velocityHitsFor: () => [],
     setInputMap: vi.fn(),
     startMidiLearn: vi.fn(),
     cancelMidiLearn: vi.fn(),
