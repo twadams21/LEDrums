@@ -84,6 +84,7 @@
       <Select
         value={node.canvasScene ?? ''}
         options={sceneOptions}
+        segment={false}
         onChange={(v) => store.setCanvasScene(node, v)}
         placeholder="Choose scene"
         ariaLabel="Canvas scene"
@@ -102,7 +103,7 @@
   <div class="bar">
     <label class="lblrow">
       <span class="k">Preset</span>
-      <Select value={node.presetId} options={presetOptions} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
+      <Select value={node.presetId} options={presetOptions} segment={false} onChange={(v) => store.selectPreset(node, v)} ariaLabel="Preset" />
     </label>
     <div class="presetActions">
       <IconButton icon={RotateCcw} label="Apply preset — reset params to it" variant="soft" size={14} onclick={() => store.applyPreset(node)} />

@@ -60,6 +60,7 @@
           <Select
             value={looks[bus.id] ?? ''}
             options={lookOptions(bus.id)}
+            segment={false}
             onChange={(v) => store.setLook(sectionId, bus.id, v === '' ? null : v)}
             placeholder="None"
             ariaLabel={`${bus.name} look`}
