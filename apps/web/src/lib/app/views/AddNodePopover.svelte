@@ -26,6 +26,7 @@
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Plus from '@lucide/svelte/icons/plus';
+  import Cable from '@lucide/svelte/icons/cable';
   import X from '@lucide/svelte/icons/x';
 
   let {
@@ -33,6 +34,7 @@
     bounds,
     types = ADD_NODE_TYPES,
     disabled = false,
+    wiring = false,
     onAdd,
     onClose,
   }: {
@@ -44,6 +46,10 @@
     types?: readonly AddNodeType[];
     /** Read-only viewer: browsing allowed, adding disabled. */
     disabled?: boolean;
+    /** F8: summoned holding a wire a drag released in empty space — the pick takes that wire.
+        Says so in the header, and drops drag-to-place (which would land a node WITHOUT the
+        wire); `types` is already filtered to what the wire can reach. */
+    wiring?: boolean;
     onAdd: (kind: NodeKind) => void;
     onClose: () => void;
   } = $props();
@@ -122,12 +128,13 @@
   class="add-popover"
   role="group"
   aria-label="Add node palette"
+  style:--add-row-cursor={wiring ? 'pointer' : 'grab'}
   style:left={`${pos.x}px`}
   style:top={`${pos.y}px`}
   style:width={`${size.w}px`}
   style:height={`${size.h}px`}
 >
-  <PanelHeader icon={Plus} title="Add node">
+  <PanelHeader icon={wiring ? Cable : Plus} title={wiring ? 'Add & wire' : 'Add node'}>
     <IconButton icon={X} label="Close" tooltipSide="left" onclick={onClose} />
   </PanelHeader>
   <div class="rows">
@@ -137,7 +144,7 @@
         class="row"
         {disabled}
         title={`Add ${t.label}`}
-        draggable={!disabled}
+        draggable={!disabled && !wiring}
         ondragstart={(e) => dragRow(e, t.kind)}
         onkeydown={onListKeydown}
         onclick={() => add(t.kind)}
@@ -187,7 +194,7 @@
     border-radius: var(--radius-2);
     color: var(--text-muted);
     text-align: left;
-    cursor: grab;
+    cursor: var(--add-row-cursor, grab);
     transition:
       background-color var(--dur-120) ease,
       border-color var(--dur-120) ease,
@@ -201,6 +208,8 @@
   }
   .row:active:not(:disabled) {
     scale: 0.98;
+  }
+  .row[draggable='true']:active:not(:disabled) {
     cursor: grabbing;
   }
   .row:disabled {

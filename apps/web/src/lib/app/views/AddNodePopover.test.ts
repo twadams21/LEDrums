@@ -82,6 +82,19 @@ describe('AddNodePopover', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('says it is wiring, lists only what it was given, and drops drag-to-place (F8)', () => {
+    const types = ADD_NODE_TYPES.filter((t) => t.kind === 'effect' || t.kind === 'modifier');
+    render(AddNodePopover, {
+      props: { at: { x: 0, y: 0 }, bounds: { w: 900, h: 700 }, types, wiring: true, onAdd: vi.fn(), onClose: vi.fn() },
+    });
+
+    expect(screen.getByText('Add & wire')).toBeTruthy();
+    expect(screen.getByTitle('Add Effect')).toBeTruthy();
+    expect(screen.queryByTitle('Add Mix')).toBeNull(); // filtered out by the pending wire
+    // a drag would place a node the wire never reaches, so the rows stop being drag sources
+    expect(screen.getByTitle('Add Effect').getAttribute('draggable')).toBe('false');
+  });
+
   it('closes on an outside press but not on one inside itself', async () => {
     const { onClose, popover } = mount();
     await fireEvent.pointerDown(popover);
