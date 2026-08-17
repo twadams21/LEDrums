@@ -144,3 +144,56 @@ describe('EffectParamsSection — nothing vanishes, for every real effect', () =
     for (const spec of eff.params) expect(rendered).toContain(spec.label);
   });
 });
+
+/* F5 — the envelope replaced the Brightness and Decay sliders, and there is no longer a toggle
+   between "sliders" and "curve". These pin the consequences of that: the block is always there
+   for an effect that declares a decay, its two axis sliders are the effect's OWN params (moved,
+   not duplicated), and merely mounting it authors nothing. */
+
+const decayEffect = (): EffectDef => GENERATOR_EFFECTS.find((e) => e.id === 'gen:whole-drum')!;
+const plainEffect = (): EffectDef => GENERATOR_EFFECTS.find((e) => e.id === 'gen:breathing-kit')!;
+
+describe('EffectParamsSection — the decay envelope is the control, always', () => {
+  it('shows the curve with no toggle to reach it, for an effect that declares a decay', () => {
+    const { container } = mount(decayEffect());
+    expect(container.querySelector('[aria-label="Decay envelope"]')).not.toBeNull();
+    // The two affordances the toggle used to need are gone, not merely hidden.
+    expect(container.querySelector('[aria-label^="Draw "]')).toBeNull();
+    expect(container.querySelector('[aria-label^="Detach the curve"]')).toBeNull();
+  });
+
+  it('and shows no curve at all for an effect that declares none', () => {
+    const { container } = mount(plainEffect());
+    expect(container.querySelector('[aria-label="Decay envelope"]')).toBeNull();
+  });
+
+  it('puts the decay and brightness sliders inside the block, exactly once each', () => {
+    const eff = decayEffect();
+    const { container } = mount(eff);
+    const block = container.querySelector('.lifeenv') as HTMLElement;
+    expect(labels(block)).toEqual(['Decay', 'Brightness']);
+    // …and nowhere else: the invariant test above counts every label once, so a row that both
+    // moved into the block and stayed in the flat list would fail there. This pins the pair.
+    expect(labels(container).filter((l) => l === 'Decay' || l === 'Brightness')).toEqual(['Decay', 'Brightness']);
+  });
+
+  it('steps aside under a filter, handing the two scalars back as ordinary rows', async () => {
+    const { container, getByLabelText } = mount(decayEffect());
+    await fireEvent.input(getByLabelText('Filter parameters'), { target: { value: 'decay' } });
+    expect(container.querySelector('[aria-label="Decay envelope"]')).toBeNull();
+    expect(labels(container.querySelector('.common') as HTMLElement)).toContain('Decay');
+  });
+
+  it('authors nothing by being opened', () => {
+    // The seed is what the author is SHOWN, not what they made. A control that corrects its
+    // own value as it mounts must not turn that into an edit — with the envelope always on,
+    // that would write a curve (and an undo entry) into every effect node merely browsed.
+    const store = stubStore();
+    const setLifeEnvelope = vi.fn();
+    const updateLifeEnvelope = vi.fn();
+    Object.assign(store, { setLifeEnvelope, updateLifeEnvelope });
+    render(EffectParamsSection, { props: { store, node: node(), eff: decayEffect() } });
+    expect(setLifeEnvelope).not.toHaveBeenCalled();
+    expect(updateLifeEnvelope).not.toHaveBeenCalled();
+  });
+});

@@ -19,7 +19,7 @@ beforeAll(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 });
 
-const LIFT: CurveValue = { h0: { x: 0.2, y: 0 }, h1: { x: 0.9, y: 1 }, profile: 'exp', strength: 0.6 };
+const LIFT: CurveValue = { h0: { x: 0.2, y: 0 }, h1: { x: 0.9, y: 1 }, profile: 'bend', strength: 0.6 };
 
 const inputMap = (velocityCurves: Record<string, CurveValue> = {}): InputMap =>
   ({ midiNotes: [], midiChannel: null, oscMap: [], zones: [], globalControls: {}, velocityCurves }) as unknown as InputMap;

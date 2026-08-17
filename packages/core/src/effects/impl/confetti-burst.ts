@@ -42,7 +42,7 @@ export const confettiBurst: EffectGenerator<ConfettiBurstState> = {
     { key: 'count', label: 'Particles / Hit', type: 'number', default: 24, min: 1, max: 256, step: 1 },
     { key: 'spread', label: 'Spread', type: 'number', default: 1.4, min: 0.05, max: 8, step: 0.05, unit: 'mm/ms' },
     { key: 'gravity', label: 'Gravity', type: 'number', default: 0.004, min: 0, max: 0.05, step: 0.001, unit: 'mm/ms²' },
-    { key: 'life', label: 'Life', type: 'number', default: 1200, min: 100, max: 6000, unit: 'ms' },
+    { key: 'life', label: 'Decay', type: 'number', default: 1200, min: 100, max: 6000, unit: 'ms' },
     { key: 'baseHue', label: 'Base Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
     { key: 'hueSpan', label: 'Hue Span', type: 'number', default: 360, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },

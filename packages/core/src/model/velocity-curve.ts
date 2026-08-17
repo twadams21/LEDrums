@@ -26,7 +26,7 @@
 
    Purity: lookup + evaluation only. No engine state, no IO.
    ============================================================================= */
-import { clampCurve01, evalCurve, isIdentityCurve, type CurveValue } from './curve';
+import { clampUnit, evalCurve, isIdentityCurve, type CurveValue } from './curve';
 import type { InputMap } from './project-schema';
 
 /**
@@ -39,7 +39,7 @@ import type { InputMap } from './project-schema';
  */
 export function applyVelocityCurve(curve: CurveValue | undefined, velocity: number): number {
   if (!curve || isIdentityCurve(curve)) return velocity;
-  return evalCurve(curve, clampCurve01(velocity));
+  return evalCurve(curve, clampUnit(velocity));
 }
 
 /** The curve authored for a drum, or `undefined` for identity. */

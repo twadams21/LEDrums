@@ -113,6 +113,11 @@ export function createGeneratorBridge(): GeneratorBridge {
       const age = timeMs - v.bornAtMs;
       genTrigger.ageMs = age > 0 ? age : 0;
 
+      // An authored envelope OWNS this voice's decay (F5). The generator is told so it can
+      // suppress its own age fade (`lifeFade`) rather than multiplying a second one under the
+      // curve — the composite below already scales by the level the envelope produced.
+      genCtx.authoredDecay = v.lifeEnvelope != null;
+
       // Timebase: swap the clock the generator reads, without changing its signature.
       // 'absolute' (default) — the engine's wall-clock + transport, exactly as before, so
       //   free-running base/ambient effects are byte-for-byte unchanged.

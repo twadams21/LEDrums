@@ -66,8 +66,8 @@ const MODEL: SerializedModel = {
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
 const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: [] };
 
-/** Halves everything: out = in / 2, flat linear, so the expected number is arithmetic. */
-const HALF: CurveValue = { h0: { x: 0, y: 0 }, h1: { x: 1, y: 0.5 }, profile: 'linear', strength: 0 };
+/** Halves everything: out = in / 2, on the notch so the expected number is arithmetic. */
+const HALF: CurveValue = { h0: { x: 0, y: 0 }, h1: { x: 1, y: 0.5 }, profile: 'bend', strength: 0 };
 
 const fireState = (h: Harness, project: Project): void => {
   h.cb!.onState!(project, MODEL, [], [], OUTPUT, null, null, null, OSC_LISTEN);

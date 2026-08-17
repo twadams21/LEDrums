@@ -43,6 +43,7 @@ export * from './effects/emitter';
 export * from './effects/registry';
 export * from './effects/visibility';
 export * from './effects/voice-life';
+export * from './effects/life-fade';
 export * from './effects/vocabulary';
 export * from './effects/metadata';
 export * from './effects/aliases';

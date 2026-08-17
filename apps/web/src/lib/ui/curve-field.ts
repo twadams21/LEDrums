@@ -4,22 +4,56 @@
  * No DOM, no Svelte, no IO, so it unit-tests without jsdom and the view stays a thin
  * renderer over it.
  *
- * The VALUE and its evaluation live in `@ledrums/core` (`model/curve`), because the same
- * shape is persisted in the project (an effect node's `lifeEnvelope`, a drum's velocity
- * curve) and evaluated by the server engine and the sim alike — `core` may not import the
- * web app, so the maths cannot live here. Re-exported below so this module stays the one
- * import a consumer of the control needs; what remains local is view maths: pixels, paths,
- * gestures and the hit overlay.
+ * The value itself — its type, its profiles, and how it evaluates — lives in
+ * `@ledrums/core` (`model/curve.ts`) and is re-exported below, unchanged, so this module
+ * stays the one import the control and its consumers reach for. It had to move: a curve is
+ * authored content now (an effect node's `lifeEnvelope`, S6b; a drum's velocity curve, S8),
+ * and the server engine evaluates the same shape this control draws. Two copies of
+ * `evalCurve` would be two answers to "what is this voice's brightness right now".
  *
- * The shape is deliberately domain-agnostic: the same value drives a time-domain envelope
- * (x = time, y = level) and a transfer curve (x = input velocity, y = output velocity).
- * Consumers own the unit mapping; everything here is 0..1.
+ * The shape is deliberately domain-agnostic: the same value drives a
+ * time-domain envelope (x = time, y = level) and a transfer curve (x = input
+ * velocity, y = output velocity). Consumers own the unit mapping; everything
+ * here is 0..1.
+ *
+ * Outside the handles the curve is FLAT — `x < h0.x → h0.y`, `x > h1.x → h1.y`
+ * — which is what makes a handle pair expressive enough on its own: dragging
+ * `h0` right is a hold (envelope) or a threshold/gate (transfer curve) without
+ * a third handle or a mode.
+ *
+ * `strength` is **bipolar, −1..+1, with 0 as the centre notch**: 0 is no
+ * curvature at all (the profile is exactly a straight line there), and the two
+ * directions are inverse bends of each other. That is the whole lin/exp/log
+ * question folded into ONE continuum rather than three buttons (Trent,
+ * 2026-08-17): pushing the fader up from centre bends `bend` exponentially,
+ * pulling it down bends it logarithmically — the exact inverse shape — and the
+ * mode word the view prints is DERIVED from where the fader sits (see
+ * {@link curveModeLabel}), never stored beside it. A profile with nothing to
+ * bend (`snap`) reports `hasStrength: false` and the view disables the fader
+ * rather than hiding it.
+ *
+ * Why a notch and not three modes: a straight line reachable only by picking
+ * "Linear" from a list, while a button labelled "Exp" also draws a straight
+ * line at strength 0, is how the control read as broken — the label promised a
+ * bend the value did not have. With the notch there is exactly one neutral
+ * position, it is in the middle where a fader's neutral belongs, and every
+ * departure from it visibly bends.
  */
-import { clampCurve01, evalCurve, normalizeCurve, type CurvePoint, type CurveValue } from '@ledrums/core';
+import {
+  clampBipolar,
+  clampUnit as clamp01,
+  evalCurve,
+  normalizeCurve,
+  type CurveProfile,
+  type CurvePoint,
+  type CurveValue,
+} from '@ledrums/core';
 
 export {
   CURVE_PROFILE_OPTIONS,
   DEFAULT_CURVE,
+  clampBipolar,
+  clampUnit as clamp01,
   evalCurve,
   IDENTITY_CURVE,
   isIdentityCurve,
@@ -32,8 +66,6 @@ export {
   type CurveValue,
 } from '@ledrums/core';
 
-/** NaN (the only value with no place on the axis) reads as 0; ±Infinity clamps. */
-export const clamp01 = clampCurve01;
 
 /** Which of the two handles a gesture is addressing. */
 export type CurveHandle = 'h0' | 'h1';
@@ -41,7 +73,7 @@ export type CurveHandle = 'h0' | 'h1';
 /**
  * How one axis reads to a human. The control's maths never sees these — they
  * only label the readout — which is exactly what keeps the primitive
- * domain-agnostic: `{ label: 'life', format: u => `${Math.round(u * 4000)} ms` }`
+ * domain-agnostic: `{ label: 'decay', format: u => `${Math.round(u * 4000)} ms` }`
  * for an envelope, `{ label: 'velocity' }` for a transfer curve.
  */
 export interface CurveAxisSpec {
@@ -53,6 +85,42 @@ export interface CurveAxisSpec {
 /** Keyboard nudge in normalised units; shift multiplies by {@link NUDGE_COARSE}. */
 export const NUDGE = 0.01;
 export const NUDGE_COARSE = 10;
+
+/**
+ * Half-width of the fader's magnetic zone around centre. Linear is the one
+ * value an author returns to deliberately, and a bare fader makes hitting an
+ * exact 0 a pixel hunt — so the notch pulls, rather than merely being marked.
+ *
+ * The pull is the {@link Slider}'s `notchSnap`, which applies it to POINTER
+ * drags only: a keyboard or wheel step is already exact, and a magnet several
+ * steps wide would trap the thumb on the notch with no way to step off it.
+ */
+export const STRENGTH_NOTCH = 0.05;
+
+/**
+ * The mode word for a (profile, strength) pair — DERIVED, never stored. This is
+ * what keeps "which mode am I in" answerable from one control: the fader IS the
+ * mode, and the label always tells the truth about the shape on screen (a
+ * straight line never gets called "Exp").
+ */
+export function curveModeLabel(profile: CurveProfile, strength: number): string {
+  const s = clampBipolar(strength);
+  if (profile === 'snap') return 'Snap';
+  if (s === 0) return 'Linear';
+  if (profile === 'sCurve') return s > 0 ? 'In-out' : 'Out-in';
+  return s > 0 ? 'Exp' : 'Log';
+}
+
+/** One-line description of what the fader is doing, for the control's tooltip. */
+export function curveModeHint(profile: CurveProfile, strength: number): string {
+  if (profile === 'snap') return 'Snap holds the start level, then steps — nothing to bend';
+  const mode = curveModeLabel(profile, strength);
+  if (mode === 'Linear') return 'Linear — the notch. Push up or pull down to bend';
+  if (mode === 'Exp') return 'Exp — fast departure, long tail. Pull below centre for Log';
+  if (mode === 'Log') return 'Log — slow departure, late fall. Push above centre for Exp';
+  if (mode === 'In-out') return 'S-curve, ease-in-out. Pull below centre to invert it';
+  return 'S-curve inverted, ease-out-in. Push above centre to un-invert it';
+}
 
 /** `samples + 1` evenly spaced points across the field, for plotting. */
 export function sampleCurve(value: CurveValue, samples = 64): CurvePoint[] {

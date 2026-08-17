@@ -2,6 +2,7 @@ import { clamp01, lerp } from '../../math';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR } from '../visibility';
+import { lifeFade } from '../life-fade';
 
 /**
  * Velocity Flames: each drum grows a flame from hoop 0 upward whose height tracks
@@ -37,7 +38,7 @@ export const velocityFlames: EffectGenerator = {
     // Per-drum flame height = strongest decayed velocity among that drum's triggers.
     const heightByDrum = new Map<string, number>();
     for (const trig of ctx.triggers) {
-      const e = trig.velocity * Math.exp(-trig.ageMs / decay);
+      const e = trig.velocity * lifeFade(ctx, Math.exp(-trig.ageMs / decay));
       const prev = heightByDrum.get(trig.drumId) ?? 0;
       if (e > prev) heightByDrum.set(trig.drumId, e);
     }

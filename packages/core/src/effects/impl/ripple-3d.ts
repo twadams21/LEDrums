@@ -2,6 +2,7 @@ import { hsvToRgb } from '../../color/color';
 import { clamp01, distance } from '../../math';
 import { createEmitterState, updateEmissions, type EmitterState } from '../emitter';
 import { pnum, type EffectGenerator } from '../types';
+import { lifeFade } from '../life-fade';
 
 export interface Ripple3dState {
   em: EmitterState;
@@ -32,7 +33,7 @@ export const ripple3d: EffectGenerator<Ripple3dState> = {
     { key: 'speed', label: 'Wave Speed', type: 'number', default: 900, min: 100, max: 4000, step: 10, unit: 'mm/s' },
     { key: 'thickness', label: 'Thickness', type: 'number', default: 140, min: 20, max: 600, unit: 'mm' },
     { key: 'rings', label: 'Echo Rings', type: 'number', default: 2, min: 1, max: 4, step: 1 },
-    { key: 'lifeMs', label: 'Life', type: 'number', default: 1600, min: 200, max: 6000, unit: 'ms' },
+    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1600, min: 200, max: 6000, unit: 'ms' },
     { key: 'hueShift', label: 'Hue Shift', type: 'number', default: 50, min: 0, max: 360, unit: '°/m' },
   ],
   createState(): Ripple3dState {
@@ -57,7 +58,7 @@ export const ripple3d: EffectGenerator<Ripple3dState> = {
       if (!drum) continue;
       const origin = drum.effectOriginWorld;
       const radius = (speed * em.ageMs) / 1000;
-      const fade = clamp01(1 - em.ageMs / lifeMs);
+      const fade = lifeFade(ctx, clamp01(1 - em.ageMs / lifeMs));
       const level = fade * em.velocity * bri;
       if (level < 0.004) continue;
       for (const p of ctx.model.pixels) {

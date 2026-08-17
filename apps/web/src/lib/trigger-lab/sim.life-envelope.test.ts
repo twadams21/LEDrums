@@ -68,14 +68,15 @@ function expectedLevels(params: Record<string, number>, lifeEnvelope: CurveValue
   return out;
 }
 
-const linearFall: CurveValue = { h0: { x: 0, y: 1 }, h1: { x: 1, y: 0 }, profile: 'linear', strength: 0 };
-const expFall: CurveValue = { h0: { x: 0, y: 1 }, h1: { x: 1, y: 0 }, profile: 'exp', strength: 0.664 };
+const linearFall: CurveValue = { h0: { x: 0, y: 1 }, h1: { x: 1, y: 0 }, profile: 'bend', strength: 0 };
+const expFall: CurveValue = { h0: { x: 0, y: 1 }, h1: { x: 1, y: 0 }, profile: 'bend', strength: 0.664 };
+const logFall: CurveValue = { h0: { x: 0, y: 1 }, h1: { x: 1, y: 0 }, profile: 'bend', strength: -0.664 };
 const heldTail: CurveValue = { h0: { x: 0.2, y: 1 }, h1: { x: 0.6, y: 0.35 }, profile: 'sCurve', strength: 0.8 };
 
 describe('the sim resolves a voice’s life through the same core helper as the engine', () => {
   it('spans and dwells agree for every shape', () => {
     const effect = EFFECTS.find((e) => e.id === CHASE)!;
-    for (const curve of [undefined, linearFall, expFall, heldTail]) {
+    for (const curve of [undefined, linearFall, expFall, logFall, heldTail]) {
       const life = resolveVoiceLife(effect.generatorId, { lifeBeats: 8 }, BPM, effect.sustainMs, curve);
       const sim = mk();
       sim.triggerGraph('pad', lifeGraph({ lifeBeats: 8 }, curve), baseCtx());
@@ -91,6 +92,7 @@ describe('a voice’s brightness follows the authored curve', () => {
   for (const [name, curve] of [
     ['linear', linearFall],
     ['exp', expFall],
+    ['log — the same fader below its notch', logFall],
     ['a held tail that ends above zero', heldTail],
   ] as const) {
     it(`${name}: the sim's level is the shared gain, frame for frame`, () => {
@@ -125,5 +127,38 @@ describe('a voice’s brightness follows the authored curve', () => {
     expect(simLevels(lifeGraph({ lifeBeats: 8 }, quarter), 1600).at(-1)).toBe(0);
     // …while the un-curved voice is still going strong at the same moment.
     expect(simLevels(lifeGraph({ lifeBeats: 8 }), 1600).at(-1)).toBe(1);
+  });
+});
+
+/* F5 — "the preview was still fading out what appeared to be linearly" (Trent, 2026-08-17).
+   Two causes, both closed here: the seed was pinned at strength 0 (F4's bipolar fader makes
+   that exactly a straight line), and the effect's own fade ran underneath the curve so the
+   drawn shape could only ever darken it. The first is what these sample. */
+
+describe('the preview follows the drawn bend, not a straight line', () => {
+  const params = { lifeBeats: 8 }; // 4000ms span @120bpm
+  const at = (curve: CurveValue, ms: number): number => simLevels(lifeGraph(params, curve), ms).at(-1)!;
+
+  it('exp sits below the straight line, log above it, at the same instant', () => {
+    const half = 2000;
+    const linear = at(linearFall, half);
+    expect(linear).toBeCloseTo(0.5, 1); // the notch really is straight
+
+    // The regression: these three used to be the same picture.
+    expect(at(expFall, half)).toBeLessThan(linear - 0.1);
+    expect(at(logFall, half)).toBeGreaterThan(linear + 0.1);
+  });
+
+  it('and the whole traced shape is nonlinear, not just one sample', () => {
+    for (const [curve, sign] of [
+      [expFall, -1],
+      [logFall, 1],
+    ] as const) {
+      for (const t of [800, 1600, 2400, 3200]) {
+        const straight = evalCurve(linearFall, t / 4000);
+        const bent = at(curve, t);
+        expect(Math.sign(bent - straight)).toBe(sign);
+      }
+    }
   });
 });

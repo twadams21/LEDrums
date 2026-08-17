@@ -44,7 +44,7 @@ class RecordingEngine implements voice.RenderEngine {
 }
 
 /** Halves everything: out = in / 2, so the expected number is arithmetic, not a shape guess. */
-const HALF: CurveValue = { h0: { x: 0, y: 0 }, h1: { x: 1, y: 0.5 }, profile: 'linear', strength: 0 };
+const HALF: CurveValue = { h0: { x: 0, y: 0 }, h1: { x: 1, y: 0.5 }, profile: 'bend', strength: 0 };
 
 /** defaultProject maps note 36 → kick — a real zone-map hit to shape. */
 const MAPPED_NOTE = 36;

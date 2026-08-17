@@ -6,8 +6,17 @@
 
 <script lang="ts">
   /* The curve control: two free handles, one profile for the whole curve, and a
-     strength fader that IS that profile's curvature. Flat outside the handles,
-     so a hold (envelope) or a threshold (transfer curve) needs no third handle.
+     centre-notched strength fader that IS that profile's curvature. Flat outside
+     the handles, so a hold (envelope) or a threshold (transfer curve) needs no
+     third handle.
+
+     The fader is BIPOLAR (Trent, 2026-08-17): its notch in the middle is linear,
+     up from there bends exponentially, down bends logarithmically — the inverse
+     shape — and the mode word beneath it is derived from where the fader sits
+     rather than picked separately. Lin / exp / log are therefore one continuum
+     with one neutral position, not three buttons of which two could draw the
+     same straight line. S-curve rides the same fader, going over centre to
+     invert its shoulders; Snap has nothing to bend and greys the fader out.
 
      Deliberately domain-agnostic — the same control edits an envelope (x = time,
      y = level) and a velocity transfer curve (x = in, y = out). Axis semantics
@@ -33,6 +42,10 @@
     CURVE_PROFILE_OPTIONS,
     NUDGE,
     NUDGE_COARSE,
+    STRENGTH_NOTCH,
+    clampBipolar,
+    curveModeHint,
+    curveModeLabel,
     curvePath,
     dragHandle,
     evalCurve,
@@ -110,6 +123,10 @@
   const curve = $derived(normalizeCurve(value));
   const paths = $derived(curvePath(curve, box, 96));
   const strengthLive = $derived(profileHasStrength(curve.profile));
+  /* The mode word IS the fader position read back — one source of truth, so the
+     label can never promise a bend the curve on screen does not have. */
+  const modeLabel = $derived(curveModeLabel(curve.profile, curve.strength));
+  const modeHint = $derived(curveModeHint(curve.profile, curve.strength));
 
   const ghostPath = $derived.by(() => {
     if (!ghost) return '';
@@ -406,26 +423,25 @@
       </svg>
     </div>
 
-    <div
-      class="fader"
-      style:height={`${height}px`}
-      title={strengthLive
-        ? 'Curve strength — the curvature of the chosen profile'
-        : `Curve strength — ${curve.profile === 'linear' ? 'Linear' : 'Snap'} has no curvature to bend`}
-    >
+    <div class="fader" style:height={`${height}px`} title={modeHint}>
       <Slider
         orientation="vertical"
         value={curve.strength}
-        min={0}
+        min={-1}
         max={1}
         step={0.01}
+        notchAt={0}
+        notchSnap={STRENGTH_NOTCH}
         showValue={false}
         disabled={disabled || !strengthLive}
-        ariaLabel="Curve strength"
-        onChange={(v) => apply({ ...curve, strength: v }, 'stream')}
+        ariaLabel="Curve strength — {modeLabel}"
+        onChange={(v) => apply({ ...curve, strength: clampBipolar(v) }, 'stream')}
       />
-      <span class="fader-label" class:off={!strengthLive}>
-        {strengthLive ? curve.strength.toFixed(2) : '—'}
+      <!-- The mode is a readout, not a control: it is what the fader position
+           means, printed where the eye already is. -->
+      <span class="fader-mode" class:off={!strengthLive}>{strengthLive ? modeLabel : 'Snap'}</span>
+      <span class="fader-amount" class:off={!strengthLive}>
+        {strengthLive ? Math.abs(curve.strength).toFixed(2) : '—'}
       </span>
     </div>
   </div>
@@ -575,7 +591,10 @@
     align-items: center;
     gap: var(--space-1);
     flex: none;
-    width: 30px;
+    /* Wide enough for the longest mode word ("Out-in") at --text-2xs, so the
+       readout never wraps and the plot never reflows as the fader crosses
+       centre. */
+    width: 46px;
   }
   /* The fader shares the column with its readout, so it takes the leftover
      height rather than the wrapper's full height (which would push the readout
@@ -590,13 +609,25 @@
   .fader :global(.slider.disabled) {
     opacity: 0.55;
   }
-  .fader-label {
+  /* Mode first and the magnitude under it: the word is what changed when the
+     fader crossed centre, so it carries the weight and the number recedes. */
+  .fader-mode {
+    font-size: var(--text-2xs);
+    line-height: 1.1;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-label);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .fader-amount {
     font-family: var(--font-mono);
     font-size: var(--text-2xs);
+    line-height: 1.1;
     font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
-  .fader-label.off {
+  .fader-mode.off,
+  .fader-amount.off {
     color: var(--text-disabled);
   }
 

@@ -534,7 +534,7 @@ class ShotSeamImpl implements ShotSeam {
         withVelocityCurve(project.inputMap, drum.id, {
           h0: { x: 0.18, y: 0 },
           h1: { x: 0.9, y: 1 },
-          profile: 'exp',
+          profile: 'bend',
           strength: 0.62,
         }),
       );
