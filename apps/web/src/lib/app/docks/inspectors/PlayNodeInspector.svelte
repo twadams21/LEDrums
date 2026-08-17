@@ -8,7 +8,9 @@
      preset. Params are always node-local — editing one clip never touches another. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, Scope } from '../../../trigger-lab/sim';
-  import { voice } from '@ledrums/core';
+  import { voice, type PlayType } from '@ledrums/core';
+  import { subtypeOptions, EFFECT_GROUP_KEY } from '../../views/add-node-taxonomy';
+  import SubtypeSwitcher from './SubtypeSwitcher.svelte';
   import { busIcon } from '../../views/trigger-node-meta';
   import { MODE_OPTS, SCOPE_OPTS } from '../../views/node-options';
   import { nodeLintEntries } from '../../views/graph-lint';
@@ -99,6 +101,19 @@
       />
     </div>
   {/if}
+
+  <!-- Subtype switcher (F3 item 11): an Effect node is ADDED by collection (the Add-node
+       menu's Effect group) and re-typed here — the same list, the same icons and tints. The
+       Replace button beside it still opens the gallery for picking a specific effect. -->
+  <div class="bar">
+    <SubtypeSwitcher
+      label="Collection"
+      value={store.playCollectionOf(node)}
+      options={subtypeOptions(EFFECT_GROUP_KEY)}
+      onChange={(v) => store.setPlayCollection(node, v as PlayType)}
+      ariaLabel="Effect collection"
+    />
+  </div>
 
   <div class="bar">
     <label class="lblrow">

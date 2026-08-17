@@ -1,3 +1,4 @@
+import type { Component } from 'svelte';
 import type { AddGroup } from './AddPalette.svelte';
 import { COLLECTIONS, listModifiersByCategory } from '@ledrums/core';
 import Blend from '@lucide/svelte/icons/blend';
@@ -109,4 +110,31 @@ export function buildAddGroups(): AddGroup[] {
       ),
     },
   ];
+}
+
+/** One in-place subtype choice — the Select `Option` shape, so a switcher renders the SAME
+    icon and tint the Add-node palette drew for that item. */
+export interface SubtypeOption {
+  value: string;
+  label: string;
+  icon: Component;
+  /** The palette item's tint. Optional because an AddItem's is — a tintless item just draws
+      the icon in the inherited text colour, as it does in the palette. */
+  iconColor?: string;
+}
+
+/**
+ * The subtypes an inspector switcher offers for an Add-node group (F3 item 11) — read from
+ * the very list the palette adds from, so "added as" and "re-typed to" cannot drift apart.
+ * An unknown key yields an empty list rather than throwing: a switcher with nothing to offer
+ * simply doesn't render.
+ */
+export function subtypeOptions(groupKey: string): SubtypeOption[] {
+  const group = buildAddGroups().find((g) => g.key === groupKey);
+  return (group?.items ?? []).map((i) => ({
+    value: i.id,
+    label: i.name,
+    icon: i.icon,
+    iconColor: i.tint,
+  }));
 }

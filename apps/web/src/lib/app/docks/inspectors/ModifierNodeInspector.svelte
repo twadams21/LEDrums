@@ -8,6 +8,8 @@
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode } from '../../../trigger-lab/sim';
   import { listModifiers, type ParamSpec as CoreParamSpec } from '@ledrums/core';
+  import { subtypeOptions, MODIFIER_GROUP_PREFIX } from '../../views/add-node-taxonomy';
+  import SubtypeSwitcher from './SubtypeSwitcher.svelte';
   import { num } from '../../views/node-options';
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -22,7 +24,6 @@
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
 
   const MODS = listModifiers();
-  const MOD_OPTS = MODS.map((m) => ({ value: m.id, label: m.name }));
   const def = $derived(MODS.find((m) => m.id === node.modifierId) ?? null);
   const specs = $derived<CoreParamSpec[]>(def?.paramSpec ?? []);
   const live = $derived(node.params);
@@ -44,16 +45,17 @@
   </div>
 </header>
 
+<!-- Subtype switcher (F3 item 11): the same modifier list the Add-node menu's Modify group
+     adds from, carrying its icons and tint, so the thing you picked there is recognisable
+     here. `setModifierId` reseeds the new modifier's declared defaults. -->
 <div class="bar">
-  <label class="lblrow">
-    <span class="k">Modifier</span>
-    <Select
-      value={node.modifierId ?? ''}
-      options={MOD_OPTS}
-      onChange={(v) => store.setModifierId(node, v)}
-      ariaLabel="Modifier type"
-    />
-  </label>
+  <SubtypeSwitcher
+    label="Modifier"
+    value={node.modifierId ?? ''}
+    options={subtypeOptions(`${MODIFIER_GROUP_PREFIX}all`)}
+    onChange={(v) => store.setModifierId(node, v)}
+    ariaLabel="Modifier type"
+  />
   <label class="bypass">
     <span class="k">Bypass</span>
     <Toggle pressed={!!node.bypass} onChange={(v) => store.setModifierBypass(node, v)} ariaLabel="Bypass modifier" />
@@ -159,17 +161,6 @@
     gap: var(--space-3);
     padding: var(--space-3);
     border-bottom: 1px solid var(--border-faint);
-  }
-  .lblrow {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex: 1;
-    min-width: 0;
-  }
-  .lblrow :global(.select-trigger) {
-    flex: 1;
-    min-width: 0;
   }
   .bypass {
     display: inline-flex;

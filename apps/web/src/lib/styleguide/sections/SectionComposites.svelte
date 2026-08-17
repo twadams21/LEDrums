@@ -39,6 +39,9 @@
   import Field from '../../ui/Field.svelte';
   import Slider from '../../ui/Slider.svelte';
   import DemoCard from '../DemoCard.svelte';
+  import ParamLabel from '../../app/docks/inspectors/ParamLabel.svelte';
+  import SubtypeSwitcher from '../../app/docks/inspectors/SubtypeSwitcher.svelte';
+  import { subtypeOptions, EFFECT_GROUP_KEY } from '../../app/views/add-node-taxonomy';
   import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
@@ -320,6 +323,7 @@
     createSong(): void {}
   }
   const setlistStub = new SetlistStub() as unknown as TriggerLab;
+  let demoCollection = $state('ambient');
 </script>
 
 <section class="block" id="composites">
@@ -375,6 +379,41 @@
         {#each faceKinds as k (k)}
           <NodeIconChip icon={kindIcon[k]} tint={tint[k]} />
         {/each}
+      </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Inspector param row — label, unit, subtype switcher"
+      src={[
+        'lib/app/docks/inspectors/ParamLabel',
+        'lib/app/docks/inspectors/SubtypeSwitcher',
+        'lib/app/views/add-node-taxonomy',
+      ]}
+      note="The two pieces F3 added to every inspector row. ParamLabel puts a param's UNIT in an (i) tooltip on the LABEL (with its declared range) instead of after the number input — a unit suffix made each row's input start at a different x, and now every number field in a section shares one column. SubtypeSwitcher re-types a node IN PLACE — the same subtype list the flat Add-node menu adds from, read through subtypeOptions() so the two can never drift, drawn with the palette's own icons and tints. It never segments: a segmented control renders an icon INSTEAD of its label, and the switcher needs both."
+      wide
+    >
+      <div class="prow-demo">
+        <SubtypeSwitcher
+          label="Collection"
+          value={demoCollection}
+          options={subtypeOptions(EFFECT_GROUP_KEY)}
+          onChange={(v) => (demoCollection = v)}
+          ariaLabel="Demo effect collection"
+        />
+        <div class="prow-rows">
+          <div class="prow-row">
+            <ParamLabel label="Hue" unit="°" min={0} max={360} />
+            <Slider value={210} min={0} max={360} showUnit={false} format={(v) => `${v}°`} ariaLabel="Demo hue" />
+          </div>
+          <div class="prow-row">
+            <ParamLabel label="Decay" unit="ms" min={0} max={2000} />
+            <Slider value={250} min={0} max={2000} showUnit={false} format={(v) => `${v}ms`} ariaLabel="Demo decay" />
+          </div>
+          <div class="prow-row">
+            <ParamLabel label="Noise" />
+            <Slider value={0.6} min={0} max={1} step={0.01} showUnit={false} format={(v) => v.toFixed(2)} ariaLabel="Demo noise" />
+          </div>
+        </div>
       </div>
     </DemoCard>
 
@@ -743,5 +782,23 @@
     /* Establish a containing block so the overlay's position:fixed scopes to this frame, not the
        viewport — lets the REAL component render inside the styleguide (no markup copy). */
     transform: translateZ(0);
+  }
+  /* inspector param-row demo — the app's own row metrics */
+  .prow-demo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: 340px;
+  }
+  .prow-rows {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .prow-row {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
   }
 </style>
