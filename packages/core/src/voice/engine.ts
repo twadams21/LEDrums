@@ -49,12 +49,14 @@ import {
   type Show,
   type TriggerGraph,
   type TriggerSource,
+  type Voice,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
 import { relativeNavTarget, type NavAxis } from './navigation';
 import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
+import { SPLICE_FILL_EFFECT_ID, maxCascadeDelayMs, spliceFillEffectDef } from './splice';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -113,6 +115,11 @@ export interface VoiceStat {
   /** True while the voice is in its release (fade-out) phase. */
   releasing: boolean;
   via: string;
+  /** The eval STATE PREFIX this voice was spawned under — the firing graph's key, with a
+   * `#<slotIndex>` suffix on section-slot fires (see {@link RenderEngine} resolve paths).
+   * Empty string when the spawn path supplied none (ad-hoc previews). Clients strip the
+   * suffix to attribute a live voice back to the graph that is playing it. */
+  pad: string;
 }
 
 export interface EngineStats {
@@ -196,6 +203,14 @@ class VoiceBusEngine implements RenderEngine {
    */
   private readonly registeredCanvasSceneIds = new Set<string>();
 
+  /**
+   * Accumulated motion time per `(pad, splice node)` for `'latched'` splices, in ms. Advanced
+   * once per frame per key while ANY voice for that key is alive, and deliberately NOT while
+   * the kit is dark — that is the whole difference between latched and continuous. Kept here
+   * rather than on the voice because it has to OUTLIVE the voice: the next hit resumes from it.
+   */
+  private spliceMotionMs = new Map<string, number>();
+
   // Object-pooled voices (fixed-size slab; `acquire`/`release`/`spawn` in voice-pool.ts).
   private readonly voices = new VoicePool();
 
@@ -235,6 +250,8 @@ class VoiceBusEngine implements RenderEngine {
   private timeMs = 0;
   private beat = 0;
   private bpm = 120;
+  /** Beats per bar from the transport — read only by the bar-length musical divisions. */
+  private beatsPerBar = 4;
   private sectionIndex = 0;
   private perf: EnginePerfStats = emptyPerfStats();
 
@@ -319,6 +336,15 @@ class VoiceBusEngine implements RenderEngine {
     };
     this.busById = new Map(this.show.buses.map((b) => [b.id, b] as const));
     this.effectsById = new Map(this.show.effects.map((e) => [e.id, e] as const));
+    // Reserved fill effect for colour-only splices (see `splice.ts`). Registered here rather
+    // than authored, so a splice colour renders without the show having to carry a def for it.
+    // An authored def under the reserved id would be a graph the engine can't trust; ours wins.
+    // Prefer a POLY layer for the reserved fill: on a mono layer every new splice voice
+    // releases the last, so a sequencer cycling splice nodes would cut each hoop off as it
+    // moved on. Which layer a splice plays on is authorable (`GraphNode.busId`); this is only
+    // the fallback for a colour-only splice that names none.
+    const fillBus = this.show.buses.find((b) => b.polyphony === 'poly') ?? this.show.buses[0];
+    this.effectsById.set(SPLICE_FILL_EFFECT_ID, spliceFillEffectDef(fillBus?.id ?? ''));
     this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
     // Authored content changed: clear live state so eval starts clean & deterministic.
     this.voices.reset();
@@ -326,6 +352,7 @@ class VoiceBusEngine implements RenderEngine {
     this.lastPick.clear();
     this.latched.clear();
     this.mixMemberSnapshots.clear();
+    this.spliceMotionMs.clear(); // authored content replaced → latched motion starts fresh
     this.renderPlanCache.reset(); // R18: authored graphs replaced → drop cached plans
     this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
@@ -338,6 +365,54 @@ class VoiceBusEngine implements RenderEngine {
     // override this immediately after; here we just ensure a clean non-null start).
     this.activeSongId = show.songs?.[0]?.id ?? null;
     this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+  }
+
+  /**
+   * Shape a freshly spawned splice voice's own envelope around its cascade. Two corrections,
+   * both needing the MODEL (how many hoops, how many drums), which is why this lives in the
+   * engine and not the voice pool:
+   *
+   * 1. It has to OUTLIVE its cascade. The last hoop's turn comes `maxCascadeDelayMs` after the
+   *    hit, so a voice whose hold ends before then is cut off mid-travel and the far side of
+   *    the kit never lights at all.
+   * 2. Under a per-unit envelope (`fade`/`pulse`) the voice's own ATTACK must get out of the
+   *    way. Each unit already applies the authored attack itself, so leaving the global one in
+   *    place multiplies the two for whichever unit is revealed at age 0 — that colour ramps on
+   *    a squared curve while every later one, arriving after the global attack has finished,
+   *    ramps linearly. The attack is moved into the hold rather than dropped, so the voice
+   *    still lives exactly as long as the last unit needs.
+   *
+   * The AUTHORED envelope is untouched on `splice.envelope`, which is what the per-unit shaping
+   * reads — so none of this stretches an individual unit's attack/hold/fade.
+   */
+  private shapeCascadeVoice(voice: Voice | null): void {
+    if (!voice?.splice || !this.model) return;
+    const extra = maxCascadeDelayMs(this.model, voice.splice);
+    if (extra > 0) voice.sustainMs += extra;
+    if (voice.splice.waitMode === 'fade' || voice.splice.waitMode === 'pulse') {
+      voice.sustainMs += voice.attackMs;
+      voice.attackMs = 0;
+    }
+  }
+
+  /**
+   * Advance the latched-motion accumulator for every `(pad, splice node)` with a live voice,
+   * then stamp the total onto those voices for the compositor to read as their motion clock.
+   *
+   * Advanced once per KEY, not once per voice: two overlapping hits on one pad are one moving
+   * pattern, so counting dt twice would double its speed for as long as they overlap.
+   */
+  private advanceLatchedSpliceMotion(dt: number): void {
+    const advanced = new Set<string>();
+    for (const v of this.voices.pool) {
+      if (!v.active || v.splice?.motionMode !== 'latched') continue;
+      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
+      if (!advanced.has(key)) {
+        advanced.add(key);
+        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dt));
+      }
+      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
+    }
   }
 
   // --- input -------------------------------------------------------------
@@ -548,6 +623,7 @@ class VoiceBusEngine implements RenderEngine {
       beatPhase: this.beatPhase(),
       sourceDrumId: e.drumId ?? '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const resolved of toFire) {
       this.onDiagnostic?.({
@@ -588,6 +664,7 @@ class VoiceBusEngine implements RenderEngine {
       beatPhase: this.beatPhase(),
       sourceDrumId: src?.kind === 'drum' ? src.drumId : '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     const resolved: ResolvedGraph = { graphKey: key, graph, statePrefix: key, path: 'fire-graph' };
     this.onDiagnostic?.({
@@ -720,12 +797,15 @@ class VoiceBusEngine implements RenderEngine {
       if (!effectId) continue;
       const action = this.lookAction(effectId, `Section: ${section.name}`);
       if (!action) continue;
-      this.voices.spawn(action, null, 1, {
-        effectsById: this.effectsById,
-        busById: this.busById,
-        latched: this.latched,
-        timeMs: this.timeMs,
-      });
+      this.shapeCascadeVoice(
+        this.voices.spawn(action, null, 1, {
+          effectsById: this.effectsById,
+          busById: this.busById,
+          latched: this.latched,
+          timeMs: this.timeMs,
+          bpm: this.bpm,
+        }),
+      );
     }
   }
 
@@ -800,13 +880,16 @@ class VoiceBusEngine implements RenderEngine {
       } else if (a.kind === 'pending') {
         this.enqueuePendingFire(a.descriptor);
       } else {
-        this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
-          effectsById: this.effectsById,
-          busById: this.busById,
-          latched: this.latched,
-          timeMs: this.timeMs,
-          pad,
-        });
+        this.shapeCascadeVoice(
+          this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
+            effectsById: this.effectsById,
+            busById: this.busById,
+            latched: this.latched,
+            timeMs: this.timeMs,
+            bpm: this.bpm,
+            pad,
+          }),
+        );
       }
     }
   }
@@ -849,6 +932,7 @@ class VoiceBusEngine implements RenderEngine {
     this.timeMs = now;
     this.beat = transport.beat;
     this.bpm = transport.bpm;
+    this.beatsPerBar = transport.beatsPerBar;
     this.sectionIndex = this.show.sections.length > 0 ? transport.bar % this.show.sections.length : 0;
 
     this.drainQueue();
@@ -857,6 +941,8 @@ class VoiceBusEngine implements RenderEngine {
     // Advance voice envelopes, then reap dead voices back into the pool.
     advanceEnvelopes(this.voices.pool, this.timeMs, this.busById);
     reapDeadVoices(this.voices.pool, this.latched);
+
+    this.advanceLatchedSpliceMotion(dt);
 
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
@@ -932,6 +1018,7 @@ class VoiceBusEngine implements RenderEngine {
         hue: typeof v.params.hue === 'number' ? v.params.hue : 0,
         releasing: v.phase === 'release',
         via: v.via,
+        pad: v.pad ?? '',
       });
     }
     return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices, perf: this.perf };

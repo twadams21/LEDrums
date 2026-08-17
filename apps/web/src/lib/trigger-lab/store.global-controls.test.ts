@@ -51,14 +51,14 @@ function connected(sent: ClientMessage[]): TriggerLab {
 
 /** The `input` echo the server broadcasts for an inbound OSC packet. */
 function echoOsc(store: TriggerLab, address: string, value = 1): void {
-  (store as unknown as { receiveInputEcho: (k: 'midi' | 'osc', l: string, v: number, n?: number, c?: number) => void })
-    .receiveInputEcho('osc', address, value, undefined, undefined);
+  (store as unknown as { receiveInputEcho: (input: import('../ws/client').InputEcho) => void })
+    .receiveInputEcho({ kind: 'osc', label: address, value });
 }
 
 /** The `input` echo the server broadcasts for an inbound MIDI note. */
 function echoNote(store: TriggerLab, note: number, velocity01 = 1): void {
-  (store as unknown as { receiveInputEcho: (k: 'midi' | 'osc', l: string, v: number, n?: number, c?: number) => void })
-    .receiveInputEcho('midi', `note ${note}`, velocity01, note, undefined);
+  (store as unknown as { receiveInputEcho: (input: import('../ws/client').InputEcho) => void })
+    .receiveInputEcho({ kind: 'midi', label: `note ${note}`, value: velocity01, note });
 }
 
 describe('setGlobalControlBinding', () => {

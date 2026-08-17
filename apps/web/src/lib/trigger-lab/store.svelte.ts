@@ -45,10 +45,13 @@ import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { graphFireKeyOf } from '@ledrums/protocol';
-import { WSClient, type ConnectionState } from '../ws/client';
+import { WSClient, type ConnectionState, type InputEcho } from '../ws/client';
 import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { appendVelocityHit, type VelocityHits } from '../app/velocity-hits';
+import type { CurveHit } from '../ui/curve-field';
 import { selectDockVoices, type DockVoice } from './dock-voices';
+import { playingGraphKeys } from './graph-liveness';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
@@ -66,8 +69,8 @@ import type {
   PlayType,
   Project,
 } from '@ledrums/core';
-import { BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
-import { voice, canvasEffectId } from '@ledrums/core';
+import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
+import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
@@ -123,6 +126,7 @@ import {
 import * as vsw from './store/value-switch';
 import * as penv from './store/param-envelope';
 import * as mg from './store/mod-graph';
+import * as fp from './store/face-params';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
 import * as songRefsLib from './store/song-library-refs';
@@ -155,6 +159,9 @@ import {
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
+
+/** One shared empty buffer, so a drum with no hits yet reads a stable identity. */
+const EMPTY_HITS: readonly CurveHit[] = [];
 
 export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
 export type LfoCreationPreset = voice.LfoWaveform;
@@ -753,6 +760,11 @@ export class TriggerLab {
     }),
   );
 
+  /** Graph keys with a sustained (loop/hold) voice alive right now — the graph rail's "now
+      playing" marks. Derived from {@link dockVoices}, the authoritative list, NOT the smoothed
+      display one (which decays late and would hold the mark lit past the sound). */
+  playingGraphs = $derived<Set<string>>(playingGraphKeys(this.dockVoices));
+
   /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
       them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
       but exponentially approach the authoritative values, advanced every rAF frame by
@@ -907,6 +919,15 @@ export class TriggerLab {
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
       undoable action. Set only via {@link batchIntoCurrentUndo}. */
   private suppressUndoSnapshot = false;
+  /** Open-gesture nesting depth (see {@link beginGesture}) — a drag that publishes on every
+      pointermove must collapse to ONE undo checkpoint. */
+  private gestureDepth = 0;
+  /** True between beginGesture() and the gesture's first mutation: that mutation takes the
+      one checkpoint, then suppression takes over. A gesture that mutates nothing pushes nothing. */
+  private gesturePending = false;
+  /** `suppressUndoSnapshot` as it stood when the outermost gesture opened, restored on close
+      so a gesture nested inside a batchIntoCurrentUndo can't re-arm checkpoints early. */
+  private gestureSuppressPrev = false;
   /** Whether a controller discovery sweep is in flight. See {@link ControllerMonitor.scanning}. */
   get controllerScanning(): boolean {
     return this.monitor.scanning;
@@ -932,6 +953,7 @@ export class TriggerLab {
     // Build the sim from the (possibly restored) arrays — it snapshots `buses` by reference and
     // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
     this.sim = new Sim(this.buses, this.effects, this.presets);
+    this.sim.pixelModel = this.labModel.pm;
     this.client = makeClient();
   }
 
@@ -985,6 +1007,30 @@ export class TriggerLab {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
     this.graphFireAt = { ...this.graphFireAt, [key]: now };
   }
+  /** Recent input velocities per drum, for the velocity-sensitivity editor's live overlay
+      (Trent, 2026-08-17: see the curve helping while you drum). Each entry is the RAW input
+      velocity only — its y is read off whatever curve is on screen, so an unsaved tweak
+      re-plots hits that already landed. UI timestamps, never engine state. */
+  velocityHits = $state<VelocityHits>({});
+  /** Stamp one raw hit against its drum. Connected, the server's `input` echo is the source
+      (it carries the pre-curve value + the drum the zone-map claimed); offline the local fire
+      paths call it. Never both, or the same stick hit would plot twice. */
+  private recordVelocityHit(drumId: string | undefined, value: number): void {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this.velocityHits = appendVelocityHit(this.velocityHits, drumId, { x: value, at: now });
+  }
+  /** The recent hits to plot under one drum's curve. */
+  velocityHitsFor(drumId: string): readonly CurveHit[] {
+    return this.velocityHits[drumId] ?? EMPTY_HITS;
+  }
+  /** Shape a velocity by its drum's sensitivity curve — the OFFLINE mirror of the server's
+      `toInputEvent` seam. Connected, the server has already applied it and the client must
+      not apply it again. */
+  private shapeVelocity(drumId: string | undefined, velocity: number): number {
+    const inputMap = this.project?.inputMap;
+    return inputMap ? applyDrumVelocity(inputMap, drumId, velocity) : velocity;
+  }
+
   /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
       threaded into that graph's node previews so they animate on the graph's own fire. */
   get selectedGraphFireAt(): number | null {
@@ -1223,6 +1269,12 @@ export class TriggerLab {
 
   private pushUndoSnapshot(): void {
     if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
+    // First mutation inside an open gesture (a pointer drag on a face param / slider): THIS
+    // checkpoint covers the whole drag, and everything until endGesture() folds into it.
+    if (this.gesturePending) {
+      this.gesturePending = false;
+      this.suppressUndoSnapshot = true;
+    }
     this.undoStack.push({
       authored: structuredClone(this.toAuthored()),
       // The project is server-owned and lives outside AuthoredState, so it snapshots separately
@@ -1237,6 +1289,37 @@ export class TriggerLab {
   runUndoable<T>(edit: () => T): T {
     this.pushUndoSnapshot();
     return edit();
+  }
+
+  /** Open a continuous-edit GESTURE — a pointer drag or a wheel spin over a numeric control,
+      which publishes a value on every move. Without this a single drag of a face param would
+      stack one undo entry per pointermove and Cmd-Z would crawl back through the drag pixel
+      by pixel. The first mutation inside the gesture takes ONE checkpoint; every later one
+      folds into it (S5: one gesture = one undo, matching the G3 param-edit contract).
+
+      Nestable, and lazy: a gesture that mutates nothing pushes nothing. Always pair with
+      {@link endGesture} — the caller owns pointercancel / lostpointercapture too, since an
+      unclosed gesture would swallow later checkpoints. */
+  beginGesture(): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (this.gestureDepth === 0) {
+      // An enclosing batchIntoCurrentUndo already owns suppression — don't take a checkpoint
+      // inside it, and restore ITS flag on close.
+      this.gestureSuppressPrev = this.suppressUndoSnapshot;
+      this.gesturePending = !this.suppressUndoSnapshot;
+    }
+    this.gestureDepth += 1;
+  }
+
+  /** Close the gesture opened by {@link beginGesture}. Extra calls are ignored, so a
+      pointerup that races a pointercancel cannot re-open undo mid-drag. */
+  endGesture(): void {
+    if (this.gestureDepth === 0) return;
+    this.gestureDepth -= 1;
+    if (this.gestureDepth === 0) {
+      this.gesturePending = false;
+      this.suppressUndoSnapshot = this.gestureSuppressPrev;
+    }
   }
 
   /** Run `edit` WITHOUT opening a new undo checkpoint — any {@link pushUndoSnapshot} inside it is
@@ -1261,6 +1344,7 @@ export class TriggerLab {
     this.applyAuthored(prev.authored);
     this.normalizeGraphs();
     this.sim = new Sim(this.buses, this.effects, this.presets);
+    this.sim.pixelModel = this.labModel.pm;
     this.sim.clearPendingFires();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
@@ -1478,7 +1562,7 @@ export class TriggerLab {
       onFrame: (frame) => {
         this.serverFrame = frame;
       },
-      onInput: (kind, label, value, note, channel) => this.receiveInputEcho(kind, label, value, note, channel),
+      onInput: (input) => this.receiveInputEcho(input),
       // Server-side rejection (e.g. an invalid patch paste — S45): surface it as a dismissible
       // notice so the failure is user-visible rather than silent.
       onError: (message) => {
@@ -1505,14 +1589,12 @@ export class TriggerLab {
       re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
       rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
       the timeline intact. */
-  private receiveInputEcho(
-    kind: 'midi' | 'osc',
-    label: string,
-    value: number,
-    note: number | undefined,
-    channel: number | undefined,
-  ): void {
+  private receiveInputEcho({ kind, label, value, note, channel, drumId }: InputEcho): void {
     const time = Date.now();
+    // The echo's `value` is the RAW input, before the drum's sensitivity curve — exactly the
+    // x a velocity-curve editor plots. Connected, this is the ONLY place hits are recorded
+    // (the local fire paths stay quiet), so a stick hit plots once.
+    this.recordVelocityHit(drumId, value);
     if (kind === 'midi' && note !== undefined) {
       const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
@@ -1726,6 +1808,13 @@ export class TriggerLab {
 
   private fireRawMidiLocal(note: number, value: number): void {
     const graphs = this.resolvedView.graphs;
+    // The drum the zone-map CLAIMS this note for — no `pads[0]` fallback here, unlike the
+    // ctx's `sourceDrumId` below: an unclaimed note carries no drum's sensitivity, and
+    // plotting it under one would attribute a hit to a drum that was never struck.
+    const claimedDrumId = this.mappedDrumIdForMidiNote(note) ?? undefined;
+    const raw = Math.max(0, Math.min(1, value / 127));
+    // Offline the local sim IS the engine, so this path is both the echo and the fire.
+    this.recordVelocityHit(claimedDrumId, raw);
     const toFire = resolveGraphsForFire(graphs, { kind: 'midi', note, value });
     // Sequence reset bindings apply BEFORE the fires (mirroring engine.processInput), so a note
     // that both resets and triggers a sequence plays step 1 on this very hit. A reset-only note
@@ -1743,12 +1832,13 @@ export class TriggerLab {
     if (toFire.length === 0 && resets.length === 0) return;
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
-      velocity: Math.max(0, Math.min(1, value / 127)),
+      velocity: this.shapeVelocity(claimedDrumId, raw),
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
-      sourceDrumId: this.mappedDrumIdForMidiNote(note) ?? this.pads[0]?.drumId ?? '',
+      sourceDrumId: claimedDrumId ?? this.pads[0]?.drumId ?? '',
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const { key, graph } of toFire) {
       this.markGraphFire(key); // offline hardware MIDI: the local sim IS the engine, so stamp here
@@ -1801,6 +1891,10 @@ export class TriggerLab {
   }
 
   hit(pad: Pad): void {
+    // Live feedback for the velocity editor, before the routing checks below: a hit on a pad
+    // that routes nowhere is still a hit worth plotting while tuning. Connected, the server's
+    // `key` echo carries this same pair, so recording here too would double-plot it.
+    if (this.link !== 'open') this.recordVelocityHit(pad.drumId, this.velocity);
     const toFire = this.resolveHitGraphsLocal(pad);
     // A pad may route to a sequence RESET binding alone (a sequence node's own `resetSource`,
     // firing nothing) — that hit still counts as routed, and connected it must still reach the
@@ -1835,12 +1929,15 @@ export class TriggerLab {
     }
     const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
     const ctx = {
-      velocity: this.velocity,
+      // Offline mirror of the server's `key` seam: the pad's drum shapes its own velocity,
+      // so a test fire and a real stick agree about what this drum does with a hit.
+      velocity: this.shapeVelocity(pad.drumId, this.velocity),
       sectionIndex: idx < 0 ? 0 : idx,
       sectionCount: this.sections.length,
       beatPhase: this.beatPhase,
       sourceDrumId: pad.drumId,
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     for (const { graph, label, key } of toFire) {
       const resolved = this.sim.triggerGraph(label, graph, ctx, key);
@@ -1879,6 +1976,7 @@ export class TriggerLab {
       beatPhase: this.beatPhase,
       sourceDrumId: this.sourceDrumIdForTriggerSource(src),
       bpm: this.bpm,
+      beatsPerBar: this.beatsPerBar,
     };
     const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
     this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
@@ -2772,6 +2870,10 @@ export class TriggerLab {
       node = makeNode('note', nodeId, x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
     } else if (kind === 'osc') {
       node = makeNode('osc', nodeId, x, y, { oscAddress: '' });
+    } else if (kind === 'splice') {
+      // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
+      // splice node renders nothing at all (every slot blank), which would read as broken.
+      node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit(this.buses));
     } else if (kind === 'randomMod') {
       node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
     } else {
@@ -2781,7 +2883,8 @@ export class TriggerLab {
     // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
     // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
     // both), announced with a toast. Only the light-making Effect node auto-wires.
-    if (node.kind === 'effect') this.autoWireEffectToOutput(node);
+    // A Splice makes light of its own, so it auto-wires for the same reason an Effect does.
+    if (node.kind === 'effect' || node.kind === 'splice') this.autoWireEffectToOutput(node);
     return node;
   }
 
@@ -2797,8 +2900,22 @@ export class TriggerLab {
     if (!output) return;
     const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
     if (rejection === null) {
-      pushToast('Effect wired to the Output anchor — it lights on the next hit.', { tone: 'info' });
+      pushToast(`${node.kind === 'splice' ? 'Splice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
     }
+  }
+
+  /** Add a node AND land a wire on it as ONE undoable action (F8: a connection drag released in
+      empty space summons the palette, and the picked node takes the wire the drag was making).
+      `wire` runs only when the node was actually added, and folds into the add's undo checkpoint
+      — one Ctrl/Z pops the node and its wire together, exactly as R04's Effect auto-wire does.
+
+      `wire` must route through the normal {@link connect} path (the view hands it the same
+      `dropConnect` a wire released ON a node body takes), so a wire the graph would refuse by
+      hand is refused here too — one mutation path, one validity table. */
+  addNodeWired(kind: NodeKind, x: number, y: number, wire: (node: GraphNode) => void): GraphNode | null {
+    const node = this.addNode(kind, x, y);
+    if (node) this.batchIntoCurrentUndo(() => wire(node));
+    return node;
   }
 
   /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
@@ -3025,7 +3142,7 @@ export class TriggerLab {
 
   setMode(node: GraphNode, mode: PlayMode): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if ((node.kind !== 'play' && node.kind !== 'effect') || node.mode === mode) return;
+    if ((node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
   }
@@ -3034,7 +3151,7 @@ export class TriggerLab {
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
     node.targetId = undefined;
@@ -3044,7 +3161,7 @@ export class TriggerLab {
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'scope' && node.kind !== 'output') return;
+    if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
@@ -3138,6 +3255,79 @@ export class TriggerLab {
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.division = division;
+  }
+
+  // --- splice node mutators ------------------------------------------------
+  //
+  // A splice node carries a dozen settings and a variable-length list of splices, so these are
+  // PATCH-based rather than the one-setter-per-field style the older single-value nodes use —
+  // fifteen near-identical setters would be noise, and every one of them would repeat the same
+  // viewer guard, kind guard and undo checkpoint. The guards live here once instead.
+
+  /** Patch a splice node's own settings (count excepted — see {@link setSpliceCount}, which also
+      keeps the authored rows in step). Guards `node.kind === 'splice'`. */
+  setSpliceSetting(
+    node: GraphNode,
+    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint'>>,
+  ): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    this.pushUndoSnapshot();
+    Object.assign(node, patch);
+  }
+
+  /** Set how many splices each hoop / drum / scope is cut into, growing or shrinking the authored
+      rows to match. New rows CYCLE the existing colours (2 rows → 4 gives red, blue, red, blue)
+      rather than arriving blank, so raising the count reads as "cut finer", not "add gaps".
+      Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
+  setSpliceCount(node: GraphNode, count: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
+    if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
+    this.pushUndoSnapshot();
+    const rows = node.splices ?? [];
+    const grown = rows.length
+      ? Array.from({ length: next }, (_, i) => (i < rows.length ? rows[i]! : { ...rows[i % rows.length]! }))
+      : Array.from({ length: next }, () => ({}) as voice.SpliceDef);
+    node.splices = grown;
+    node.spliceCount = next;
+  }
+
+  /** Patch ONE splice row — its colour (`null` clears it), effect (`null` clears it) or mute.
+      Pads the authored rows out to `index` so the inspector can edit a slot that is currently
+      being filled by the cycling fallback. Guards `node.kind === 'splice'`. */
+  setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice' || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
+    this.pushUndoSnapshot();
+    const rows = [...(node.splices ?? [])];
+    while (rows.length <= index) rows.push({});
+    rows[index] = { ...rows[index]!, ...patch };
+    node.splices = rows;
+  }
+
+  /** Append a splice, keeping the band count in step with the authored rows. */
+  addSplice(node: GraphNode): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const rows = node.splices ?? [];
+    if (rows.length >= voice.MAX_SPLICE_COUNT) return;
+    this.pushUndoSnapshot();
+    node.splices = [...rows, rows.length ? { ...rows[rows.length - 1]! } : {}];
+    node.spliceCount = node.splices.length;
+  }
+
+  /** Remove a splice, keeping the band count in step. The last row cannot be removed — a splice
+      node with no splices renders nothing, which is a deletion, not an edit. */
+  removeSplice(node: GraphNode, index: number): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (node.kind !== 'splice') return;
+    const rows = node.splices ?? [];
+    if (index < 0 || index >= rows.length || rows.length <= 1) return;
+    this.pushUndoSnapshot();
+    node.splices = rows.filter((_, i) => i !== index);
+    node.spliceCount = node.splices.length;
   }
 
   /** Bind (or clear, via `null`) the input that snaps a sequence node back to its first step —
@@ -3353,6 +3543,35 @@ export class TriggerLab {
     node.env = {};
   }
 
+  /** Re-type an effect node to another COLLECTION in place (F3 item 11) — the inspector
+      companion to the Add-node menu's Effect group, which adds a node by collection and
+      seeds that collection's first effect. Re-typing does the same to a node that already
+      exists: canvas selects a scene, every other collection routes through the SAME
+      {@link pickEffect} swap the gallery uses, so preset / params / scope / layer reset
+      exactly as a gallery swap does rather than through a second, drifting path.
+      No-op when the node is already that collection, or when the library has nothing in it
+      (a collection with no non-deprecated effect cannot be entered). */
+  setPlayCollection(node: GraphNode, playType: PlayType): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!isEffectNode(node)) return;
+    if (this.playCollectionOf(node) === playType) return;
+
+    if (playType === 'canvas') {
+      const sceneId = this.allCanvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
+      this.setCanvasScene(node, sceneId);
+      return;
+    }
+    const eff = this.selectableEffects.find((e) => !e.deprecated && e.playType === playType);
+    if (!eff) return;
+    this.pickEffect(node, eff.id);
+  }
+
+  /** An effect node's collection — its own, or the effect's when the node predates D3. */
+  playCollectionOf(node: GraphNode): PlayType {
+    if (!isEffectNode(node)) return 'ambient';
+    return node.playType ?? this.effectOf(node)?.playType ?? 'ambient';
+  }
+
   // --- canvas scenes (U5) --------------------------------------------------
 
   /** Create a new authored canvas scene, returning its id. */
@@ -3484,13 +3703,15 @@ export class TriggerLab {
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    if (!isEffectNode(node) || node.busId === busId) return;
+    if ((!isEffectNode(node) && node.kind !== 'splice') || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
   }
   /** The effective layer for a play node (its override, or the effect's default). */
   busOf(node: GraphNode): string {
-    if (!isEffectNode(node)) return '';
+    // `splice` is a layer-producing node too — but deliberately NOT folded into `isEffectNode`,
+    // which also gates the gallery / preset / effect-param paths a splice has no business in.
+    if (!isEffectNode(node) && node.kind !== 'splice') return '';
     return node.busId || this.effectOf(node)?.busId || '';
   }
 
@@ -3544,6 +3765,32 @@ export class TriggerLab {
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     node.params = penv.setParamValue(node.params, key, value);
+  }
+
+  /** Author the node's life ENVELOPE — the amplitude-over-life curve that replaces its scalar
+      Life/Decay param (S6b). `null` detaches, restoring the scalar path exactly. Same mutation
+      path and same undo slot as {@link setParam}, so a curve edit is one undo like any other.
+      The scalar param is left untouched underneath: it still sets the envelope's time span, and
+      detaching returns to it with nothing lost. */
+  setLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.pushUndoSnapshot();
+    this.writeLifeEnvelope(node, value);
+  }
+
+  /** The same write with NO undo checkpoint — for the live frames of a curve drag, which fire
+      per pointermove. The control commits once at gesture end through {@link setLifeEnvelope},
+      so the stack gets one entry per gesture instead of one per frame. */
+  updateLifeEnvelope(node: GraphNode, value: CurveValue): void {
+    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!nodeHasParams(node)) return;
+    this.writeLifeEnvelope(node, value);
+  }
+
+  private writeLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
+    if (value) node.lifeEnvelope = value;
+    else delete node.lifeEnvelope;
   }
 
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
@@ -3630,6 +3877,48 @@ export class TriggerLab {
     if (!next) return;
     this.pushUndoSnapshot();
     node.modInputs = next;
+  }
+
+  // --- face params (S5) ----------------------------------------------------
+  // "Add a param to the node face" ≡ "expose this param for modulation": ONE list
+  // (`node.modInputs`), two views (the node-face rows + the inspector's Parameters section).
+  // These read the SAME rows `modInputsOf` returns; they only widen what may be ADDED, since
+  // a face row is an editing surface first and a modulation target second.
+
+  /** Every param a node declares, normalized across both spec dialects (effect `kind` /
+      modifier `type`) — the face renders a control per declared TYPE. */
+  faceParamSpecs(node: GraphNode): fp.FaceParamSpec[] {
+    return fp.nodeParamSpecs(node, this.effectOf(node));
+  }
+
+  /** Params not yet on the face — the widened "Add parameter" picker (every declared param,
+      not only the modulatable numbers). */
+  availableFaceParams(node: GraphNode): { key: string; label: string }[] {
+    return fp.availableFaceParams(node, this.effectOf(node));
+  }
+
+  /** Whether a param is currently on the node's face (≡ exposed for modulation). */
+  isParamOnFace(node: GraphNode, key: string): boolean {
+    return fp.isParamOnFace(node, key);
+  }
+
+  /** The param a modulation wire dropped on this node's BODY should land on — its first
+      exposed NUMBER row, else the first number param it could expose. Skips non-numeric face
+      rows, which carry no `param:<key>` handle. */
+  modDropTarget(node: GraphNode): string | undefined {
+    return mg.modDropTargetParam(node, this.effectOf(node));
+  }
+
+  /** Put a param on the node face — the same mutation as exposing it for modulation, so the
+      gesture and the list stay one. Idempotent. */
+  addFaceParam(node: GraphNode, param: string): void {
+    this.addModInput(node, param);
+  }
+
+  /** Take a param off the face — the same mutation as un-exposing it, INCLUDING the existing
+      wire-deletion behaviour (the caller confirms first when {@link mappingsFor} is non-empty). */
+  removeFaceParam(node: GraphNode, param: string): void {
+    this.removeModInput(node, param);
   }
 
   /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */

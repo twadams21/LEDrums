@@ -21,6 +21,10 @@ export {
   songLibraryBlobSchema,
 } from './schemas';
 export type { ClientMessage, ServerMessage } from './schemas';
+// The authored two-handle curve's shape guard (`GraphNode.lifeEnvelope`, S6b). Defined in core
+// beside the type the engine evaluates and surfaced here so wire-side callers validating an
+// imported or pasted document reach for it on the same import path as everything else.
+export { curveValueSchema } from '@ledrums/core';
 
 // The graph-fire contract carried on the `monitor` stream (server stamps, web reads back).
 export { graphFireKeyOf, graphFiredMonitorLabel, graphMonitorDestination } from './monitor-graph';
@@ -134,6 +138,11 @@ export interface VoiceStat {
   releasing: boolean;
   /** Provenance label (the voice's `via`) — shown as the chip tooltip. */
   via: string;
+  /** Eval state prefix the voice was spawned under: the firing graph's key, with a
+   * `#<slotIndex>` suffix on section-slot fires. `''` when the spawn path supplied none.
+   * This is the graph ATTRIBUTION — it is what lets a client show which graph is currently
+   * driving lights on the kit. */
+  pad: string;
 }
 
 /** Optional voice-bus telemetry, present only when the server runs the voice engine. */

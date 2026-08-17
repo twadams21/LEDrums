@@ -4,6 +4,8 @@ import {
   programChangeRecall,
   sectionIndexRecall,
   SECTION_RECALL_CC,
+  zoneForNote,
+  zoneForOsc,
   type RecallTarget,
 } from '../input-router';
 import type { VoiceEngineHost } from '../voice-engine-host';
@@ -71,7 +73,13 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
     }
     if (msg.t === 'key') {
       voiceHost.applyInput({ kind: 'key', drumId: msg.drumId, zone: msg.zone, velocity: msg.velocity });
-      deps.broadcastJson({ t: 'input', kind: 'midi', label: `${msg.drumId}:${msg.zone ?? ''}`, value: msg.velocity ?? 1 });
+      deps.broadcastJson({
+        t: 'input',
+        kind: 'midi',
+        label: `${msg.drumId}:${msg.zone ?? ''}`,
+        value: msg.velocity ?? 1,
+        drumId: msg.drumId,
+      });
       return true;
     }
     if (msg.t === 'fireGraph') {
@@ -97,7 +105,21 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       } else {
         voiceHost.applyInput({ kind: 'noteOff', note: msg.note, channel: msg.channel });
       }
-      deps.broadcastJson({ t: 'input', kind: 'midi', label: `note ${msg.note}`, value: msg.velocity / 127, note: msg.note, channel: msg.channel });
+      // The echo carries the RAW normalised velocity plus the drum the zone-map claims
+      // for this note: the pair a per-drum velocity-curve editor plots (x = what came
+      // in, y = read off the curve being edited). Resolved here rather than parsed back
+      // out of a label, and deliberately pre-curve — echoing the shaped value would
+      // draw the hits on top of the curve instead of under it.
+      const pad = zoneForNote(voiceHost.getInputMap(), msg.note);
+      deps.broadcastJson({
+        t: 'input',
+        kind: 'midi',
+        label: `note ${msg.note}`,
+        value: msg.velocity / 127,
+        note: msg.note,
+        channel: msg.channel,
+        ...(pad ? { drumId: pad.drumId } : {}),
+      });
       return true;
     }
     if (msg.t === 'osc') {
@@ -110,7 +132,14 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
         return true;
       }
       voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });
-      deps.broadcastJson({ t: 'input', kind: 'osc', label: msg.address, value: msg.value });
+      const oscPad = zoneForOsc(voiceHost.getInputMap(), msg.address);
+      deps.broadcastJson({
+        t: 'input',
+        kind: 'osc',
+        label: msg.address,
+        value: msg.value,
+        ...(oscPad ? { drumId: oscPad.drumId } : {}),
+      });
       return true;
     }
     // Any other message falls through to the legacy reducer (it still backs structural edits).

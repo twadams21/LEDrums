@@ -16,11 +16,11 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
-import { makeNode, type GraphNode, type NodeKind, type TriggerGraph } from '../trigger-lab/sim';
+import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
-import { voice } from '@ledrums/core';
+import { voice, withVelocityCurve } from '@ledrums/core';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
-import { spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
+import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
@@ -30,6 +30,12 @@ import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
     reconcile; ui-shot adds its own settle before capturing. */
 function settle(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+/** Split on the FIRST separator only, so a value may contain it. */
+function splitOnce(text: string, sep: string): [string, string | undefined] {
+  const i = text.indexOf(sep);
+  return i < 0 ? [text, undefined] : [text.slice(0, i), text.slice(i + sep.length)];
 }
 
 export interface ShotSeam {
@@ -47,27 +53,64 @@ export interface ShotSeam {
   newGraph(): void;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
+  /** Author a one-effect graph, set the named params on it, place it in the active section
+      and FIRE it — so a capture can show what an effect actually renders, at whatever moment
+      `--settle` lands on. The route to "does this effect's Life param do anything" and to any
+      other look-of-the-render shot; without it, proving engine behaviour needs a click chain
+      through the gallery and a slider. */
+  fireEffect(generatorId: string, params: Record<string, number>): void;
+  /** Fire the graph {@link fireEffect} last authored, again. Connected, the show reaches the
+      server asynchronously, so the fire that rides the same tick as the authoring can land
+      before the engine has the graph — sequence `fire:…,refire` to fire once the sync has
+      had a beat. */
+  refire(): void;
+  /** Hold the op sequence for `ms` — for state that lands asynchronously (the debounced show
+      sync to the engine), which no amount of rAF settling will cover. */
+  wait(ms: number): Promise<void>;
   /** Select a node — by the kind most recently added, by node id, else the first
       non-trigger node. Flips the Node Editor to its Inspector tab. */
   selectNode(kindOrId: string): void;
+  /** Put the last-added (else first) splice node into a motion mode, so the MOVE controls —
+      rate, increment, per-unit offset, order, restart/continuous/latched — actually render. */
+  setSpliceMotion(chase: string): void;
   /** Open the effect gallery for the selected / last-added / first effect node. */
   openGallery(): void;
   /** Set that same node's effect (`effect:gen:segments`) through the store seam a gallery
       card click drives — so any registered effect's params/thumbnail are capturable without
       choreographing a scroll-and-click through a 50-card grid. */
   pickEffect(effectId: string): void;
+  /** Set that same node's play mode (`mode:loop`). A `oneshot` fire is gone within a frame or
+      two, so a sustained state — a held loop, and anything keyed off it — is only capturable
+      with the node switched first. */
+  setPlayMode(mode: PlayMode): void;
   /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
       `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
   firePad(drumId?: string): void;
+  /** Author a splice CASCADING on a real trigger graph and fire it, so the preview shows the
+      thing a splice actually is rather than an unwired node card. Builds Trigger → Effect →
+      Splice → Output on its own graph, staggers the splice across hoops, and hits the pad —
+      every step through the store's own mutators, so what the shot proves is the live path.
+      `arg` names the drum (`splice-cascade:snare`, bare = the first pad). */
+  previewSpliceCascade(drumId?: string): void;
   /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
   openSettings(pane?: SettingsPane): void;
+  /** Author a non-identity velocity sensitivity curve on a drum (`velocity-curve:kick`,
+      bare = the first drum) so the tuned state — not just the empty diagonal — is
+      capturable. Writes through the same `setInputMap` gate the pane's own editor uses. */
+  previewVelocityCurve(drumId?: string): void;
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
-  /** Type a query into the Add pane's search field (drives the flat grouped
-      results state). The field's value is component-local, so this drives the
-      real input rather than a store method. */
+  /** Summon the on-canvas Add-node popover at the canvas centre, via its own `+` control —
+      the popover's open state is TriggerGraphView-local, so this drives the real affordance
+      rather than duplicating the placement math. Opens the Trigger view first. */
+  openAddPopover(): void;
+  /** Type a query into the Effect Gallery's search field. The field's value is
+      component-local, so this drives the real input rather than a store method. */
   setSearch(query: string): void;
+  /** Type a query into the effect inspector's param filter (S4). Like `setSearch`, the
+      field's value is component-local, so this drives the real input. */
+  filterParams(query: string): void;
   /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
       states: `graph` = insertion line at a gap, `section` = reorder target outline. */
   previewSectionsDnd(kind: 'graph' | 'section'): void;
@@ -79,6 +122,13 @@ export interface ShotSeam {
       over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
       ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
   previewSpliceArmed(): void;
+  /** Pin the F8 pending-wire palette — the Add-node popover as it appears when a connection drag
+      is released in EMPTY canvas: holding that wire, its list filtered to the kinds the wire can
+      land on, and a pick adding the node AND the wire. The live state needs a drag headless
+      Chrome can't drive. Opens the Trigger graph and ensures a source node the wire leaves from.
+      `arg` picks the drag's source: `flow` (an Effect's output, the default), `modifier`, or
+      `mod-source` (an envelope) — each filters the list differently. */
+  previewWireDrop(from?: 'flow' | 'modifier' | 'mod-source'): void;
   /** Pin the R12 canvas drag-over highlight (the accent ring the graph canvas wears while a new
       node is dragged in from the Add pane) so ui-shot can capture it — the live state is drag-only
       and headless Chrome can't drive the gesture. Opens the Trigger graph so the canvas is live. */
@@ -100,6 +150,15 @@ export interface ShotSeam {
       its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
       an empty Mix hides the rows. */
   mixWithLayers(): void;
+  /** Author a node whose FACE carries exposed param rows (S5) — the state neither `add` nor
+      `select` reaches, since a fresh node's face is bare.
+
+      `face-params` puts the first two number params of a fresh Effect on its face.
+      `face-params:wired` additionally wires an LFO into the first row, so the driven state
+      (modulation badge + live tick beside an editable base value) is capturable.
+      `face-params:mixed` uses a MODIFIER node instead — `trail` declares a number AND an
+      enum, so one capture shows both control types on one card. */
+  faceParams(mode?: 'wired' | 'mixed'): void;
   /** Author a REAL empty-scope graph so ui-shot can capture the R06 lint surface end to end:
       an Effect scoped to one drum wired to an Output scoped to a different drum → the effective
       scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
@@ -131,6 +190,8 @@ class ShotSeamImpl implements ShotSeam {
       the scope node `add:scope` just created without threading its id through the CLI. */
   private added = new Map<NodeKind, GraphNode>();
   private lastAdded: GraphNode | null = null;
+  /** The graph {@link fireEffect} authored, so {@link refire} can fire it again. */
+  private firedGraphKey: string | null = null;
 
   constructor(
     private readonly store: TriggerLab,
@@ -145,6 +206,7 @@ class ShotSeamImpl implements ShotSeam {
     sectionsDndPreview.clear();
     wireInvalidPreview.clear();
     spliceArmedPreview.clear();
+    pendingWirePreview.clear();
     lintPreview.clear();
     canvasDropPreview.clear();
     toastStore.clear();
@@ -186,6 +248,41 @@ class ShotSeamImpl implements ShotSeam {
     return node;
   }
 
+  fireEffect(generatorId: string, params: Record<string, number>): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const section = this.store.activeSection;
+    if (!section) return;
+    const key = this.store.createGraph(`Shot ${generatorId}`);
+    const created = this.store.addNode('effect', 360, 200);
+    if (!created) return;
+    // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
+    // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
+    // re-resolve through the graph or the edit lands on a detached object.
+    const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
+    const target = live();
+    if (target) this.store.pickEffect(target, `gen:${generatorId}`);
+    for (const [paramKey, value] of Object.entries(params)) {
+      const node = live();
+      if (node) this.store.setParam(node, paramKey, value);
+    }
+    // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
+    // Output, but nothing drives it.
+    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+    if (trigger) this.store.connect(trigger.id, created.id);
+    this.store.addGraphToSection(section.id, key);
+    this.firedGraphKey = key;
+    this.refire();
+  }
+
+  wait(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  }
+
+  refire(): void {
+    const index = this.firedGraphKey ? (this.store.activeSection?.graphs.indexOf(this.firedGraphKey) ?? -1) : -1;
+    if (index >= 0) this.store.fireSectionGraph(index);
+  }
+
   selectNode(kindOrId: string): void {
     const graph = this.store.selectedGraph;
     if (!graph) return;
@@ -218,6 +315,58 @@ class ShotSeamImpl implements ShotSeam {
     this.store.setSequenceResetSource(seq, source);
   }
 
+  setSpliceMotion(chase: string): void {
+    const graph = this.store.selectedGraph;
+    const addedId = this.added.get('splice')?.id;
+    // Re-resolve through the store's graph, not the `added` reference — see `bindSequenceReset`.
+    const node = (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'splice');
+    if (!node) return;
+    this.store.setSpliceSetting(node, {
+      spliceChase: chase as 'off' | 'step' | 'smooth' | 'stagger',
+      // A representative cascade so the offset + order rows render with real values.
+      spliceOffsetMode: 'beats',
+      spliceOffsetDivision: '1/16',
+    });
+  }
+
+  previewSpliceCascade(drumId?: string): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const section = this.store.activeSection;
+    const pad = this.padFor(drumId) ?? this.store.pads[0];
+    if (!section || !pad) return;
+    const key = this.store.createGraph('Shot splice cascade');
+    const effect = this.store.addNode('effect', 360, 200);
+    const splice = this.store.addNode('splice', 620, 200);
+    if (!effect || !splice) return;
+    // Every mutation re-resolves through `graph.nodes`: `addNode` hands back the RAW node, and
+    // writing to that bypasses the `$state` proxy — the value lands and nothing re-renders.
+    const live = (id: string): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === id) ?? null;
+    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+    if (trigger) this.store.connect(trigger.id, effect.id);
+    // Bind the graph to the pad we are about to hit, or the hit resolves to some OTHER graph
+    // and the preview shows whatever that one draws.
+    this.store.setTriggerSource(key, { kind: 'drum', drumId: pad.drumId, zone: String(pad.zone) });
+    this.store.connect(effect.id, splice.id);
+    const spliceNode = live(splice.id);
+    // A slow, obvious cascade: one hoop at a time, a beat apart, held long enough that a
+    // single frame catches several units mid-travel rather than one flash.
+    if (spliceNode) {
+      this.store.setSpliceSetting(spliceNode, {
+        spliceChase: 'step',
+        spliceOffsetMode: 'beats',
+        spliceOffsetDivision: '1/4',
+        spliceHoldMs: 1200,
+      });
+      // Loop, not one-shot: a one-shot cascade is over before a screenshot lands (the same
+      // reason `mode:loop` exists — see the ui-shot README).
+      const forLoop = live(splice.id);
+      if (forLoop) this.store.setMode(forLoop, 'loop');
+    }
+    this.store.addGraphToSection(section.id, key);
+    this.firedGraphKey = key;
+    this.store.hit(pad);
+  }
+
   openGallery(): void {
     const graph = this.store.selectedGraph;
     if (!graph) return;
@@ -236,14 +385,27 @@ class ShotSeamImpl implements ShotSeam {
     if (target) this.store.pickEffect(target, effectId);
   }
 
+  setPlayMode(mode: PlayMode): void {
+    const target = this.effectTarget();
+    if (target) this.store.setMode(target, mode);
+  }
+
   firePad(drumId?: string): void {
-    const pads = this.store.pads;
-    const wanted = drumId?.toLowerCase();
-    const match = wanted
-      ? pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted))
-      : undefined;
-    const pad = match ?? pads[0];
+    const pad = this.padFor(drumId) ?? this.store.pads[0];
     if (pad) this.store.hit(pad);
+  }
+
+  /** The pad `drumId` names, by id or label prefix. The ONE lookup, so the `fire` op's
+      pad-vs-generator disambiguation can never accept a name `firePad` would then miss. */
+  private padFor(drumId?: string): TriggerLab['pads'][number] | undefined {
+    const wanted = drumId?.toLowerCase();
+    if (!wanted) return undefined;
+    return this.store.pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted));
+  }
+
+  /** Does `name` address a pad? Guards `fire:<arg>`'s two meanings. */
+  private isPadId(name: string): boolean {
+    return this.padFor(name) !== undefined;
   }
 
   /** The effect/play node an effect op acts on: the selected one, else the last added, else the
@@ -293,14 +455,24 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
+  openAddPopover(): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
+  }
+
   setSearch(query: string): void {
-    // The Add pane's search value is AddPalette-local state (not the store), so
-    // drive the real input and fire `input` for Svelte's bind:value to pick up.
-    // The effect gallery owns a second field with the same job; when it is open it is the
-    // one on screen, so search there rather than at a hidden pane behind the dialog.
-    const input =
-      document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]') ??
-      document.querySelector<HTMLInputElement>('input[aria-label="Search nodes"]');
+    // The Effect Gallery's search value is component-local state (not the store), so drive the
+    // real input and fire `input` for Svelte's bind:value to pick up. (The Add-node popover has
+    // no search since F2 — it is a flat, one-click list of node types.)
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]');
+    if (!input) return;
+    input.value = query;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  filterParams(query: string): void {
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter parameters"]');
     if (!input) return;
     input.value = query;
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -339,6 +511,18 @@ class ShotSeamImpl implements ShotSeam {
     const graph = this.store.selectedGraph;
     if (graph && graph.nodes.every((n) => n.kind === 'trigger' || n.kind === 'output')) this.addNode('effect');
     spliceArmedPreview.set(true);
+  }
+
+  previewWireDrop(from: 'flow' | 'modifier' | 'mod-source' = 'flow'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // The palette holds a wire LEAVING a node, so the open graph needs one of that kind. A fresh
+    // Effect auto-wires to Output (R04), which is fine — the pending wire is a second one.
+    const kind: NodeKind = from === 'modifier' ? 'modifier' : from === 'mod-source' ? 'envelope' : 'effect';
+    const graph = this.store.selectedGraph;
+    const source = graph?.nodes.find((n) => n.kind === kind) ?? this.addNode(kind);
+    if (!source) return;
+    pendingWirePreview.set({ nodeId: source.id, type: 'source', handleId: null });
   }
 
   previewCanvasDrop(): void {
@@ -417,6 +601,30 @@ class ShotSeamImpl implements ShotSeam {
       if (frames++ < 30) requestAnimationFrame(reassert);
     };
     requestAnimationFrame(reassert);
+  }
+
+  previewVelocityCurve(drumId?: string): void {
+    this.claimEdit(() => {
+      const project = this.store.project;
+      if (!project) return;
+      const wanted = drumId?.toLowerCase();
+      const drum = wanted
+        ? project.kit.drums.find((d) => d.id.toLowerCase() === wanted)
+        : project.kit.drums[0];
+      if (!drum) return;
+      // A gate plus a lift: silent below a light tap, then an ease-out that gives the quiet
+      // hits most of the range. Non-identity in every way the plot can show at once —
+      // handles moved on both axes, a curved profile, and a bent strength.
+      this.store.setInputMap(
+        withVelocityCurve(project.inputMap, drum.id, {
+          h0: { x: 0.18, y: 0 },
+          h1: { x: 0.9, y: 1 },
+          profile: 'bend',
+          strength: 0.62,
+        }),
+      );
+    });
+    this.openSettings('zones');
   }
 
   previewGlobalControls(): void {
@@ -500,13 +708,17 @@ class ShotSeamImpl implements ShotSeam {
       const idx = trimmed.indexOf(':');
       const op = (idx >= 0 ? trimmed.slice(0, idx) : trimmed).trim();
       const arg = idx >= 0 ? trimmed.slice(idx + 1).trim() : undefined;
-      this.runOp(op, arg);
+      await this.runOp(op, arg);
       await settle();
     }
   }
 
-  private runOp(op: string, arg?: string): void {
+  private runOp(op: string, arg?: string): void | Promise<void> {
     switch (op) {
+      // wait:<ms> — hold the sequence. The show reaches the server on a 300ms debounce, so a
+      // capture that authors a graph and then fires it has to let the sync land in between.
+      case 'wait':
+        return this.wait(Number(arg) || 0);
       case 'reset':
         this.reset();
         break;
@@ -526,14 +738,44 @@ class ShotSeamImpl implements ShotSeam {
       case 'select':
         if (arg) this.selectNode(arg);
         break;
+      case 'splice-motion':
+        if (arg) this.setSpliceMotion(arg);
+        break;
+      case 'splice-cascade':
+        this.previewSpliceCascade(arg);
+        break;
+      /* `fire` means two things and always has: `fire[:<drum>]` hits a PAD through the real hit
+         path, and `fire:<generatorId>[:key=value[;key=value]]` authors a graph on that generator
+         and fires it (`fire:chase-bands:lifeBeats=8`). They arrived on different branches and met
+         here as two `case 'fire'` labels, the second of which a switch can never reach — so
+         `fire:kick` silently became `fireEffect('kick')` and both presets that use it captured
+         a dark kit. One case, disambiguated by whether the arg names a PAD (the narrower, older
+         meaning wins on a tie; a generator id is never a drum id). */
+      case 'fire': {
+        const [head, spec] = splitOnce(arg ?? '', ':');
+        if (!head || this.isPadId(head)) {
+          this.firePad(arg || undefined);
+          break;
+        }
+        const params: Record<string, number> = {};
+        for (const pair of (spec ?? '').split(';')) {
+          const [k, v] = splitOnce(pair.trim(), '=');
+          if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
+        }
+        this.fireEffect(head, params);
+        break;
+      }
+      case 'refire':
+        this.refire();
+        break;
       case 'gallery':
         this.openGallery();
         break;
       case 'effect':
         if (arg) this.pickEffect(arg);
         break;
-      case 'fire':
-        this.firePad(arg);
+      case 'mode':
+        if (arg === 'oneshot' || arg === 'loop' || arg === 'hold') this.setPlayMode(arg);
         break;
       case 'settings':
         // `settings` opens the modal on its default pane; `settings:outputs` deep-links a section.
@@ -542,8 +784,14 @@ class ShotSeamImpl implements ShotSeam {
       case 'backups':
         this.previewBackups();
         break;
+      case 'add-popover':
+        this.openAddPopover();
+        break;
       case 'search':
         this.setSearch(arg ?? '');
+        break;
+      case 'param-filter':
+        this.filterParams(arg ?? '');
         break;
       case 'sections-insert':
         this.previewSectionsDnd('graph');
@@ -563,6 +811,9 @@ class ShotSeamImpl implements ShotSeam {
       case 'canvas-drop':
         this.previewCanvasDrop();
         break;
+      case 'wire-drop':
+        this.previewWireDrop(arg === 'modifier' ? 'modifier' : arg === 'mod-source' ? 'mod-source' : 'flow');
+        break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
         break;
@@ -580,11 +831,17 @@ class ShotSeamImpl implements ShotSeam {
       case 'mix-layers':
         this.mixWithLayers();
         break;
+      case 'face-params':
+        this.faceParams(arg === 'wired' ? 'wired' : arg === 'mixed' ? 'mixed' : undefined);
+        break;
       case 'empty-scope':
         this.emptyScope();
         break;
       case 'no-path-to-output':
         this.notReachingOutput();
+        break;
+      case 'velocity-curve':
+        this.previewVelocityCurve(arg);
         break;
       case 'global-controls':
         this.previewGlobalControls();
@@ -620,6 +877,34 @@ class ShotSeamImpl implements ShotSeam {
     this.added.set('mix', mix);
     this.lastAdded = mix;
     this.shell.select({ kind: 'node', nodeId: mix.id });
+  }
+
+  faceParams(mode?: 'wired' | 'mixed'): void {
+    if (this.store.canTakeover) this.store.takeover();
+    this.shell.setView('trigger');
+    // A modifier node is the mixed-TYPE case (`trail`: a number + an enum); an effect node
+    // gives two numbers, the modulatable pair the wired capture needs.
+    const target = mode === 'mixed' ? this.addNode('modifier') : this.addNode('effect');
+    if (!target) return;
+    // The store hands back the RAW node — always re-resolve through the live graph before
+    // mutating, or the value lands but never re-renders (ROUTER gotcha).
+    const live = () => this.store.selectedGraph?.nodes.find((n) => n.id === target.id) ?? null;
+    const node = live();
+    if (!node) return;
+    for (const spec of this.store.faceParamSpecs(node).slice(0, 2)) {
+      const n = live();
+      if (n) this.store.addFaceParam(n, spec.key);
+    }
+    if (mode === 'wired') {
+      // Placed explicitly, well clear of the target — the staggered `addNode` default would
+      // drop the source card ON TOP of the very rows the capture exists to show.
+      const lfo = this.store.addNode('lfo', 60, 420);
+      const n = live();
+      const key = n ? this.store.modDropTarget(n) : undefined;
+      if (lfo && key) this.store.connect(lfo.id, target.id, undefined, `param:${key}`);
+    }
+    this.lastAdded = target;
+    this.shell.select({ kind: 'node', nodeId: target.id });
   }
 
   emptyScope(): void {

@@ -38,6 +38,7 @@ const deps = (timeMs: number): SpawnDeps => ({
   busById: new Map([['lead', monoBus]]),
   latched: new Map(),
   timeMs,
+  bpm: 120,
 });
 
 describe('VoicePool — mono steal resets voice age (S25)', () => {
@@ -62,6 +63,41 @@ describe('VoicePool — mono steal resets voice age (S25)', () => {
     const sampleAt = 1200;
     expect(sampleAt - b!.bornAtMs).toBe(200);
     expect(sampleAt - a!.bornAtMs).toBe(1200);
+  });
+});
+
+// F7 — the two envelope authorities the merged stack brought together. A splice node
+// authors its OWN attack/hold/release for the composite voice (`PlayAction.attackMs` et al),
+// while S6b's `resolveVoiceLife` derives a dwell from the effect's own life param. The
+// node-owned envelope has to win, or a splice's authored hold silently becomes whatever
+// `segments` declares for `lifeBeats` and the whole cascade runs on the wrong clock.
+describe('VoicePool — a node-owned envelope outranks the effect life param (F7)', () => {
+  // `segments` declares voiceLife { key: 'lifeBeats', unit: 'beats' } — with a spec default
+  // of 4 beats at 120bpm that is 2000ms, well clear of the category sustain below.
+  const lifeEffect: EffectDef = { ...effect, generatorId: 'segments', sustainMs: 100 };
+  const lifeDeps = (timeMs: number): SpawnDeps => ({
+    ...deps(timeMs),
+    effectsById: new Map([['fx', lifeEffect]]),
+  });
+
+  it('takes the effect life param when the action authors no envelope', () => {
+    const v = new VoicePool().spawn(action, null, 1, lifeDeps(0))!;
+    expect(v.sustainMs).toBeGreaterThan(lifeEffect.sustainMs);
+    expect(v.attackMs).toBe(lifeEffect.attackMs);
+    expect(v.releaseMs).toBe(lifeEffect.releaseMs);
+  });
+
+  it('takes the action envelope verbatim when the node authors one (the splice path)', () => {
+    const authored: PlayAction = { ...action, attackMs: 10, sustainMs: 400, releaseMs: 300, attackEase: { fn: 'cubic', dir: 'out' } };
+    const v = new VoicePool().spawn(authored, null, 1, lifeDeps(0))!;
+    expect(v.sustainMs).toBe(400);
+    expect(v.attackMs).toBe(10);
+    expect(v.releaseMs).toBe(300);
+    expect(v.attackEase).toEqual({ fn: 'cubic', dir: 'out' });
+    // No authored decay curve rides along, so the effect's own decay term still applies —
+    // a splice is per-element shaping, not a replacement for the voice's decay (see
+    // `effects/life-fade.ts`).
+    expect(v.lifeEnvelope).toBeNull();
   });
 });
 

@@ -54,6 +54,7 @@
     onNodeClick,
     onEdgeClick,
     onPaneClick,
+    onPaneContextMenu,
     onNodeEnter,
     onNodeLeave,
     onConnect,
@@ -100,6 +101,10 @@
         for the wire would also delete whatever node was still selected. */
     onEdgeClick?: (id: string) => void;
     onPaneClick?: () => void;
+    /** Right-click on the pane BACKGROUND (never on a node or wire). The Trigger graph
+        summons its Add-node popover here; callers own `preventDefault` if they want to
+        replace the native menu. */
+    onPaneContextMenu?: (event: MouseEvent) => void;
     onNodeEnter?: (id: string) => void;
     onNodeLeave?: () => void;
     onConnect?: (c: Connection) => void;
@@ -152,6 +157,7 @@
       onnodeclick={({ node }) => onNodeClick?.(node.id)}
       onedgeclick={({ edge }) => onEdgeClick?.(edge.id)}
       onpaneclick={() => onPaneClick?.()}
+      onpanecontextmenu={({ event }) => onPaneContextMenu?.(event as MouseEvent)}
       onnodepointerenter={({ node }) => onNodeEnter?.(node.id)}
       onnodepointerleave={() => onNodeLeave?.()}
       onconnect={onConnect}

@@ -5,6 +5,7 @@ import { isCanvasEffectId } from '../canvas/ids';
 import { tryGetCanvasEffect } from '../canvas/registry';
 import '../canvas/presets';
 import { solidBase } from './impl/solid-base';
+import { solidColour } from './impl/solid-colour';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
 import { wholeKit } from './impl/whole-kit';
@@ -63,6 +64,7 @@ import { segments } from './impl/segments';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
+  solidColour,
   chase,
   wholeDrum,
   wholeKit,

@@ -44,7 +44,7 @@ const capturing = (sent: ClientMessage[]): (() => WSClient) =>
 /** The MIDI-hardware forward + the server echo have no public wrapper — reach them directly. */
 type Internals = {
   forwardMidi(ev: MidiEvent): void;
-  receiveInputEcho(kind: 'midi' | 'osc', label: string, value: number, note: number | undefined, channel: number | undefined): void;
+  receiveInputEcho(input: import('../ws/client').InputEcho): void;
 };
 const internals = (store: TriggerLab): Internals => store as unknown as Internals;
 
@@ -68,7 +68,7 @@ describe('onInput echo never fires the sim (S12)', () => {
     const key = store.createGraph('Direct 60');
     store.setTriggerSource(key, { kind: 'midi', note: 60 });
 
-    internals(store).receiveInputEcho('midi', 'C4', 0.8, 60, 0);
+    internals(store).receiveInputEcho({ kind: 'midi', label: 'C4', value: 0.8, note: 60, channel: 0 });
 
     expect(effectEvents(store)).toHaveLength(0);
     expect(store.voices).toHaveLength(0);
@@ -79,7 +79,7 @@ describe('onInput echo never fires the sim (S12)', () => {
     const key = store.createGraph('Learn me');
     store.startMidiLearn({ kind: 'trigger', graphKey: key });
 
-    internals(store).receiveInputEcho('midi', 'E4', 1, 64, 0);
+    internals(store).receiveInputEcho({ kind: 'midi', label: 'E4', value: 1, note: 64, channel: 0 });
 
     expect(store.triggerSource(key)).toEqual({ kind: 'midi', note: 64 });
     expect(effectEvents(store)).toHaveLength(0);
@@ -92,7 +92,7 @@ describe('onInput echo never fires the sim (S12)', () => {
   it('an echoed MIDI input records last-heard badge activity (S04 seam) without firing', () => {
     const store = new TriggerLab(capturing([]));
 
-    internals(store).receiveInputEcho('midi', 'C4', 0.8, 60, 0);
+    internals(store).receiveInputEcho({ kind: 'midi', label: 'C4', value: 0.8, note: 60, channel: 0 });
 
     expect(store.inputBadge({ kind: 'midi', note: 60 })).not.toBeNull();
     expect(store.inputBadge({ kind: 'midi', note: 61 })).toBeNull(); // no churn from other notes
@@ -102,7 +102,7 @@ describe('onInput echo never fires the sim (S12)', () => {
   it('an echoed OSC input records last-heard badge activity under its address (S04 seam)', () => {
     const store = new TriggerLab(capturing([]));
 
-    internals(store).receiveInputEcho('osc', '/kick', 0.75, undefined, undefined);
+    internals(store).receiveInputEcho({ kind: 'osc', label: '/kick', value: 0.75 });
 
     expect(store.inputBadge({ kind: 'osc', address: '/kick' })).not.toBeNull();
     expect(store.inputBadge({ kind: 'osc', address: '/snare' })).toBeNull();

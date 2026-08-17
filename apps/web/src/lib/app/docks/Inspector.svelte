@@ -11,20 +11,15 @@
   import type { ShellStore } from '../shell-store.svelte';
   import { describePatchNode } from '../patch-topology';
   import { type GraphNode, type NodeKind } from '../../trigger-lab/sim';
-  import { KIND_OPTS } from '../views/node-options';
+  import { KIND_OPTS, MOD_SOURCE_OPTS } from '../views/node-options';
   import { patchEditorFor, type PatchEditor } from './patch-inspector';
   import { patchLabel } from './inspectors/forms';
   import Select from '../../ui/Select.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
-  import Spline from '@lucide/svelte/icons/spline';
-  import Waves from '@lucide/svelte/icons/waves'; // S36
-  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'; // S37
-  import Music2 from '@lucide/svelte/icons/music-2';
-  import RadioTower from '@lucide/svelte/icons/radio-tower';
-  import Dice5 from '@lucide/svelte/icons/dice-5';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import SubtypeSwitcher from './inspectors/SubtypeSwitcher.svelte';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
   import ContainerNodeInspector from './inspectors/ContainerNodeInspector.svelte';
@@ -32,6 +27,7 @@
   import DelayNodeInspector from './inspectors/DelayNodeInspector.svelte';
   import ModifierNodeInspector from './inspectors/ModifierNodeInspector.svelte';
   import ScopeNodeInspector from './inspectors/ScopeNodeInspector.svelte';
+  import SpliceNodeInspector from './inspectors/SpliceNodeInspector.svelte';
   import OutputNodeInspector from './inspectors/OutputNodeInspector.svelte';
   import EnvelopeNodeInspector from './inspectors/EnvelopeNodeInspector.svelte';
   import LfoNodeInspector from './inspectors/LfoNodeInspector.svelte'; // S36
@@ -66,6 +62,29 @@
   const project = $derived(store.project);
 </script>
 
+<!-- Every modulation SOURCE node shares one header, the same shape every other editable
+     node's header has: an in-place SUBTYPE switcher (F3 item 11 — envelope ⇄ LFO ⇄ CC ⇄ note
+     ⇄ OSC ⇄ random, drawn with the Add-node palette's icons and tints) and remove. The
+     switcher names the kind, so it replaces the eyebrow that used to rather than sitting
+     beside it saying the same word twice.
+
+     Re-typing keeps what the source modulates: `changeKind` prunes only wires the new kind
+     cannot carry, and a source's outgoing `param:` wires are valid for every source kind. -->
+{#snippet modSourceHead(n: GraphNode)}
+  <header class="nodehead">
+    <span class="kindsel">
+      <SubtypeSwitcher
+        label="Source"
+        value={n.kind}
+        options={MOD_SOURCE_OPTS}
+        onChange={(v) => store.changeKind(n, v as NodeKind)}
+        ariaLabel="Modulation source type"
+      />
+    </span>
+    <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(n)} />
+  </header>
+{/snippet}
+
 <!-- A viewer (S2 read-only) gets a natively-disabled fieldset: every nested form control
      (buttons, selects, inputs, the bits-ui triggers) is disabled by the browser, and the CSS
      below dims the panel + neutralises the div-based slider drags. The store mutators already
@@ -75,48 +94,24 @@
     <TriggerSourceInspector {store} {node} />
   {:else if node && node.kind === 'envelope'}
     <!-- modulation SOURCE node: no kind selector (not a conversion target) — its shape editor -->
-    <header class="nodehead">
-      <Eyebrow icon={Spline}>Envelope source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <EnvelopeNodeInspector {store} {node} />
   {:else if node && node.kind === 'lfo'}
     <!-- S36 — modulation SOURCE node: no kind selector (not a conversion target) — its settings -->
-    <header class="nodehead">
-      <Eyebrow icon={Waves}>LFO source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <LfoNodeInspector {store} {node} />
   {:else if node && node.kind === 'cc'}
     <!-- S37 — modulation SOURCE node: no kind selector (not a conversion target) — its CC settings -->
-    <header class="nodehead">
-      <Eyebrow icon={SlidersHorizontal}>CC source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <CcNodeInspector {store} {node} />
   {:else if node && node.kind === 'note'}
-    <header class="nodehead">
-      <Eyebrow icon={Music2}>Note source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <NoteNodeInspector {store} {node} />
   {:else if node && node.kind === 'osc'}
-    <header class="nodehead">
-      <Eyebrow icon={RadioTower}>OSC source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <OscNodeInspector {store} {node} />
   {:else if node && node.kind === 'randomMod'}
-    <header class="nodehead">
-      <Eyebrow icon={Dice5}>Random source</Eyebrow>
-      <span class="grow"></span>
-      <IconButton icon={Trash2} label="Remove node" variant="soft" size={14} onclick={() => store.removeNode(node)} />
-    </header>
+    {@render modSourceHead(node)}
     <RandomModNodeInspector {store} {node} />
   {:else if node && node.kind === 'output'}
     <!-- protected graph anchor: KIND_OPTS excludes `output`, so the shared kind selector
@@ -140,6 +135,8 @@
       <ModifierNodeInspector {store} {node} />
     {:else if node.kind === 'scope'}
       <ScopeNodeInspector {store} {node} />
+    {:else if node.kind === 'splice'}
+      <SpliceNodeInspector {store} {node} />
     {:else}
       <ContainerNodeInspector {store} {node} />
     {/if}
@@ -252,10 +249,6 @@
     display: inline-flex;
     flex: 1;
     min-width: 0;
-  }
-  /* source-node header (no kind selector): eyebrow, spacer, remove */
-  .nodehead .grow {
-    flex: 1;
   }
   .kindsel :global(.sel-trigger) {
     font-weight: 700;

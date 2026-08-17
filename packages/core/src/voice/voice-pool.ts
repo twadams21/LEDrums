@@ -8,7 +8,8 @@
  * (the engine, which owns transport), never read from a global clock.
  */
 import { canvasEffectId } from '../canvas/ids';
-import type { PlayAction } from './eval-graph';
+import { resolveVoiceLife } from '../effects/voice-life';
+import type { MixInputDraft, PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
 import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
 
@@ -23,6 +24,9 @@ export interface SpawnDeps {
   busById: Map<string, Bus>;
   latched: Map<string, string | null>;
   timeMs: number;
+  /** Transport bpm at spawn — converts a `beats`-unit life declaration to ms, the same way
+      the effect converts internally. See {@link resolveVoiceLife}. */
+  bpm: number;
   /** Eval state prefix (pad / slot key) the spawning action belongs to — tagged onto the
       voice so origin-keyed liveness scans (R13 delay-overlap Mix) can be pad-scoped. `''`
       for non-graph spawns (section looks). */
@@ -154,11 +158,13 @@ export class VoicePool {
     // A canvas play node's scene doc is authoritative: it hosts the scene's adapter id
     // (`canvas:<sceneId>`, resolved by the effects registry) through the SAME bridge path
     // a hosted generator takes — no dispatch fork (locked dec 7).
-    slot.generatorId = a.mixInputs?.length
+    slot.generatorId = a.mixInputs?.length || a.spliceInputs?.length
       ? (effect.generatorId ?? null)
       : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
-    slot.mixInputs = a.mixInputs?.map((input, index): MixInput | null => {
+    /** Realise a composite member (Mix branch or splice) into a sub-voice. A member whose
+        effect or generator can't be resolved is dropped rather than rendered blank. */
+    const toMember = (input: MixInputDraft, index: number): MixInput | null => {
       const inputEffect = deps.effectsById.get(input.effectId);
       if (!inputEffect) return null;
       const generatorId = input.canvasScene ? canvasEffectId(input.canvasScene) : inputEffect.generatorId;
@@ -180,7 +186,31 @@ export class VoicePool {
         opacity: input.opacity,
         originNodeId: input.originNodeId,
       };
-    }).filter((input): input is MixInput => input !== null);
+    };
+    slot.mixInputs = a.mixInputs?.map(toMember).filter((input): input is MixInput => input !== null);
+    // Splice members are index-aligned with `splice.inputBySlot`, so a dropped member would
+    // shift every later slot's content onto the wrong splice. Keep the layout in step by
+    // remapping the slot table through the members that actually survived.
+    if (a.spliceInputs?.length && a.splice) {
+      const kept: MixInput[] = [];
+      const remap = new Map<number, number>();
+      a.spliceInputs.forEach((input, index) => {
+        const member = toMember(input, index);
+        if (!member) return;
+        remap.set(index, kept.length);
+        kept.push(member);
+      });
+      slot.spliceInputs = kept;
+      slot.splice = kept.length
+        ? { ...a.splice, inputBySlot: a.splice.inputBySlot.map((i) => (i < 0 ? -1 : remap.get(i) ?? -1)) }
+        : undefined;
+    } else {
+      slot.spliceInputs = undefined;
+      slot.splice = undefined;
+    }
+    // The engine re-stamps this each frame from its own accumulator; clear it so a reused
+    // pool slot never shows the previous voice's position for one frame.
+    slot.spliceMotionMs = undefined;
     // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
@@ -193,9 +223,20 @@ export class VoicePool {
     slot.params = { ...a.params };
     slot.mixBlendMode = a.mixBlendMode;
     slot.specs = effect.params;
-    slot.attackMs = effect.attackMs;
-    slot.sustainMs = effect.sustainMs;
-    slot.releaseMs = effect.releaseMs;
+    // A node-owned envelope wins over the hosting effect's — see `PlayAction.attackMs`. A
+    // splice authors its own attack/hold/release for the composite voice, so neither the
+    // effect's category envelope nor its life param gets a say in that voice's dwell.
+    slot.attackMs = a.attackMs ?? effect.attackMs;
+    slot.attackEase = a.attackEase;
+    // Sustain follows the effect's OWN life param when it declares one, so the voice outlives
+    // the fade the effect is drawing; attack/release stay on the category envelope (the
+    // internal fade has reached ~0 by release, so the short tail renders nothing anyway).
+    // An authored `lifeEnvelope` takes over from there: its end handle is the voice's end.
+    const life = resolveVoiceLife(slot.generatorId, slot.params, deps.bpm, effect.sustainMs, a.lifeEnvelope);
+    slot.sustainMs = a.sustainMs ?? life.sustainMs;
+    slot.lifeEnvelope = life.envelope;
+    slot.lifeSpanMs = life.spanMs;
+    slot.releaseMs = a.releaseMs ?? effect.releaseMs;
     slot.phase = 'attack';
     slot.level = 0;
     slot.bornAtMs = deps.timeMs;
@@ -236,8 +277,11 @@ function makeVoiceSlot(): Voice {
     liveParams: {},
     specs: EMPTY_SPECS,
     attackMs: 0,
+    attackEase: undefined,
     sustainMs: 0,
     releaseMs: 0,
+    lifeEnvelope: null,
+    lifeSpanMs: 0,
     phase: 'attack',
     level: 0,
     bornAtMs: 0,
@@ -246,6 +290,9 @@ function makeVoiceSlot(): Voice {
     via: '',
     deckGain: 1,
     mixInputs: undefined,
+    spliceInputs: undefined,
+    splice: undefined,
+    spliceMotionMs: undefined,
   };
 }
 

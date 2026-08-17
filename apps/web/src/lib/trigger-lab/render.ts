@@ -100,6 +100,108 @@ function syncMixInputState(input: voice.MixInput, rendered: Voice): void {
 
 let mixScratch: Framebuffer | null = null;
 let mixInputBytes: Uint8Array | null = null;
+/** One byte buffer per splice member, reused across voices + frames (mirrors the core
+    compositor's per-member framebuffers). */
+let spliceBytes: Uint8Array[] = [];
+
+/**
+ * Composite one splice voice into `buf` — the offline mirror of the core compositor's
+ * splice branch. Each member renders once over the voice's whole range, then every band is
+ * revealed from its member's buffer, tinted by that splice's colour. Kept structurally
+ * parallel to core so the preview and real output can't drift on where a splice starts.
+ */
+function renderSpliceVoice(buf: Uint8Array, v: Voice, level: number, sim: Sim, lab: LabModel): void {
+  const cfg = v.splice;
+  const members = v.spliceInputs;
+  if (!cfg || !members?.length) return;
+  const { model } = lab;
+  const ranges = pixelRangesFor(v, lab);
+  if (!ranges.length) return;
+
+  if (spliceBytes.length && spliceBytes[0]!.length !== model.count * 3) spliceBytes = [];
+  while (spliceBytes.length < members.length) spliceBytes.push(new Uint8Array(model.count * 3));
+
+  for (let i = 0; i < members.length; i++) {
+    const member = members[i]!;
+    const bytes = spliceBytes[i]!;
+    bytes.fill(0);
+    const memberVoice = mixInputVoice(member, v);
+    for (const range of ranges) renderGeneratorVoice(bytes, memberVoice, 1, sim, lab, range.start, range.end);
+    syncMixInputState(member, memberVoice);
+  }
+
+  const age = sim.timeMs - v.bornAtMs;
+  // `continuous` free-runs off the shared clock so a hit resumes where the last stopped;
+  // `restart` uses the voice's own age. Mirrors core's compositor.
+  // A pulse on a looping/held voice repeats — mirrors core.
+  const pulseCycleMs =
+    cfg.waitMode === 'pulse' && v.mode !== 'oneshot'
+      ? voice.splicePulseCycleMs(voice.maxCascadeDelayMs(lab.pm, cfg), cfg.envelope)
+      : 0;
+  const motionClock =
+    cfg.motionMode === 'continuous'
+      ? sim.timeMs
+      : cfg.motionMode === 'latched'
+        ? (v.spliceMotionMs ?? 0) // only ran while lit
+        : age;
+  voice.forEachPartitionUnit(lab.pm, ranges, cfg.partition, (unit) => {
+    const len = unit.end - unit.start;
+    const seed = cfg.jitter > 0 ? (cfg.seed + unit.index * 0x9e3779b1) >>> 0 : cfg.seed;
+    const bands = voice.computeSpliceBands(len, cfg.count, cfg.jitter, seed);
+    // Per-unit motion clock on both cascade axes, mirroring core.
+    const delay = voice.unitCascadeDelayMs(
+      voice.spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed),
+      voice.spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
+      cfg,
+    );
+    // `dark`: nothing until this unit's turn — measured on the voice's age, mirroring core.
+
+    const unitAge = voice.unitMotionAge(motionClock, delay);
+    const stepOffset = cfg.chase === 'step' ? voice.chaseStepOffset(unitAge, cfg.chaseMs, cfg.direction) : 0;
+    // Rotation is a static phase on the cut, riding the same shift as the chase.
+    const shift =
+      voice.spliceRotationPx(cfg.rotationDeg, len) +
+      (cfg.chase === 'smooth'
+        ? voice.chasePixelShift(unitAge, cfg.chaseMs, cfg.direction, len)
+        : cfg.chase === 'stagger'
+          ? voice.chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
+          : 0);
+    const feather = voice.spliceFeatherPx(cfg.smudge, bands, len);
+    voice.forEachSpliceSegment(bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
+      const inputIndex = cfg.inputBySlot[slot] ?? -1;
+      if (inputIndex < 0) return; // a blank splice shows nothing
+      // Per-SPLICE reveal (colour cascade on top of the unit's turn), mirroring core.
+      const reveal = delay + voice.colorCascadeDelayMs(slot, cfg);
+      if (cfg.waitMode !== 'lit' && reveal > 0 && age < reveal) return;
+      const ownAge = pulseCycleMs > 0 ? (age - reveal) % pulseCycleMs : age - reveal;
+      const unitLevel =
+        cfg.waitMode === 'pulse'
+          ? voice.unitEnvelopeLevel(ownAge, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
+          : cfg.waitMode === 'fade'
+            ? voice.unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
+            : 1;
+      if (unitLevel <= 0) return;
+      const src = spliceBytes[inputIndex]!;
+      const colour = voice.spliceTintColour(cfg.colors[slot]);
+      const span = bandEnd - bandStart;
+      for (let i = 0; i < span; i++) {
+        const p = unit.start + bandStart + i;
+        const j3 = p * 3;
+        let r = src[j3]! / 255;
+        let g = src[j3 + 1]! / 255;
+        let b = src[j3 + 2]! / 255;
+        if (r <= 0 && g <= 0 && b <= 0) continue;
+        const w = (span <= 1 ? w0 : w0 + (w1 - w0) * (i / span)) * unitLevel;
+        if (w <= 0) continue;
+        if (colour) ({ r, g, b } = voice.tintPixel(r, g, b, colour, cfg.tint));
+        // Accumulate: across a smudge two splices write the same pixel with weights summing to 1.
+        buf[j3] = Math.min(255, buf[j3]! + Math.round(r * w * level * 255));
+        buf[j3 + 1] = Math.min(255, buf[j3 + 1]! + Math.round(g * w * level * 255));
+        buf[j3 + 2] = Math.min(255, buf[j3 + 2]! + Math.round(b * w * level * 255));
+      }
+    });
+  });
+}
 
 /** Composite every live voice into `buf` (RGB triples), additive over black. */
 export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
@@ -109,6 +211,13 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   for (const v of sim.voices) {
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
+
+    // Splice: members rendered whole, then shown through moving bands. Ahead of the Mix
+    // branch because the two are mutually exclusive (a splice's content is its own splices).
+    if (v.spliceInputs?.length && v.splice) {
+      renderSpliceVoice(buf, v, level, sim, lab);
+      continue;
+    }
 
     if (v.mixInputs?.length) {
       if (!mixScratch || mixScratch.pixelCount !== lab.pm.pixelCount) mixScratch = new Framebuffer(lab.pm.pixelCount);
@@ -251,6 +360,9 @@ function renderGeneratorVoice(
       playing: true,
     },
     triggers: genTriggers,
+    // Parity with the core bridge (generator-bridge.ts): an authored envelope owns the voice's
+    // decay, so the generator suppresses its own age fade instead of doubling up under it.
+    authoredDecay: v.lifeEnvelope != null,
   };
 
   genScratch.clear();

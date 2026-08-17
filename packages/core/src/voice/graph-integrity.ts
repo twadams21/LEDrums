@@ -71,7 +71,7 @@ function isFlowEdge(edge: GraphEdge): boolean {
 }
 
 function isRenderLeafCandidate(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier' || node.kind === 'scope';
+  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'splice' || node.kind === 'modifier' || node.kind === 'scope';
 }
 
 function edgeIdFor(existing: Set<string>, base: string): string {

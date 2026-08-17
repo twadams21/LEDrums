@@ -64,6 +64,24 @@ export interface EffectGenerator<State = unknown> {
    * {@link EffectTimebase}.
    */
   timebase?: EffectTimebase;
+  /**
+   * Declares that one of this effect's own params governs how long its visuals last, so the
+   * host voice's envelope can be derived from the INSTANCE's value instead of the fixed
+   * per-category default. Without this, a voice is reaped on the category envelope (a
+   * `'trigger'` effect dies at ~410ms) no matter what the effect's Life slider says, and the
+   * effect's internal fade never reaches its end — the param appears to do nothing.
+   *
+   * Two shapes, told apart by `factor`:
+   * - A HARD cutoff — the emission is gone at `age >= life`. No factor.
+   * - An exponential decay toward a visibility threshold, where the param is a time CONSTANT
+   *   and the visible tail is a multiple of it (`decayMs: 220` renders for ~1.2s). Declare
+   *   `factor: EXP_TAIL_FACTOR`; sustain becomes `life × factor`.
+   *
+   * `unit: 'beats'` converts at the voice's spawn bpm, matching how the effect itself
+   * converts. Resolved from the registry at spawn ({@link resolveVoiceSustainMs}), so this
+   * never has to cross the wire.
+   */
+  voiceLife?: { key: string; unit: 'ms' | 'beats'; factor?: number };
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

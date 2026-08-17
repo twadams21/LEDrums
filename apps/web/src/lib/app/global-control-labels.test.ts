@@ -9,7 +9,7 @@ const DRUMS = [
 
 const inputMap: InputMap = {
   midiChannel: null,
-  globalControls: {},
+  globalControls: {}, velocityCurves: {},
   zones: [],
   midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
   oscMap: [{ address: '/snare', drumId: 'snare', slot: 2 }],

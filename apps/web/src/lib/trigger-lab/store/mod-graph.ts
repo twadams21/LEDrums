@@ -6,7 +6,8 @@
    guard + undo snapshot). Extracted from store.svelte.ts unchanged in behaviour. */
 
 import type { EffectDef, GraphEdge, GraphNode } from '../sim';
-import { voice, listModifiers } from '@ledrums/core';
+import { voice } from '@ledrums/core';
+import { nodeParamSpecs } from './face-params';
 
 /** A numeric modulation-target row: the param key/label plus its optional range. */
 export interface ModTargetSpec {
@@ -16,22 +17,15 @@ export interface ModTargetSpec {
   max?: number;
 }
 
-/** The numeric params a target node can expose as modulation targets. Play/effect nodes read
-    the resolved `effect` (the store resolves it — it is rune-backed); modifier nodes resolve
-    purely via `listModifiers()`. Non-number params are excluded. */
+/** The numeric params a target node can expose as modulation targets — the declared params
+    (normalized across both spec dialects by `nodeParamSpecs`) filtered to numbers, because
+    only a number can be driven by a modulation source. Play/effect nodes read the resolved
+    `effect` (the store resolves it — it is rune-backed); modifier nodes resolve from the
+    core modifier registry. */
 export function modTargetSpecs(node: GraphNode, effect: EffectDef | undefined): ModTargetSpec[] {
-  if (node.kind === 'play' || node.kind === 'effect') {
-    return (effect?.params ?? [])
-      .filter((s) => s.kind === 'number')
-      .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
-  }
-  if (node.kind === 'modifier') {
-    const def = listModifiers().find((m) => m.id === node.modifierId);
-    return (def?.paramSpec ?? [])
-      .filter((s) => s.type === 'number')
-      .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
-  }
-  return [];
+  return nodeParamSpecs(node, effect)
+    .filter((s) => s.kind === 'number')
+    .map((s) => ({ key: s.key, label: s.label, min: s.min, max: s.max }));
 }
 
 /** The ordered exposed modulation-target rows on a node. */
@@ -46,6 +40,19 @@ export function availableModParams(node: GraphNode, effect: EffectDef | undefine
   return modTargetSpecs(node, effect)
     .filter((s) => !exposed.has(s.key))
     .map((s) => ({ key: s.key, label: s.label }));
+}
+
+/** The param a modulation wire dropped on this node's BODY should land on: its first exposed
+    NUMBER row, else the first number param it could expose. Non-numeric face rows are skipped
+    — since S5 a face row may be an enum or a bool, and those carry no `param:<key>` handle,
+    so a drop that chose one would target a port nothing can evaluate. Undefined when the node
+    declares no number param at all. */
+export function modDropTargetParam(node: GraphNode, effect: EffectDef | undefined): string | undefined {
+  const targets = modTargetSpecs(node, effect);
+  if (targets.length === 0) return undefined;
+  const keys = new Set(targets.map((s) => s.key));
+  const exposed = (node.modInputs ?? []).find((m) => keys.has(m.param));
+  return exposed ? exposed.param : targets[0]!.key;
 }
 
 /** Expose a param as a modulation target (append a node-face row). Returns the new modInputs

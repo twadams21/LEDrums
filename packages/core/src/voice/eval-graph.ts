@@ -16,10 +16,13 @@ import type {
   PlayType,
   Preset,
   ResolvedModifier,
+  EaseSpec,
   Scope,
+  SpliceConfig,
   SwitchOn,
   TriggerGraph,
 } from './types';
+import { resolveSplices } from './splice';
 import type { Mapping } from './modulation';
 import { quantizeSteppedRandom, sampleRandomDistribution } from './modulation';
 import { computeDelayMs } from './delay';
@@ -28,6 +31,7 @@ import { resolveNodeModulations } from './modulation-graph';
 import { compileRenderPlan, type RenderPlan, type RenderPlanCache, type RenderPlanChild } from './render-plan';
 import { intersectScopeTargets } from './scope';
 import type { BlendMode } from '../color/blend';
+import type { CurveValue } from '../model/curve';
 
 // ---- Eval actions (engine-internal) -----------------------------------------
 
@@ -48,6 +52,10 @@ export interface PlayAction {
   /** layer/bus override ('' → the effect's default bus). */
   busId: string;
   params: ParamValues;
+  /** Authored amplitude-over-life curve, carried verbatim from
+      {@link GraphNode.lifeEnvelope} to the spawned voice (S6b). Absent → the voice takes its
+      dwell from the effect's declared life param, exactly as before. */
+  lifeEnvelope?: CurveValue;
   /**
    * Resolved modifier chain for this play node's `mod` input (S28 seam). Carried verbatim to
    * the spawned voice. Populated by graph resolution in S29 (walk `mod` edges, order by
@@ -63,6 +71,23 @@ export interface PlayAction {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: MixInputDraft[];
+  /** Resolved splice layout (bands + chase + tints) when this action came from a `splice`
+      node. Carried verbatim to the voice; the compositor reads it with no graph access. */
+  splice?: SpliceConfig;
+  /** One draft per NON-BLANK splice slot, index-aligned with `splice.inputBySlot`. */
+  spliceInputs?: MixInputDraft[];
+  /**
+   * Per-node envelope override, in milliseconds. When present the voice takes these instead
+   * of the hosting effect's attack/sustain/release — the seam that lets a node own how long
+   * its light stays up. Absent (every node but `splice` today) → the effect's own envelope,
+   * unchanged.
+   */
+  attackMs?: number;
+  sustainMs?: number;
+  releaseMs?: number;
+  /** Curve the attack rises on — carried to the voice so its ramp is eased, and to the splice
+      config so a per-unit attack uses the same shape. */
+  attackEase?: EaseSpec;
   /** Origin graph node this action's layer was produced by (a play/effect node, or the
       Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
       origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
@@ -135,6 +160,10 @@ export interface TriggerCtx {
       musical divisions into milliseconds. Snapshotted at enqueue time; later bpm changes
       must NOT affect already-enqueued fires (the resolved `relativeDelayMs` is stored). */
   bpm: number;
+  /** Beats per bar at the moment the trigger fired. Only the BAR-length divisions read it
+      (`1-bar`/`2-bars`/`4-bars`); everything else is signature-independent, so it is optional
+      and defaults to 4 — a caller that predates bar divisions needs no change. */
+  beatsPerBar?: number;
 }
 
 /**
@@ -243,8 +272,59 @@ function makePlayDraft(state: EvalState, graph: TriggerGraph, node: GraphNode): 
     targetId: node.targetId,
     busId: node.busId,
     params: node.params,
+    lifeEnvelope: node.lifeEnvelope,
     modifiers: mods.length ? mods : undefined,
     modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+    originNodeId: node.id,
+  };
+}
+
+/**
+ * Build the play draft for a `splice` node. The node seeds its own layer, so unlike Mix it
+ * takes no upstream members: its content is the splices themselves, each resolved into a
+ * generator sub-voice (`solid-colour` for a colour-only splice) by {@link resolveSplices}.
+ *
+ * The HOST effect — which supplies the composite voice's bus and its attack/sustain/release
+ * — is the first non-blank splice's effect, the same rule the Mix collector uses for its
+ * first input. Every splice's own params ride on its member draft, so the host's params are
+ * deliberately empty: nothing renders through the host generator itself.
+ *
+ * Returns `null` when every splice is blank, so a splice node with nothing authored emits no
+ * voice at all (again mirroring an empty Mix).
+ */
+function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode, ctx: TriggerCtx): PlayDraft | null {
+  const resolved = resolveSplices(node, ctx.bpm, ctx.beatsPerBar);
+  if (!resolved) return null;
+  const mods = resolveModifierChain(graph, node);
+  const modulations = resolveNodeModulations(graph, node);
+  const host = resolved.members[0]!;
+  const spliceInputs: MixInputDraft[] = resolved.members.map((member) => ({
+    effectId: member.effectId,
+    canvasScene: member.def.canvasScene,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: member.params,
+    opacity: 1,
+    originNodeId: node.id,
+  }));
+  return {
+    effectId: host.effectId,
+    playType: node.playType,
+    mode: node.mode,
+    scope: node.scope,
+    targetId: node.targetId,
+    busId: node.busId,
+    params: {},
+    attackEase: node.spliceAttackEase,
+    attackMs: resolved.envelope.attackMs,
+    sustainMs: resolved.envelope.sustainMs,
+    releaseMs: resolved.envelope.releaseMs,
+    modifiers: mods.length ? mods : undefined,
+    modulations: freezeRandomMappings(modulations.length ? modulations : undefined, state.prng),
+    splice: resolved.config,
+    spliceInputs,
     originNodeId: node.id,
   };
 }
@@ -406,6 +486,36 @@ function evalGraphGen3FromPlan(
         // per-edge latch keys from other converging edges are intentionally dropped (mirrors the
         // Mix collector). Two distinct toggle paths into one Effect thus share a single latch.
         const latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        pushKids(node, { kind: 'play', play: draft }, latchKey);
+        break;
+      }
+      // A splice seeds its own layer, so it behaves exactly like an Effect in the walk:
+      // one firing per trigger however many flow edges converge on it (R14), and the draft
+      // travels downstream through Scope/Modifier/Mix/Output like any other layer.
+      case 'splice': {
+        const draft = makeSpliceDraft(state, graph, node, ctx);
+        if (!draft) break;
+        via.set(node.id, labelFor(node, 'Splice'));
+        if (firedEffects.has(node.id)) break;
+        firedEffects.add(node.id);
+        let latchKey = newEntries.find((entry) => entry.latchKey != null)?.latchKey ?? null;
+        // A LOOPING splice owns its own voice, because nothing else would ever end it: a loop
+        // never releases, so without this a second hit stacks another endless voice and there is
+        // no way to stop either short of a separate Toggle node. Same latch machinery the
+        // `toggle` case uses, applied to the node itself.
+        if (node.mode !== 'oneshot') {
+          const current = state.latched.get(sk);
+          const alive = current ? state.isVoiceAlive(current) : false;
+          if (alive && current) {
+            if ((node.spliceLoopRetrigger ?? 'stop') === 'stop') {
+              state.latched.set(sk, null);
+              actions.push({ kind: 'stop', voiceId: current, via: labelFor(node, 'Splice off') });
+              break;
+            }
+            draft.supersedePriorVoice = true; // restart: re-sync rather than stack
+          }
+          latchKey = sk;
+        }
         pushKids(node, { kind: 'play', play: draft }, latchKey);
         break;
       }

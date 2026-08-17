@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BLEND_MODES } from '../color/blend';
 import { kitSchema, migrateKit, rgbOrderSchema } from '../geometry/kit-schema';
+import { curveValueSchema } from './curve';
 import { globalControlsSchema } from './global-controls';
 
 /** A control source feeds a live value (0..1 conceptually) into a parameter. */
@@ -114,6 +115,15 @@ export const inputMapSchema = z.object({
   zones: z.array(declaredZoneSchema).default([]),
   /** OSC address that drives the master `volume` control. */
   volumeOscAddress: z.string().optional(),
+  /**
+   * Per-DRUM velocity sensitivity, keyed by `drumId` — a transfer curve from the
+   * input's normalised velocity to the velocity the engine sees. Per drum, NOT
+   * per zone (Trent, 2026-08-17: "Kick has 1 sensitivity curve, not each zone of
+   * the kick drum"). A missing entry is the identity, which is why the map is
+   * empty by default and why {@link withVelocityCurve} deletes rather than
+   * stores an identity curve. Applied in {@link applyDrumVelocity}.
+   */
+  velocityCurves: z.record(z.string(), curveValueSchema).default({}),
   /** App-general control bindings (next/prev song + section, …) — see
       {@link globalControlsSchema}. Keyed by action id; absent = unbound. */
   globalControls: globalControlsSchema,

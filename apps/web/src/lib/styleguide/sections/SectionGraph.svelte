@@ -1,28 +1,29 @@
 <script lang="ts">
   /* The graph system, LIVE: the real GraphCanvas (shared SvelteFlow chrome + token
-     theming), the Node Editor drawer (Add palette + Inspector tabs), WireEdge and
-     NodeCard — wired to demo data. Drag nodes, hover to light connected wires, drag
-     handles to wire, Delete to remove, add kinds from the drawer's Add tab. The
+     theming), the on-canvas Add-node popover, WireEdge and NodeCard — wired to demo
+     data. Drag nodes, hover to light connected wires, drag handles to wire, Delete to
+     remove, right-click the canvas (or hit `+`) to add a kind from the popover. The
      locked interaction contract is printed below. */
   import type { Edge, Node } from '@xyflow/svelte';
   import GraphCanvas from '../../app/views/GraphCanvas.svelte';
-  import NodeEditor from '../../app/views/NodeEditor.svelte';
-  import AddPalette, { type AddGroup } from '../../app/views/AddPalette.svelte';
+  import AddNodePopover from '../../app/views/AddNodePopover.svelte';
   import type { FlowApi } from '../../app/views/FlowHandle.svelte';
   import WireEdge from '../../app/views/WireEdge.svelte';
   import GraphDemoNode from '../GraphDemoNode.svelte';
   import { GraphHover } from '../../app/views/graph-hover.svelte';
-  import { kindIcon, tint, kindLabel, modifierName } from '../../app/views/trigger-node-meta';
+  import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
   import { nodeHasInput, nodeHasOutput, type NodeKind } from '../../trigger-lab/sim';
-  import { buildAddGroups, EFFECT_GROUP_KEY, MODIFIER_GROUP_PREFIX } from '../../app/views/add-node-taxonomy';
   import DemoCard from '../DemoCard.svelte';
   import NodeSignalPreview from '../../app/views/NodeSignalPreview.svelte';
   import NodeStatePreview from '../../app/views/NodeStatePreview.svelte';
-  import ParamRowTick from '../../app/views/ParamRowTick.svelte';
+  import FaceParamControl from '../../ui/FaceParamControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import Link2 from '@lucide/svelte/icons/link-2';
-  import { paramRowSignal, previewCtx } from '../../trigger-lab/signal-preview';
+  import Plus from '@lucide/svelte/icons/plus';
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import X from '@lucide/svelte/icons/x';
   import { makeNode } from '../../trigger-lab/sim';
   import { graphThumb } from '../../app/views/graph-thumb';
   import { voice } from '@ledrums/core';
@@ -38,8 +39,14 @@
     demoCcTable.set(voice.ccKey(1, null), v);
     return v;
   };
-  const demoSources = [{ source: { kind: 'lfo', lfo: demoLfo } as voice.ModSource, invert: false }];
-  const demoTick = (tMs: number): number => paramRowSignal(demoSources, previewCtx(tMs, 120, demoCcTable));
+
+  // S5 face-param demo: the three control types a node-face row can carry, live-editable here
+  // exactly as they are on a node card (the same component, no copied markup).
+  let faceSize = $state(0.45);
+  let faceBlend = $state<string>('add');
+  let faceMirror = $state(false);
+  const FACE_BLENDS = ['add', 'over', 'mask'];
+  const fmt2 = (v: number): string => v.toFixed(2).replace(/\.?0+$/, '');
 
   // Wave-4 state-face demo: one node per gating/routing kind, plus a Fire button that
   // stamps the same epoch contract the store's selectedGraphFireAt provides.
@@ -71,8 +78,8 @@
     edges: [{ from: 't', to: 'p' }],
   });
   const railCards = [
-    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0 },
-    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3 },
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0, playing: true },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3, playing: false },
   ];
 
   const face = (kind: NodeKind, sub: string) => ({
@@ -111,30 +118,34 @@
     edges = hover.decorate(edges);
   }
 
-  // Node Editor drawer Add groups: the Stage 1 chooser is exactly 2x2
-  // (Effect / Route / Modulate / Modify), same shape the real Trigger graph builds.
-  const addGroups = $derived<AddGroup[]>(buildAddGroups());
-  // Placement: the drawer adds at the visible canvas centre via the flow instance
-  // (FlowHandle) — the same mechanism the real views use.
+  // The popover is summoned at the invoke point and the node lands there — the same
+  // capture-at-invoke mechanism the real view uses (FlowHandle → screenToFlowPosition).
   let flowApi = $state<FlowApi | null>(null);
   let canvasWrap = $state<HTMLElement | null>(null);
-  function demoCentre(): { x: number; y: number } {
+  let addPopover = $state<{ at: { x: number; y: number }; spawn: { x: number; y: number } } | null>(null);
+  const canvasBox = $derived.by(() => {
+    addPopover;
     const r = canvasWrap?.getBoundingClientRect();
-    if (!flowApi) return { x: 0, y: 0 };
-    return flowApi.screenToFlowPosition(r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : { x: 0, y: 0 });
+    return { w: r?.width ?? 0, h: r?.height ?? 0 };
+  });
+  function openAddPopover(screen?: { x: number; y: number }): void {
+    const rect = canvasWrap?.getBoundingClientRect();
+    if (!rect) return;
+    const point = screen ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    addPopover = {
+      at: { x: point.x - rect.left, y: point.y - rect.top },
+      spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
+    };
   }
-  function handleAdd(id: string, groupKey: string): void {
-    const c = demoCentre();
-    if (groupKey.startsWith(MODIFIER_GROUP_PREFIX)) addMod(id, c.x, c.y);
-    else if (groupKey === EFFECT_GROUP_KEY) add('effect', c.x, c.y);
-    else if (id.startsWith('envelope:')) add('envelope', c.x, c.y);
-    else if (id.startsWith('lfo:')) add('lfo', c.x, c.y);
-    else add(id as NodeKind, c.x, c.y);
+  function handleAdd(kind: NodeKind): void {
+    const c = addPopover?.spawn;
+    if (!c) return;
+    add(kind, c.x, c.y);
   }
 
   let nid = 0;
   const demoSubs: Partial<Record<NodeKind, string>> = {
-    play: 'from palette',
+    effect: 'from palette',
     all: 'all at once',
     random: 'repeat',
     sequence: 'in order',
@@ -142,6 +153,10 @@
     chance: '45%',
     toggle: 'on · off',
     delay: '120ms',
+    modifier: 'add · smear',
+    mix: 'normal',
+    scope: 'whole kit',
+    envelope: 'modulation source',
   };
   function add(kind: NodeKind, cx: number, cy: number): void {
     nodes = [
@@ -151,18 +166,6 @@
         type: 'demo',
         position: { x: cx - 88, y: cy - 24 },
         data: face(kind, demoSubs[kind] ?? ''),
-      },
-    ];
-  }
-  /** Add a modifier node from the category palette (titled with the registry display name). */
-  function addMod(modifierId: string, cx: number, cy: number): void {
-    nodes = [
-      ...nodes,
-      {
-        id: `n${++nid}`,
-        type: 'demo',
-        position: { x: cx - 88, y: cy - 24 },
-        data: { ...face('modifier', 'modifier'), title: modifierName(modifierId) },
       },
     ];
   }
@@ -178,55 +181,75 @@
   </div>
 
   <DemoCard
-    title="Canvas · Node Editor drawer · wires"
+    title="Canvas · Add-node popover · wires"
     src={[
       'lib/app/views/GraphCanvas',
-      'lib/app/views/NodeEditor',
-      'lib/app/views/AddPalette',
+      'lib/app/views/AddNodePopover',
+      'lib/app/views/add-node-taxonomy',
+      'lib/app/views/popover-placement',
+      'lib/app/views/pending-wire',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
+    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. It is a FLAT list of node types and ONE click adds — no search, no taxonomy to browse, no second click; the families that differ only by subtype (Effect / Modifier / Modulate) land on their default and are re-typed in the node's inspector. Rows read their glyph and tint from the node registry (add-node-taxonomy → trigger-node-meta), arrow keys walk them, and a row can also be dragged onto the canvas to place at the drop point. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible. It is summoned a THIRD way (F8): releasing a wire drag in empty canvas opens it AT the release point holding that wire — the header reads 'Add &amp; wire', the list is filtered to the kinds the wire can actually land on (probed against the store's own connect predicate via pending-wire, never a second rule table), rows stop being drag sources, and the pick adds the node AND its wire as ONE undo step. Nothing valid to offer → it doesn't open and the drag just cancels; dismissing leaves no node and no wire."
     wide
   >
-    <div class="canvas-demo">
-      <div class="canvas-cell" bind:this={canvasWrap}>
-        <GraphCanvas
-          bind:nodes
-          bind:edges
-          nodeTypes={{ demo: GraphDemoNode }}
-          edgeTypes={{ wire: WireEdge }}
-          defaultEdgeOptions={{ type: 'wire' }}
-          fitPadding={0.25}
-          onFlow={(f) => (flowApi = f)}
-          onNodeEnter={(id) => {
-            hover.enter(id);
-            restamp();
-          }}
-          onNodeLeave={() => {
-            hover.leave();
-            restamp();
-          }}
-          onConnect={(c) => {
-            edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
-          }}
-        />
+    <div class="canvas-demo" bind:this={canvasWrap}>
+      <GraphCanvas
+        bind:nodes
+        bind:edges
+        nodeTypes={{ demo: GraphDemoNode }}
+        edgeTypes={{ wire: WireEdge }}
+        defaultEdgeOptions={{ type: 'wire' }}
+        fitPadding={0.25}
+        onFlow={(f) => (flowApi = f)}
+        onPaneContextMenu={(e) => {
+          e.preventDefault();
+          openAddPopover({ x: e.clientX, y: e.clientY });
+        }}
+        onNodeEnter={(id) => {
+          hover.enter(id);
+          restamp();
+        }}
+        onNodeLeave={() => {
+          hover.leave();
+          restamp();
+        }}
+        onConnect={(c) => {
+          edges = [...edges, { id: `e${c.source}-${c.target}-${++nid}`, source: c.source, target: c.target, type: 'wire' }];
+        }}
+      />
+      <div class="add-affordance">
+        <IconButton icon={Plus} label="Add node" variant="soft" tooltipSide="left" onclick={() => openAddPopover()} />
       </div>
-      <NodeEditor>
-        {#snippet add()}
-          <AddPalette groups={addGroups} onAdd={handleAdd} />
-        {/snippet}
-        {#snippet inspector()}
-          <p class="insp-hint">In the app, the selected node's editor mounts here (see the Trigger / Patch views).</p>
-        {/snippet}
-      </NodeEditor>
+      {#if addPopover}
+        <AddNodePopover
+          at={addPopover.at}
+          bounds={canvasBox}
+          onAdd={handleAdd}
+          onClose={() => (addPopover = null)}
+        />
+      {/if}
     </div>
   </DemoCard>
 
   <DemoCard
-    title="Signal previews · node-face live ticks"
+    title="Inspector slideover (store-free stub)"
+    src={['lib/app/InspectorSlideover', 'lib/app/overlay-dismiss']}
+    note="A faithful markup stub of the Inspector slideover — the live one mounts inside the graph canvas and reads the shell selection, so it cannot be mounted inline here. It is pinned to the CANVAS's right edge, not the window's (F2): the drum preview and the Buses / Layers docks stay visible and interactive beside it, and a clip layer keeps the slide inside the canvas box. It is an OVERLAY, never a push — it floats on the canvas surface (above the drop ring and lint strip, below the summoned add-node popover) and the canvas geometry never changes when it opens; the canvas's own furniture (the + affordance, the lint strip) steps inboard instead. A node selection opens it; Escape or a canvas-background click clears the selection and closes it; changing selection swaps the content in place. Width rides the same persisted pane size (280–520, default 340) via a Splitter on its left edge."
+  >
+    <div class="slideover-stub">
+      <PanelHeader icon={SlidersHorizontal} title="Inspector">
+        <IconButton icon={X} label="Close inspector" tooltip={false} />
+      </PanelHeader>
+      <p class="insp-hint">The selected node's per-kind editor mounts here (see lib/app/docks/Inspector).</p>
+    </div>
+  </DemoCard>
+
+  <DemoCard
+    title="Signal previews · node-face live signals"
     src={[
       'lib/app/views/NodeSignalPreview',
-      'lib/app/views/ParamRowTick',
       'lib/trigger-lab/SignalFace',
       'lib/trigger-lab/signal-preview',
     ]}
@@ -244,11 +267,64 @@
         <NodeSignalPreview kind="cc" ccValue={demoCc} />
         <span class="sig-label">CC · live value bar + readout</span>
       </div>
-      <div class="sig-cell">
-        <span class="sig-row"><span class="sig-plabel">brightness</span><ParamRowTick sample={demoTick} /></span>
-        <span class="sig-label">Param row · live value tick</span>
-      </div>
     </div>
+  </DemoCard>
+
+  <DemoCard
+    title="Face param control · in-place editing on a node row"
+    src={['lib/ui/FaceParamControl', 'lib/ui/drag-number', 'lib/trigger-lab/store/face-params']}
+    note="S5: an exposed param row IS a modulation target row — one list (node.modInputs), two views (the node face and the inspector's Parameters section). A node card is 176–260px wide, so the row carries a COMPACT slider: a 48px rail (press jumps, drag tracks) plus a value field (grab and sweep, scroll, arrow keys); an enum is a cycle chip (shift-click reverses), a bool a small switch. A drag publishes on every move but takes ONE undo checkpoint (store.beginGesture / endGesture). Wired rows badge the modulation and stay editable — the value you see and edit is the BASE, the same contract as ColorSwatch. Only number rows carry a param:&#123;key&#125; handle; nothing can modulate an enum or a bool."
+  >
+    <ul class="face-demo">
+      <li class="face-row">
+        <span class="sig-plabel">size</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          ariaLabel="Size"
+          onChange={(v) => (faceSize = v as number)}
+        />
+      </li>
+      <li class="face-row">
+        <span class="sig-plabel">depth</span>
+        <FaceParamControl
+          kind="number"
+          value={faceSize}
+          display={fmt2(faceSize)}
+          min={0}
+          max={1}
+          step={0.01}
+          modulated
+          ariaLabel="Depth"
+          onChange={(v) => (faceSize = v as number)}
+        />
+      </li>
+      <li class="face-row">
+        <span class="sig-plabel">blend</span>
+        <FaceParamControl
+          kind="enum"
+          value={faceBlend}
+          display={faceBlend}
+          options={FACE_BLENDS}
+          ariaLabel="Blend"
+          onChange={(v) => (faceBlend = v as string)}
+        />
+      </li>
+      <li class="face-row">
+        <span class="sig-plabel">mirror</span>
+        <FaceParamControl
+          kind="bool"
+          value={faceMirror}
+          display={faceMirror ? 'on' : 'off'}
+          ariaLabel="Mirror"
+          onChange={(v) => (faceMirror = v as boolean)}
+        />
+      </li>
+    </ul>
   </DemoCard>
 
   <DemoCard
@@ -270,7 +346,7 @@
   <DemoCard
     title="Graphs rail (store-free stub)"
     src="lib/app/views/TriggerGraphsRail"
-    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store: the fire indicator rides store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there) and ticks a quiet accent marker in the card's left edge, decaying over --dur-150; right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. One accent bar inside each card's left edge (shown lit on the first card) carries both live states: a fire flashes it and decays over --dur-150, riding store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there), while a graph still holding loop/hold voices (store.playingGraphs) HOLDS it lit until release. Same bar, two lifetimes — never a second mark. Right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
     <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">
@@ -289,6 +365,7 @@
             </svg>
             <span class="stub-scrim"></span>
             <span class="stub-meta"><span class="stub-name">{cItem.name}</span><span class="stub-sub">{cItem.sub}</span></span>
+            {#if cItem.playing}<span class="stub-bar"></span>{/if}
           </button>
         {/each}
         <button type="button" class="stub-new">+ Add graph</button>
@@ -308,8 +385,9 @@
       <li><strong>Per-band handles.</strong> A value+bands switch emits one source handle per band (<code>band-&#123;i&#125;</code>) so each band wires a different child (<code>BandSwitchNode</code>).</li>
       <li><strong>Modifier wires read distinctly.</strong> A modifier node (media-effect: Trail / Bloom…) wires to a play/modifier <code>mod</code> input — a dashed <code>--role-mod</code> wire, separate from trigger-flow wires. Drop-anywhere routes by source kind: a wire from a modifier lands on the target's <code>mod</code> input.</li>
       <li><strong>Modulation wires are a third role.</strong> A modulation source (Envelope / LFO / CC) wires from its output into a target's exposed <code>param:&#123;key&#125;</code> row — a dotted <code>--role-modulation</code> wire, distinct from both flow and modifier wires. Params are exposed target-side (the Inspector's Parameters section); each exposed param is its own node-face row + scoped input handle, and drop-anywhere from a source lands on a param row.</li>
+      <li><strong>A face param row and a modulation target row are the same row.</strong> "Put this param on the node face" ≡ "expose it for modulation" — one gesture, one list (<code>node.modInputs</code>), rendered as face rows on the card and as the Parameters section in the inspector. The row is editable in place (<code>FaceParamControl</code>: number drag / enum cycle chip / bool switch), and one drag is one undo. A NUMBER row also carries the <code>param:&#123;key&#125;</code> handle; an enum or bool row does not, because nothing can modulate it. A wired row keeps its control and badges the modulation — the value shown is the BASE, as on <code>ColorSwatch</code>.</li>
       <li><strong>Sources preview their signal on the node face.</strong> Envelope/LFO/CC nodes draw a live preview (shape + phase cursor, waveform, value bar) and each exposed param row shows a live value tick — all sampled through core (<code>signal-preview.ts</code>) and driven by the ONE shared thumbnail ticker (<code>SignalFace</code>), viewport-gated, reduced-motion → a static frame. The signal animates; the chrome never does.</li>
-      <li><strong>Adding lives in the Node Editor drawer.</strong> The drawer beside the canvas has two tabs: <strong>Add</strong> - a sticky 2x2 Stage 1 chooser (Effect / Route / Modulate / Modify) above a scrollable Stage 2 of real node-card previews; <strong>Inspector</strong> - the selected node's editor. Stage 2 starts empty, Add selection resets when Add is left, click adds near the visible canvas centre, and drag places at the drop point. Nothing floats over the canvas.</li>
+      <li><strong>Adding and inspecting are both on-canvas overlays, never columns.</strong> Right-click the canvas (or press <code>+</code>) to summon the Add-node popover AT that point — a flat list of node types, one click each — and the node lands where it was summoned. Selecting a node opens the Inspector slideover pinned to the canvas's right edge; the canvas geometry never changes for either, and the drum preview and docks stay visible and usable beside them.</li>
       <li><strong>Delete / Backspace</strong> removes the selection.</li>
     </ul>
   </div>
@@ -317,13 +395,27 @@
 
 <style>
   .canvas-demo {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    height: 400px;
-  }
-  .canvas-cell {
+    position: relative;
     min-width: 0;
     min-height: 0;
+    height: 400px;
+  }
+  .add-affordance {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 6;
+  }
+  /* inspector-slideover stub — mirrors InspectorSlideover.svelte's chrome (see the src pointer) */
+  .slideover-stub {
+    display: grid;
+    grid-template-rows: auto auto;
+    width: 340px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
   }
   .insp-hint {
     margin: 0;
@@ -350,19 +442,38 @@
     color: var(--text-faint);
     font-family: var(--font-mono);
   }
-  .sig-row {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    background: var(--surface-inset);
-    border: 1px solid var(--border-faint);
-    border-radius: var(--radius-1);
-  }
   .sig-plabel {
     font-size: var(--text-2xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
+  }
+  /* face-param demo — the node-card footer row, at the card's real metrics (22px tall,
+     ~226px of usable width) so the styleguide shows the actual squeeze the control lives in */
+  .face-demo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 226px;
+  }
+  .face-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    height: 22px;
+    padding: 0 var(--space-2);
+    background: var(--surface-inset);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .face-row .sig-plabel {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .contract {
     margin-top: var(--space-5);
@@ -436,6 +547,18 @@
   }
   .stub-card:hover {
     border-color: var(--border-strong);
+  }
+  /* the now-playing / fire bar, shown held (the live rail fades it in and out) */
+  .stub-bar {
+    position: absolute;
+    left: 5px;
+    top: 12px;
+    bottom: 12px;
+    z-index: 2;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    opacity: 0.85;
   }
   .stub-card.sel {
     border-color: var(--accent);

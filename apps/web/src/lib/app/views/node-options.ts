@@ -60,6 +60,13 @@ export const POLY_OPTS = [
 // is never a conversion target either.
 export const KIND_OPTS = NODE_KINDS.filter((k) => !voice.isModSourceKind(k) && k !== 'output').map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
 
+/** Modulation SOURCE kinds, as an in-place switcher (F3 item 11) — the Add-node menu's
+    Modulate group at KIND level. The group's palette items go one level finer (an envelope
+    shape preset, an LFO waveform), but those dimensions already have their own control inside
+    each source's own editor, so a switcher offering them would be a second way to set the same
+    thing. Icons and tints are the palette's own. */
+export const MOD_SOURCE_OPTS = NODE_KINDS.filter((k) => voice.isModSourceKind(k)).map((k) => ({ value: k, label: kindLabel[k], icon: kindIcon[k], iconColor: tint[k] }));
+
 export const SWITCH_OPTS: Array<{ value: SwitchOn; label: string }> = [
   { value: 'value', label: 'value' },
   { value: 'section', label: 'section' },
@@ -89,6 +96,8 @@ export const DELAY_MODE_OPTS: Array<{ value: 'time' | 'beats'; label: string }> 
 
 /** Friendly label for a musical division string (e.g. `'dotted-1/8'` → `'1/8 dotted'`). */
 function divisionLabel(d: string): string {
+  if (d === '1-bar') return '1 bar';
+  if (d.endsWith('-bars')) return d.replace('-bars', ' bars');
   if (d.startsWith('dotted-')) return d.replace('dotted-', '') + ' dotted';
   if (d.startsWith('triplet-')) return d.replace('triplet-', '') + ' triplet';
   return d;
@@ -123,8 +132,17 @@ export function num(v: ParamValue | undefined, d: number): number {
 /** Format a param value for a read-out: numbers honour the spec's step (2dp for
     sub-integer steps) + unit; booleans render as "on" / "off". */
 export function fmt(spec: ParamSpec, v: ParamValue | undefined): string {
-  if (typeof v === 'number') return `${spec.step && spec.step < 1 ? v.toFixed(2) : Math.round(v)}${spec.unit ?? ''}`;
-  return v ? 'on' : 'off';
+  if (typeof v !== 'number') return v ? 'on' : 'off';
+  const n = spec.step && spec.step < 1 ? v.toFixed(2) : String(Math.round(v));
+  return `${n}${unitSuffix(spec.unit)}`;
+}
+
+/** A unit as it should read after a number: symbols hug it (`90°`, `0.50×`), words get a
+    space (`4 beats`, `1500 ms`). Word units glued to the digits — "4beats", "0.25rev/beat" —
+    are what let a Life slider be misread as seconds. */
+function unitSuffix(unit: string | undefined): string {
+  if (!unit) return '';
+  return /^[a-z]/i.test(unit) ? ` ${unit}` : unit;
 }
 
 /** A pixel span read-out ("first – last"), or an em-dash when there is none. */

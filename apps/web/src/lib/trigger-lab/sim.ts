@@ -21,8 +21,20 @@
      - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
    ============================================================================= */
 
-import { voice, type BlendMode, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
-import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
+import {
+  lifeEnvelopeGain,
+  resolveVoiceLife,
+  voice,
+  voice as coreVoice,
+  type BlendMode,
+  type CurveValue,
+  type PixelModel,
+  type EffectCategory,
+  type EffectTag,
+  type PlayType,
+  type ResolvedModifier,
+} from '@ledrums/core';
+import { type EaseSpec, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -215,11 +227,23 @@ export interface Voice {
   modulations?: Mapping[];
   mixBlendMode?: BlendMode;
   mixInputs?: voice.MixInput[];
+  /** Splice members — one per non-blank splice slot; mirrors the core Voice field. */
+  spliceInputs?: voice.MixInput[];
+  /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. */
+  splice?: voice.SpliceConfig;
+  /** Accumulated motion time for a `latched` splice — mirrors the core Voice field. */
+  spliceMotionMs?: number;
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
+  /** Curve the attack rises on (absent → linear) — mirrors the core Voice field. */
+  attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
+  /** authored amplitude-over-life curve + the real-time width of its x axis, both resolved at
+      spawn through the SAME core helper the engine uses. Mirrors the core Voice fields. */
+  lifeEnvelope?: CurveValue | null;
+  lifeSpanMs?: number;
   phase: VoicePhase;
   level: number;
   bornAtMs: number;
@@ -342,6 +366,20 @@ export class Sim {
       Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
       store's WebMIDI forward so the preview tracks CC exactly like the connected engine; the
       render sweep reads it per frame via `render.ts` `modCtxFor`. */
+  /**
+   * Accumulated motion time per `(pad, splice node)` for `latched` splices — the offline
+   * mirror of the engine's own map. Advanced only while a voice for that key is alive, and
+   * carried across voices so the movement resumes where the fade left it.
+   */
+  private spliceMotionMs = new Map<string, number>();
+
+  /**
+   * The kit geometry, set by the store once the lab model is built. Needed only so a cascading
+   * splice voice can be extended to outlive its cascade (the span depends on how many hoops and
+   * drums there are) — everything else in the sim is geometry-free.
+   */
+  pixelModel: PixelModel | null = null;
+
   ccTable = new Map<string, number>();
 
   /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
@@ -353,6 +391,13 @@ export class Sim {
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
     for (const e of effects) this.effectsById.set(e.id, e);
+    // Reserved fill effect for colour-only splices — registered here exactly as the core
+    // engine registers it at `setShow`, so a splice colour previews without the authored
+    // effect list carrying a def for it (see core `voice/splice.ts`).
+    // Prefer a POLY layer, mirroring the engine: a mono layer makes every new splice voice
+    // release the last, which cuts each hoop off as a sequencer moves on.
+    const fillBus = buses.find((b) => b.polyphony === 'poly') ?? buses[0];
+    this.effectsById.set(voice.SPLICE_FILL_EFFECT_ID, voice.spliceFillEffectDef(fillBus?.id ?? ''));
     this.presets = presets;
     for (const p of presets) this.presetsById.set(p.id, p);
   }
@@ -501,6 +546,50 @@ export class Sim {
     // generator effects differ per fire yet replay exactly given the same inputs.
     // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
     const seed = deriveSeedFromCounter(this.voiceSeq + 1);
+    // Dwell + amplitude curve, resolved by the SAME core function the engine's pool calls —
+    // the two paths agree by construction rather than by two copies of the arithmetic.
+    const life = resolveVoiceLife(effect.generatorId, a.params, this.bpm, effect.sustainMs, a.lifeEnvelope);
+    /** Realise a composite member (Mix branch or splice) into a sub-voice — the offline
+        mirror of core `VoicePool.spawn`'s `toMember`. */
+    const toMember = (input: voice.MixInputDraft, index: number): voice.MixInput | null => {
+      const inputEffect = this.effect(input.effectId);
+      if (!inputEffect?.generatorId) return null;
+      return {
+        generatorId: inputEffect.generatorId,
+        scope: input.scope,
+        targetId: input.targetId,
+        sourceDrumId,
+        velocity,
+        seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
+        params: { ...input.params },
+        liveParams: {},
+        specs: inputEffect.params,
+        modulations: input.modulations,
+        genState: null,
+        modifiers: input.modifiers,
+        modState: undefined,
+        opacity: input.opacity,
+        originNodeId: input.originNodeId,
+      };
+    };
+    // Splice members stay index-aligned with `splice.inputBySlot`; a dropped member would
+    // slide every later slot's content onto the wrong splice, so remap the slot table.
+    const spliceMembers: voice.MixInput[] = [];
+    const spliceRemap = new Map<number, number>();
+    a.spliceInputs?.forEach((input, index) => {
+      const member = toMember(input, index);
+      if (!member) return;
+      spliceRemap.set(index, spliceMembers.length);
+      spliceMembers.push(member);
+    });
+    const spliceConfig =
+      a.splice && spliceMembers.length
+        ? { ...a.splice, inputBySlot: a.splice.inputBySlot.map((i) => (i < 0 ? -1 : spliceRemap.get(i) ?? -1)) }
+        : undefined;
+    // Via the `coreVoice` alias: the local `const voice` below shadows the `voice` namespace for
+    // this whole function (TDZ), which is the same trap the `seed` comment above warns about.
+    // The span depends on the MODEL (hoops per drum, drum count) — see `extendForCascade`.
+    const cascadeExtraMs = spliceConfig && this.pixelModel ? coreVoice.maxCascadeDelayMs(this.pixelModel, spliceConfig) : 0;
     const voice: Voice = {
       id: `v${++this.voiceSeq}`,
       effectId: a.effectId,
@@ -513,35 +602,26 @@ export class Sim {
       seed,
       generatorId: effect.generatorId ?? null,
       genState: null,
-      mixInputs: a.mixInputs?.map((input, index): voice.MixInput | null => {
-        const inputEffect = this.effect(input.effectId);
-        if (!inputEffect?.generatorId) return null;
-        return {
-          generatorId: inputEffect.generatorId,
-          scope: input.scope,
-          targetId: input.targetId,
-          sourceDrumId,
-          velocity,
-          seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
-          params: { ...input.params },
-          liveParams: {},
-          specs: inputEffect.params,
-          modulations: input.modulations,
-          genState: null,
-          modifiers: input.modifiers,
-          modState: undefined,
-          opacity: input.opacity,
-          originNodeId: input.originNodeId,
-        };
-      }).filter((input): input is voice.MixInput => input !== null),
+      mixInputs: a.mixInputs?.map(toMember).filter((input): input is voice.MixInput => input !== null),
+      spliceInputs: spliceConfig ? spliceMembers : undefined,
+      splice: spliceConfig,
       modifiers: a.modifiers,
       modState: undefined,
       modulations: a.modulations,
       mixBlendMode: a.mixBlendMode,
       params: { ...a.params },
-      attackMs: effect.attackMs,
-      sustainMs: effect.sustainMs,
-      releaseMs: effect.releaseMs,
+      // A node-owned envelope wins over the hosting effect's, mirroring core's VoicePool.
+      attackMs: a.attackMs ?? effect.attackMs,
+      attackEase: a.attackEase,
+      // Sustain follows the effect's OWN life param when it declares one, and an authored
+      // `lifeEnvelope` takes over from there (mirrors core VoicePool.spawn through the same
+      // core helper) — otherwise the category envelope reaps the voice before the effect's
+      // internal fade finishes and its Decay slider looks inert. A splice's own hold beats
+      // both: that voice's dwell is authored on the node.
+      sustainMs: a.sustainMs ?? life.sustainMs,
+      lifeEnvelope: life.envelope,
+      lifeSpanMs: life.spanMs,
+      releaseMs: a.releaseMs ?? effect.releaseMs,
       phase: 'attack',
       level: 0,
       bornAtMs: this.timeMs,
@@ -552,9 +632,34 @@ export class Sim {
       pad: this.stateKey,
       originNodeId: a.originNodeId,
     };
+    // A cascading splice has to outlive its cascade or the far side of the kit never lights;
+    // mirrors the engine's `shapeCascadeVoice`.
+    if (cascadeExtraMs > 0) voice.sustainMs += cascadeExtraMs;
+    // Under a per-unit envelope the voice's own attack must get out of the way, or the unit
+    // revealed at age 0 ramps on a squared curve while later ones ramp linearly. Moved into the
+    // hold rather than dropped, so the voice still outlives the last unit. Mirrors the engine.
+    if (voice.splice?.waitMode === 'fade' || voice.splice?.waitMode === 'pulse') {
+      voice.sustainMs += voice.attackMs;
+      voice.attackMs = 0;
+    }
     this.voices.push(voice);
     if (a.latchKey) this.latched.set(a.latchKey, voice.id);
     return voice;
+  }
+
+  /** Advance the latched-motion accumulator once per `(pad, splice node)` with a live voice,
+      then stamp it onto those voices. Mirrors the engine's `advanceLatchedSpliceMotion`. */
+  private advanceLatchedSpliceMotion(dtMs: number): void {
+    const advanced = new Set<string>();
+    for (const v of this.voices) {
+      if (v.splice?.motionMode !== 'latched') continue;
+      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
+      if (!advanced.has(key)) {
+        advanced.add(key);
+        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dtMs));
+      }
+      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
+    }
   }
 
   private release(v: Voice): void {
@@ -644,18 +749,25 @@ export class Sim {
     this.beat += (dtMs / 60000) * this.bpm;
 
     this.drainPendingFires();
+    this.advanceLatchedSpliceMotion(dtMs);
 
     for (const v of this.voices) {
       const age = this.timeMs - v.bornAtMs;
+      // The authored life envelope multiplies the attack/sustain level and nothing else —
+      // release already ramps from where the curve left the voice. Byte-identical to the
+      // pre-envelope tick when `lifeEnvelope` is absent. Mirrors core `advanceEnvelopes`.
       if (v.phase === 'attack') {
-        v.level = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+        // Eased like the engine's `advanceEnvelopes`, so a curve reads the same in the preview.
+        const t = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+        v.level = v.attackEase ? coreVoice.ease(v.attackEase, t) : t;
         if (v.level >= 1) v.phase = 'sustain';
+        v.level *= lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
       } else if (v.phase === 'sustain') {
         if (v.mode === 'oneshot') {
-          v.level = 1;
+          v.level = lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
           if (age >= v.attackMs + v.sustainMs) this.release(v);
         } else {
-          v.level = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480));
+          v.level = (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480))) * lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
         }
       } else {
         const bus = this.bus(v.busId);

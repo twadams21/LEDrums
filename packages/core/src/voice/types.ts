@@ -4,6 +4,7 @@
  * and unit-testable. The authored content is the {@link Show} aggregate; everything
  * else here is either authored sub-state or the engine-internal {@link Voice}.
  */
+import type { CurveValue } from '../model/curve';
 import type { ResolvedModifier } from '../modifiers/types';
 import type { PlayType } from '../effects/vocabulary';
 import type { CanvasScene } from '../canvas/types';
@@ -200,6 +201,7 @@ export type LegacyGraphNodeKind = 'play';
 export type CanonicalGraphNodeKind =
   | 'trigger'
   | 'effect'
+  | 'splice'
   | 'all'
   | 'random'
   | 'sequence'
@@ -218,7 +220,7 @@ export type CanonicalGraphNodeKind =
   | 'osc'
   | 'randomMod';
 
-export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
+export type BlockKind = LegacyGraphNodeKind | 'effect' | 'splice' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
 /**
  * `modifier` is NOT a block kind — it takes no part in trigger-flow evaluation (it never
  * fires children). It is a media-effects node wired to a play node's `mod` input handle;
@@ -234,6 +236,169 @@ export type BlockKind = LegacyGraphNodeKind | 'effect' | 'all' | 'random' | 'seq
  */
 export type RandomDistribution = 'linear' | 'gaussian' | 'exponential' | 'logarithmic' | 'triangular' | 'beta' | 'stepped';
 export type NoteModMode = 'gate' | 'velocity';
+
+// ---- Splice (one node, many bands) ------------------------------------------
+
+/**
+ * What a `splice` node cuts up. The node's own scope (kit / drum / hoop, narrowed by any
+ * upstream Scope) decides WHICH pixels it owns; this decides how those pixels are divided:
+ * - `'hoop'`   — each hoop is cut into `count` splices, so a chase reads as a spin AROUND
+ *                every ring at once (the default: hoops are the kit's natural circles).
+ * - `'drum'`   — each drum's whole pixel run is cut into `count`, so a splice spans hoops.
+ * - `'scope'`  — the owned range is cut into `count` once, end to end.
+ */
+export type SplicePartition = 'hoop' | 'drum' | 'scope';
+
+/**
+ * How a splice node's content moves. All three read the same rate (a musical division or free
+ * milliseconds) and the same direction; they differ in WHAT moves and whether it glides.
+ * - `'off'`     — bands hold still.
+ * - `'step'`    — the CONTENT rotates one splice per interval; band geometry stays put (a
+ *                 chase: content hops slot to slot, so the increment is always one splice).
+ * - `'smooth'`  — the band GEOMETRY slides continuously around the range, wrapping at the end
+ *                 (a spin: the whole cut pattern rotates, one lap per interval).
+ * - `'stagger'` — the band GEOMETRY jumps by an authored PIXEL increment each interval: the
+ *                 same material walking round the hoop, but in discrete hops rather than a
+ *                 glide, and at a step size independent of how wide the splices are.
+ */
+export type SpliceChaseMode = 'off' | 'step' | 'smooth' | 'stagger';
+
+/**
+ * The order the partition units start moving in, when a splice node offsets its motion across
+ * them (see {@link SpliceConfig.offsetMs}). "Unit" is a hoop under the `'hoop'` partition and a
+ * drum under `'drum'` — so on a whole drum this is the order the HOOPS fire in.
+ * - `'up'`         — hoop 1 first, climbing the drum.
+ * - `'down'`       — the top hoop first, descending.
+ * - `'outside-in'` — the two outer hoops first, working inward (1, N, 2, N−1, …).
+ * - `'random'`     — a seeded shuffle: stable for the voice's life, different per seed.
+ */
+export type SpliceOrder = 'up' | 'down' | 'outside-in' | 'random';
+
+/**
+ * What a new hit does to a splice's motion.
+ * - `'restart'`    — the hit puts the chase/spin/stagger back to its starting position, so
+ *                    every hit reads as a fresh gesture. (The original behaviour.)
+ * - `'continuous'` — the motion runs off a free clock, so a hit picks up wherever the last
+ *                    one left off and the movement never visibly resets. Every voice from
+ *                    this node shares that clock, which is what keeps successive hits in
+ *                    phase with each other rather than each starting its own timeline. The
+ *                    clock keeps running while the kit is DARK, so a hit after a long gap
+ *                    lands wherever the movement would have travelled unseen.
+ * - `'latched'`    — like continuous, except the movement only advances while the lights are
+ *                    actually up: it freezes at the position it reached as the fade ended,
+ *                    and the next hit carries on from exactly there. The visible motion is
+ *                    therefore continuous ACROSS the silence rather than through it.
+ */
+export type SpliceMotionMode = 'restart' | 'continuous' | 'latched';
+
+/**
+ * What a partition unit does while it waits for its turn in a cascade offset.
+ * - `'lit'`  — it shows its resting cut, standing still until the movement reaches it. The
+ *              kit is fully lit from the first frame and the cascade reads as motion.
+ * - `'dark'` — it emits nothing at all until its turn comes, so the light itself travels
+ *              across the hoops (or drums) rather than the movement travelling through
+ *              already-lit ones. Once lit it stays up for the rest of the voice.
+ * - `'fade'`  — as `'dark'`, but it fades UP over the attack time as its turn arrives and then
+ *               stays lit. Without this only the first arrival ever fades, because the fade a
+ *               `'dark'` unit appears to have is really the VOICE's global attack — which is
+ *               long finished by the time the second one is revealed.
+ * - `'pulse'` — as `'fade'`, and it also holds and fades back OUT as the cascade reaches it,
+ *               then goes dark again: a pulse of light travelling across the kit rather than
+ *               a leading edge that leaves everything lit behind it.
+ * Timed against the VOICE's age, not the motion clock, so it means the same thing under all
+ * three {@link SpliceMotionMode}s — including `continuous`, whose clock has no zero to
+ * measure a delay from.
+ */
+export type SpliceWaitMode = 'lit' | 'dark' | 'fade' | 'pulse';
+
+/**
+ * One splice — what renders inside one band of the partition. Every field is optional
+ * because "blank" is a legitimate, authorable state:
+ *   effect + colour → the effect, tinted toward the colour
+ *   effect, no colour → the effect, untouched
+ *   colour, no effect → a flat fill of that colour (hosted by the `solid-colour` generator)
+ *   neither, or `muted` → blank; the band renders nothing and whatever is underneath shows.
+ */
+export interface SpliceDef {
+  /** `#rrggbb`, or null/absent for "no colour". */
+  color?: string | null;
+  /** Effect id from the same registry the gallery lists. Absent = no effect. */
+  effectId?: string;
+  /** Canvas-scene doc id, when this splice hosts a canvas effect. */
+  canvasScene?: string;
+  /** Param overrides for {@link effectId} (defaults fill the rest). */
+  params?: ParamValues;
+  /** Blank this splice without losing what is authored on it. */
+  muted?: boolean;
+}
+
+/**
+ * The resolved splice layout carried on a play action / voice: everything the compositor
+ * needs to lay bands out and move them, with no access to the graph. Built once at eval
+ * time — the bpm-derived `chaseMs` is snapshotted there exactly like a delay node's
+ * resolved offset, so a later tempo change cannot re-time a voice already in flight.
+ */
+export interface SpliceConfig {
+  count: number;
+  partition: SplicePartition;
+  /** 0..1 random variation in splice LENGTH (0 = every splice the same width). */
+  jitter: number;
+  seed: number;
+  chase: SpliceChaseMode;
+  /** Resolved chase interval in ms (one splice per interval in `step`, one full lap in
+      `smooth`). ≤ 0 disables movement. */
+  chaseMs: number;
+  /** +1 = up the strip / clockwise, −1 = the other way. */
+  direction: 1 | -1;
+  /** Pixels the cut jumps per interval in `'stagger'`. Ignored by the other modes. */
+  incrementPx: number;
+  /**
+   * Milliseconds each partition unit's motion starts AFTER the one before it in {@link order}
+   * — so a chase can climb a drum hoop by hoop instead of every hoop moving in lockstep. 0
+   * (the default) means every unit moves together, which is the previous behaviour exactly.
+   * A unit that has not reached its start shows the cut standing still, not darkness.
+   */
+  offsetMs: number;
+  /** The order units start moving in when {@link offsetMs} is non-zero. */
+  order: SpliceOrder;
+  /** Milliseconds each DRUM's motion starts after the one before it, on top of {@link offsetMs}.
+      Only meaningful under the `'hoop'` partition, where hoops and drums are separate axes — it
+      is what sends a kit-wide splice travelling drum to drum. 0 = every drum together. */
+  drumOffsetMs: number;
+  /** The order drums start moving in when {@link drumOffsetMs} is non-zero. */
+  drumOrder: SpliceOrder;
+  /** Milliseconds each SPLICE starts after the one before it, in {@link colorOrder} — so the
+      colours come on one after another rather than all together. Only visible when
+      {@link waitMode} hides them first; 0 = every colour at once. */
+  colorOffsetMs: number;
+  /** The order the colours come on when {@link colorOffsetMs} is set. */
+  colorOrder: SpliceOrder;
+  /** Where the cut sits around the run, in degrees — a phase offset that rotates every band's
+      start. 0 = the run's own start. */
+  rotationDeg: number;
+  /** 0..1 — how far each splice's colour bleeds into its neighbours across their shared edge.
+      0 is a hard cut. Expressed as a fraction of the average band width, so it reads the same
+      on a small hoop and a big kick. */
+  smudge: number;
+  /** Whether a hit restarts the motion or it free-runs across hits. */
+  motionMode: SpliceMotionMode;
+  /** Whether a unit waiting its turn in the cascade is lit and still, dark, or pulsing. */
+  waitMode: SpliceWaitMode;
+  /** The attack CURVE. Linear brightens far too fast to the eye, because perceived brightness
+      is not linear in output — an ease-in family reads as a smooth swell. Absent → linear, the
+      original behaviour. */
+  attackEase?: EaseSpec;
+  /** The AUTHORED envelope, carried here as well as on the action because `'pulse'` runs it
+      per unit — and the voice's own `sustainMs` is extended to outlive the cascade, so it is
+      no longer the authored hold by the time the compositor sees it. */
+  envelope: { attackMs: number; sustainMs: number; releaseMs: number };
+  /** 0..1 strength of the colour tint applied to an effect splice. */
+  tint: number;
+  /** Per-slot authored colour (null = none), index-aligned with the splice slots. */
+  colors: (string | null)[];
+  /** Splice slot index → index into the voice's `spliceInputs`; −1 = a blank slot. */
+  inputBySlot: number[];
+}
 
 /** `play` is accepted only as a legacy persisted graph alias. Gen3 authoring and
     normalisation must emit canonical `effect` nodes instead. */
@@ -280,6 +445,21 @@ export interface GraphNode {
    */
   targetId?: string;
   params: ParamValues;
+  /**
+   * The voice's amplitude over its own life, authored as a shape instead of a number
+   * (S6b). Optional and additive: absent — the overwhelmingly common case — the voice
+   * behaves exactly as it did before envelopes existed, taking its dwell from the effect's
+   * declared {@link import('../effects/types').EffectGenerator.voiceLife} param.
+   *
+   * The x axis is normalised over that same declared life, so the curve carries no units of
+   * its own and `beats` still resolves once, at spawn. `h1` is therefore both the end of the
+   * shape and the end of the voice: at `x = 1` the voice lives exactly as long as its Life
+   * slider says, and dragging `h1` left shortens it.
+   *
+   * Only meaningful on play/effect nodes. See `effects/voice-life.ts` for the resolution and
+   * `voice/envelope-tick.ts` for the single place it is applied.
+   */
+  lifeEnvelope?: CurveValue;
   env: EnvMap;
   // modifier (only meaningful when kind === 'modifier')
   /** Which {@link ModifierDef} this modifier node applies (registry id). Optional +
@@ -291,6 +471,92 @@ export interface GraphNode {
   bypass?: boolean;
   /** Buffer-level route composition mode for `kind === 'mix'`. */
   mixBlendMode?: BlendMode;
+  // splice (only meaningful when kind === 'splice'). All optional + additive: a splice node
+  // authored before any of these existed still resolves, because `resolveSpliceConfig`
+  // (voice/splice.ts) supplies every default.
+  /** The authored splices, in slot order. Fewer entries than {@link spliceCount} cycle:
+      slot i takes `splices[i % splices.length]`, so 2 colours over 8 splices alternate. */
+  splices?: SpliceDef[];
+  /** How many splices each partition unit is cut into. */
+  spliceCount?: number;
+  splicePartition?: SplicePartition;
+  /** 0..1 random variation in splice length. */
+  spliceJitter?: number;
+  /** Seed for the length jitter — the same seed always cuts the same pattern. */
+  spliceSeed?: number;
+  spliceChase?: SpliceChaseMode;
+  /** `'beats'` → resolve {@link spliceDivision} against the bpm at spawn; `'time'` → use
+      {@link spliceRateMs} directly. Same two-mode shape as the delay node. */
+  spliceRateMode?: 'time' | 'beats';
+  /** Chase interval in milliseconds (used when `spliceRateMode === 'time'`). */
+  spliceRateMs?: number;
+  /** Musical division (used when `spliceRateMode === 'beats'`) — the `DELAY_DIVISIONS` set
+      in `delay.ts`, resolved by the same `computeDelayMs`, so a 1/8 chase and a 1/8 delay
+      can never disagree about what an eighth note is. */
+  spliceDivision?: string;
+  /** Chase direction: +1 or −1. */
+  spliceDirection?: 1 | -1;
+  /** Pixels the cut jumps each interval when `spliceChase === 'stagger'`. Independent of
+      splice width on purpose — a 3px stagger over 12px splices creates a slow crawl the
+      splice-wide `'step'` chase cannot express. */
+  spliceIncrementPx?: number;
+  /** How the per-unit motion offset is expressed: resolved against bpm (`'beats'`) or taken
+      as milliseconds (`'time'`). Absent → `'beats'`. */
+  spliceOffsetMode?: 'time' | 'beats';
+  /** Per-unit motion offset in milliseconds (used when `spliceOffsetMode === 'time'`).
+      Absent/0 → every unit moves together. */
+  spliceOffsetMs?: number;
+  /** Musical division for the per-unit offset (used when `spliceOffsetMode === 'beats'`).
+      Absent → no offset: a division only takes effect once one is chosen, so simply picking
+      an order can never start a cascade the author did not ask for. */
+  spliceOffsetDivision?: string;
+  /** The order units start moving in when an offset is set. Absent → `'up'`. */
+  spliceOrder?: SpliceOrder;
+  /** Per-DRUM cascade offset (hoop partition only): how the movement travels across the kit,
+      independently of how it travels up each drum. Same two-mode shape as the others. */
+  spliceDrumOffsetMode?: 'time' | 'beats';
+  spliceDrumOffsetMs?: number;
+  spliceDrumOffsetDivision?: string;
+  /** The order drums start moving in. Absent → `'up'`. */
+  spliceDrumOrder?: SpliceOrder;
+  /** 0..1 blend of each splice's colour into its neighbours. Absent/0 → hard-edged bands. */
+  spliceSmudge?: number;
+  /** Whether a hit restarts this splice's motion or it free-runs. Absent → `'restart'`. */
+  spliceMotionMode?: SpliceMotionMode;
+  /** Per-SPLICE cascade: the order the colours come on, and how far apart. Needs a
+      {@link spliceWaitMode} other than `'lit'` to be visible — otherwise everything is already
+      lit and there is no arrival to stagger. */
+  spliceColorOffsetMode?: 'time' | 'beats';
+  spliceColorOffsetMs?: number;
+  spliceColorOffsetDivision?: string;
+  spliceColorOrder?: SpliceOrder;
+  /** Rotate the cut around each hoop/drum, 0..360°. Absent → 0. */
+  spliceRotationDeg?: number;
+  /** What a unit does before its cascade turn arrives. Absent → `'lit'` (the original
+      behaviour: the whole kit lights at once and only the MOVEMENT cascades). */
+  spliceWaitMode?: SpliceWaitMode;
+  // Splice envelope. A splice node owns its own attack/hold/fade rather than inheriting the
+  // first splice's effect, so how long the lights stay up after a hit is authorable — and so
+  // reordering the splices cannot silently change the envelope. Absent → the defaults in
+  // `splice.ts`.
+  /** Rise time in ms. */
+  spliceAttackMs?: number;
+  /** How long it stays at full after the attack, in ms — the "stays on for" control. */
+  spliceHoldMs?: number;
+  /** Fade-out time in ms. */
+  spliceReleaseMs?: number;
+  /** Curve the attack rises on. Absent → linear. */
+  spliceAttackEase?: EaseSpec;
+  /**
+   * What a hit does to a splice that is ALREADY looping. `'stop'` (the default) makes the node
+   * self-toggling — hit to start, hit again to stop — which is the only way to end a loop
+   * without a separate Toggle node, and also stops repeated hits stacking loops forever.
+   * `'restart'` re-syncs it from the top instead, superseding the running voice.
+   * Meaningless on a one-shot, which ends by itself.
+   */
+  spliceLoopRetrigger?: 'stop' | 'restart';
+  /** 0..1 strength of a splice colour's tint over its effect. */
+  spliceTint?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
   /** Ordered list of params this node has EXPOSED as modulation targets (doc 10). Empty /
       absent by default; the target Inspector's "Add parameter" appends one. Each entry
@@ -534,6 +800,23 @@ export interface Voice {
       this voice's downstream modifiers/output mask continue. Undefined for ordinary voices. */
   mixInputs?: MixInput[];
   /**
+   * Splice members — one per NON-BLANK splice slot (a colour-only splice hosts the
+   * `solid-colour` generator, so every member is uniformly a generator sub-voice). Each is
+   * rendered once per frame into its own buffer; {@link splice} then decides which band of
+   * pixels each one is actually shown through. Undefined for ordinary voices.
+   */
+  spliceInputs?: MixInput[];
+  /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. Present exactly
+      when this voice came from a `splice` node. */
+  splice?: SpliceConfig;
+  /**
+   * Accumulated motion time in ms for a `'latched'` splice. The engine advances it only while
+   * a voice for this (pad, splice node) is alive and carries the total ACROSS voices, so the
+   * movement resumes exactly where the fade left it. Stamped onto the voice each frame; the
+   * other two motion modes ignore it.
+   */
+  spliceMotionMs?: number;
+  /**
    * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
    * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from
    * graph topology at spawn (S29); `undefined`/empty → the voice takes the unchanged
@@ -568,8 +851,22 @@ export interface Voice {
   /** The spawning effect's param specs (by reference) — drives modulation ranges. */
   specs: ParamSpec[];
   attackMs: number;
+  /** Curve the attack rises on (absent → linear). Carried from a node that authors one; the
+      per-frame envelope advance eases the ramp with it. */
+  attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
+  /**
+   * Authored amplitude-over-life curve, copied from the spawning node (S6b) and already
+   * normalised. `null`/absent → no envelope, and every level below is what it always was.
+   */
+  lifeEnvelope?: CurveValue | null;
+  /**
+   * Real-time width of {@link lifeEnvelope}'s x axis, resolved at spawn (ms, beats already
+   * converted at the spawn bpm). Stored so the per-frame tick stays a pure multiply with no
+   * registry lookup and no allocation.
+   */
+  lifeSpanMs?: number;
   phase: VoicePhase;
   level: number;
   bornAtMs: number;

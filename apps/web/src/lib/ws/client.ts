@@ -22,6 +22,13 @@ import type { EngineStats, Project } from '@ledrums/core';
 
 export type ConnectionState = 'connecting' | 'open' | 'closed';
 
+/**
+ * One raw input as the server heard it — pre-curve value, plus the drum the
+ * zone-map claimed it for. Derived from the wire message rather than restated,
+ * so a field added to the echo reaches every consumer or fails the typecheck.
+ */
+export type InputEcho = Omit<Extract<ServerMessage, { t: 'input' }>, 't'>;
+
 /** Minimal structural type so the client is testable with a fake WebSocket. */
 export interface WSLike {
   binaryType: string;
@@ -52,7 +59,7 @@ export interface WSCallbacks {
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
-  onInput?: (kind: 'midi' | 'osc', label: string, value: number, note?: number, channel?: number) => void;
+  onInput?: (input: InputEcho) => void;
   onMonitor?: (event: MonitorEvent) => void;
   onSend?: (msg: ClientMessage) => void;
   onProjects?: (names: string[]) => void;
@@ -249,9 +256,11 @@ export class WSClient {
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
         break;
-      case 'input':
-        this.cb.onInput?.(msg.kind, msg.label, msg.value, msg.note, msg.channel);
+      case 'input': {
+        const { t: _t, ...input } = msg;
+        this.cb.onInput?.(input);
         break;
+      }
       case 'monitor':
         this.cb.onMonitor?.(msg.event);
         break;

@@ -188,6 +188,10 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'An always-on base layer that slowly swirls in 3D over the kit and never goes fully dark — the "content that lives underneath everything", quietly moving so the rig is never a black box.',
     tags: ['ambient', 'wash', '3d', 'kit-wide'],
   },
+  'solid-colour': {
+    description: 'One flat authored colour over whatever it is scoped to, shaped only by the voice envelope — the plain colour fill: a held wash, a hard hit flash, or the colour inside a single splice.',
+    tags: ['ambient', 'wash', 'kit-wide'],
+  },
   'breathing-kit': {
     description: 'The whole kit slowly breathes — one sine LFO drives brightness in and out while the hue drifts gently — so the rig pulses as a single calm body between the action.',
     tags: ['ambient', 'wash', 'kit-wide'],

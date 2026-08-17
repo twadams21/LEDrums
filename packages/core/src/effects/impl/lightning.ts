@@ -3,6 +3,8 @@ import { clamp01, mulberry32, type Vec3 } from '../../math';
 import type { PixelModel } from '../../geometry/pixel-model';
 import { buildPixelGrid, forEachPixelWithin, type PixelGrid } from '../../geometry/pixel-grid';
 import { pnum, type EffectGenerator } from '../types';
+import { EXP_TAIL_FACTOR } from '../visibility';
+import { lifeFade } from '../life-fade';
 
 const STEPS = 14;
 
@@ -36,6 +38,9 @@ export const lightning: EffectGenerator<LightningState> = {
   name: 'Lightning',
   category: 'particle',
   timebase: 'voice',
+  // Not a cutoff: the bolt fades on exp(-age/decayMs),
+  // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
+  voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 0.35, min: 0, max: 1, step: 0.01 },
@@ -61,7 +66,7 @@ export const lightning: EffectGenerator<LightningState> = {
     const stepLen = Math.max(20, ctx.model.bounds.size / STEPS);
 
     for (const trig of ctx.triggers) {
-      const env = trig.velocity * Math.exp(-trig.ageMs / decay);
+      const env = trig.velocity * lifeFade(ctx, Math.exp(-trig.ageMs / decay));
       if (env < 0.004) continue;
       const drum = ctx.model.drumById.get(trig.drumId);
       if (!drum) continue;

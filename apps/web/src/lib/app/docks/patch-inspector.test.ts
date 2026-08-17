@@ -140,7 +140,7 @@ describe('hoopPixelSpan', () => {
 
 describe('input-map zone editing', () => {
   const base: InputMap = { midiChannel: null,
-    globalControls: {}, zones: [], midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
+    globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }], oscMap: [], volumeOscAddress: '/vol' };
 
   it('reads the note / address for a (drumId, slot)', () => {
     expect(zoneMidiNote(base, 'kick', 0)).toBe(36);
@@ -279,7 +279,7 @@ describe('boundTriggerFor', () => {
 });
 
 describe('nextZoneSlot', () => {
-  const empty: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+  const empty: InputMap = { midiChannel: null, globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [], oscMap: [] };
 
   it('hands out the lowest free slot on the drum', () => {
     expect(nextZoneSlot(empty, 'kick')).toBe(0);
@@ -295,7 +295,7 @@ describe('nextZoneSlot', () => {
   it('counts bound-but-undeclared slots, and only this drum', () => {
     const m: InputMap = {
       midiChannel: null,
-      globalControls: {},
+      globalControls: {}, velocityCurves: {},
       zones: [],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
       oscMap: [{ address: '/s', drumId: 'snare', slot: 1 }],
@@ -305,7 +305,7 @@ describe('nextZoneSlot', () => {
   });
 
   it('keeps going past the old 8-slot cap — a drum may have as many zones as it needs', () => {
-    let m: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+    let m: InputMap = { midiChannel: null, globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [], oscMap: [] };
     for (let i = 0; i < 12; i++) m = addDeclaredZone(m, 'kick', nextZoneSlot(m, 'kick'));
     expect(zoneSlotsForDrum(m, 'kick')).toHaveLength(12);
     expect(nextZoneSlot(m, 'kick')).toBe(12);
@@ -313,7 +313,7 @@ describe('nextZoneSlot', () => {
 });
 
 describe('zone names', () => {
-  const empty: InputMap = { midiChannel: null, globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+  const empty: InputMap = { midiChannel: null, globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [], oscMap: [] };
 
   it('falls back to the slot default name until the zone is renamed', () => {
     expect(zoneLabel(empty, 'kick', 0)).toBe('center');
@@ -346,7 +346,7 @@ describe('zone names', () => {
 
 describe('declared zones (add / remove / relabel + effective set)', () => {
   const empty: InputMap = { midiChannel: null,
-    globalControls: {}, zones: [], midiNotes: [], oscMap: [] };
+    globalControls: {}, velocityCurves: {}, zones: [], midiNotes: [], oscMap: [] };
 
   it('addDeclaredZone persists a slot with no binding (idempotent)', () => {
     const m = addDeclaredZone(empty, 'kick', 2);
@@ -358,7 +358,7 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
   it('zoneSlotsForDrum unions declared + bound slots, deduped and sorted', () => {
     const m: InputMap = {
       midiChannel: null,
-    globalControls: {},
+    globalControls: {}, velocityCurves: {},
       zones: [{ drumId: 'kick', slot: 5, label: '' }],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 0 }],
       oscMap: [{ address: '/k', drumId: 'kick', slot: 0 }, { address: '/x', drumId: 'snare', slot: 1 }],
@@ -369,7 +369,7 @@ describe('declared zones (add / remove / relabel + effective set)', () => {
   it('removeZone drops the declaration AND every binding for the slot', () => {
     const m: InputMap = {
       midiChannel: null,
-    globalControls: {},
+    globalControls: {}, velocityCurves: {},
       zones: [{ drumId: 'kick', slot: 1, label: '' }],
       midiNotes: [{ note: 36, drumId: 'kick', slot: 1 }],
       oscMap: [{ address: '/k', drumId: 'kick', slot: 1 }],
