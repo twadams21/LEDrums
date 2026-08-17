@@ -54,6 +54,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
 | `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
 | `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |
+| `wire-drop[:<from>]`| the same palette as a wire released in EMPTY canvas summons it — holding that wire, list filtered to what it can reach (`flow` default · `modifier` · `mod-source`) |
 | `settings`  | open the app Settings dialog |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.

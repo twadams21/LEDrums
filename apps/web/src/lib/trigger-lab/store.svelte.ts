@@ -2807,6 +2807,20 @@ export class TriggerLab {
     }
   }
 
+  /** Add a node AND land a wire on it as ONE undoable action (F8: a connection drag released in
+      empty space summons the palette, and the picked node takes the wire the drag was making).
+      `wire` runs only when the node was actually added, and folds into the add's undo checkpoint
+      — one Ctrl/Z pops the node and its wire together, exactly as R04's Effect auto-wire does.
+
+      `wire` must route through the normal {@link connect} path (the view hands it the same
+      `dropConnect` a wire released ON a node body takes), so a wire the graph would refuse by
+      hand is refused here too — one mutation path, one validity table. */
+  addNodeWired(kind: NodeKind, x: number, y: number, wire: (node: GraphNode) => void): GraphNode | null {
+    const node = this.addNode(kind, x, y);
+    if (node) this.batchIntoCurrentUndo(() => wire(node));
+    return node;
+  }
+
   /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
       a chosen modifier directly, vs `addNode('modifier')` which seeds the first one). Unknown
       ids are still placed — the inspector/chain runner tolerate an unresolved modifierId. */

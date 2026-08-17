@@ -41,3 +41,22 @@ class SpliceArmedPreviewState {
 }
 
 export const spliceArmedPreview = new SpliceArmedPreviewState();
+
+/* F8 pending-wire palette. Releasing a connection drag in empty space summons the Add-node
+   popover holding the wire — a drag-only state, so the shot seam pins the wire it would hold and
+   TriggerGraphView (under `import.meta.env.DEV`) opens the popover at the canvas centre with the
+   list filtered to the kinds that wire can land on. Inert + dead-code-eliminated in production. */
+class PendingWirePreviewState {
+  /** The pending wire pinned for a capture (`{ nodeId, type, handleId }`), else null. */
+  current = $state<{ nodeId: string; type: 'source' | 'target'; handleId: string | null } | null>(null);
+
+  set(wire: { nodeId: string; type: 'source' | 'target'; handleId: string | null }): void {
+    this.current = wire;
+  }
+
+  clear(): void {
+    this.current = null;
+  }
+}
+
+export const pendingWirePreview = new PendingWirePreviewState();
