@@ -60,9 +60,9 @@
     "target": ".grail"
   },
   "graphs-rail-playing": {
-    "state": "view:trigger,graph:kick,mode:loop,fire:kick",
-    "target": ".grail",
-    "settle": 2500
+    "state": "view:trigger,fire:chase-bands,mode:loop,wait:1500,refire",
+    "target": ".gcard.sel",
+    "settle": 1500
   },
   "visualizer": {
     "state": "view:trigger",

@@ -73,8 +73,8 @@
     edges: [{ from: 't', to: 'p' }],
   });
   const railCards = [
-    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0 },
-    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3 },
+    { hk: '1', name: 'Kick', sub: 'Kick · center', thumb: railThumbA, sel: true, links: 0, playing: true },
+    { hk: '2', name: 'Snare', sub: 'Snare · rim', thumb: railThumbB, sel: false, links: 3, playing: false },
   ];
 
   const face = (kind: NodeKind, sub: string) => ({
@@ -288,7 +288,7 @@
   <DemoCard
     title="Graphs rail (store-free stub)"
     src="lib/app/views/TriggerGraphsRail"
-    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. The live rail binds the TriggerLab store: the fire indicator rides store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there) and ticks a quiet accent marker in the card's left edge, decaying over --dur-150; right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
+    note="A faithful markup stub of the Trigger view's left Graphs rail — hotkey-badged graph cards with real graphThumb mini-maps (dots tinted by node kind), the linked badge a graph placed in more than one section wears, and the dashed add-graph card, stacked vertically. One accent bar inside each card's left edge (shown lit on the first card) carries both live states: a fire flashes it and decays over --dur-150, riding store.graphFireAt (one per-graph signal — keyboard, local hit and server-engine fires all land there), while a graph still holding loop/hold voices (store.playingGraphs) HOLDS it lit until release. Same bar, two lifetimes — never a second mark. Right-click carries rename/duplicate/remove/delete, and it resizes via Splitter (size persisted in paneSizes); section switching lives outside the rail."
   >
     <div class="rail-stub">
       <PanelHeader icon={Workflow} title="Graphs">
@@ -307,6 +307,7 @@
             </svg>
             <span class="stub-scrim"></span>
             <span class="stub-meta"><span class="stub-name">{cItem.name}</span><span class="stub-sub">{cItem.sub}</span></span>
+            {#if cItem.playing}<span class="stub-bar"></span>{/if}
           </button>
         {/each}
         <button type="button" class="stub-new">+ Add graph</button>
@@ -468,6 +469,18 @@
   }
   .stub-card:hover {
     border-color: var(--border-strong);
+  }
+  /* the now-playing / fire bar, shown held (the live rail fades it in and out) */
+  .stub-bar {
+    position: absolute;
+    left: 5px;
+    top: 12px;
+    bottom: 12px;
+    z-index: 2;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    opacity: 0.85;
   }
   .stub-card.sel {
     border-color: var(--accent);
