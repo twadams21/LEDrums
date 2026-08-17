@@ -22,7 +22,8 @@ import { clamp01, hashString, mulberry32 } from '../math';
 import { drumHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { PixelRange } from '../modifiers/types';
 import { computeDelayMs } from './delay';
-import type { EffectDef, GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
+import { ease } from './easing';
+import type { EaseSpec, EffectDef, GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
 
 /** Splice count defaults + the authoring ceiling. The cap is a legibility bound, not a
     perf one: past a few dozen splices per hoop each band is a pixel or two wide. */
@@ -315,9 +316,15 @@ export function spliceRotationPx(rotationDeg: number, len: number): number {
  * negative age) it is 0, and once its fade has run out it is 0 again — which is what makes the
  * light a travelling pulse rather than a leading edge.
  */
-export function unitEnvelopeLevel(ownAgeMs: number, attackMs: number, sustainMs: number, releaseMs: number): number {
+export function unitEnvelopeLevel(
+  ownAgeMs: number,
+  attackMs: number,
+  sustainMs: number,
+  releaseMs: number,
+  attackEase?: EaseSpec,
+): number {
   if (!(ownAgeMs > 0)) return 0;
-  if (ownAgeMs < attackMs) return ownAgeMs / attackMs;
+  if (ownAgeMs < attackMs) return attackEase ? ease(attackEase, ownAgeMs / attackMs) : ownAgeMs / attackMs;
   const held = attackMs + sustainMs;
   if (ownAgeMs <= held) return 1;
   const fade = Math.max(1, releaseMs);
@@ -331,10 +338,11 @@ export function unitEnvelopeLevel(ownAgeMs: number, attackMs: number, sustainMs:
  * back out — this is for a cascade that should leave the kit lit behind it, with each arrival
  * easing in rather than snapping.
  */
-export function unitFadeInLevel(ownAgeMs: number, attackMs: number): number {
+export function unitFadeInLevel(ownAgeMs: number, attackMs: number, attackEase?: EaseSpec): number {
   if (!(ownAgeMs > 0)) return 0;
   if (!(attackMs > 0)) return 1;
-  return ownAgeMs >= attackMs ? 1 : ownAgeMs / attackMs;
+  if (ownAgeMs >= attackMs) return 1;
+  return attackEase ? ease(attackEase, ownAgeMs / attackMs) : ownAgeMs / attackMs;
 }
 
 /** A unit's total cascade delay: its place on the hoop axis plus its place on the drum axis. */
@@ -612,6 +620,7 @@ export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): R
       motionMode: node.spliceMotionMode ?? 'restart',
       waitMode: node.spliceWaitMode ?? 'lit',
       envelope,
+      attackEase: node.spliceAttackEase,
       tint: clamp01(node.spliceTint ?? 1),
       colors,
       inputBySlot,

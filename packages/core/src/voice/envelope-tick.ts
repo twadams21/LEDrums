@@ -5,6 +5,7 @@
  * No allocation, no array churn — they mutate the pre-sized pool in place.
  */
 import { releaseVoice } from './voice-pool';
+import { ease } from './easing';
 import type { Bus, Voice } from './types';
 
 /** Advance every active voice's envelope level for this frame (attack → sustain →
@@ -14,7 +15,10 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
     if (!v.active) continue;
     const age = timeMs - v.bornAtMs;
     if (v.phase === 'attack') {
-      v.level = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+      // An authored attack curve shapes the voice's own ramp too — otherwise picking a curve
+      // would do nothing in the wait modes that have no per-unit envelope.
+      const t = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+      v.level = v.attackEase ? ease(v.attackEase, t) : t;
       if (v.level >= 1) v.phase = 'sustain';
     } else if (v.phase === 'sustain') {
       if (v.mode === 'oneshot') {

@@ -221,6 +221,7 @@ export class VoicePool {
     slot.specs = effect.params;
     // A node-owned envelope wins over the hosting effect's — see `PlayAction.attackMs`.
     slot.attackMs = a.attackMs ?? effect.attackMs;
+    slot.attackEase = a.attackEase;
     slot.sustainMs = a.sustainMs ?? effect.sustainMs;
     slot.releaseMs = a.releaseMs ?? effect.releaseMs;
     slot.phase = 'attack';
@@ -263,6 +264,7 @@ function makeVoiceSlot(): Voice {
     liveParams: {},
     specs: EMPTY_SPECS,
     attackMs: 0,
+    attackEase: undefined,
     sustainMs: 0,
     releaseMs: 0,
     phase: 'attack',

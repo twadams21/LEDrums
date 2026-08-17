@@ -16,6 +16,7 @@ import type {
   PlayType,
   Preset,
   ResolvedModifier,
+  EaseSpec,
   Scope,
   SpliceConfig,
   SwitchOn,
@@ -79,6 +80,9 @@ export interface PlayAction {
   attackMs?: number;
   sustainMs?: number;
   releaseMs?: number;
+  /** Curve the attack rises on — carried to the voice so its ramp is eased, and to the splice
+      config so a per-unit attack uses the same shape. */
+  attackEase?: EaseSpec;
   /** Origin graph node this action's layer was produced by (a play/effect node, or the
       Mix node for a composite). Carried so the engine/sim can tag the spawned voice for
       origin-keyed liveness — the signal delay-overlap Mix composition reads (R13). */
@@ -307,6 +311,7 @@ function makeSpliceDraft(state: EvalState, graph: TriggerGraph, node: GraphNode,
     targetId: node.targetId,
     busId: node.busId,
     params: {},
+    attackEase: node.spliceAttackEase,
     attackMs: resolved.envelope.attackMs,
     sustainMs: resolved.envelope.sustainMs,
     releaseMs: resolved.envelope.releaseMs,

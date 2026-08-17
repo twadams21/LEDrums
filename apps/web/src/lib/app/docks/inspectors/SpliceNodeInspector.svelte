@@ -16,6 +16,7 @@
   import CommitInput from '../../../ui/CommitInput.svelte';
   import ColorField from '../../../ui/ColorField.svelte';
   import IconButton from '../../../ui/IconButton.svelte';
+  import EasePicker from '../../../ui/EasePicker.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -427,7 +428,7 @@
     </section>
 
     <section class="group">
-      <h4 class="grouptitle">Hold</h4>
+      <h4 class="grouptitle">Brightness envelope</h4>
 
       <Field layout="row" label="Layer">
         <Select
@@ -459,7 +460,17 @@
         />
       </Field>
 
-      <Field layout="row" label="Hold" unit="ms">
+      <!-- Stacked: EasePicker is a family Select PLUS a direction control, which the row
+           layout's control column squeezes to the point of clipping. -->
+      <Field label="Curve">
+        <EasePicker
+          value={node.spliceAttackEase ?? { fn: 'linear', dir: 'in' }}
+          onChange={(v) => store.setSpliceSetting(node, { spliceAttackEase: v })}
+          ariaLabel="Splice attack curve"
+        />
+      </Field>
+
+      <Field layout="row" label="Sustain" unit="ms">
         <CommitInput
           type="number"
           value={node.spliceHoldMs ?? voice.DEFAULT_SPLICE_HOLD_MS}
@@ -467,11 +478,11 @@
           max={voice.MAX_SPLICE_ENVELOPE_MS}
           step={10}
           onCommit={(v) => store.setSpliceSetting(node, { spliceHoldMs: Number(v) })}
-          ariaLabel="Splice hold milliseconds"
+          ariaLabel="Splice sustain milliseconds"
         />
       </Field>
 
-      <Field layout="row" label="Fade" unit="ms">
+      <Field layout="row" label="Decay" unit="ms">
         <CommitInput
           type="number"
           value={node.spliceReleaseMs ?? voice.DEFAULT_SPLICE_RELEASE_MS}
@@ -479,13 +490,14 @@
           max={voice.MAX_SPLICE_ENVELOPE_MS}
           step={10}
           onCommit={(v) => store.setSpliceSetting(node, { spliceReleaseMs: Number(v) })}
-          ariaLabel="Splice fade milliseconds"
+          ariaLabel="Splice decay milliseconds"
         />
       </Field>
 
       <p class="hint">
-        How long the lights stay up after a hit: rise, hold at full, then fade. A One-shot runs the
-        whole shape; Loop and Hold stay up until the voice is stopped.
+        How long the lights stay up after a hit: attack up, sustain at full, then decay away. A
+        One-shot runs the whole shape; Loop and Hold stay up until the voice is stopped. A linear
+        attack reads as brightening too fast — an ease-in curve swells more evenly.
       </p>
       <p class="hint">
         {layerIsMono

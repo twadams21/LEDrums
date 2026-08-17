@@ -65,8 +65,12 @@ Decide two things before writing code:
   `gen:<generatorId>`; core must never assume that shape. If your node needs an effect the author
   did not choose, register a reserved def in `engine.setShow` (and the sim constructor) — see
   `spliceFillEffectDef`.
-- **A 3-option `SegmentedControl` overflows the Node editor at `layout="row"`.** Hit by both the
-  reset node and the splice node. Use the default stacked `Field` layout for 3-ups.
+- **Multi-option controls overflow the Node editor at `layout="row"`.** Hit four times now: a
+  3-up SegmentedControl (reset node, splice), a 4-up (splice wait mode), a wordy 4-up (splice
+  order — that one became a `Select`), and `EasePicker`, which is a Select PLUS a direction
+  control. Use the default stacked `Field` layout for anything wider than one control.
+- **An empty-string option value reads as UNSET to `Select`**, which then shows its placeholder
+  instead of the option's own label. Use a sentinel (`@none`) for "nothing selected" entries.
 - Two controls side by side in an inspector row truncate at the panel's real width — one per line.
 - Seed new nodes with working CONTENT in `addNode`. A node that renders nothing on its first hit
   reads as broken, not as unconfigured.

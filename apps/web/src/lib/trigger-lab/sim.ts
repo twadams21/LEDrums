@@ -22,7 +22,7 @@
    ============================================================================= */
 
 import { voice, voice as coreVoice, type BlendMode, type PixelModel, type EffectCategory, type EffectTag, type PlayType, type ResolvedModifier } from '@ledrums/core';
-import { type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
+import { type EaseSpec, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -224,6 +224,8 @@ export interface Voice {
   /** resolved param snapshot at spawn. */
   params: ParamValues;
   attackMs: number;
+  /** Curve the attack rises on (absent → linear) — mirrors the core Voice field. */
+  attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
   phase: VoicePhase;
@@ -591,6 +593,7 @@ export class Sim {
       params: { ...a.params },
       // A node-owned envelope wins over the hosting effect's, mirroring core's VoicePool.
       attackMs: a.attackMs ?? effect.attackMs,
+      attackEase: a.attackEase,
       sustainMs: a.sustainMs ?? effect.sustainMs,
       releaseMs: a.releaseMs ?? effect.releaseMs,
       phase: 'attack',
@@ -725,7 +728,9 @@ export class Sim {
     for (const v of this.voices) {
       const age = this.timeMs - v.bornAtMs;
       if (v.phase === 'attack') {
-        v.level = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+        // Eased like the engine's `advanceEnvelopes`, so a curve reads the same in the preview.
+        const t = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
+        v.level = v.attackEase ? coreVoice.ease(v.attackEase, t) : t;
         if (v.level >= 1) v.phase = 'sustain';
       } else if (v.phase === 'sustain') {
         if (v.mode === 'oneshot') {

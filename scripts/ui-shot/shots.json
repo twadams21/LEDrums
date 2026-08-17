@@ -181,5 +181,10 @@
   "splice-motion": {
     "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger",
     "target": "Node editor"
+  },
+  "splice-envelope": {
+    "state": "view:trigger,new-graph,add:splice,select:splice",
+    "target": "Node editor",
+    "viewport": "1600x2400"
   }
 }

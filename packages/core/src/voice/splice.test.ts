@@ -23,6 +23,8 @@ import {
   spliceFeatherPx,
   spliceOrderIndex,
   tintPixel,
+  unitEnvelopeLevel,
+  unitFadeInLevel,
   unitMotionAge,
   wrapIndex,
 } from './splice';
@@ -389,6 +391,25 @@ describe('unitMotionAge', () => {
   it('is the identity with no offset — the previous behaviour, byte for byte', () => {
     expect(unitMotionAge(750, 0)).toBe(750);
     expect(unitMotionAge(750, -5)).toBe(750);
+  });
+});
+
+describe('attack curve', () => {
+  it('is linear when nothing is authored — the original behaviour', () => {
+    expect(unitFadeInLevel(50, 100)).toBeCloseTo(0.5, 6);
+    expect(unitEnvelopeLevel(50, 100, 500, 100)).toBeCloseTo(0.5, 6);
+  });
+
+  it('eases the rise when a curve is given, without moving the endpoints', () => {
+    const soft = unitFadeInLevel(50, 100, { fn: 'quad', dir: 'in' });
+    expect(soft, 'quad-in starts slower than linear').toBeCloseTo(0.25, 6);
+    expect(unitFadeInLevel(0.0001, 100, { fn: 'quad', dir: 'in' })).toBeGreaterThanOrEqual(0);
+    expect(unitFadeInLevel(100, 100, { fn: 'quad', dir: 'in' }), 'still full at the end').toBe(1);
+  });
+
+  it('applies to the pulse envelope\'s attack too, and only its attack', () => {
+    expect(unitEnvelopeLevel(50, 100, 500, 100, { fn: 'quad', dir: 'in' })).toBeCloseTo(0.25, 6);
+    expect(unitEnvelopeLevel(300, 100, 500, 100, { fn: 'quad', dir: 'in' }), 'sustain is untouched').toBe(1);
   });
 });
 

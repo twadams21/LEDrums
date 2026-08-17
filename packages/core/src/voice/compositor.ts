@@ -377,9 +377,9 @@ export function createDefaultCompositor(): Compositor {
               // in below, and the voice was extended at spawn to outlive the whole cascade.
               const unitLevel =
                 cfg.waitMode === 'pulse'
-                  ? unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs)
+                  ? unitEnvelopeLevel(age - reveal, cfg.envelope.attackMs, cfg.envelope.sustainMs, cfg.envelope.releaseMs, cfg.attackEase)
                   : cfg.waitMode === 'fade'
-                    ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs)
+                    ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
                     : 1;
               if (unitLevel <= 0) return;
               const src = buffers[inputIndex]!.rgba;

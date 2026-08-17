@@ -383,6 +383,10 @@ export interface SpliceConfig {
   motionMode: SpliceMotionMode;
   /** Whether a unit waiting its turn in the cascade is lit and still, dark, or pulsing. */
   waitMode: SpliceWaitMode;
+  /** The attack CURVE. Linear brightens far too fast to the eye, because perceived brightness
+      is not linear in output — an ease-in family reads as a smooth swell. Absent → linear, the
+      original behaviour. */
+  attackEase?: EaseSpec;
   /** The AUTHORED envelope, carried here as well as on the action because `'pulse'` runs it
       per unit — and the voice's own `sustainMs` is extended to outlive the cascade, so it is
       no longer the authored hold by the time the compositor sees it. */
@@ -525,6 +529,8 @@ export interface GraphNode {
   spliceHoldMs?: number;
   /** Fade-out time in ms. */
   spliceReleaseMs?: number;
+  /** Curve the attack rises on. Absent → linear. */
+  spliceAttackEase?: EaseSpec;
   /** 0..1 strength of a splice colour's tint over its effect. */
   spliceTint?: number;
   // modulation targets (doc 10, S34) — meaningful on play + modifier nodes
@@ -821,6 +827,9 @@ export interface Voice {
   /** The spawning effect's param specs (by reference) — drives modulation ranges. */
   specs: ParamSpec[];
   attackMs: number;
+  /** Curve the attack rises on (absent → linear). Carried from a node that authors one; the
+      per-frame envelope advance eases the ramp with it. */
+  attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
   phase: VoicePhase;

@@ -671,6 +671,26 @@ describe('splice — colour cascade', () => {
     expectRgb(late.rgb(2), BLUE, 'the second colour reached full');
   });
 
+  it('rises on the authored curve rather than always linearly', () => {
+    // Quad-in is t² — a quarter of the way up at the halfway point, not half.
+    const over = { spliceWaitMode: 'fade' as const, spliceAttackMs: 200, spliceColorOffsetMode: 'time' as const, spliceColorOffsetMs: 400 };
+    const linear = colours(over, 100).rgb(0)[0];
+    const eased = colours({ ...over, spliceAttackEase: { fn: 'quad', dir: 'in' } }, 100).rgb(0)[0];
+    expect(linear, 'linear is halfway at halfway').toBeCloseTo(0.5, 1);
+    expect(eased, 'quad-in is a quarter of the way').toBeCloseTo(0.25, 1);
+  });
+
+  it('curves every colour identically, not just the first', () => {
+    const over = {
+      spliceWaitMode: 'fade' as const,
+      spliceAttackMs: 200,
+      spliceAttackEase: { fn: 'quad' as const, dir: 'in' as const },
+      spliceColorOffsetMode: 'time' as const,
+      spliceColorOffsetMs: 400,
+    };
+    expect(colours(over, 100).rgb(0)[0]).toBeCloseTo(colours(over, 500).rgb(2)[2], 2);
+  });
+
   it('does nothing while everything is already lit', () => {
     const { rgb } = colours({ spliceWaitMode: 'lit', spliceColorOffsetMode: 'time', spliceColorOffsetMs: 5000 }, 150);
     expectRgb(rgb(0), RED, 'nothing is hidden, so nothing can be staggered');
