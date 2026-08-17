@@ -105,6 +105,7 @@
           <Select
             value={node.targetId ?? ''}
             options={targetOptions}
+            segment={false}
             onChange={(v) => store.setTargetId(node, v || undefined)}
             placeholder="Auto (triggering drum)"
             ariaLabel="Splice scope target"
@@ -302,11 +303,14 @@
           {/if}
 
           <!-- A Select, not a 4-up SegmentedControl: "Outside in" overflows the panel's control
-               column by 15px, and the set is likely to grow. -->
+               column by 15px, and the set is likely to grow. `segment={false}` is what keeps
+               that true now the ≤4 rule lives inside Select itself (F3 item 10) — the opt-out
+               its own header describes for a label that clips where a trigger ellipsises. -->
           <Field layout="row" label="{unitNoun} order">
             <Select
               value={node.spliceOrder ?? 'up'}
               options={SPLICE_ORDER_OPTS}
+              segment={false}
               onChange={(v) => store.setSpliceSetting(node, { spliceOrder: v as voice.SpliceOrder })}
               ariaLabel="{unitNoun} order"
             />
@@ -362,6 +366,7 @@
             <Select
               value={node.spliceColorOrder ?? 'up'}
               options={SPLICE_ORDER_OPTS}
+              segment={false}
               onChange={(v) => store.setSpliceSetting(node, { spliceColorOrder: v as voice.SpliceOrder })}
               ariaLabel="Colour order"
             />
@@ -410,6 +415,7 @@
             <Select
               value={node.spliceDrumOrder ?? 'up'}
               options={SPLICE_ORDER_OPTS}
+              segment={false}
               onChange={(v) => store.setSpliceSetting(node, { spliceDrumOrder: v as voice.SpliceOrder })}
               ariaLabel="Drum order"
             />
@@ -434,10 +440,13 @@
     <section class="group">
       <h4 class="grouptitle">Brightness envelope</h4>
 
+      <!-- Layer names are the show author's, not the app's, and each carries a "· cuts" /
+           "· sustains" suffix — exactly the case Select's header excludes from segmenting. -->
       <Field layout="row" label="Layer">
         <Select
           value={store.busOf(node)}
           options={layerOptions}
+          segment={false}
           onChange={(v) => store.setBus(node, v)}
           ariaLabel="Splice layer"
         />
@@ -512,7 +521,7 @@
 
       <p class="hint">
         How long the lights stay up after a hit: attack up, sustain at full, then decay away. A
-        One-shot runs the whole shape; Loop and Hold stay up until the voice is stopped. A linear
+        One-shot runs the whole shape; Loop stays up until the voice is stopped. A linear
         attack reads as brightening too fast — an ease-in curve swells more evenly.
       </p>
       <p class="hint">
@@ -563,9 +572,12 @@
                 onChange={(v) => store.setSpliceAt(node, row.index, { color: v })}
                 ariaLabel="Splice {row.index + 1} colour"
               />
+              <!-- Effect names come from the show, so a three-effect show must not turn this
+                   into three segments of ellipsised text — stay a dropdown at every length. -->
               <Select
                 value={row.effectId ?? SPLICE_NO_EFFECT}
                 options={effectOpts}
+                segment={false}
                 onChange={(v) => store.setSpliceAt(node, row.index, { effectId: v === SPLICE_NO_EFFECT ? undefined : v })}
                 ariaLabel="Splice {row.index + 1} effect"
               />

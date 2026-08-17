@@ -10,6 +10,7 @@
   import Slider from '../../../ui/Slider.svelte';
   import Select from '../../../ui/Select.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
+  import ColorField from '../../../ui/ColorField.svelte';
   import FaceExposeButton from './FaceExposeButton.svelte';
   import ParamLabel from './ParamLabel.svelte';
 
@@ -54,9 +55,20 @@
       ariaLabel={spec.label}
       class="paramsel"
     />
+  {:else if spec.kind === 'color'}
+    <!-- A single `#rrggbb` param, on `ColorField` rather than the hue/sat/brightness swatch:
+         the swatch writes THREE number params and can never be unset, which is the wrong model
+         for one declared colour string. `solid-colour` — the host generator behind a
+         colour-only splice — is the first effect to declare one; until it existed this branch
+         fell through to the bool Toggle and painted a colour as "OFF". Not clearable: the
+         generator always needs a colour, and its spec default is the floor. -->
+    <ColorField
+      value={str(live[spec.key], typeof spec.default === 'string' ? spec.default : '#ffffff')}
+      clearable={false}
+      onChange={(v) => store.setParam(node, spec.key, v ?? (typeof spec.default === 'string' ? spec.default : '#ffffff'))}
+      ariaLabel={spec.label}
+    />
   {:else}
-    <!-- bool → Toggle. `color` specs map (fixtures.mapParamSpec) but their inspector
-         control — the write-through swatch — is owned by S19; no effect declares one yet. -->
     <Toggle
       pressed={live[spec.key] === true}
       onChange={(v) => store.setParam(node, spec.key, v)}

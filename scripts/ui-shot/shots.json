@@ -243,15 +243,20 @@
   },
   "splice-inspector": {
     "state": "view:trigger,new-graph,add:splice,select:splice",
-    "target": "Node editor"
+    "target": "Inspector"
   },
   "splice-motion": {
     "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger",
-    "target": "Node editor"
+    "target": "Inspector"
+  },
+  "splice-cascade": {
+    "state": "view:trigger,splice-cascade:kick",
+    "target": ".viz-stage",
+    "settle": 1200
   },
   "splice-envelope": {
     "state": "view:trigger,new-graph,add:splice,select:splice",
-    "target": "Node editor",
+    "target": "Inspector",
     "viewport": "1600x2400"
   }
 }

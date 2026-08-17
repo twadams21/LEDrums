@@ -52,7 +52,9 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
 | `mode:<m>`  | set that node's play mode (`mode:loop`) — a `oneshot` fire is gone before the shot lands, so sustained states need this first |
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
+| `fire:<generatorId>[:k=v[;k=v]]`| author a graph on that generator and fire it (`fire:chase-bands:lifeBeats=8`) — the same op, told apart by whether the arg names a pad |
 | `splice-motion:<mode>` | put the added splice node into a motion mode (`step`/`smooth`/`stagger`) so its MOVE controls render |
+| `splice-cascade[:<drum>]`| author Trigger → Effect → Splice → Output on its own graph, stagger it a beat per hoop, loop it and hit the pad — the preview showing what a splice IS, not an unwired node card. **Needs the OFFLINE preview**: when a server is linked the kit paints the ENGINE's frame, which this locally-authored graph never reaches, so run it against a web-only dev server |
 | `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
 | `face-params[:wired\|:mixed]`| author a node with exposed param rows on its FACE — bare = two number rows on an Effect, `:wired` also wires an LFO into the first (driven state), `:mixed` uses a Modifier so a number AND an enum row show on one card |
 | `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |

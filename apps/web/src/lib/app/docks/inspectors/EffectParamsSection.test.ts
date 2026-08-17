@@ -38,9 +38,9 @@ const stubStore = (): TriggerLab =>
     removeFaceParam() {},
   }) as unknown as TriggerLab;
 
-/** Every visible param label, in DOM order. */
-const labels = (c: HTMLElement): string[] =>
-  [...c.querySelectorAll('.plabel')].map((e) => e.textContent?.trim() ?? '');
+/** Every visible param label, in DOM order. `sel` narrows which labels count. */
+const labels = (c: HTMLElement, sel = '.plabel'): string[] =>
+  [...c.querySelectorAll(sel)].map((e) => e.textContent?.trim() ?? '');
 
 const mount = (eff: EffectDef) =>
   render(EffectParamsSection, { props: { store: stubStore(), node: node(), eff } });
@@ -75,6 +75,20 @@ describe('EffectParamsSection — progressive disclosure', () => {
 
     const withoutHue = mount(effect('Temp Sweep', [p('warmHue', 'Warm Hue'), p('brightness', 'Brightness')]));
     expect(withoutHue.container.querySelector('[aria-label="Effect colour"]')).toBeNull();
+  });
+
+  it('gives a declared colour param a colour control, never the bool fallback', () => {
+    // `solid-colour` — the host generator behind a colour-only splice — is the first effect to
+    // declare `type: 'color'`. ParamRow's `{:else}` arm is a Toggle, so before this branch
+    // existed the row rendered a colour as "OFF" and there was no way to author it.
+    const eff = effect('Solid Colour', [p('color', 'Colour', { kind: 'color', default: '#ffffff' })]);
+    const { container } = mount(eff);
+    const picker = container.querySelector('input[type="color"][aria-label="Colour"]') as HTMLInputElement | null;
+    expect(picker).not.toBeNull();
+    expect(picker!.value).toBe('#ffffff');
+    expect(container.querySelector('.boolcell')).toBeNull();
+    // Required, not clearable: an effect always needs its colour.
+    expect(container.querySelector('[aria-label="Colour: clear"]')).toBeNull();
   });
 
   it('shows a fold note rather than an empty fold when an effect declares only common params', () => {
@@ -138,7 +152,11 @@ describe('EffectParamsSection — filter', () => {
 describe('EffectParamsSection — nothing vanishes, for every real effect', () => {
   it.each(GENERATOR_EFFECTS.map((e) => [e.id, e] as const))('renders every declared param of %s', (_id, eff) => {
     const { container } = mount(eff);
-    const rendered = labels(container).filter((l) => l !== 'Colour');
+    // The hue+saturation+brightness swatch is excluded STRUCTURALLY, by its own row class —
+    // not by dropping the text "Colour". `solid-colour` (the host generator behind a
+    // colour-only splice) declares a real param labelled exactly that, and a text filter
+    // silently ate its row, making a rendered param look like a missing one.
+    const rendered = labels(container, ':not(.swatchrow) > .plabel');
     // One row per declared param, no duplicates, no invented rows.
     expect(rendered.length).toBe(eff.params.length);
     for (const spec of eff.params) expect(rendered).toContain(spec.label);

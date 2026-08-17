@@ -86,6 +86,12 @@ export interface ShotSeam {
   /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
       `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
   firePad(drumId?: string): void;
+  /** Author a splice CASCADING on a real trigger graph and fire it, so the preview shows the
+      thing a splice actually is rather than an unwired node card. Builds Trigger → Effect →
+      Splice → Output on its own graph, staggers the splice across hoops, and hits the pad —
+      every step through the store's own mutators, so what the shot proves is the live path.
+      `arg` names the drum (`splice-cascade:snare`, bare = the first pad). */
+  previewSpliceCascade(drumId?: string): void;
   /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
   openSettings(pane?: SettingsPane): void;
   /** Author a non-identity velocity sensitivity curve on a drum (`velocity-curve:kick`,
@@ -323,6 +329,44 @@ class ShotSeamImpl implements ShotSeam {
     });
   }
 
+  previewSpliceCascade(drumId?: string): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const section = this.store.activeSection;
+    const pad = this.padFor(drumId) ?? this.store.pads[0];
+    if (!section || !pad) return;
+    const key = this.store.createGraph('Shot splice cascade');
+    const effect = this.store.addNode('effect', 360, 200);
+    const splice = this.store.addNode('splice', 620, 200);
+    if (!effect || !splice) return;
+    // Every mutation re-resolves through `graph.nodes`: `addNode` hands back the RAW node, and
+    // writing to that bypasses the `$state` proxy — the value lands and nothing re-renders.
+    const live = (id: string): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === id) ?? null;
+    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+    if (trigger) this.store.connect(trigger.id, effect.id);
+    // Bind the graph to the pad we are about to hit, or the hit resolves to some OTHER graph
+    // and the preview shows whatever that one draws.
+    this.store.setTriggerSource(key, { kind: 'drum', drumId: pad.drumId, zone: String(pad.zone) });
+    this.store.connect(effect.id, splice.id);
+    const spliceNode = live(splice.id);
+    // A slow, obvious cascade: one hoop at a time, a beat apart, held long enough that a
+    // single frame catches several units mid-travel rather than one flash.
+    if (spliceNode) {
+      this.store.setSpliceSetting(spliceNode, {
+        spliceChase: 'step',
+        spliceOffsetMode: 'beats',
+        spliceOffsetDivision: '1/4',
+        spliceHoldMs: 1200,
+      });
+      // Loop, not one-shot: a one-shot cascade is over before a screenshot lands (the same
+      // reason `mode:loop` exists — see the ui-shot README).
+      const forLoop = live(splice.id);
+      if (forLoop) this.store.setMode(forLoop, 'loop');
+    }
+    this.store.addGraphToSection(section.id, key);
+    this.firedGraphKey = key;
+    this.store.hit(pad);
+  }
+
   openGallery(): void {
     const graph = this.store.selectedGraph;
     if (!graph) return;
@@ -347,13 +391,21 @@ class ShotSeamImpl implements ShotSeam {
   }
 
   firePad(drumId?: string): void {
-    const pads = this.store.pads;
-    const wanted = drumId?.toLowerCase();
-    const match = wanted
-      ? pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted))
-      : undefined;
-    const pad = match ?? pads[0];
+    const pad = this.padFor(drumId) ?? this.store.pads[0];
     if (pad) this.store.hit(pad);
+  }
+
+  /** The pad `drumId` names, by id or label prefix. The ONE lookup, so the `fire` op's
+      pad-vs-generator disambiguation can never accept a name `firePad` would then miss. */
+  private padFor(drumId?: string): TriggerLab['pads'][number] | undefined {
+    const wanted = drumId?.toLowerCase();
+    if (!wanted) return undefined;
+    return this.store.pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted));
+  }
+
+  /** Does `name` address a pad? Guards `fire:<arg>`'s two meanings. */
+  private isPadId(name: string): boolean {
+    return this.padFor(name) !== undefined;
   }
 
   /** The effect/play node an effect op acts on: the selected one, else the last added, else the
@@ -689,16 +741,28 @@ class ShotSeamImpl implements ShotSeam {
       case 'splice-motion':
         if (arg) this.setSpliceMotion(arg);
         break;
-      // fire:<generatorId>[:key=value[;key=value]] — e.g. `fire:chase-bands:lifeBeats=8`
+      case 'splice-cascade':
+        this.previewSpliceCascade(arg);
+        break;
+      /* `fire` means two things and always has: `fire[:<drum>]` hits a PAD through the real hit
+         path, and `fire:<generatorId>[:key=value[;key=value]]` authors a graph on that generator
+         and fires it (`fire:chase-bands:lifeBeats=8`). They arrived on different branches and met
+         here as two `case 'fire'` labels, the second of which a switch can never reach — so
+         `fire:kick` silently became `fireEffect('kick')` and both presets that use it captured
+         a dark kit. One case, disambiguated by whether the arg names a PAD (the narrower, older
+         meaning wins on a tie; a generator id is never a drum id). */
       case 'fire': {
-        if (!arg) break;
-        const [generatorId, spec] = splitOnce(arg, ':');
+        const [head, spec] = splitOnce(arg ?? '', ':');
+        if (!head || this.isPadId(head)) {
+          this.firePad(arg || undefined);
+          break;
+        }
         const params: Record<string, number> = {};
         for (const pair of (spec ?? '').split(';')) {
           const [k, v] = splitOnce(pair.trim(), '=');
           if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
         }
-        this.fireEffect(generatorId, params);
+        this.fireEffect(head, params);
         break;
       }
       case 'refire':
@@ -712,9 +776,6 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'mode':
         if (arg === 'oneshot' || arg === 'loop' || arg === 'hold') this.setPlayMode(arg);
-        break;
-      case 'fire':
-        this.firePad(arg);
         break;
       case 'settings':
         // `settings` opens the modal on its default pane; `settings:outputs` deep-links a section.
