@@ -25,16 +25,15 @@
   "inspector-closed": {
     "state": "view:trigger"
   },
-  "inspector-over-docks": {
+  "inspector-in-canvas": {
     "state": "view:trigger,add:mix,select:mix"
   },
   "add-node-popover": {
     "state": "view:trigger,add-popover",
     "target": "Add node palette"
   },
-  "add-node-popover-search": {
-    "state": "view:trigger,add-popover,search:delay",
-    "target": "Add node palette"
+  "add-node-popover-with-inspector": {
+    "state": "view:trigger,add:mix,select:mix,add-popover"
   },
   "fx-params-comet": {
     "state": "view:trigger,add:effect,select:effect,effect:gen:comet-trails",
@@ -73,9 +72,9 @@
     "target": ".grail"
   },
   "graphs-rail-playing": {
-    "state": "view:trigger,graph:kick,mode:loop,fire:kick",
-    "target": ".grail",
-    "settle": 2500
+    "state": "view:trigger,fire:chase-bands,mode:loop,wait:1500,refire",
+    "target": ".gcard.sel",
+    "settle": 1500
   },
   "visualizer": {
     "state": "view:trigger",
