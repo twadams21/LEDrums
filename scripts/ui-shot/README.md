@@ -55,6 +55,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
 | `face-params[:wired\|:mixed]`| author a node with exposed param rows on its FACE — bare = two number rows on an Effect, `:wired` also wires an LFO into the first (driven state), `:mixed` uses a Modifier so a number AND an enum row show on one card |
 | `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |
+| `wire-drop[:<from>]`| the same palette as a wire released in EMPTY canvas summons it — holding that wire, list filtered to what it can reach (`flow` default · `modifier` · `mod-source`) |
 | `settings`  | open the app Settings dialog |
 | `velocity-curve[:<drum>]`| author a non-identity velocity sensitivity curve on a drum and open Settings › Drum trigger zones (`velocity-curve:kick`; bare = the first drum) — pair with `fire:<drum>` to catch the live hit marker |
 

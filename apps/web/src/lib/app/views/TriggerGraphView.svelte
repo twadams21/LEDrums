@@ -18,7 +18,7 @@
   import { wireRejectionMessage } from '../../trigger-lab/store/wire-toasts';
   import { pushToast } from '../../ui/toast.svelte';
   import type { WireDragFrom } from './WireDragValidity.svelte';
-  import { wireInvalidPreview, spliceArmedPreview } from './wire-preview.svelte';
+  import { wireInvalidPreview, spliceArmedPreview, pendingWirePreview } from './wire-preview.svelte';
   import { canvasDropPreview } from './canvas-drop-preview.svelte';
   import { lintPreview } from './lint-preview.svelte';
   import { lintEntries, lintEntriesByNode } from './graph-lint';
@@ -42,7 +42,8 @@
   } from './trigger-flow-projection';
   import { GraphHover } from './graph-hover.svelte';
   import { findFreePosition, type Rect } from './node-placement';
-  import { nodeIdAtEvent } from './flow-dom';
+  import { nodeIdAtEvent, pointOfEvent } from './flow-dom';
+  import { toPortOf, typesForPendingWire, type PendingWire } from './pending-wire';
   import { guardFlowCallback } from './flow-guard';
   import { TRIGGER_STORE_KEY } from './trigger-context';
   import TriggerNode from './TriggerNode.svelte';
@@ -52,7 +53,7 @@
   import { computeAlignment, type AlignRect, type GuideLine } from './align-guides';
   import type { FlowApi } from './FlowHandle.svelte';
   import AddNodePopover from './AddNodePopover.svelte';
-  import { ADD_NODE_DRAG_TYPE, decodeAddDragPayload } from './add-node-taxonomy';
+  import { ADD_NODE_DRAG_TYPE, ADD_NODE_TYPES, decodeAddDragPayload } from './add-node-taxonomy';
   import InspectorSlideover, { INSPECTOR_PANE } from '../InspectorSlideover.svelte';
   import TriggerGraphsRail from './TriggerGraphsRail.svelte';
   import IconButton from '../../ui/IconButton.svelte';
@@ -119,7 +120,16 @@
   // `at` is canvas-local px (where to paint the popover); `spawn` is the matching FLOW
   // position (where the node goes). Both are captured at invoke time so a pan/zoom while
   // the palette is open can never land the node somewhere else than it was summoned.
-  let addPopover = $state<{ at: { x: number; y: number }; spawn: { x: number; y: number } } | null>(null);
+  //
+  // F8: it is also summoned by RELEASING a connection drag in empty space, in which case it
+  // holds that pending wire — the picked node lands AND takes the wire, and the list is
+  // filtered to the kinds the wire can reach.
+  let addPopover = $state<{
+    at: { x: number; y: number };
+    spawn: { x: number; y: number };
+    /** The wire a released drag is still holding (F8), else null for a plain add. */
+    pending: PendingWire | null;
+  } | null>(null);
   // The popover stays inside the canvas MINUS whatever the open inspector covers, so it can
   // never be summoned underneath the panel.
   const canvasBox = $derived.by(() => {
@@ -127,16 +137,26 @@
     const r = canvasWrap?.getBoundingClientRect();
     return { w: Math.max(0, (r?.width ?? 0) - inspectorInset), h: r?.height ?? 0 };
   });
-  /** Open the palette at a screen point (a right-click), or at the canvas centre (the `+`). */
-  function openAddPopover(screen?: { x: number; y: number }): void {
+  /** Open the palette at a screen point (a right-click / a wire released in empty space), or at
+      the canvas centre (the `+`). `pending` carries the wire a released drag is holding (F8). */
+  function openAddPopover(screen?: { x: number; y: number }, pending: PendingWire | null = null): void {
     const rect = canvasWrap?.getBoundingClientRect();
     if (!rect) return;
     const point = screen ?? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
     addPopover = {
       at: { x: point.x - rect.left, y: point.y - rect.top },
       spawn: flowApi ? flowApi.screenToFlowPosition(point) : { x: 0, y: 0 },
+      pending,
     };
   }
+  /** The types the palette offers: every kind, or — while it holds a pending wire — only the
+      kinds that wire can actually land on, probed against the store's own wiring predicate
+      (`pending-wire`), so the palette can never offer a pick that adds a node with no wire. */
+  const addTypes = $derived.by(() => {
+    const g = store.selectedGraph;
+    const pending = addPopover?.pending;
+    return g && pending ? typesForPendingWire(g, pending, ADD_NODE_TYPES) : ADD_NODE_TYPES;
+  });
   // A graph switch invalidates the captured spawn point — close rather than drop a node into
   // the graph the user just left.
   $effect(() => {
@@ -145,11 +165,35 @@
       addPopover = null;
     });
   });
-  /** Palette pick → a node at the position the palette was summoned at. */
+  // DEV/ui-shot only: the pending-wire palette is reachable only by a live connection drag, which
+  // headless Chrome can't drive. When the shot seam pins a wire, open the palette at the canvas
+  // centre holding it (the real state, filtered list and all); clearing it closes the palette.
+  // Tree-shaken outside DEV.
+  $effect(() => {
+    if (!import.meta.env.DEV) return;
+    const pinned = pendingWirePreview.current;
+    untrack(() => {
+      if (pinned) openAddPopover(undefined, pinned);
+      else if (addPopover?.pending) addPopover = null;
+    });
+  });
+  /** Palette pick → a node at the position the palette was summoned at, plus — when the palette
+      is holding a wire a drag released in empty space (F8) — that wire, landed on the new node.
+      The wire goes through the SAME `dropConnect` a wire released ON a node body takes (one
+      mutation path, one validity table), folded into the add's undo checkpoint so a single
+      Ctrl/Z pops the node and its wire together. */
   function handleAdd(kind: NodeKind): void {
-    const spawn = addPopover?.spawn;
-    if (!spawn) return;
-    addNodeAt(kind, spawn.x, spawn.y);
+    const open = addPopover;
+    if (!open) return;
+    const pending = open.pending;
+    if (!pending) {
+      addNodeAt(kind, open.spawn.x, open.spawn.y);
+      return;
+    }
+    const p = spawnAt(open.spawn.x, open.spawn.y);
+    store.addNodeWired(kind, p.x, p.y, (node) =>
+      dropConnect(pending.nodeId, pending.type, pending.handleId, node.id),
+    );
   }
   /** Estimated canvas footprint per existing node — the card plus room for mod rows /
       band fans. An estimate is fine: the probe only needs "roughly where nodes sit". */
@@ -438,12 +482,6 @@
     const sn = store.selectedGraph?.nodes.find((n) => n.id === fn.id);
     if (sn) store.moveNode(sn, fn.position.x, fn.position.y);
   }
-  /** The target handle id (`mod`, a `param:<key>` modulation row, or the default flow input)
-      as a store `toPort`. A dropped param handle must pass through so its mapping edge lands. */
-  function toPortOf(handle: string | null | undefined): ToPort {
-    if (handle === 'mod') return 'mod';
-    return handle && voice.paramKeyOf(handle as ToPort) !== null ? (handle as `param:${string}`) : undefined;
-  }
   /** Surface a refused wire as one plain-language error toast naming the reason (R03 / doc 1.1).
       A `null` reason (accepted, or a viewer/no-graph no-op) says nothing. */
   function toastRejection(reason: WireRejection | null): void {
@@ -533,9 +571,28 @@
   }
   const onConnectEnd: OnConnectEnd = (event, conn) => {
     if (conn.toHandle || !conn.fromHandle) return; // already landed on a handle
+    const from: PendingWire = {
+      nodeId: conn.fromHandle.nodeId,
+      type: conn.fromHandle.type,
+      handleId: conn.fromHandle.id ?? null,
+    };
     const toId = nodeIdAtEvent(event);
-    if (toId) dropConnect(conn.fromHandle.nodeId, conn.fromHandle.type, conn.fromHandle.id, toId);
+    if (toId) {
+      dropConnect(from.nodeId, from.type, from.handleId, toId);
+      return;
+    }
+    openPendingAdd(event, from);
   };
+  /** A wire released in EMPTY canvas (F8): keep it pending and summon the palette at the release
+      point, listing only the kinds it can land on — the pick then adds that node AND lands the
+      wire. Nothing valid to offer (or a viewer / no graph) → the drag just cancels, as today. */
+  function openPendingAdd(event: MouseEvent | TouchEvent, from: PendingWire): void {
+    const g = store.selectedGraph;
+    if (!g || !store.canEdit) return;
+    if (typesForPendingWire(g, from, ADD_NODE_TYPES).length === 0) return;
+    const at = pointOfEvent(event);
+    if (at) openAddPopover(at, from);
+  }
   /** A wire dropped on a node body (not a handle): wire it to that node's input — or
       its output if the drag began at an input. `store.connect` validates direction /
       cycle / dup, so a drop that can't be accepted is simply ignored. When the drag
@@ -707,6 +764,8 @@
       <AddNodePopover
         at={addPopover.at}
         bounds={canvasBox}
+        types={addTypes}
+        wiring={!!addPopover.pending}
         disabled={!store.canEdit}
         onAdd={handleAdd}
         onClose={() => (addPopover = null)}

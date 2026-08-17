@@ -55,6 +55,14 @@
     "state": "view:trigger,add:effect,select:effect,effect:gen:segments",
     "target": "Inspector"
   },
+  "wire-drop-add-node": {
+    "state": "view:trigger,new-graph,wire-drop",
+    "target": "Add node palette"
+  },
+  "wire-drop-add-node-modulation": {
+    "state": "view:trigger,new-graph,wire-drop:mod-source",
+    "target": "Add node palette"
+  },
   "gen3-scope-inspector": {
     "state": "view:trigger,add:scope,select:scope",
     "target": "Inspector"

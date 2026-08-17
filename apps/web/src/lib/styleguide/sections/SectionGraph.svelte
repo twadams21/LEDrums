@@ -187,10 +187,11 @@
       'lib/app/views/AddNodePopover',
       'lib/app/views/add-node-taxonomy',
       'lib/app/views/popover-placement',
+      'lib/app/views/pending-wire',
       'lib/app/views/WireEdge',
       'lib/app/views/graph-hover.svelte',
     ]}
-    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. It is a FLAT list of node types and ONE click adds — no search, no taxonomy to browse, no second click; the families that differ only by subtype (Effect / Modifier / Modulate) land on their default and are re-typed in the node's inspector. Rows read their glyph and tint from the node registry (add-node-taxonomy → trigger-node-meta), arrow keys walk them, and a row can also be dragged onto the canvas to place at the drop point. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible."
+    note="Adding is a transient on-canvas surface, not a permanent column: right-click the canvas (or press +) to summon the palette AT that point, and the node lands where it was summoned. It is a FLAT list of node types and ONE click adds — no search, no taxonomy to browse, no second click; the families that differ only by subtype (Effect / Modifier / Modulate) land on their default and are re-typed in the node's inspector. Rows read their glyph and tint from the node registry (add-node-taxonomy → trigger-node-meta), arrow keys walk them, and a row can also be dragged onto the canvas to place at the drop point. Escape, an outside press, or a pick dismisses it. Placement flips and clamps (popover-placement) so a corner invoke stays fully visible. It is summoned a THIRD way (F8): releasing a wire drag in empty canvas opens it AT the release point holding that wire — the header reads 'Add &amp; wire', the list is filtered to the kinds the wire can actually land on (probed against the store's own connect predicate via pending-wire, never a second rule table), rows stop being drag sources, and the pick adds the node AND its wire as ONE undo step. Nothing valid to offer → it doesn't open and the drag just cancels; dismissing leaves no node and no wire."
     wide
   >
     <div class="canvas-demo" bind:this={canvasWrap}>
