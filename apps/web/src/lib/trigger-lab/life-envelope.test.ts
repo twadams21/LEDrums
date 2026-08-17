@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXP_TAIL_FACTOR, evalCurve, resolveVoiceLife, resolveVoiceSustainMs } from '@ledrums/core';
-import { EXP_SEED_STRENGTH, lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from './life-envelope';
+import { EXP_SEED_STRENGTH, decaySpanHint, lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from './life-envelope';
 import { listEffects } from '@ledrums/core';
 
 /* Turning a scalar Life/Decay into a curve must be a no-op you can see through: the seeded
@@ -85,5 +85,33 @@ describe('which param the max-brightness slider writes', () => {
     expect(maxBrightnessKey('no-such-effect')).toBeNull();
     expect(maxBrightnessKey(null)).toBeNull();
     expect(maxBrightnessKey(undefined)).toBeNull();
+  });
+});
+
+/* The envelope's span and the Decay slider are two different numbers — `decayMs: 220` spans
+   ~1.21s because it is a time CONSTANT. Flagged in review of F5's own screenshot as a
+   suspected unit bug, which is exactly why the readout has to say what it is. */
+
+describe('the span readout explains itself', () => {
+  it('names the time-constant relationship where the effect declares a factor', () => {
+    const hint = decaySpanHint('whole-drum', { label: 'Decay' });
+    expect(hint).toContain('time constant');
+    expect(hint).toContain(EXP_TAIL_FACTOR.toFixed(1));
+    // The two numbers really do differ by exactly that factor — the readout is not lying.
+    expect(resolveVoiceSustainMs('whole-drum', { decayMs: 220 }, 120, 100)).toBeCloseTo(220 * EXP_TAIL_FACTOR, 6);
+  });
+
+  it('and says only what is true for an effect with a hard cutoff', () => {
+    const hint = decaySpanHint('segments', { label: 'Decay' });
+    expect(hint).not.toContain('time constant');
+    expect(hint).toContain('Decay');
+    // 3 beats @120bpm = 1500ms: same quantity, different UNIT, so the word "total" still earns
+    // its place even here.
+    expect(resolveVoiceSustainMs('segments', { lifeBeats: 3 }, 120, 100)).toBe(1500);
+  });
+
+  it('falls back to a usable label rather than printing "null"', () => {
+    expect(decaySpanHint('whole-drum', null)).toContain('Decay');
+    expect(decaySpanHint(null, null)).toContain('Decay');
   });
 });

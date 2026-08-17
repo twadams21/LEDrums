@@ -71,6 +71,26 @@ export function maxBrightnessKey(generatorId: string | null | undefined): string
 }
 
 /**
+ * Why the envelope's span and the Decay slider can read as two different numbers.
+ *
+ * They are two different numbers, on purpose. An effect whose param is an exponential time
+ * CONSTANT (it declares `voiceLife.factor`) is still visible for {@link EXP_TAIL_FACTOR} of
+ * them — `decayMs: 220` renders for ~1.2s, not 220ms — so the envelope's x axis is sized to
+ * what the eye actually sees rather than to the constant. Effects with a hard cutoff resolve
+ * 1:1, but may still differ in UNIT (`3.00 beats` at 120bpm is a 1.50s axis).
+ *
+ * Either way the pair looked like a scale bug on sight (caught in review of F5's own
+ * screenshot), which is the whole reason the readout says what it is and carries this.
+ */
+export function decaySpanHint(generatorId: string | null | undefined, spec: { label: string } | null): string {
+  const life = generatorId ? tryGetEffect(generatorId)?.voiceLife : undefined;
+  const label = spec?.label ?? 'Decay';
+  return life?.factor
+    ? `Total width of the envelope's time axis. ${label} is an exponential time constant — the decay stays visible for about ${EXP_TAIL_FACTOR.toFixed(1)}× it, and the envelope spans all of that.`
+    : `Total width of the envelope's time axis — the ${label} slider's own value, resolved to real time.`;
+}
+
+/**
  * The envelope an effect starts on: full brightness at birth, gone at its declared decay time,
  * bent the way that effect already fades.
  *
