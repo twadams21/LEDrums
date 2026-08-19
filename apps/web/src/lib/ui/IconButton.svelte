@@ -13,6 +13,11 @@
     disabled?: boolean;
     /** Show the custom tooltip on hover (default true). */
     tooltip?: boolean;
+    /** Why the button is disabled — shown as the tooltip INSTEAD of `label` while
+        `disabled`. Without it a disabled button has no tooltip at all (a dead
+        control that also explains nothing); with it, the affordance stays visible
+        and says what would make it live again ("Viewing — take over to edit"). */
+    disabledReason?: string;
     tooltipSide?: 'top' | 'bottom' | 'left' | 'right';
     class?: string;
   };
@@ -25,6 +30,7 @@
     variant = 'ghost',
     disabled = false,
     tooltip = true,
+    disabledReason,
     tooltipSide = 'top',
     class: klass,
   }: Props = $props();
@@ -36,8 +42,11 @@
   </button>
 {/snippet}
 
-{#if tooltip && !disabled}
-  <Tooltip text={label} side={tooltipSide}>{@render btn()}</Tooltip>
+<!-- A disabled button gets a tooltip only when it can say WHY (`disabledReason`).
+     `.ib:disabled` kills its pointer events, so the hover lands on Tooltip's own
+     span anchor — the reason still shows for a dead control. -->
+{#if tooltip && (!disabled || disabledReason)}
+  <Tooltip text={disabled && disabledReason ? disabledReason : label} side={tooltipSide}>{@render btn()}</Tooltip>
 {:else}
   {@render btn()}
 {/if}

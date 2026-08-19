@@ -213,12 +213,18 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Icon buttons · Tooltip" src={['lib/ui/IconButton', 'lib/ui/Tooltip']}>
+    <DemoCard
+      title="Icon buttons · Tooltip"
+      src={['lib/ui/IconButton', 'lib/ui/Tooltip']}
+      note="A gated action stays VISIBLE and goes disabled — never hidden. `disabledReason` replaces the tooltip with WHY, naming the remedy ('Viewing — take over to edit'); without it a disabled icon button has no tooltip at all. Hiding it instead makes the control flash on load and vanish once presence lands, which reads as a bug (2026-08-19, Tim — the chrome bars' add-song / add-section `+`)."
+    >
       <div class="comp-row">
         <IconButton icon={Play} label="Play" variant="solid" />
         <IconButton icon={Plus} label="Add" variant="soft" />
         <IconButton icon={Pencil} label="Rename" />
         <IconButton icon={Trash2} label="Delete" />
+        <Separator orientation="vertical" />
+        <IconButton icon={Plus} label="Add song" disabled disabledReason="Viewing — take over to edit" />
         <Separator orientation="vertical" />
         <Tooltip text="A custom tooltip">
           <button class="ghost">Hover me</button>
