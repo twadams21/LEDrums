@@ -7,7 +7,7 @@ import SongsBar from './SongsBar.svelte';
 /* SongsBar replaces the rail's SongRail in the tabbed chrome. These lock the
    chrome→store wiring: one chip per resolved setlist song (references wear a
    visible Library badge), the active chip marked, select/add/rename going to the
-   right store methods, and the editor affordances hidden from viewers. */
+   right store methods, and the editor affordances disabled (not hidden) for viewers. */
 function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
   const songs = [
     { id: 's1', name: 'Song One', sections: [{}, {}] },
@@ -52,14 +52,16 @@ describe('SongsBar', () => {
     expect(store.setActiveSong).toHaveBeenCalledWith('s2');
   });
 
-  it('adds a song from the bar button; hidden for a read-only viewer', async () => {
+  it('adds a song from the bar button; disabled (not hidden) for a read-only viewer', async () => {
     const store = mockStore();
     const { getByLabelText } = render(SongsBar, { props: { store } });
     await fireEvent.click(getByLabelText('Add song'));
     expect(store.createSong).toHaveBeenCalledTimes(1);
 
+    // The viewer keeps the control on screen, dead (edit-gate) — a `+` that vanishes
+    // once presence lands reads as a bug, not as read-only.
     const viewer = render(SongsBar, { props: { store: mockStore({ canEdit: false }) } });
-    expect(within(viewer.container).queryByLabelText('Add song')).toBeNull();
+    expect((within(viewer.container).getByLabelText('Add song') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('renders a referenced library song (resolved tail) with a Library tooltip and empty-setlist copy', () => {

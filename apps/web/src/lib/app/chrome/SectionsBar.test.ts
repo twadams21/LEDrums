@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SectionsBar from './SectionsBar.svelte';
 
@@ -17,7 +17,9 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
       ],
     },
     activeSectionId: 'sec-1',
+    canEdit: true,
     setActiveSection: vi.fn(),
+    addSongSection: vi.fn(),
     ...over,
   } as unknown as TriggerLab;
 }
@@ -41,6 +43,22 @@ describe('SectionsBar', () => {
     const { container } = render(SectionsBar, { props: { store } });
     await fireEvent.click(container.querySelectorAll('.chip')[1]!);
     expect(store.setActiveSection).toHaveBeenCalledWith('sec-2');
+  });
+
+  it('adds a section from the bar, named after the count, for editors', async () => {
+    const store = mockStore();
+    const { getByLabelText } = render(SectionsBar, { props: { store } });
+    await fireEvent.click(getByLabelText('Add section'));
+    expect(store.addSongSection).toHaveBeenCalledWith('Section 3');
+  });
+
+  // A viewer keeps the affordance VISIBLE but dead (edit-gate) — hiding it made the
+  // bar flash its `+` on load, before presence arrives, and explained nothing.
+  it('disables the add affordance for viewers and when there is no song, never hides it', () => {
+    const viewer = render(SectionsBar, { props: { store: mockStore({ canEdit: false }) } });
+    expect((within(viewer.container).getByLabelText('Add section') as HTMLButtonElement).disabled).toBe(true);
+    const noSong = render(SectionsBar, { props: { store: mockStore({ activeSong: null }) } });
+    expect((within(noSong.container).getByLabelText('Add section') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('shows the empty state when the active song has no sections (or no song)', () => {

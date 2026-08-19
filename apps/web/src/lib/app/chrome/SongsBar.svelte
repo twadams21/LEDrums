@@ -11,6 +11,7 @@
      library copy (propagates). Chips stay chips — no row chrome. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import { showSongRows, type ShowSongRow } from '../views/objects-view';
+  import { VIEWING_REASON } from './edit-gate';
   import IconButton from '../../ui/IconButton.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
@@ -112,9 +113,15 @@
         </ContextMenu>
       {/if}
     {/each}
-    {#if store.canEdit}
-      <IconButton icon={Plus} label="Add song" size={13} onclick={() => store.createSong()} />
-    {/if}
+    <!-- Visible-but-disabled for a viewer (edit-gate.ts): a vanishing `+` reads as a bug. -->
+    <IconButton
+      icon={Plus}
+      label="Add song"
+      size={13}
+      disabled={!store.canEdit}
+      disabledReason={store.canEdit ? undefined : VIEWING_REASON}
+      onclick={() => store.createSong()}
+    />
   </div>
 </div>
 
