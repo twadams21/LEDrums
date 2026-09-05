@@ -127,7 +127,7 @@ The builder refuses a wrong Node patch and a pre-existing output directory. It u
 ```sh
 NODE="$PWD/../ledrums-health-release/apps/desktop/.node-pin/node-v22.23.1-darwin-x64/bin/node"
 OUT="/tmp/ledrums-p11-sea-$(date +%s)" # must not already exist
-"$NODE" apps/server/src/backups/snapshot-worker-sea.probe.mjs "$OUT"
+"$NODE" apps/desktop/scripts/snapshot-worker-sea.probe.mjs "$OUT"
 P11_BASELINE_MODULE="$OUT/baseline.cjs" "$NODE" --expose-gc --import tsx \
   apps/server/src/backups/snapshot-worker.probe.ts > /tmp/p11-source.json
 env -i P11_BASELINE_MODULE="$OUT/baseline.cjs" LEDRUMS_TELEMETRY=off \

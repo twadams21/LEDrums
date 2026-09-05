@@ -20,17 +20,17 @@ All workers use isolated worktrees off merged audit `ea18f61`, commit but do not
 
 | Work | State | Branch / evidence |
 |---|---|---|
-| P03/P04/P08 core lifecycle + scoped rendering + offline parity | integrated; review corrections implementing | paused live modulation + Mix authored-envelope regressions |
-| P01/P10 document lifetime + bounded/debounced persistence | integrated; review corrections implementing | pending paste generation + exact-content Save As |
+| P03/P04/P08 core lifecycle + scoped rendering + offline parity | integrated; final retirement re-review | replay allocation and retention fixed in `e5543b1d` / `c7bef0b5` |
+| P01/P10 document lifetime + bounded/debounced persistence | integrated; independent re-review clear | generation-fenced async paste and exact-content Save As verified |
 | P05/P07 observable output + retired coverage | integrated; independent review clear | real loopback + fake-socket acceptance/coverage tests |
 | P12/P13 release SHA + exact SEA runtime | integrated; independent review clear | 68 targeted checks; actual universal sidecar smoke |
 | P09 GPU resource lifetime | verified | real Chrome 0 retained growth; strict connected capture clean |
 | Wall-clock throughput measurement | verified | `874300d`; 38 targeted host tests |
-| P02/P11 authoritative project + async backup ownership | implementing | `fix/health-project-backups`; includes awaitable shutdown drain |
+| P02/P11 authoritative project + async backup ownership | integrated; final re-review | atomic authority, shutdown authorization, canonical canvas specs, bounded SEA-tested worker; residual clone stalls documented |
 | P06 controller takeover lifecycle | review correction verified | `2ff07e29`; 25 tests + 12 independent probe groups |
 | P14 ingest notification liveness/atomicity | integrated; independent review clear | 57 Worker tests; migration/deployment UNEXECUTED |
 | P15 trustworthy dead-code tooling + verified deletion | verified scoped baseline | `77c1d2a0`; pure-JS pin, seeded-fixture check, held files retained |
-| Lazy route loading / bundle measurements | implementing | `perf/health-lazy-surfaces`; before samples recorded |
+| Lazy route loading / bundle measurements | integrated; independent review running | `9581516c`; isolated initial-JS reduction 22.42%, no established startup-timing win |
 | Integrated review, full gates and PR merge | in progress | no publication included |
 
 ## Verification notes

@@ -13,6 +13,7 @@
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "verify:universal": "node scripts/verify-universal.mjs",
     "prepare:bundle": "node scripts/prepare-bundle.mjs",
+    "health:snapshot-sea": "node scripts/snapshot-worker-sea.probe.mjs",
     "fetch:cloudflared": "node scripts/fetch-cloudflared.mjs",
     "publish:ota": "node scripts/publish-ota.mjs",
     "ota": "node scripts/ota.mjs"

@@ -6,17 +6,18 @@
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, copyFileSync, chmodSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '../../../..');
+const root = resolve(here, '../../..');
+const serverBackups = join(root, 'apps/server/src/backups');
 const pinned = readFileSync(join(root, 'apps/desktop/.node-version'), 'utf8').trim().replace(/^v/, '');
 if (process.version !== `v${pinned}`) throw new Error(`Run with EXACT pinned Node v${pinned}, not ${process.version}`);
 const out = process.argv[2];
-if (!out || !out.startsWith('/') || existsSync(out)) throw new Error('Supply an ABSOLUTE, NONEXISTENT temporary output directory');
+if (!out || !isAbsolute(out) || existsSync(out)) throw new Error('Supply an ABSOLUTE, NONEXISTENT temporary output directory');
 mkdirSync(out, { recursive: true });
-const require = createRequire(join(root, 'apps/desktop/package.json'));
+const require = createRequire(import.meta.url);
 const { build } = require('esbuild');
 const { inject } = require('postject');
 const options = {
@@ -26,8 +27,8 @@ const options = {
   define: { 'import.meta.url': '__ledrumsImportMetaUrl' },
 };
 const old = execFileSync('git', ['show', '0c25083d:apps/server/src/backups/snapshot-store.ts'], { cwd: root, encoding: 'utf8' });
-await build({ ...options, stdin: { contents: old, loader: 'ts', resolveDir: here }, outfile: join(out, 'baseline.cjs') });
-for (const [name, entry] of [['server', join(root, 'apps/server/src/main.ts')], ['latency', join(here, 'snapshot-worker.probe.ts')]]) {
+await build({ ...options, stdin: { contents: old, loader: 'ts', resolveDir: serverBackups }, outfile: join(out, 'baseline.cjs') });
+for (const [name, entry] of [['server', join(root, 'apps/server/src/main.ts')], ['latency', join(serverBackups, 'snapshot-worker.probe.ts')]]) {
   const bundle = join(out, `${name}.cjs`), blob = join(out, `${name}.blob`), config = join(out, `${name}.sea.json`), binary = join(out, name);
   await build({ ...options, entryPoints: [entry], outfile: bundle });
   writeFileSync(config, JSON.stringify({ main: bundle, output: blob, disableExperimentalSEAWarning: true, useSnapshot: false, useCodeCache: false }));

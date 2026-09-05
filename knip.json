@@ -5,7 +5,7 @@
       "entry": ["scripts/pixlite-probe.mjs", "scripts/health-webgl.mjs", "scripts/health-startup.mjs"]
     },
     "apps/web": {
-      "entry": ["src/main.ts", "src/design-system.ts", "src/lib/app/shot-seam.ts", "scripts/contrast-check.mjs"],
+      "entry": ["src/main.ts", "src/design-system.ts", "src/lib/app/shot-seam.ts", "src/lib/trigger-lab/runtime-retention.probe.ts", "scripts/contrast-check.mjs"],
       "vite": { "config": ["vite.config.ts", "vite.design-system.config.ts"] }
     },
     "apps/desktop": {
