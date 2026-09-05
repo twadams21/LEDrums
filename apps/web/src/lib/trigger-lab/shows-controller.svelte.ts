@@ -22,6 +22,7 @@
     `activeSectionId`) and the WS link. The store keeps the sim-play + section-arrangement surfaces. */
 
 import type { ClientMessage } from '../ws/protocol-types';
+import { trackDocument } from './store/track-document';
 import type { EffectDef, Preset, TriggerGraph } from './sim';
 import type { Song } from '../app/setlist';
 import * as setlist from '../app/setlist';
@@ -85,24 +86,24 @@ function readStoredSongLibrary(): unknown {
   return readStoredKey(SONGS_STORAGE_KEY);
 }
 
-/** Write the versioned library envelope. Best-effort — quota / private-mode failures are swallowed
-    (persistence must never throw into the render loop or lifecycle). */
-export function writeStoredLibrary(payload: PersistedShowLibrary): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    /* ignore */
-  }
+/** Write the versioned library envelope. Never throws; false lets the save indicator avoid
+    claiming success on quota/private-mode failures. */
+export function writeStoredLibrary(payload: PersistedShowLibrary): boolean {
+  return writeStoredKey(SHOWS_STORAGE_KEY, payload);
 }
 
 /** Write the versioned SONG-library envelope (best-effort, mirrors {@link writeStoredLibrary}). */
-export function writeStoredSongLibrary(payload: PersistedSongLibrary): void {
-  if (typeof localStorage === 'undefined') return;
+export function writeStoredSongLibrary(payload: PersistedSongLibrary): boolean {
+  return writeStoredKey(SONGS_STORAGE_KEY, payload);
+}
+
+function writeStoredKey(key: string, payload: unknown): boolean {
+  if (typeof localStorage === 'undefined') return false;
   try {
-    localStorage.setItem(SONGS_STORAGE_KEY, JSON.stringify(payload));
+    localStorage.setItem(key, JSON.stringify(payload));
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
@@ -131,6 +132,8 @@ export interface ShowsControllerHost {
   toAuthored(): AuthoredState;
   /** Replace the document's authored state, history and runtime as one lifetime boundary. */
   replaceDocument(show: Show): void;
+  /** Flush local caches and server pushes through the same pipeline as autosave. */
+  saveNow(): void;
   /** Re-point the active section (R24 owns the rune) — song switch selects the song's first section. */
   setActiveSectionId(id: string | null): void;
   /** Whether this client is a read-only viewer (S2) — authoring no-ops then. */
@@ -146,7 +149,9 @@ export class ShowsController {
   /** Every show by id — the persisted library. The ACTIVE show's `authored` is a stale cache (the
       store's authored runes are the live source of truth while it's active); INACTIVE shows hold
       their last-saved authored verbatim. Hydrated in {@link hydrateFromStorage}. */
-  showLibrary = $state<Record<string, Show>>({});
+  // Library slots are immutable caches, replaced by every controller write. Deep proxies here
+  // would make each active-show edit walk every INACTIVE document just to subscribe for autosave.
+  showLibrary = $state.raw<Record<string, Show>>({});
   /** Which show is live — its `authored` is what the store's authored runes mirror. */
   activeShowId = $state<string>('');
 
@@ -264,6 +269,17 @@ export class ShowsController {
 
   // --- library snapshots (persist / sync sources) --------------------------
 
+  /** Cheap root dependencies: every library mutation replaces its immutable map. */
+  trackLibraryChanges(): void {
+    void this.showLibrary;
+    void this.activeShowId;
+  }
+
+  /** The canonical pool IS deeply editable (referenced graphs expose rune proxies). */
+  trackSongLibraryChanges(): void {
+    trackDocument(this.songLibrary);
+  }
+
   /** Write the live authored runes back into the active show's library slot, so its edits are
       captured before we switch away (or persist). No-op if the active id is unknown. */
   private flushActiveToLibrary(): void {
@@ -275,11 +291,11 @@ export class ShowsController {
     };
   }
 
-  /** The library to persist: every show, with the ACTIVE show's `authored` refreshed from the live
-      runes (inactive shows carried verbatim). Built fresh each autosave tick so the written blob is
-      always current without churning the showLibrary rune on every edit. */
+  /** Materialize the active document once; inactive slots are already detached immutable caches.
+      Share those slots across payloads rather than cloning the entire library (or its stale active
+      slot). All controller writes replace slots/maps, and replaceDocument snapshots before editing. */
   currentLibrary(): ShowLibrary {
-    const lib = $state.snapshot(this.showLibrary) as Record<string, Show>;
+    const lib = this.showLibrary;
     const active = lib[this.activeShowId];
     const name = active?.name ?? 'Untitled Show';
     return {
@@ -322,12 +338,10 @@ export class ShowsController {
     this.activateDocument(this.showLibrary[id]!);
   }
 
-  /** Deliberately persist the active show NOW (flush runes → slot → storage). Autosave already covers
-      this on a debounce; saveShow is the explicit, immediate write/confirmation. */
+  /** Explicit Save uses the same snapshot/write/sync/indicator pipeline as autosave, immediately. */
   saveShow(): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
-    this.flushActiveToLibrary();
-    writeStoredLibrary(serializeShowLibrary(this.currentLibrary()));
+    this.host.saveNow();
   }
 
   /** Clone the current authored content under a new id + name and switch to the clone — the source
@@ -584,18 +598,8 @@ export class ShowsController {
       wins) / seed-from-cache / viewer-follow path for the show library AND the canonical song pool.
       Presence arrives before this state on a (re)connect, so the viewer role is already settled. */
   reconcileOnState(rawShowLibrary: unknown, rawSongLibrary: unknown): void {
-    // markServerStateSeen first so the seed-push isn't gated off.
-    this.libSync.markServerStateSeen();
-    const plan = this.libSync.planReconcile(rawShowLibrary, this.bootedFromLocalLibrary, this.host.isViewer());
-    if (plan.kind === 'adopt') {
-      this.adoptLibrary(plan.library);
-      // The server already holds this library, so mark synced WITHOUT echoing it back. A later
-      // authored edit diverges the signature and pushes normally.
-      this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
-    } else if (plan.kind === 'seed') {
-      this.syncLibraryToServer(); // server has no library yet → seed it from our localStorage cache
-    }
-    // Cold-load reconcile of the canonical SONG library — the exact sibling of the show-library path.
+    // Resolve the canonical pool FIRST: document replacement constructs its runtime immediately,
+    // so its referenced effects/presets must come from this state message, not the outgoing pool.
     this.songSync.markServerStateSeen();
     const songPlan = this.songSync.planReconcile(rawSongLibrary, this.bootedFromLocalSongLibrary, this.host.isViewer());
     if (songPlan.kind === 'adopt') {
@@ -603,6 +607,15 @@ export class ShowsController {
       this.songSync.noteSynced(this.songSync.librarySig(this.currentSongLibrary()));
     } else if (songPlan.kind === 'seed') {
       this.syncSongLibraryToServer();
+    }
+    this.libSync.markServerStateSeen();
+    const plan = this.libSync.planReconcile(rawShowLibrary, this.bootedFromLocalLibrary, this.host.isViewer());
+    if (plan.kind === 'adopt') {
+      this.adoptLibrary(plan.library);
+      // Mark synced WITHOUT echoing the adopted library. Later edits diverge and push normally.
+      this.libSync.noteSynced(this.libSync.librarySig(this.currentLibrary()));
+    } else if (plan.kind === 'seed') {
+      this.syncLibraryToServer();
     }
   }
 
@@ -641,9 +654,9 @@ export class ShowsController {
   /** Push the current library to the server when it actually changed (sig-guarded so an unchanged
       library isn't re-sent every autosave tick). Gated on the first `state` having been seen, so the
       cold-load adopt always wins the race against the debounced autosave. */
-  syncLibraryToServer(): void {
+  syncLibraryToServer(payload?: PersistedShowLibrary): void {
     if (!this.host.linkOpen() || this.host.isViewer()) return; // a viewer follows the editor — never authors up
-    const envelope = serializeShowLibrary(this.currentLibrary());
+    const envelope = payload ?? serializeShowLibrary(this.currentLibrary());
     if (!this.libSync.planPush(envelope)) return;
     this.host.send({ t: 'setShowLibrary', library: envelope });
   }
@@ -661,9 +674,9 @@ export class ShowsController {
 
   /** Push the current song library to the server when it actually changed (sig-guarded, gated on the
       first `state`) — the sibling of {@link syncLibraryToServer}. */
-  syncSongLibraryToServer(): void {
+  syncSongLibraryToServer(payload?: PersistedSongLibrary): void {
     if (!this.host.linkOpen() || this.host.isViewer()) return; // a viewer follows the editor — never authors up
-    const envelope = serializeSongLibrary(this.currentSongLibrary());
+    const envelope = payload ?? serializeSongLibrary(this.currentSongLibrary());
     if (!this.songSync.planPush(envelope)) return;
     this.host.send({ t: 'setSongLibrary', library: envelope });
   }

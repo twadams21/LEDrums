@@ -5,7 +5,7 @@ import { flushSync } from 'svelte';
 import { TriggerLab } from './store.svelte';
 import { makeNode, type TriggerGraph } from './sim';
 import { EFFECTS } from './fixtures';
-import { serializeShowLibrary } from './persistence';
+import { serializeShowLibrary, serializeSongLibrary } from './persistence';
 import type { WSClient, WSCallbacks } from '../ws/client';
 
 const ctx = { velocity: 1, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: 'kick', bpm: 120 };
@@ -95,6 +95,32 @@ describe.each(transitions)('document replacement: %s', (transition) => {
       expect(store.bpm).toBe(bpm);
     } finally { store.stop(); }
   });
+});
+
+it('binds the incoming canonical song pool before creating the adopted document runtime', () => {
+  const { store, callbacks } = setup();
+  try {
+    const id = store.activeShowId;
+    const pool = serializeSongLibrary({ songs: { remote: { id: 'remote', name: 'Pool', sections: [], graphs: {}, graphNames: {}, effects: [{ ...EFFECTS[0]!, id: 'remote-effect' }], presets: [] } } });
+    const library = serializeShowLibrary({ activeShowId: id, shows: { [id]: { id, name: 'Remote', authored: { ...store.activeShow!.authored, songRefs: ['remote'] } } } });
+    callbacks.onState!(defaultProject(), { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } }, [], [], { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 }, library, pool, null, { status: 'listening', port: 9000, hosts: [] });
+    // Immediately coherent, not eventually fixed by a later autosave effect's registry upsert.
+    expect(store.sim.effect('remote-effect')).toBeDefined();
+  } finally { store.stop(); }
+});
+
+it('enforces the default byte budget without refusing oversized edits or skipping over them', () => {
+  const store = new TriggerLab(() => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient);
+  store.runUndoable(() => { store.bpm = 150; });
+  store.graphNames.huge = 'x'.repeat(17 * 1024 * 1024); // UTF-16 alone exceeds 32 MiB
+  store.runUndoable(() => { store.bpm = 177; });
+  expect(store.bpm).toBe(177);
+  expect(store.undo()).toBe(false); // cannot jump past the oversized edit to the older 120 bpm
+  delete store.graphNames.huge;
+  store.runUndoable(() => { store.bpm = 200; });
+  expect(store.undo()).toBe(true);
+  expect(store.bpm).toBe(177);
+  expect(store.undo()).toBe(false);
 });
 
 it('preserves runtime and Undo for save, rename, inactive deletion and no-op open', () => {
