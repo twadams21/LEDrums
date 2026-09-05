@@ -48,7 +48,10 @@ shutdown/peer-disconnect/takeover regressions cover both modes with disabled out
 No UI surface, sa33 SnapshotStore/worker or sa29 checkpoint/modifier implementation overlap;
 later core repairs preserved. Local commit awaits independent re-review; no full sweep or shipping.
 
-**Health remediation implementation (2026-09-05, `fix/health-integration`, IN PROGRESS):**
+**Health remediation — final blockers fixed, local gates green (2026-09-05, `fix/health-integration` HEAD `424da809`, UNPUSHED/UNMERGED):**
+Trent (this machine, `scutil` = "Trent’s MacBook Pro") chose to finish ALL slices rather than defer any, via Fable low-effort twux workers with Pi orchestrating. The seven independent-review blockers were corrected in `a591d3c4` (server: import-only guard fails closed on missing/string-version legacy library files before any boot snapshot, authority still wins; backup read/off-site pack cross the worker as JSON text, local write commits before isolated off-site handoff) and `424da809` (web: live region outside `aria-busy`, host-wide stylesheet registry with boundary-scoped recovery, exact-URL/attempt-window/initiator provenance, status 0 corroborated by HEAD probe). Independent reviewer verified diffs and counterprobes, then owned the serial integrated gate: frozen install, typecheck, **4,759 tests / 4 opt-in skips**, dead-code verify, build, design-system, diff-check, 16/16 production lazy matrix, 3 strict shots, pinned Node 22.23.1 SEA 16/16, desktop `prepare:bundle` smoke. Evidence: `docs/reports/2026-09-05-health-integration-review.md`. **P11 multi-MB stall-free acceptance is still PARTIAL** (clone submission stalls; text transport is a reliability fix). No PR, push, merge, release, deploy or Worker migration has happened; those need Trent's authorization. Full Tauri/ARM build unverified.
+
+**Health remediation implementation (2026-09-05, `fix/health-integration`, historical — superseded by the entry above):**
 Trent approved implementing all audit follow-ups without further questions, in-session;
 verified machine identity remains Trent’s MacBook Pro. The integrating agent selected conservative
 implementation defaults: clear history on document replacement, restart geometry-dependent visual
@@ -59,7 +62,7 @@ Tracker: `docs/plans/2026-09-05-health-implementation.md`; scoped evidence:
 document lifetime/persistence ownership, observable output/old-coverage retirement, controller
 ownership, GPU disposal, true wall-clock FPS, immutable release source/exact SEA pin, atomic ingest
 admission and verified workspace dead-code roots. Project replacement/async backups and lazy UI
-loading are still being implemented; independent review corrections and integrated gates remain.
+loading were subsequently implemented; their review corrections and the integrated gate are recorded above.
 Unresolved controller cleanup now survives re-adoption/credential refresh (review regression fixed).
 No fixes in this new batch are declared merged/shipped yet. Worker rollout requires its documented
 claims-table migration with old writers quiesced; **migration, deployment and OTA publication are

@@ -47,8 +47,9 @@ is currently on `fix/health-integration` (not yet declared merged):
 - Worker admission/notification identity belongs to one D1 transactional ledger. Notifications
   are bounded `waitUntil` work, not an awaited part of error persistence. Existing installations
   must migrate/backfill with writers quiesced before deploying this code.
-Project replacement/async backup ownership and review corrections remain in progress; see
-`docs/plans/2026-09-05-health-implementation.md` and the scoped implementation reports.
+Project replacement/async backup ownership and review corrections are integrated locally (HEAD
+`424da809`, unpushed); see `docs/plans/2026-09-05-health-implementation.md` and the scoped reports.
+Legacy three-file import fails closed when a present library file lacks a numeric `version`.
 Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
 host/sim until its live responsibilities have been transferred and tested.
 
@@ -61,9 +62,12 @@ backup read/parse in a persistent literal-eval Node worker (source and actual pi
 Two accepted snapshots are count-admitted before synchronous structured clone; 32 MiB/files and
 64 MiB retained-JSON limits apply AFTER clone/stringify, not to pre-clone heap. Safety refusal
 aborts replacement. Main retains a SHA-256 cadence digest, not full JSON. Close joins the worker;
-crash/timeout rejects outstanding work and retry creates a new worker. Measured default burst
-stalls improve by refusing excess attempts; accepted clone and large read-result delivery are
-slower on the 6.4 MB fixture, and atomic live-state/off-site JSON remain synchronous boundaries.
+crash/timeout rejects outstanding work and retry creates a new worker. Read results and the
+optional off-site bundle cross the worker boundary as JSON TEXT (flat clone) and are parsed
+iteratively on main, so a deep-but-valid snapshot that passed validation is always readable; the
+local write commits before and independently of off-site preparation. Measured default burst
+stalls improve by refusing excess attempts; accepted clone submission is slower on the 6.4 MB
+fixture, and atomic live-state/off-site JSON parse remain synchronous main-thread boundaries.
 See `docs/reports/2026-09-05-health-backup-worker.md` for exact measurements/defaults and
 `docs/reports/2026-09-05-health-projects.md` for migration/durability. Neither local result says
 these changes have shipped or meet a render budget.
@@ -81,7 +85,8 @@ Web code-loading boundaries (SA-26, local branch `perf/health-lazy-surfaces`):
 `app/lazy-views.ts` owns Trigger/Sections/Objects imports; `settings/lazy-panes.ts` owns the
 seven Settings pane imports. Perform/necessary Three and the Settings Dialog/nav remain eager.
 `ui/lazy-resource.svelte.ts` caches code, not mounted instances; `ui/lazy-component.ts` owns
-constrained fetch recovery. See `docs/reports/2026-09-05-health-bundle.md` for browser evidence
+constrained fetch recovery through a host-wide stylesheet registry (Vite remembers failed
+preloads for the page lifetime) with boundary-scoped retry and exact-URL/attempt-window evidence. See `docs/reports/2026-09-05-health-bundle.md` for browser evidence
 and the deliberate safe-reopen fallback when in-place recovery cannot be established.
 
 ## Historical System Overview
