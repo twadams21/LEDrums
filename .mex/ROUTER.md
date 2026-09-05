@@ -60,7 +60,7 @@ disables viewer/canonical authoring affordances and exposes Copy as the default 
 strict shots captured picker, linked status/dialog, canonical read-only, and viewer-disabled states.
 Evidence: focused 162 tests, full 2,518 web + 1,402 core + 601 server + 98 IO + 13 protocol +
 57 worker + 83 desktop tests green; full typecheck/build green; strict shots on the dedicated
-LEDrums Vite port were console-clean. Remaining delivery: commit/push this branch and let PR CI run.
+LEDrums Vite port were console-clean. Pushed as `1ff8043c`; PR CI is pending.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
