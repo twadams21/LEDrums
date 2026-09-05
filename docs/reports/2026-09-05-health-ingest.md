@@ -7,8 +7,9 @@ Base: `ea18f615`. Fix + regression commit: `e347b7fa`.
 
 Source: Trent's in-session instruction to implement P14 of
 [`2026-09-05-codebase-health-audit.md`](../plans/2026-09-05-codebase-health-audit.md), approving the
-follow-ups and choosing best-effort notifications, local commits, worker-only verification, and
-no infrastructure actions. Attribution verified by `scutil --get ComputerName` → Trent’s MacBook Pro.
+follow-ups without further questions. Best-effort notifications are the integrating agent's
+implementation default; local commits and worker-only verification were delegation constraints,
+not separately stated user decisions. Infrastructure actions remain unauthorized. Attribution verified by `scutil --get ComputerName` → Trent’s MacBook Pro.
 
 Implementation ownership stayed inside `workers/error-ingest`; this requested report is the only
 file outside that directory. No application/core/IO/UI/release changes, dependency additions,

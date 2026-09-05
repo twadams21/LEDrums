@@ -36,6 +36,25 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Health remediation implementation (2026-09-05, `fix/health-integration`, IN PROGRESS):**
+Trent approved implementing all audit follow-ups without further questions, in-session;
+verified machine identity remains Trent’s MacBook Pro. The integrating agent selected conservative
+implementation defaults: clear history on document replacement, restart geometry-dependent visual
+state, 32 MiB estimated retained history plus 10,000-entry ceiling, and best-effort bounded ingest
+notifications. These are **implementation defaults, not separately stated user decisions**.
+Tracker: `docs/plans/2026-09-05-health-implementation.md`; scoped evidence:
+`docs/reports/2026-09-05-health-*.md`. Work includes shared core/offline rendering and voice policy,
+document lifetime/persistence ownership, observable output/old-coverage retirement, controller
+ownership, GPU disposal, true wall-clock FPS, immutable release source/exact SEA pin, atomic ingest
+admission and verified workspace dead-code roots. Project replacement/async backups and lazy UI
+loading are still being implemented; independent review corrections and integrated gates remain.
+Unresolved controller cleanup now survives re-adoption/credential refresh (review regression fixed).
+No fixes in this new batch are declared merged/shipped yet. Worker rollout requires its documented
+claims-table migration with old writers quiesced; **migration, deployment and OTA publication are
+unexecuted and require separate authorization**. Held Patch files and the unrelated dirty prototype
+checkout remain untouched. The prior audit's undecided questions below are historical: its later
+implementation authorization and the agent-selected defaults above supersede the request to stop.
+
 **Codebase health audit (2026-09-05, branch `fix/codebase-health-audit`, base `763c422`):**
 requested by **Trent** in-session (machine identity verified). Work is isolated in
 `../ledrums-health-audit`; the original prototype checkout and its dirty F7 brief are untouched.

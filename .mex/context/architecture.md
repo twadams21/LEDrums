@@ -32,8 +32,23 @@ feeding the trusted-host server HTTP input path. `workers/error-ingest` is a dep
 Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older “no cloud
 backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
 
-Ownership audit and planned shared modules: `docs/plans/2026-09-05-codebase-health-audit.md`
-(P01 document/history/sim lifetime, P02 authoritative project replacement, P08 offline adapter).
+Ownership audit: `docs/plans/2026-09-05-codebase-health-audit.md`. The follow-up implementation
+is currently on `fix/health-integration` (not yet declared merged):
+- Core compositor/pool/envelope/member policies now also drive the offline Sim; geometry changes
+  use immutable model identity, and modifier definitions explicitly declare scope execution policy.
+- The store owns document replacement and creates a fresh Sim; `document-history.ts` owns
+  structurally shared, identity-guarded, byte-estimated checkpoints. Persistence materializes at
+  debounce/explicit flush boundaries, not on each drag event.
+- `udp-output.ts` owns adapter readiness and bounded local-send/drain callbacks. OutputManager
+  retains transmitted coverage across maps; packet acceptance is not controller acknowledgement.
+- Controller test state belongs to its destination, independently of HTTP client credentials.
+  Only acknowledged return-to-live clears unresolved ownership; old clients are not retained in
+  the recovery ledger.
+- Worker admission/notification identity belongs to one D1 transactional ledger. Notifications
+  are bounded `waitUntil` work, not an awaited part of error persistence. Existing installations
+  must migrate/backfill with writers quiesced before deploying this code.
+Project replacement/async backup ownership and review corrections remain in progress; see
+`docs/plans/2026-09-05-health-implementation.md` and the scoped implementation reports.
 Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
 host/sim until its live responsibilities have been transferred and tested.
 

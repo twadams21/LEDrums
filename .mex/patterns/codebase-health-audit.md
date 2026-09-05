@@ -25,11 +25,16 @@ Read AGENTS, architecture and conventions. Source evidence from current code, no
 ## Gotchas
 
 - `rg`/`fd` tool wrappers may fail before searching; use the CLI through bash when that happens.
-- Core/offline action parity does not prove rendered-pixel or voice-lifetime parity. Compare frames and state evolution.
+- Core/offline action parity does not prove rendered-pixel or voice-lifetime parity. Compare frames and state evolution, including authored envelopes inside composites and input changes while paused. A tick-keyed cache must not freeze live modulation; invalidation must not advance trails twice.
+- Document replacement also invalidates outstanding clipboard promises and manual paste dialogs. Use a generation token, not just show identity (same-ID server replacement is still a new lifetime). Save As must not replay boot-only preset backfill over an already-live snapshot.
+- Controller cleanup belongs to its destination, not its disposable HTTP client. Test failed cleanup → leave → re-adopt, credential refresh while pending, and rapid A/B/A. Never clear uncertainty before acknowledgement.
 - Async UDP errors do not reach synchronous send catches. Packet attempts are not proof of controller receipt.
 - Dropping congested preview frames must not silently drop authoritative JSON messages.
 - Frame buffers owned by async transports cannot be blindly reused while outstanding sends may reference them.
 - Reaping a pooled object does not release its retained arrays unless references are cleared.
+- Three frees GPU attributes by reading them during geometry disposal: dispose BEFORE replacing attributes. Instrument actual browser WebGL creation/deletion across rebuilds and view remounts.
+- `pnpm dead-code:verify` checks actual reachability with a seeded dead source file. Keep the pure-JS Knip pin deliberate: newer releases can introduce native resolver bindings. Keep advisory unused exports separate from the verified file/dependency baseline.
+- New D1 claims code needs backfill and writer quiescence before deployment; merging application code is not a migration. Claims are notification attempts, not guaranteed delivery.
 - `pnpm test` passing with jsdom/Svelte warnings is not real-browser or hardware verification.
 
 ## Verify

@@ -1,6 +1,6 @@
 # Health P03 / P04 / P08 — core + offline runtime
 
-Source: `docs/plans/2026-09-05-codebase-health-audit.md`; Trent's dispatch explicitly approves restart-on-geometry-edit and the follow-ups. Isolated worktree `ledrums-health-core`, branch `fix/health-core-runtime`, base `ea18f61`. No store/shows/persistence, global ROUTER/design artifact, output/IO or release changes.
+Source: `docs/plans/2026-09-05-codebase-health-audit.md`; Trent approved implementing all follow-ups without further questions. Restart-on-geometry-edit is the integrating agent's conservative implementation default, not a separately stated product decision. Isolated worktree `ledrums-health-core`, branch `fix/health-core-runtime`, base `ea18f61`. No store/shows/persistence, global ROUTER/design artifact, output/IO or release changes.
 
 ## P03 — geometry ownership
 

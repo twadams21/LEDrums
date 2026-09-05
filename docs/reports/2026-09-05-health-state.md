@@ -1,6 +1,6 @@
 # P01 + P10 — document state health
 
-Branch: `fix/health-document-state`. Scope/decisions: user dispatch, 2026-09-05. Clear Undo on replacement, document-ID guard, 32 MiB estimated history budget with a 10,000-entry ceiling. No sim/render/core edits, release operations, global context or design artifact changes. Integrated ui-shot belongs to the orchestrator.
+Branch: `fix/health-document-state`. Source: user approval to implement all follow-ups without further questions, 2026-09-05. Integrating-agent defaults (not separately stated user decisions): clear Undo on replacement, document-ID guard, 32 MiB estimated history budget with a 10,000-entry ceiling. No sim/render/core edits, release operations, global context or design artifact changes. Integrated ui-shot belongs to the orchestrator.
 
 ## P01 evidence
 
