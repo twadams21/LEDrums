@@ -23,7 +23,7 @@ Land the contained repair batch, then tackle **P01–P03 (document/model lifetim
 | F07 | `workers/error-ingest/src/backups.ts` ignored R2 listing cursors. Read all pages before applying existing newest-first ordering. | Multi-page adapter regression places the newest backup beyond page one. HTTP contract is unchanged. |
 | F08 | Remove unused npm `@tauri-apps/plugin-clipboard-manager` binding from desktop manifest/lockfile. | No JS/TS imports; shell uses `invoke` through the **retained** `@tauri-apps/api`. Rust clipboard plugin and capability remain: they are live, not dead code. |
 
-All new behavior has colocated regression coverage except F08, which is dependency reachability cleanup. Validation results are recorded below after the integrated sweep.
+All new behavior has colocated regression coverage except F08, which is dependency reachability cleanup. Integrated local gates and independent reviews passed; PR: https://github.com/twadams21/LEDrums/pull/202. Merging and deployment status are tracked on the PR; no OTA release or Worker deploy is authorized by this report.
 
 ## Follow-up plan: correctness first
 
@@ -137,6 +137,8 @@ Do this alongside the appropriate correctness slices, not as a standalone file-s
 4. **Reproducible benchmark matrix.** Fixed seed/time/input replay, 1/16/64/256 voices, ordinary kit and larger pixel model, scoped effects, Mix/Splice and temporal modifiers. Warm caches, report allocations and before/after runtime distributions. UI workload adds large libraries, rapid edits and repeated model/view replacements. Hardware test checks MIDI/OSC→light and actual UDP destination/blackout behavior.
 5. **Context hygiene.** `.mex/context/architecture.md` described the old Composition-first system, browser-only MIDI/no cloud backend and 41 effects. This batch adds a current-runtime correction and explicitly marks that original map historical: native desktop MIDI, the voice engine and ingest worker now exist. ROUTER remains a long historical ledger; verify facts against code and expand an up-to-date architecture/lifecycle map separately from history. This audit initially exposed exactly the stale-branch risk those docs must guard against.
 
+6. **Initial bundle cost.** The final production build emitted a 2,099.01 kB main JS chunk (606.35 kB gzip), plus a separately split styleguide. Vite warns about the main chunk. Profile cold launch/parse and first interaction before splitting; lazy-load heavyweight noninitial views and Three/editor dependencies at real route seams, preserving an instantly usable performance surface. Compare built bytes and real-browser startup time, not just the warning threshold. Do not raise the threshold to hide the cost.
+
 ## Decisions for Trent
 
 1. **Undo across show switches:** clear history on switch (simpler) or preserve a separate bounded history per show? Recommendation: clear on replacement first, with document-ID protection either way.
@@ -152,5 +154,11 @@ These are the actual ambiguous behavior choices. Fixing UDP error visibility, qu
 - F01: extracted original broadcast path → one targeted test failed (300 vs 0 blocked-client sends); fixed → 3/3 green.
 - F02: four new start/restart FPS tests failed (0 vs 60/120); fixed → 4/4 green.
 - F03: two new reap/reset tests failed on retained state; fixed → 10/10 pool tests and 78/78 engine tests green. Live-voice preservation is covered.
-- F04–F08 and integrated final gates: pending closeout below.
+- F04/F05: both new cache regressions failed before their fixes; 141 targeted Canvas/Splice/compositor tests passed afterward.
+- F06: same-key acknowledgement regressions failed before repair; all 10 ship-queue tests passed afterward.
+- F07: multi-page adapter regression failed before repair; all 14 targeted worker backup tests passed afterward; worker typecheck green.
+- F08: `pnpm install --frozen-lockfile` passed; actual desktop shell entry bundled with the existing esbuild settings (7,016 bytes). Rust clipboard plugin/capability unchanged.
+- Integrated `pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build`: exit 0. **4,200 tests** = core 1,235 + IO 76 + protocol 13 + server 473 + web 2,308 + worker 33 + desktop Node tests 62; 18 added regressions. Web typecheck: 0 errors, 0 warnings. Runtime test warnings (jsdom canvas / Svelte `derived_inert`) remain; production bundle-size warning recorded above.
+- Standards review: no blocking findings; one minor coverage limit—Splice's repeated unchanged-model comparison establishes output stability, not an instrumented cache-hit count. Spec review: no actionable findings. Both read-only reviews inspected the repair diff independently.
+- `git diff --check`: clean. Pure-core imports/determinism preserved; no competing model types or new WS messages. CI/desktop Rust/SEA result is authoritative on PR #202.
 - No UI components/styles changed in this batch; UI redesign and screenshots belong to the planned web changes. No hardware or live Worker/OTA deployment is claimed.
