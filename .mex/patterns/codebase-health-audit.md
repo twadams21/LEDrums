@@ -43,6 +43,19 @@ Read AGENTS, architecture and conventions. Source evidence from current code, no
 - `pnpm dead-code:verify` checks actual reachability with a seeded dead source file. Keep the pure-JS Knip pin deliberate: newer releases can introduce native resolver bindings. Keep advisory unused exports separate from the verified file/dependency baseline.
 - New D1 claims code needs backfill and writer quiescence before deployment; merging application code is not a migration. Claims are notification attempts, not guaranteed delivery.
 - `pnpm test` passing with jsdom/Svelte warnings is not real-browser or hardware verification.
+- Bundle comparisons must hold core/state fixes constant. Preserve the pre-split production dist
+  and measure actual loaded JS at the same ready selector, not just the main chunk or Vite warning.
+- Native imports cache failures in Chrome. A mocked reject-once factory cannot prove retry:
+  abort an actual production entry, restore connectivity, verify the original URL stays rejected,
+  then assert recovery makes a fresh request without reloading the app/shared runtime. Chrome may
+  name the ENTRY when a dependency failed; require failed entry HTTP evidence before cache-busting.
+  Opaque/evaluation/shared-module failures need safe reopen guidance instead. Vite can report just
+  the first of several failed CSS preloads: await every witnessed failed stylesheet on recovery.
+  A failed Chrome stylesheet link can still have an empty `.sheet`; use HTTP evidence, not truthiness.
+  Assert the real ready-content selector, not just “fallback hidden” (the delayed-feedback window
+  deliberately has no fallback yet).
+- In modal browser checks a tooltip can legitimately consume Escape first. Move focus to a
+  non-tooltip navigation control and wait for the tooltip to close before asserting dialog dismissal.
 
 ## Verify
 

@@ -95,6 +95,17 @@ and IO scoped typechecks passed. Real-source server load/restore/shutdown/cold r
 in both modes with disabled output and temp storage. No full sweep, hardware, push or shipping;
 orchestrator must integrate later core/parity/state repairs. Original prototype checkout untouched.
 
+**SA-26 noninitial UI loading (local branch `perf/health-lazy-surfaces`, 2026-09-05):**
+requested by **Trent** in the SA-26/resume instructions (machine identity verified), implementing
+health-audit §6 without changing the parent's core/state work. Trigger/Sections/Objects and the
+seven Settings panes now load at their existing boundaries; Perform/necessary Three and modal
+chrome stay eager. Chrome recovery uses a fresh URL ONLY for a declared entry with witnessed
+HTTP failure; shared-module/opaque/evaluation failures instead explain safe reopening. No automatic
+reload or store reset. Browser regressions exercise real failed production requests, unchanged
+engine connection, warm/stale navigation, modal focus/Escape and persisted edits across explicit
+reload. Measurements, limitations and focused gates: `docs/reports/2026-09-05-health-bundle.md`.
+This is **local implementation evidence**, not merged/shipped status; parent owns the full sweep.
+
 **Codebase health audit (2026-09-05, branch `fix/codebase-health-audit`, base `763c422`):**
 requested by **Trent** in-session (machine identity verified). Work is isolated in
 `../ledrums-health-audit`; the original prototype checkout and its dirty F7 brief are untouched.

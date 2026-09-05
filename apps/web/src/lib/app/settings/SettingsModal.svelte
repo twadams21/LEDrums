@@ -7,34 +7,19 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import { DEFAULT_SETTINGS_PANE, type SettingsPane } from '../shell-nav';
-  import type { Component } from 'svelte';
+  import LazySurface from '../../ui/LazySurface.svelte';
+  import { settingsPanes } from './lazy-panes';
+  import { SETTINGS_SECTIONS } from './sections';
   import Dialog from '../../ui/Dialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import SettingsNav from './SettingsNav.svelte';
-  import InputPane from './panes/InputPane.svelte';
-  import DrumZonesPane from './panes/DrumZonesPane.svelte';
-  import GlobalControlsPane from './panes/GlobalControlsPane.svelte';
-  import DrumsHoopsPane from './panes/DrumsHoopsPane.svelte';
-  import OutputsChainsPane from './panes/OutputsChainsPane.svelte';
-  import ControllerPane from './panes/ControllerPane.svelte';
-  import SystemPane from './panes/SystemPane.svelte';
+
   import X from '@lucide/svelte/icons/x';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
-  /** Route → pane component. `Record<SettingsPane, …>` makes the compiler the coverage
-      check: a new section id doesn't build until it has a pane. Labels, icons and hues
-      are the registry's (`sections.ts`) — the sidebar and each pane header read them. */
-  const PANES: Record<SettingsPane, Component<{ store: TriggerLab }>> = {
-    input: InputPane,
-    zones: DrumZonesPane,
-    controls: GlobalControlsPane,
-    drums: DrumsHoopsPane,
-    outputs: OutputsChainsPane,
-    controller: ControllerPane,
-    system: SystemPane,
-  };
-
+  // Keep the small Dialog/nav shell eager: focus trapping, Escape and the close
+  // control must work BEFORE a pane's code arrives, without swapping dialogs.
   const open = $derived(shell.settingsPane !== null);
   /* On close the route goes null while the Dialog is still tearing down — without the
      memory, `active` would fall back to the first section and the modal would swap panes
@@ -45,7 +30,7 @@
     if (shell.settingsPane !== null) lastPane = shell.settingsPane;
   });
   const active = $derived(shell.settingsPane ?? lastPane);
-  const ActivePane = $derived(PANES[active]);
+  const paneLabel = $derived(SETTINGS_SECTIONS.find((s) => s.id === active)!.label);
 
   /** Every close path (X, Esc, backdrop) disarms any pending MIDI/OSC learn — an arm
       left live after the modal closes is invisible, and the next stray input would
@@ -65,7 +50,13 @@
   <div class="split">
     <SettingsNav {active} onSelect={(id) => shell.openSettings(id)} />
     <div class="pane">
-      <ActivePane {store} />
+      {#if open}
+        {#key active}
+          <LazySurface resource={settingsPanes[active]} label={paneLabel}>
+            {#snippet children(Pane)}<Pane {store} />{/snippet}
+          </LazySurface>
+        {/key}
+      {/if}
     </div>
   </div>
 </Dialog>

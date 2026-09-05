@@ -18,9 +18,8 @@
   import LayersDock from './docks/LayersDock.svelte';
   import Visualizer from './docks/Visualizer.svelte';
   import Monitor from './docks/Monitor.svelte';
-  import TriggerGraphView from './views/TriggerGraphView.svelte';
-  import SectionsView from './views/SectionsView.svelte';
-  import ObjectsView from './views/ObjectsView.svelte';
+  import { editorViews } from './lazy-views';
+  import LazySurface from '../ui/LazySurface.svelte';
   import PerformView from './views/PerformView.svelte';
   import PanelHeader from '../ui/PanelHeader.svelte';
   import Splitter from '../ui/Splitter.svelte';
@@ -87,14 +86,14 @@
     </main>
   {:else}
     <main class="center">
-      {#if shell.view === 'trigger'}
-        <TriggerGraphView {store} {shell} />
-      {:else if shell.view === 'objects'}
-        <ObjectsView {store} {shell} />
-      {:else if shell.view === 'monitor'}
+      {#if shell.view === 'monitor'}
         <Monitor {store} variant="workspace" />
       {:else}
-        <SectionsView {store} {shell} />
+        {#key shell.view}
+          <LazySurface resource={editorViews[shell.view === 'trigger' ? 'trigger' : shell.view === 'objects' ? 'objects' : 'sections']} label={shell.view === 'trigger' ? 'Trigger' : shell.view === 'objects' ? 'Objects' : 'Sections'}>
+            {#snippet children(View)}<View {store} {shell} />{/snippet}
+          </LazySurface>
+        {/key}
       {/if}
     </main>
 

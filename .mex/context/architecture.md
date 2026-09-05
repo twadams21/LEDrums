@@ -77,6 +77,13 @@ constants. Server preflight and production library setters accept exactly show v
 browser remains the canonical migration owner. Recover older libraries on copies, never by
 changing the version tag or falling back to stale import files. No library schema was copied.
 
+Web code-loading boundaries (SA-26, local branch `perf/health-lazy-surfaces`):
+`app/lazy-views.ts` owns Trigger/Sections/Objects imports; `settings/lazy-panes.ts` owns the
+seven Settings pane imports. Perform/necessary Three and the Settings Dialog/nav remain eager.
+`ui/lazy-resource.svelte.ts` caches code, not mounted instances; `ui/lazy-component.ts` owns
+constrained fetch recovery. See `docs/reports/2026-09-05-health-bundle.md` for browser evidence
+and the deliberate safe-reopen fallback when in-place recovery cannot be established.
+
 ## Historical System Overview
 Authored content + live input → render loop → pixels → wire & screen.
 

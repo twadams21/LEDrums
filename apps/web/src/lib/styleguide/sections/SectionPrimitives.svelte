@@ -36,6 +36,7 @@
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import AnchorHeader from '../../ui/AnchorHeader.svelte';
   import LintCallout from '../../ui/LintCallout.svelte';
+  import LoadFeedback from '../../ui/LoadFeedback.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
   import { pushToast } from '../../ui/toast.svelte';
@@ -451,6 +452,16 @@
         <ColorField value={null} ariaLabel="Demo colour field (none)" />
         <ColorField value="#b6ff00" clearable={false} ariaLabel="Demo colour field (required)" />
       </div>
+    </DemoCard>
+
+    <DemoCard
+      title="Code loading · failure & retry"
+      src={['lib/ui/LoadFeedback', 'lib/ui/LazySurface', 'lib/ui/lazy-resource.svelte', 'lib/ui/lazy-component']}
+      note="LazySurface reserves busy space immediately, announces Loading after 200ms, and never delays ready content. Cached code renders synchronously on return; instances still unmount. A recognized entry-download or stylesheet failure has an alert and explicit network retry. Opaque/shared-module/evaluation failures offer safe reopen guidance, not a fake retry — no automatic app reload during a performance. Settings keeps one stable Dialog and its navigation/close control available throughout. Static examples below show the three real feedback states; no pretend percentages or looping animation."
+    >
+      <LoadFeedback label="Trigger" />
+      <LoadFeedback label="Trigger" failed onRetry={() => pushToast('In the app, Try again re-requests the editor code.')} />
+      <LoadFeedback label="Input" failed />
     </DemoCard>
 
     <DemoCard title="Status" src={['lib/ui/StatusPill', 'lib/ui/StatusDot']}>
