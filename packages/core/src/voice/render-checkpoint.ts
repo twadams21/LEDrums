@@ -194,26 +194,44 @@ function restore(state: RenderState, snapshot: Snapshot, model: PixelModel): voi
  * resumes exactly as if only the final presentation had been rendered once. Lifecycle,
  * eval PRNG, latches and splice motion are NEVER rolled back or advanced here.
  */
-export function createRenderCheckpoint(): (voices: readonly Voice[], model: PixelModel, tick: number) => void {
+export interface RenderCheckpoint {
+  (voices: readonly Voice[], model: PixelModel, tick: number): void;
+  /** Ownership-only: never capture/restore state or execute effects. Call after retirement
+   * or generation/model replacement even when presentation is suspended. Unchanged live
+   * baselines (including Echo's exclusive one-slot journal) must survive dirty replay.
+   * Opaque state is not inspected here; capture's explicit rejection contract is unchanged. */
+  prune(voices: readonly Voice[], model: PixelModel | null): void;
+  /** Release all checkpoints AND the model identity immediately. */
+  reset(): void;
+}
+
+export function createRenderCheckpoint(): RenderCheckpoint {
   let geometry: PixelModel | null = null;
   const snapshots = new Map<Voice, { id: string; seed: number; bornAtMs: number; tick: number; snapshot: Snapshot }>();
-  return (voices, model, tick) => {
-    if (geometry !== model) {
-      snapshots.clear();
+  const reset = (): void => { snapshots.clear(); geometry = null; };
+  const prune = (voices: readonly Voice[], model: PixelModel | null): void => {
+    if (geometry !== model || !model) {
+      reset();
       geometry = model;
+      return;
     }
     const alive = new Set(voices.filter((v) => v.active));
-    for (const voice of snapshots.keys()) if (!alive.has(voice)) snapshots.delete(voice);
+    for (const [v, entry] of snapshots) {
+      // renderModel also fences an explicitly reset/reused slab with equal id/seed/birth.
+      if (!alive.has(v) || v.renderModel !== model || entry.id !== v.id ||
+        entry.seed !== v.seed || entry.bornAtMs !== v.bornAtMs) snapshots.delete(v);
+    }
+  };
+  const checkpoint = (voices: readonly Voice[], model: PixelModel, tick: number): void => {
+    prune(voices, model);
     for (const v of voices) {
       if (!v.active) continue;
       ensureGeometryState(v, model);
-      let entry = snapshots.get(v);
-      // A slab object may now carry a new generation; an equal id on a different slab
-      // object is also a new owner. Never rewind a newly spawned voice to its predecessor.
-      if (entry && (entry.id !== v.id || entry.seed !== v.seed || entry.bornAtMs !== v.bornAtMs)) entry = undefined;
+      const entry = snapshots.get(v);
       if (entry?.tick === tick) restore(v, entry.snapshot, model);
       else snapshots.set(v, { id: v.id, seed: v.seed, bornAtMs: v.bornAtMs, tick,
         snapshot: capture(v, model, entry?.snapshot) });
     }
   };
+  return Object.assign(checkpoint, { prune, reset });
 }

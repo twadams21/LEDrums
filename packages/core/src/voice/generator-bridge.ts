@@ -30,6 +30,8 @@ import type { Voice } from './types';
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
     GeneratorBridge.beginFrame} once per frame before rendering any voice. */
 export interface GeneratorBridge {
+  /** Drop the previous model/context without running a generator (presentation may stop). */
+  reset(): void;
   /** Refresh the reusable {@link RenderContext} for this frame (rebuilt only when the
       model identity changes; otherwise the existing context's fields are updated). */
   beginFrame(model: PixelModel, timeMs: number, dt: number, transport: TransportState): void;
@@ -61,6 +63,11 @@ export function createGeneratorBridge(): GeneratorBridge {
   };
 
   return {
+    reset(): void {
+      genCtx = null;
+      frameTransport = null;
+      genScratch = null;
+    },
     beginFrame(model, timeMs, dt, transport): void {
       frameTransport = transport;
       // The triggers array reference is stable; its single element is mutated per voice.

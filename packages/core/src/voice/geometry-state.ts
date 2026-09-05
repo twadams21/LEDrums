@@ -15,9 +15,11 @@ export interface GeometryState {
   spliceInputs?: GeometryState[];
 }
 
-export function ensureGeometryState(state: GeometryState, model: PixelModel): void {
-  if (state.renderModel === model) return;
-  state.renderModel = model;
+/** null detaches all geometry ownership, including adapters that close over Canvas docs. */
+export function ensureGeometryState(state: GeometryState, model: PixelModel | null): void {
+  if (model && state.renderModel === model) return;
+  state.renderModel = model ?? undefined;
+  state.renderGenerator = undefined;
   state.genState = null;
   state.modState = undefined;
   for (const member of state.mixInputs ?? []) ensureGeometryState(member, model);

@@ -44,11 +44,13 @@ export function releaseVoice(v: Voice, timeMs: number): void {
   v.releaseFromLevel = v.level;
 }
 
-/** Retain the lightweight pool slot, not the dead voice's pixel-sized accumulators or
- * composite sub-voices. Spawn creates fresh state anyway; keeping it cannot aid reuse. */
+/** Retain the lightweight pool slot, not the dead voice's pixel-sized accumulators,
+ * composite sub-voices or adapter closures over Canvas documents. Spawn creates fresh
+ * state anyway; keeping it cannot aid reuse. */
 export function deactivateVoice(v: Voice): void {
   v.active = false;
   v.renderModel = undefined;
+  v.renderGenerator = undefined;
   v.genState = null;
   v.modState = undefined;
   v.mixInputs = undefined;
@@ -178,6 +180,7 @@ export class VoicePool {
       : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
     slot.renderModel = undefined;
+    slot.renderGenerator = undefined;
     /** Realise a composite member (Mix branch or splice) into a sub-voice. A member whose
         effect or generator can't be resolved is dropped rather than rendered blank. */
     const toMember = (input: MixInputDraft, index: number): MixInput | null => {

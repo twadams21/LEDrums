@@ -296,8 +296,21 @@ export class Sim {
   private model: PixelModel | null = null;
   get pixelModel(): PixelModel | null { return this.model; }
   set pixelModel(model: PixelModel | null) {
+    if (this.model === model) return;
     this.model = model;
-    if (model) for (const v of this.voices) voice.ensureGeometryState(v, model);
+    this.prunePresentation();
+    this.framebuffer = null;
+  }
+
+  /** Connected preview still ticks while skipping local paint. Ownership must follow
+   * retirement/spawn/model changes, not the next render. Drop cache adapter/model refs
+   * too, but keep unchanged live checkpoints for a later dirty same-tick presentation. */
+  private prunePresentation(): void {
+    this.compositor.prunePresentation(this.pool.pool, this.model);
+    this.renderedRevision = -1;
+    this.renderedModel = null;
+    this.renderedPresentation = '';
+    this.renderedGenerators.length = 0;
   }
 
   /** Live MIDI CC values, read by the shared compositor alongside OSC/note tables. */
@@ -448,6 +461,7 @@ export class Sim {
     });
     voice.shapeCascadeVoice(v, this.pixelModel);
     this.activeVoices = this.pool.pool.filter((v) => v.active);
+    this.prunePresentation();
     return v;
   }
 
@@ -541,6 +555,7 @@ export class Sim {
     voice.reapDeadVoices(this.pool.pool, this.latched);
     voice.advanceLatchedSpliceMotion(this.pool.pool, this.spliceMotionMs, dtMs);
     this.activeVoices = this.pool.pool.filter((v) => v.active);
+    this.prunePresentation();
   }
 
   /** 0..1 progress through a voice's life — drives param envelopes. */
@@ -557,6 +572,7 @@ export class Sim {
    * Effect/preset upserts are spawn-time definitions; existing voice params stay snapshots.
    * Newly spawned voices start at level zero and become visible on the next tick. */
   render(model: PixelModel): Readonly<Float32Array> {
+    this.pixelModel = model;
     // These adapter inputs are public, so setter-only revision counters are insufficient.
     // Do not serialize voices/opaque render state: only small presentation input tables.
     const presentation = JSON.stringify([this.timeMs, this.beat, this.bpm, this.beatsPerBar,

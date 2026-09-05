@@ -259,6 +259,10 @@ export interface Compositor {
 
 /** Offline presentation wrapper. Ordinary render callers pay no checkpoint cost. */
 export interface PresentationCompositor extends Compositor {
+  /** Non-rendering lifetime boundary. Drop retired generations/checkpoints and old model
+   * references even while local painting is suspended; null detaches the model entirely.
+   * Unchanged live baselines are preserved. Call after reaping/spawn and on model changes. */
+  prunePresentation(voices: readonly Voice[], model: PixelModel | null): void;
   renderPresentation(voices: readonly Voice[], model: PixelModel, frame: CompositorFrame, dst: Framebuffer, tick: number): void;
 }
 
@@ -284,7 +288,23 @@ export function createDefaultCompositor(): PresentationCompositor {
   let spliceLayoutModel: PixelModel | null = null;
   const SPLICE_LAYOUT_CACHE_CAP = 64;
 
+  const bindModel = (model: PixelModel | null): void => {
+    if (spliceLayoutModel === model) return;
+    spliceLayouts.clear();
+    spliceLayoutModel = model;
+    generators.reset();
+    mixScratch = mixInputScratch = null;
+    spliceBuffers = [];
+  };
+
   return {
+    prunePresentation(voices, model): void {
+      // Prune BEFORE binding voice geometry: a reset slab's undefined renderModel is
+      // an ownership fence even if its public id/seed/birth have been reused.
+      checkpoint.prune(voices, model);
+      bindModel(model);
+      for (const v of voices) if (v.active) ensureGeometryState(v, model);
+    },
     renderPresentation(voices, model, frame, dst, tick): void {
       checkpoint(voices, model, tick);
       this.render(voices, model, frame, dst);
@@ -292,10 +312,7 @@ export function createDefaultCompositor(): PresentationCompositor {
     render(voices, model, frame, dst): void {
       dst.clear();
       // Equal pixel totals/ranges can hide changed hoop or drum boundaries.
-      if (spliceLayoutModel !== model) {
-        spliceLayouts.clear();
-        spliceLayoutModel = model;
-      }
+      bindModel(model);
       const timeMs = frame.timeMs;
       const frameCtx: FrameModCtx = {
         timeMs,

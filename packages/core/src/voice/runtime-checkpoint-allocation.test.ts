@@ -101,12 +101,19 @@ for (const modifierId of ['echo', 'feedback']) {
     }, runtimeAction({ params: { brightness: 0.1 } }), 'solid-colour'));
     const compositor = createDefaultCompositor();
     const dst = new Framebuffer(model.pixelCount);
-    const render = (tick: number) => compositor.renderPresentation(voices, model, runtimeFrame(tick * 16), dst, tick);
+    const render = (tick: number) => {
+      compositor.prunePresentation(voices, model);
+      compositor.renderPresentation(voices, model, runtimeFrame(tick * 16), dst, tick);
+    };
     // First render lazily creates effect state; the next capture warms its checkpoint.
     // The pre-initialized parent probe above needs only its single tick-0 capture.
-    const result = measurePayloads(() => { render(0); render(1); render(1); }, () => {
-      for (let tick = 2; tick <= 4; tick++) render(tick);
-      for (let paint = 0; paint < 3; paint++) render(4);
+    const pruneOnly = measurePayloads(() => { render(0); render(1); render(1); }, () => {
+      for (let i = 0; i < 6; i++) compositor.prunePresentation(voices, model);
+    });
+    expect(pruneOnly).toEqual({ allocated: 0, copied: 0 });
+    const result = measurePayloads(() => { render(2); render(3); render(3); }, () => {
+      for (let tick = 4; tick <= 6; tick++) render(tick);
+      for (let paint = 0; paint < 3; paint++) render(6);
     });
     expect(result.allocated).toBe(0);
     expect(result.copied).toBe(6 * 16 * 4096 * 4 * 4);

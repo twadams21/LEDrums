@@ -190,7 +190,7 @@ describe('pre-advance presentation checkpoints', () => {
     });
   }
 
-  it('Echo journal survives two ring wraps, bypass/empty-scope/level gates and changing delay/dt/input', () => {
+  it('Echo journal survives three committed ring wraps, bypass/empty-scope/level gates and changing delay/dt/input', () => {
     const model = runtimeHoopModel(4, 8);
     const actual = runtimeVoice({ modifiers: [{ modifierId: 'echo', params: {} }] }, runtimeAction(), 'solid-colour');
     const expected = runtimeVoice({ modifiers: [{ modifierId: 'echo', params: {} }] }, runtimeAction(), 'solid-colour');
@@ -198,9 +198,11 @@ describe('pre-advance presentation checkpoints', () => {
     const reference = createDefaultCompositor();
     const fb = new Framebuffer(model.pixelCount);
     const ref = new Framebuffer(model.pixelCount);
-    for (let tick = 0; tick < 145; tick++) {
+    let committedWrites = 0;
+    for (let tick = 0; tick < 320; tick++) {
       const frame = runtimeFrame(tick * 16, [8, 16, 33][tick % 3]);
-      for (let paint = 0; paint < 4; paint++) {
+      for (let paint = 0; paint < 5; paint++) {
+        actual.level = 1;
         actual.liveParams.brightness = paint / 10;
         actual.modifiers![0]!.bypass = paint % 2 === 0;
         actual.modifiers![0]!.params.delayMs = paint * 500;
@@ -217,10 +219,20 @@ describe('pre-advance presentation checkpoints', () => {
         v.level = tick % 7 === 0 ? 0 : 1;
       }
       compositor.renderPresentation([actual], model, frame, fb, tick);
+      const position = (): number => (expected.modState?.[0] as { pos: number } | undefined)?.pos ?? 0;
+      const before = position();
       reference.render([expected], model, frame, ref);
+      if (position() !== before) {
+        expect(position()).toBe((before + 1) % 64);
+        committedWrites++;
+      }
       expect(fb.rgba, `frame ${tick}`).toEqual(ref.rgba);
       expect(actual.modState, `whole ring ${tick}`).toEqual(expected.modState);
     }
+    // Count real final-candidate applies via the reference cursor, NOT attempted ticks
+    // or dirty candidates. Gates made the former 145-tick test only 101 writes (one wrap).
+    expect(committedWrites).toBe(225);
+    expect(committedWrites).toBeGreaterThanOrEqual(3 * 64);
   });
 
   for (const key of ['mixInputs', 'spliceInputs'] as const) {
