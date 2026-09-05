@@ -563,6 +563,7 @@ export class TriggerLab {
       this.flushSave();
     },
     setActiveSectionId: (id) => (this.activeSectionId = id),
+    reconcileActiveSection: () => this.sectionsCtl.reconcileActiveSection(),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
     send: (msg) => this.client.send(msg),
@@ -589,7 +590,7 @@ export class TriggerLab {
     return this.showsCtl.songRefs;
   }
   set songRefs(v: string[]) {
-    this.showsCtl.songRefs = v;
+    this.showsCtl.setSongRefs(v);
   }
   /** which song the Sections view + Songs rail show. */
   get activeSongId(): string {

@@ -36,6 +36,16 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
+`ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
+detach, and authored-state replacement all reconcile the exact active song to a valid local fallback
+or empty state, then call the existing active-section reconciliation seam. Two regressions cover
+active canonical removal, re-add without stale-section revival, and the no-fallback/null case.
+Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorepo 4,773 passed /
+4 skipped, and full typecheck green. No UI output changed, so no shots were required. Commit/push
+and CI are still pending.
+
 **PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
 Sections `+` gate now derives from exact resolved/local song targets: canonical library references
