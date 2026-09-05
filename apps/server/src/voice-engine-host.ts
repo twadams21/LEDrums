@@ -1,5 +1,8 @@
 import {
   advanceTransport,
+  BUILTIN_CANVAS_SCENES,
+  registerCanvasScene,
+  unregisterCanvasScene,
   applyDrumVelocity,
   blockingRoutingIssues,
   buildDmxMap,
@@ -88,7 +91,8 @@ const TAP_MAX_BPM = 300;
  * legacy layer/clip/binding path stays untouched and this is easy to rip out.
  */
 export class VoiceEngineHost {
-  readonly engine: voice.RenderEngine;
+  private activeEngine: voice.RenderEngine;
+  get engine(): voice.RenderEngine { return this.activeEngine; }
   private project: Project;
   /** Live kit geometry (shares the reference held by `project.kit`); mutated in place
    * by the runtime-mutable setters below so the active render reflects edits at once. */
@@ -153,11 +157,47 @@ export class VoiceEngineHost {
   ) {
     this.project = project;
     this.kit = project.kit;
-    this.engine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
+    this.activeEngine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
     this.output = output;
     this.model = buildPixelModel(this.kit);
     this.dmxMap = this.buildMapSafe(this.kit);
     this.engine.setModel(this.model);
+  }
+
+  /** Stage a fresh runtime; never call setModel/setShow on the live engine mid-transaction. */
+  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId?: string; sectionId: string }): { applyOutput(): void; commit(): void } {
+    const model = buildPixelModel(project.kit);
+    const dmxMap = buildDmxMap(project.kit, model);
+    const engine = voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
+    engine.setModel(model);
+    // Core setShow registers canvas scenes globally. Strip that IO-like side effect during
+    // preflight; the host publishes registrations only in the synchronous successful commit.
+    for (const scene of show?.canvasScenes ?? []) {
+      if (!scene || typeof scene.id !== 'string' || !Array.isArray(scene.elements)) throw new Error('Invalid canvas scene');
+    }
+    if (show) engine.setShow({ ...show, canvasScenes: undefined });
+    if (selection) engine.applyInput({ kind: 'recallSection', timeMs: 0, ...selection });
+    return {
+      applyOutput: () => this.output.applySettings(project.output, dmxMap),
+      commit: () => {
+        this.syncCanvasScenes(show);
+        this.activeEngine = engine;
+        this.project = project;
+        this.kit = project.kit;
+        this.model = model;
+        this.dmxMap = dmxMap;
+        this.currentShow = show;
+        this.activeSongId = selection?.songId ?? show?.songs?.[0]?.id ?? null;
+        this.engineTimeMs = this.beat = 0;
+        this.accumulator = this.transmitAccum = this.previewAccum = 0;
+        this.pendingInputWall = null;
+        this.lastLatencyMs = 0;
+        this.transmitMuted = false;
+        this.tapTimes.length = 0;
+        this.lastWall = nowWall();
+        this.tickRate.reset(this.lastWall);
+      },
+    };
   }
 
   // --- geometry ------------------------------------------------------------
@@ -321,10 +361,22 @@ export class VoiceEngineHost {
 
   /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds
    * the active song so transport recall maps indices against the current arrangement. */
+  private syncCanvasScenes(next: voice.Show | null): void {
+    const ids = new Set(next?.canvasScenes?.map((s) => s.id) ?? []);
+    for (const scene of this.currentShow?.canvasScenes ?? []) {
+      if (ids.has(scene.id)) continue;
+      unregisterCanvasScene(scene.id);
+      const builtin = BUILTIN_CANVAS_SCENES.find((s) => s.id === scene.id);
+      if (builtin) registerCanvasScene(builtin);
+    }
+    for (const scene of next?.canvasScenes ?? []) registerCanvasScene(scene);
+  }
+
   setShow(show: voice.Show): void {
+    this.syncCanvasScenes(show);
     this.currentShow = show;
     this.activeSongId = show.songs?.[0]?.id ?? null;
-    this.engine.setShow(show);
+    this.engine.setShow({ ...show, canvasScenes: undefined });
   }
 
   /** The live Show, for the global transport-recall index→id mapping (null before setShow). */

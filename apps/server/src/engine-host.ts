@@ -32,7 +32,8 @@ const PREVIEW_FPS = 30; // WS preview broadcast throttle
  * emitted afterwards (R14) and surfaced via {@link getStats}.
  */
 export class EngineHost {
-  readonly engine: Engine;
+  private activeEngine: Engine;
+  get engine(): Engine { return this.activeEngine; }
   private readonly output: OutputManager;
 
   /** Cumulative dt fed to `engine.tick` — the clock inputs are stamped against. */
@@ -58,8 +59,25 @@ export class EngineHost {
   onFrame?: (rgb: Uint8Array) => void;
 
   constructor(project: Project, output: OutputManager = new OutputManager()) {
-    this.engine = new Engine(project);
+    this.activeEngine = new Engine(project);
     this.output = output;
+  }
+
+  /** Build off to the side; committing is a non-throwing pointer swap, no IO or model work. */
+  prepareProject(project: Project): { applyOutput(): void; commit(): void } {
+    const engine = new Engine(project);
+    return {
+      applyOutput: () => this.output.applySettings(project.output, engine.getDmxMap()),
+      commit: () => {
+        this.activeEngine = engine;
+        this.engineTimeMs = 0;
+        this.accumulator = this.transmitAccum = this.previewAccum = 0;
+        this.pendingInputWall = null;
+        this.lastLatencyMs = 0;
+        this.lastWall = performance.now();
+        this.tickRate.reset(this.lastWall);
+      },
+    };
   }
 
   // --- input ---------------------------------------------------------------
