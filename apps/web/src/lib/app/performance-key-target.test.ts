@@ -1,12 +1,22 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import Select from '../ui/Select.svelte';
 import SegmentedControl from '../ui/SegmentedControl.svelte';
 import Toggle from '../ui/Toggle.svelte';
+import Slider from '../ui/Slider.svelte';
+import Splitter from '../ui/Splitter.svelte';
 import { performanceKeyTarget } from './performance-key-target';
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  });
+});
 
 const OPTIONS = Array.from({ length: 5 }, (_, i) => ({ value: `o${i}`, label: `${i + 1}/4` }));
 
@@ -39,6 +49,26 @@ describe('performanceKeyTarget — DOM ownership adapter', () => {
 
     expect(performanceKeyTarget(seg.container.querySelector('[data-keyboard-owner="roving"]')!).inKeyboardControl).toBe(true);
     expect(performanceKeyTarget(toggle.container.querySelector('[data-keyboard-owner="roving"]')!).inKeyboardControl).toBe(true);
+  });
+
+  it('recognises closed Select triggers, sliders, and separators as keyboard owners', () => {
+    const select = render(Select, { props: { value: 'o0', options: OPTIONS, ariaLabel: 'Division' } });
+    const slider = render(Slider, { props: { value: 50, min: 0, max: 100, ariaLabel: 'Tempo' } });
+    const splitter = render(Splitter, { props: { orientation: 'vertical', size: 300, onResize: () => {}, label: 'Resize' } });
+
+    expect(performanceKeyTarget(select.container.querySelector('[data-keyboard-owner="select"]')!).inKeyboardControl).toBe(true);
+    expect(performanceKeyTarget(slider.container.querySelector('[data-keyboard-owner="slider"]')!).inKeyboardControl).toBe(true);
+    expect(performanceKeyTarget(splitter.container.querySelector('[data-keyboard-owner="separator"]')!).inKeyboardControl).toBe(true);
+  });
+
+  it('recognises a modal through event path and global modal state', () => {
+    const modal = document.body.appendChild(document.createElement('div'));
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const child = modal.appendChild(document.createElement('button'));
+
+    expect(performanceKeyTarget(new KeyboardEvent('keydown', { bubbles: true, composed: true })).inModal).toBe(true);
+    expect(performanceKeyTarget(child).inModal).toBe(true);
   });
 
   it('recognises an xyflow canvas without relying on focus blur', () => {

@@ -59,6 +59,7 @@ import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
 import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
+import { graphAt } from './graph-lookup';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -639,7 +640,7 @@ class VoiceBusEngine implements RenderEngine {
   private processFireGraph(e: InputEvent): void {
     const input = describeInputEvent(e);
     const key = e.graphKey;
-    const graph = key ? this.show.graphs[key] : undefined;
+    const graph = graphAt(this.show.graphs, key);
     if (!key || !graph) {
       this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'no-such-graph' });
       return;
@@ -726,7 +727,7 @@ class VoiceBusEngine implements RenderEngine {
           for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
             const key = slots[slotIndex];
             if (!key) continue;
-            const g = this.show.graphs[key];
+            const g = graphAt(this.show.graphs, key);
             // Prefix is per-slot POSITION, not the bare graph key: two slots holding
             // the SAME key in one section must run as INDEPENDENT layers (own
             // sequence/random/toggle/latch state), so fold in the slot index. Cross-
@@ -737,7 +738,7 @@ class VoiceBusEngine implements RenderEngine {
         }
       }
     }
-    const g = this.show.graphs[pad];
+    const g = graphAt(this.show.graphs, pad);
     return g ? [{ graphKey: pad, graph: g, statePrefix: pad, path: 'pad-fallback' }] : [];
   }
 
@@ -745,13 +746,13 @@ class VoiceBusEngine implements RenderEngine {
     if (!e.drumId) return 'no-direct-match';
     const pad = padKey(e.drumId, e.zone ?? '');
     if (this.activeSongId === null || this.activeSectionId === null || !this.show.songs) {
-      return this.show.graphs[pad] ? 'no-direct-match' : 'no-active-section';
+      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-active-section';
     }
     const song = this.show.songs.find((s) => s.id === this.activeSongId);
     const section = song?.sections.find((s) => s.id === this.activeSectionId);
     const slots = section?.slots[pad];
-    if (!slots || slots.every((key) => !key || !this.show.graphs[key])) {
-      return this.show.graphs[pad] ? 'no-direct-match' : 'no-slot-graphs';
+    if (!slots || slots.every((key) => !key || !graphAt(this.show.graphs, key))) {
+      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-slot-graphs';
     }
     return 'no-pad-fallback';
   }

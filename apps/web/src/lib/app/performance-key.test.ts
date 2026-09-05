@@ -13,6 +13,11 @@ const at = (over: Partial<PerformanceKeyInput> = {}): PerformanceKeyInput => ({
   inOpenPopup: false,
   inKeyboardControl: false,
   inFlowCanvas: false,
+  ctrlKey: false,
+  metaKey: false,
+  altKey: false,
+  shiftKey: false,
+  repeat: false,
   ...over,
 });
 
@@ -80,5 +85,17 @@ describe('decidePerformanceKey — context boundaries', () => {
     for (const key of ['a', 'ArrowUp', 'Backspace', ' ']) {
       expect(decidePerformanceKey(at({ key }))).toEqual({ claim: false });
     }
+  });
+
+  it('yields every modified chord', () => {
+    for (const modifier of ['ctrlKey', 'metaKey', 'altKey', 'shiftKey'] as const) {
+      expect(decidePerformanceKey(at({ key: '1', [modifier]: true }))).toEqual({ claim: false });
+      expect(decidePerformanceKey(at({ key: 'ArrowRight', [modifier]: true }))).toEqual({ claim: false });
+    }
+  });
+
+  it('suppresses repeated graph digits but deliberately repeats section arrows', () => {
+    expect(decidePerformanceKey(at({ key: '1', repeat: true }))).toEqual({ claim: false });
+    expect(decidePerformanceKey(at({ key: 'ArrowRight', repeat: true }))).toEqual({ sectionStep: 1, claim: true });
   });
 });

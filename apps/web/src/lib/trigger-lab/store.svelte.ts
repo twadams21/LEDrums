@@ -2005,7 +2005,7 @@ export class TriggerLab {
       the active section lists, and is a no-op when the section has fewer graphs. */
   fireSectionGraph(index: number): void {
     const key = this.activeSection?.graphs[index];
-    const graph = key ? this.graphs[key] : undefined;
+    const graph = voice.graphAt(this.graphs, key);
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
     this.markGraphFire(key); // card indicator + live-on-trigger node previews

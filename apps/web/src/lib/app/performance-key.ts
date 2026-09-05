@@ -24,6 +24,13 @@ export interface PerformanceKeyInput {
   inKeyboardControl: boolean;
   /** The graph canvas owns ArrowLeft/ArrowRight for selected-node movement. */
   inFlowCanvas: boolean;
+  /** Any modifier reserves the chord for the focused/native surface. */
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  /** Held graph digits must not retrigger; arrows intentionally repeat for navigation. */
+  repeat: boolean;
 }
 
 export interface PerformanceKeyDecision {
@@ -40,14 +47,19 @@ const NOTHING: PerformanceKeyDecision = { claim: false };
 export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKeyDecision {
   if (input.view !== 'perform' || input.settingsOpen) return NOTHING;
   if (input.isEditableTarget || input.inOpenPopup || input.inKeyboardControl) return NOTHING;
+  if (input.ctrlKey || input.metaKey || input.altKey || input.shiftKey) return NOTHING;
 
   if (/^[0-9]$/.test(input.key)) {
+    // A held digit is one graph intent. Let the repeated event continue to its native owner.
+    if (input.repeat) return NOTHING;
     // `0` is the tenth graph, so the row reads 1…9,0 like a keyboard shortcut bank.
     return { fireGraphIndex: input.key === '0' ? 9 : Number(input.key) - 1, claim: true };
   }
 
   if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
     if (input.inFlowCanvas) return NOTHING;
+    // Arrow repeat is intentional: holding an arrow walks through sections at the browser's
+    // repeat cadence. This is different from graph digits, which are edge-triggered above.
     return { sectionStep: input.key === 'ArrowRight' ? 1 : -1, claim: true };
   }
 

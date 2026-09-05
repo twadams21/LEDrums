@@ -10,8 +10,8 @@
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
   import { decideDeleteKey, isDeleteKey } from './lib/app/delete-key';
   import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
-  import { claimPerformanceKey, decidePerformanceKey } from './lib/app/performance-key';
   import { performanceKeyTarget } from './lib/app/performance-key-target';
+  import PerformanceKeyCapture from './lib/app/PerformanceKeyCapture.svelte';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
@@ -69,14 +69,14 @@
   // exactly one owner. The capture-phase claim is what prevents a focused control from acting
   // after the performance action.
   function onKey(e: KeyboardEvent): void {
-    // With the Settings modal open, the workspace shortcuts must not act on the surface
-    // BEHIND it (Backspace deleted the selected node through the modal) — including the
+    // With any modal open, the workspace shortcuts must not act on the surface BEHIND it
+    // (Backspace deleted the selected node through the modal) — including the
     // registry combos: mod+d would duplicate the hidden node, and mod+z must stay native
     // text-undo inside the modal's inputs. The Backspace preventDefault claim below still
     // applies — the WKWebView history-back hazard is the same whichever surface has focus.
-    const settingsOpen = shell.settingsPane !== null;
-    if (!settingsOpen && dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
-    const target = performanceKeyTarget(e.target);
+    const target = performanceKeyTarget(e);
+    const modalOpen = target.inModal || shell.settingsPane !== null;
+    if (!modalOpen && dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
     const editable = target.isEditableTarget;
     if (isDeleteKey(e.key)) {
       const selection = shell.selection;
@@ -96,29 +96,11 @@
       // guard fell straight through). Deliberately no stopPropagation — xyflow's key handler
       // is bubble-phase on window and still needs the event to drop the selected wire.
       if (prevent) e.preventDefault();
-      if (removeNode && node && !settingsOpen) {
+      if (removeNode && node && !modalOpen) {
         store.removeNode(node);
         shell.clearSelection();
       }
       return;
-    }
-    const perf = decidePerformanceKey({
-      key: e.key,
-      view: shell.view,
-      settingsOpen,
-      ...target,
-    });
-    claimPerformanceKey(e, perf);
-    if (perf.fireGraphIndex !== undefined) {
-      store.fireSectionGraph(perf.fireGraphIndex);
-      return;
-    }
-    if (perf.sectionStep !== undefined) {
-      const sections = store.activeSong?.sections ?? [];
-      if (sections.length === 0) return;
-      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
-      const next = sections[(cur + perf.sectionStep + sections.length) % sections.length];
-      if (next) store.setActiveSection(next.id);
     }
   }
 </script>
@@ -128,6 +110,8 @@
 <div class="shell-root">
   <Shell {store} {shell} />
 </div>
+
+<PerformanceKeyCapture {store} {shell} />
 
 <Overlays {store} />
 

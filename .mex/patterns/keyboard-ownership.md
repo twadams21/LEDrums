@@ -30,12 +30,18 @@ The rule must be about the event's current semantic target, not about focus-blur
    `preventDefault()` and `stopPropagation()` before performing the action.
 5. If the action crosses the WebSocket boundary, check the server's authorization table and test
    the intended editor/viewer policy at both the gate and the handler.
+6. Define repeat policy per key family: graph digits are edge-triggered; section arrows may repeat
+   while held. Yield modified chords before deciding ownership.
 
 ## Gotchas
 
 - Do not globally stop propagation from the app shell: Bits Select typeahead and segmented
   roving focus need the event.
 - A Bits popup can be portalled, so inspect listbox/option roles as well as its open trigger.
+- Mark reusable keyboard-owning control roots explicitly (`data-keyboard-owner`) and retain their
+  native/ARIA roles; do not grow an unbounded role exception list.
+- Treat every open modal/dialog as a global ownership boundary, including portalled content, and
+  detect it through composed paths plus modal state.
 - Do not use blur or focus history as the correctness mechanism; it discards user focus and races
   component state.
 - Test repeated keys, Enter/Escape aftermath, native text controls, component popups, and canvas

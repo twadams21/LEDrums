@@ -1103,6 +1103,19 @@ describe('VoiceBusEngine — fireGraph intent (S13)', () => {
     expect(diagnostics.some((d) => d.kind === 'graph-fired')).toBe(false);
   });
 
+  it.each(['__proto__', 'constructor', 'toString'])('treats inherited graph value for %s as missing', (graphKey) => {
+    const diagnostics: VoiceDiagnostic[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d) });
+    e.setModel(testModel());
+    e.setShow(showOf({ 'graph:valid': sourcedGraph({ kind: 'midi', note: 60 }, 'base') }));
+    expect(() => {
+      e.applyInput(fire(graphKey));
+      e.tick(5, 5, transport(5));
+    }).not.toThrow();
+    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: 'graph-missed', reason: 'no-such-graph' }));
+    expect(diagnostics.some((d) => d.kind === 'graph-fired')).toBe(false);
+  });
+
   it('emits input-resolved + graph-fired on the fire-graph path with the graph key', () => {
     const diagnostics: VoiceDiagnostic[] = [];
     const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d) });

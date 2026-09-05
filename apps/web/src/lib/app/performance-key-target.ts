@@ -8,28 +8,57 @@ export interface PerformanceKeyTarget {
   inOpenPopup: boolean;
   inKeyboardControl: boolean;
   inFlowCanvas: boolean;
+  inModal: boolean;
 }
 
 function elementTarget(target: EventTarget | null | undefined): Element | null {
   return typeof Element !== 'undefined' && target instanceof Element ? target : null;
 }
 
+type TargetOrEvent = Event | EventTarget | null | undefined;
+
+function isDomEvent(input: TargetOrEvent): input is Event {
+  return typeof Event !== 'undefined' && input instanceof Event;
+}
+
+function eventElements(input: TargetOrEvent): Element[] {
+  if (isDomEvent(input)) {
+    return input.composedPath().filter((entry): entry is Element => elementTarget(entry) !== null);
+  }
+  const start = elementTarget(input);
+  const elements: Element[] = [];
+  for (let current = start; current; current = current.parentElement) elements.push(current);
+  return elements;
+}
+
+function matches(elements: readonly Element[], selector: string): boolean {
+  return elements.some((entry) => entry.matches(selector));
+}
+
+const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], [data-keyboard-owner="modal"]';
+
 /** Read the keyboard surface that owns an event, without inspecting focus history or blurring it.
     Bits UI portals its popup content to body, so listbox/option roles cover events in the portal;
     the trigger markers cover the trigger while it is open. */
-export function performanceKeyTarget(target: EventTarget | null | undefined): PerformanceKeyTarget {
-  const element = elementTarget(target);
-  const closest = (selector: string): Element | null => element?.closest(selector) ?? null;
+export function performanceKeyTarget(input: TargetOrEvent): PerformanceKeyTarget {
+  const eventPath = eventElements(input);
+  const focusPath = typeof document !== 'undefined' ? eventElements(document.activeElement) : [];
+  const elements = [...new Set([...eventPath, ...focusPath])];
+  const element = eventPath[0] ?? focusPath[0] ?? null;
+  const globallyModal = typeof document !== 'undefined' && document.querySelector(MODAL_SELECTOR) !== null;
 
   return {
-    isEditableTarget: isEditableShortcutTarget(target),
-    inOpenPopup: !!closest(
+    isEditableTarget: isEditableShortcutTarget(element),
+    inOpenPopup: matches(elements,
       '[role="listbox"], [role="option"], [role="combobox"][aria-expanded="true"], ' +
         '[data-keyboard-owner="select"][aria-expanded="true"], [data-keyboard-owner="select"][data-state="open"]',
     ),
-    inKeyboardControl: !!closest(
-      '[data-keyboard-owner="roving"], [role="radio"], [role="switch"], [aria-pressed]',
+    inKeyboardControl: matches(elements,
+      '[data-keyboard-owner="select"], [data-keyboard-owner="roving"], ' +
+        '[data-keyboard-owner="slider"], [data-keyboard-owner="separator"], ' +
+        '[role="radio"], [role="switch"], [role="slider"], [role="separator"], [aria-pressed], select',
     ),
-    inFlowCanvas: !!closest('.svelte-flow'),
+    inFlowCanvas: matches(elements, '.svelte-flow'),
+    inModal: matches(elements, MODAL_SELECTOR) || globallyModal,
   };
 }

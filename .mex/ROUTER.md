@@ -36,16 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Performance keyboard ownership replacement (2026-09-06, local `fix/performance-key-ownership`):**
-Requested by Trent in-session on Trent’s MacBook Pro as a current-main replacement for PR #200
-commit `4c2273bd`. A pure decision helper gives digit/left-right ownership to the Perform view
-only; editable targets, open Select/combobox/listbox popups, radio/toggle/segmented controls,
-and flow-canvas arrow movement retain their keyboard actions. App-owned events are claimed in
-capture with both `preventDefault()` and `stopPropagation()`, with no focus blur. The server now
-authorizes `fireGraph` for viewers because Perform’s keyboard is an engine input; the voice host
-still validates and executes the graph intent. Focused web/server tests, full typecheck, full test,
-and strict Perform/Trigger/Settings ui-shot captures are green. Work is local and not merged or
-shipped; no new reusable visual component or design-system artifact was needed.
+**PR #206 keyboard ownership remediation (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent in-session on Trent’s MacBook Pro; source is the PR #206 review findings.
+The authoritative core graph lookup now uses own-property checks, and the viewer decode, server
+host, and engine regressions cover hostile and missing keys. Perform ownership is decided in a
+pure helper and installed through a mounted window-capture component: modified chords and repeat
+digits yield, arrows repeat deliberately, authoring controls keep native/ARIA ownership, and any
+open dialog or portal suppresses background shortcuts. Explicit keyboard-owner markers cover
+Select, sliders, separators, and modal content. Mounted integration tests prove action,
+`defaultPrevented`, and propagation behavior; focused tests, full typecheck, full test, build, and
+strict Perform/Trigger/Settings ui-shot captures are green. The change is on this branch and is
+not merged or shipped. No new reusable visual component or design-system artifact was needed.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
