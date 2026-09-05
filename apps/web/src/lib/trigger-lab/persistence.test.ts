@@ -6,6 +6,7 @@ import {
   VERSION,
   deserializeAuthored,
   deserializeShowLibrary,
+  coerceLibrarySong,
   loadShowLibrary,
   migrateSongs,
   sectionGraphList,
@@ -216,6 +217,15 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
 
   it('is idempotent — a section already on flat graphs is returned (deduped) untouched', () => {
     expect(sectionGraphList({ id: 'a', name: 'A', graphs: ['g1', 'g2', 'g1'] })).toEqual(['g1', 'g2']);
+  });
+
+  it('sanitizes canonical library sections with the same ordered-set invariant', () => {
+    const restored = coerceLibrarySong({
+      id: 'lib-1',
+      name: 'Canonical',
+      sections: [{ id: 'a', name: 'A', graphs: ['g', 'g', 'h', 'g'] }],
+    });
+    expect(restored?.sections[0]?.graphs).toEqual(['g', 'h']);
   });
 
   it('degrades a malformed section to an empty list', () => {

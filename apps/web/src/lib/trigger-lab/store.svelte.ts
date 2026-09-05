@@ -74,6 +74,7 @@ import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
+import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
 import { installErrorCapture } from '../app/error-capture';
 import {
@@ -413,6 +414,7 @@ export class TriggerLab {
     activeSong: () => this.activeSong,
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
+    isLocalSong: (songId) => this.songs.some((song) => song.id === songId),
     setSongs: (songs) => (this.songs = songs),
     recordUndo: () => this.pushUndoSnapshot(),
     graphs: () => $state.snapshot(this.graphs) as Record<string, TriggerGraph>,
@@ -824,6 +826,21 @@ export class TriggerLab {
       affordances' `disabled` to `!canEdit` so a viewer's UI is genuinely read-only (not just
       ignored). View-only interactions (selecting/panning/switching, playing pads) stay enabled. */
   canEdit = $derived(!this.isViewer);
+  /** Whether the active song is authored by this show. Referenced library songs are resolved for
+      playback/navigation but their sections are canonical and read-only until detached. */
+  activeSongIsLocal = $derived(this.songs.some((song) => song.id === this.activeSongId));
+  canEditActiveSong = $derived(this.canEdit && this.activeSongIsLocal);
+  activeSongEditBlockReason = $derived(
+    this.isViewer
+      ? 'Another client is editing'
+      : this.activeSongIsLocal
+        ? null
+        : 'Library song is read-only — detach a copy in Objects to edit it',
+  );
+  /** Stable local-song membership guard for controllers and view identity checks. */
+  isLocalSong(songId: string): boolean {
+    return this.songs.some((song) => song.id === songId);
+  }
   /** Whether the editor slot is held by ANOTHER client (multi-client, we're a viewer) — the
       TopBar shows a Takeover affordance only then (standalone/editor don't need it). */
   canTakeover = $derived(this.role === 'viewer');
@@ -2454,8 +2471,45 @@ export class TriggerLab {
   // forwarders below. They mutate the songs rune ShowsController owns, reached through the host.
 
   /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
-  addGraphToSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.addGraphToSection(sectionId, graphKey);
+  addGraphToSection(sectionId: string, graphKey: string): boolean {
+    return this.sectionsCtl.addGraphToSection(sectionId, graphKey);
+  }
+  /** Create a graph and place it in one local section as one undoable transaction. */
+  createGraphInSection(sectionId: string, name?: string): string | null {
+    if (this.isViewer || !this.activeSongIsLocal) return null;
+    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
+    const section = song?.sections.find((candidate) => candidate.id === sectionId);
+    if (!song || !section) return null;
+    this.pushUndoSnapshot();
+    const key = freshId('graph', (candidate) => candidate in this.graphs);
+    const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
+    this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
+    this.graphNames = { ...this.graphNames, [key]: label };
+    this.songs = this.songs.map((candidate) =>
+      candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate,
+    );
+    this.selectedPadKey = key;
+    return key;
+  }
+  /** Clone a graph and place the clone in one local section as one undoable transaction. */
+  copyGraphToSection(sectionId: string, sourceKey: string, name?: string): string | null {
+    if (this.isViewer || !this.activeSongIsLocal) return null;
+    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
+    const section = song?.sections.find((candidate) => candidate.id === sectionId);
+    const source = this.graphs[sourceKey];
+    if (!song || !section || !source) return null;
+    this.pushUndoSnapshot();
+    const key = freshId('graph', (candidate) => candidate in this.graphs);
+    this.graphs = { ...this.graphs, [key]: graphsLib.cloneGraph($state.snapshot(source) as TriggerGraph) };
+    this.graphNames = {
+      ...this.graphNames,
+      [key]: name?.trim() || `${this.graphLabel(sourceKey)} copy`,
+    };
+    this.songs = this.songs.map((candidate) =>
+      candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate,
+    );
+    this.selectedPadKey = key;
+    return key;
   }
   /** Link one exact placement to another placement's graph. */
   linkGraphPlacement(
@@ -2504,8 +2558,8 @@ export class TriggerLab {
     this.sectionsCtl.removeSection(sectionId);
   }
   /** Copy a section of the active song onto the in-app clipboard. */
-  copySection(sectionId: string): void {
-    this.sectionsCtl.copySection(sectionId);
+  copySection(sectionId: string): boolean {
+    return this.sectionsCtl.copySection(sectionId);
   }
   /** Paste the in-app clipboard as a NEW section appended to the active song, and make it active. */
   pasteSection(): void {
@@ -2641,6 +2695,9 @@ export class TriggerLab {
     if (doc.kind !== opts.context) {
       return { ok: false, message: `Clipboard holds a ${doc.kind}, not a ${opts.context}.` };
     }
+    if (doc.kind === 'section' && !this.activeSongIsLocal) {
+      return { ok: false, message: this.activeSongEditBlockReason ?? 'Library sections are read-only.' };
+    }
 
     // Song → Library: extract a fresh, self-contained namespaced closure into the pool.
     if (doc.kind === 'song' && opts.songDest === 'library') {
@@ -2747,7 +2804,8 @@ export class TriggerLab {
       select it for editing. Returns its key. The label defaults to "New graph N"
       (first unused N). Persisted via the authored-state autosave. */
   createGraph(name?: string): string {
-    if (this.isViewer) return this.selectedPadKey ?? ''; // read-only viewer (S2): authoring no-op
+    if (!this.canEditActiveSong) return this.selectedPadKey ?? ''; // viewer or canonical library: authoring no-op
+    this.pushUndoSnapshot();
     const key = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
     const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
     this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
@@ -2761,7 +2819,7 @@ export class TriggerLab {
       Inspector + Sections rename fields call. A blank name keeps the existing label (mirrors
       {@link renameSong}); an unknown key (not in `graphs`) is a no-op. Persists via autosave. */
   renameGraph(key: string, name: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditActiveSong) return; // viewer or canonical library: authoring no-op
     if (!(key in this.graphs)) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -2776,7 +2834,7 @@ export class TriggerLab {
       duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
       the user places it where they want (reuse is by reference). Persists via autosave. */
   duplicateGraph(key: string): string | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditActiveSong) return null; // viewer or canonical library: authoring no-op
     const src = this.graphs[key];
     if (!src) return null;
     this.pushUndoSnapshot();
@@ -2795,8 +2853,9 @@ export class TriggerLab {
       deleted graph was the open/selected one, clear the selection. An unknown key (not in
       `graphs`) is a no-op. Persists via the authored autosave. */
   deleteGraph(key: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditActiveSong) return; // viewer or canonical library: authoring no-op
     if (!(key in this.graphs)) return;
+    this.pushUndoSnapshot();
     const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
     this.graphs = next.graphs;
     this.graphNames = next.graphNames;

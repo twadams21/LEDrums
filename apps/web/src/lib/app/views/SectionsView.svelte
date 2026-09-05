@@ -113,16 +113,15 @@
 
   function copyAndPlace(graphKey: string): void {
     if (!pendingSectionId) return;
-    const key = store.duplicateGraph(graphKey);
+    const key = store.copyGraphToSection(pendingSectionId, graphKey);
     if (!key) return;
-    store.addGraphToSection(pendingSectionId, key);
     store.selectGraphInSection(pendingSectionId, key);
     shell.setView('trigger');
     pendingSectionId = null;
   }
   function linkAndPlace(graphKey: string): void {
     if (!pendingSectionId) return;
-    store.addGraphToSection(pendingSectionId, graphKey);
+    if (!store.addGraphToSection(pendingSectionId, graphKey)) return;
     pendingSectionId = null;
   }
 
@@ -135,8 +134,8 @@
   function createAndPlace(): void {
     if (!pendingSectionId) return;
     const sectionId = pendingSectionId;
-    const key = store.createGraph();
-    store.addGraphToSection(sectionId, key);
+    const key = store.createGraphInSection(sectionId);
+    if (!key) return;
     store.selectGraphInSection(sectionId, key);
     pendingSectionId = null;
     shell.setView('trigger'); // land on the canvas to edit the new graph
@@ -239,10 +238,17 @@
       <LayoutGrid size={15} aria-hidden="true" class="title-icon" />
       <h2>{song?.name ?? 'No song'}</h2>
     </div>
-    {#if store.canEdit}
-      <button class="addsection" type="button" onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}>
-        <Plus size={14} aria-hidden="true" /> Section
-      </button>
+    <button
+      class="addsection"
+      type="button"
+      disabled={!store.canEditActiveSong}
+      title={store.activeSongEditBlockReason ?? 'Add section'}
+      onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
+    >
+      <Plus size={14} aria-hidden="true" /> Section
+    </button>
+    {#if !store.canEditActiveSong && store.activeSongEditBlockReason}
+      <span class="readonly-reason">{store.activeSongEditBlockReason}</span>
     {/if}
   </header>
 
@@ -300,6 +306,8 @@
               sectionIdx={ss.sectionIdx}
               recall={ss.recall}
               looks={ss.section.looks}
+              canEdit={store.canEditActiveSong && store.isLocalSong(ss.song.id)}
+              editBlockReason={store.activeSongEditBlockReason ?? undefined}
             />
           </div>
         </aside>
@@ -311,6 +319,8 @@
 <GraphPickerDrawer
   {store}
   section={pendingSection}
+  disabled={!store.canEditActiveSong}
+  disabledReason={store.activeSongEditBlockReason ?? undefined}
   onCopy={copyAndPlace}
   onLink={linkAndPlace}
   onCreate={createAndPlace}
@@ -382,6 +392,15 @@
   .addsection:hover {
     border-color: color-mix(in oklab, var(--accent), var(--border) 45%);
     background: color-mix(in oklab, var(--accent), transparent 84%);
+  }
+  .addsection:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .readonly-reason {
+    margin-inline-start: auto;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
   }
   .body {
     min-height: 0;

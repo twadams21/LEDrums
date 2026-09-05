@@ -214,6 +214,64 @@ describe('copy / paste section (clipboard)', () => {
     expect(store.sectionClipboard).toBeNull();
   });
 
+  it('canonical library sections are read-only and failed copies preserve the clipboard', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSection = store.activeSong!.sections[0]!;
+    expect(store.copySection(localSection.id)).toBe(true);
+    const previousClipboard = store.sectionClipboard;
+    const libraryId = store.exportSongToLibrary(store.activeSongId)!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const canonicalSection = store.activeSong!.sections[0]!;
+    const before = {
+      activeSectionId: store.activeSectionId,
+      sectionCount: store.activeSong!.sections.length,
+      graphCount: Object.keys(store.graphs).length,
+      nameCount: Object.keys(store.graphNames).length,
+    };
+
+    expect(store.copySection(canonicalSection.id)).toBe(false);
+    expect(store.sectionClipboard).toBe(previousClipboard);
+    store.addSongSection('Should not exist');
+    store.pasteSection();
+    store.renameSection(canonicalSection.id, 'Should not rename');
+    store.removeSection(canonicalSection.id);
+    expect(store.createGraphInSection(canonicalSection.id)).toBeNull();
+    expect(store.copyGraphToSection(canonicalSection.id, canonicalSection.graphs[0]!)).toBeNull();
+    const localGraphCount = Object.keys(store.graphs).length;
+    expect(store.createGraph('Should not exist')).toBe(store.selectedPadKey ?? '');
+    expect(Object.keys(store.graphs)).toHaveLength(localGraphCount);
+    store.linkGraphPlacement(libraryId, canonicalSection.id, canonicalSection.graphs[0]!, libraryId, canonicalSection.id, canonicalSection.graphs[0]!);
+    store.unlinkGraphPlacement(libraryId, canonicalSection.id, canonicalSection.graphs[0]!);
+    expect(store.activeSectionId).toBe(before.activeSectionId);
+    expect(store.activeSong!.sections).toHaveLength(before.sectionCount);
+    expect(Object.keys(store.graphs)).toHaveLength(before.graphCount);
+    expect(Object.keys(store.graphNames)).toHaveLength(before.nameCount);
+  });
+
+  it('create-and-place and copy-and-place each undo as one transaction', () => {
+    const store = new TriggerLab(fakeClient);
+    const sectionId = store.activeSong!.sections[0]!.id;
+    const beforeGraphs = Object.keys(store.graphs).length;
+    const created = store.createGraphInSection(sectionId, 'Placed');
+    expect(created).toBeTruthy();
+    expect(store.activeSong!.sections[0]!.graphs).toContain(created);
+    expect(store.undo()).toBe(true);
+    expect(store.activeSong!.sections[0]!.graphs).not.toContain(created);
+    expect(store.graphs[created!]).toBeUndefined();
+    expect(store.graphNames[created!]).toBeUndefined();
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
+
+    const source = store.activeSong!.sections[0]!.graphs[0]!;
+    const copied = store.copyGraphToSection(sectionId, source, 'Independent');
+    expect(copied).toBeTruthy();
+    expect(store.activeSong!.sections[0]!.graphs).toContain(copied);
+    expect(store.undo()).toBe(true);
+    expect(store.activeSong!.sections[0]!.graphs).not.toContain(copied);
+    expect(store.graphs[copied!]).toBeUndefined();
+    expect(store.graphNames[copied!]).toBeUndefined();
+  });
+
   it('links exact placements across three sections and linked edits propagate', () => {
     const store = new TriggerLab(fakeClient);
     const sections = store.activeSong!.sections;
@@ -228,6 +286,45 @@ describe('copy / paste section (clipboard)', () => {
     store.selectedPadKey = sourceKey;
     store.addNode('play', 0, 0);
     expect(store.activeSong!.sections.slice(0, 3).every((section) => store.graphs[section.graphs[0]!]!.nodes.length === before + 1)).toBe(true);
+  });
+
+  it('supports reverse-direction and cross-song links without cloning unrelated graphs', () => {
+    const store = new TriggerLab(fakeClient);
+    const firstSong = store.activeSong!;
+    const firstSection = firstSong.sections[0]!;
+    const secondSection = firstSong.sections[1]!;
+    const source = secondSection.graphs[0]!;
+    const target = firstSection.graphs[0]!;
+    const beforeGraphs = Object.keys(store.graphs).length;
+
+    store.linkGraphPlacement(firstSong.id, secondSection.id, source, firstSong.id, firstSection.id, target);
+    expect(store.songs[0]!.sections[0]!.graphs[0]).toBe(source);
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
+
+    const secondSongId = store.createSong('Second song');
+    const secondSong = store.songs.find((song) => song.id === secondSongId)!;
+    const crossSection = secondSong.sections[0]!;
+    const crossTarget = store.createGraphInSection(crossSection.id, 'Cross target')!;
+    store.linkGraphPlacement(firstSong.id, secondSection.id, source, secondSongId, secondSong.sections[0]!.id, crossTarget);
+    expect(store.songs.find((song) => song.id === secondSongId)!.sections[0]!.graphs[0]).toBe(source);
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + 1);
+  });
+
+  it('treats self-link as a no-op and default copy clones only the chosen graph', () => {
+    const store = new TriggerLab(fakeClient);
+    const section = store.activeSong!.sections[0]!;
+    const source = section.graphs[0]!;
+    const beforeGraphs = Object.keys(store.graphs).length;
+    const beforeSections = store.activeSong!.sections.length;
+    store.linkGraphPlacement(store.activeSong!.id, section.id, source, store.activeSong!.id, section.id, source);
+    expect(store.activeSong!.sections[0]!.graphs).toEqual(section.graphs);
+
+    const copy = store.copyGraphToSection(section.id, source);
+    expect(copy).toBeTruthy();
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + 1);
+    expect(store.activeSong!.sections).toHaveLength(beforeSections);
+    expect(store.activeSong!.sections[0]!.graphs.filter((key) => key === source)).toHaveLength(1);
+    expect(store.activeSong!.sections[0]!.graphs).toContain(copy);
   });
 
   it('unlinks one placement into an independent copy, and undo restores the link', () => {

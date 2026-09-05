@@ -132,6 +132,22 @@ describe('reuse-by-reference', () => {
     expect(graphPlacementCount([], 'gSnare')).toBe(0);
   });
 
+  it('counts each supported placement once, including 2, 3, 4, and N groups', () => {
+    const groups = Array.from({ length: 6 }, (_, i) =>
+      addGraph({ ...song(), id: `song-${i}` }, i % 2 === 0 ? 'intro' : 'verse', 'gShared'),
+    );
+    expect(graphPlacementCount(groups.slice(0, 2), 'gShared')).toBe(2);
+    expect(graphPlacementCount(groups.slice(0, 3), 'gShared')).toBe(3);
+    expect(graphPlacementCount(groups.slice(0, 4), 'gShared')).toBe(4);
+    expect(graphPlacementCount(groups, 'gShared')).toBe(6);
+  });
+
+  it('does not count a repeated legacy key twice inside one section', () => {
+    const legacy = { ...song(), sections: [makeSection('intro', 'Intro', ['gShared', 'gShared'])] };
+    expect(graphPlacementCount([legacy], 'gShared')).toBe(1);
+    expect(makeSection('intro', 'Intro', legacy.sections[0]!.graphs).graphs).toEqual(['gShared']);
+  });
+
   it('referencedGraphs lists every distinct key in first-appearance order', () => {
     let s = addGraph(song(), 'intro', 'gA');
     s = addGraph(s, 'intro', 'gB');

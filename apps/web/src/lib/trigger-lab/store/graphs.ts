@@ -146,7 +146,9 @@ export function cloneSongGraphs(
     const name = graphNames[key];
     if (typeof name === 'string') nextNames[newKey] = name;
   }
-  const sections = song.sections.map((sec) => ({ ...sec, graphs: sec.graphs.map((k) => remap.get(k) ?? k) }));
+  const sections = song.sections.map((sec) =>
+    setlist.makeSection(sec.id, sec.name, sec.graphs.map((k) => remap.get(k) ?? k), sec.looks),
+  );
   return { song: { ...song, sections }, graphs: nextGraphs, graphNames: nextNames };
 }
 
@@ -159,10 +161,11 @@ export function cloneSectionGraphs(
   graphNames: Record<string, string>,
   mintKey: () => string,
 ): { section: setlist.SetlistSection; graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+  const normalized = setlist.makeSection(section.id, section.name, section.graphs, section.looks);
   const remap = new Map<string, string>();
   const nextGraphs: Record<string, TriggerGraph> = {};
   const nextNames: Record<string, string> = {};
-  for (const key of section.graphs) {
+  for (const key of normalized.graphs) {
     const source = graphs[key];
     if (!source || remap.has(key)) continue;
     const newKey = mintKey();
@@ -172,7 +175,7 @@ export function cloneSectionGraphs(
     if (typeof name === 'string') nextNames[newKey] = name;
   }
   return {
-    section: { ...section, graphs: section.graphs.map((key) => remap.get(key) ?? key), looks: { ...section.looks } },
+    section: setlist.makeSection(normalized.id, normalized.name, normalized.graphs.map((key) => remap.get(key) ?? key), normalized.looks),
     graphs: nextGraphs,
     graphNames: nextNames,
   };

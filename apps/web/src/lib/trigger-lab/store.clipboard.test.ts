@@ -137,6 +137,30 @@ describe('paste materialize — section', () => {
     expect(store.activeSectionId).toBe('ts-1');
     expect(store.activeSong!.sections.some((s) => s.id === 'ts-1')).toBe(true);
   });
+
+  it('rejects a section ClipDoc while a canonical library song is active without minting or selecting', () => {
+    const store = new TriggerLab(fakeClient);
+    const libraryId = store.exportSongToLibrary(store.activeSongId)!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const section = store.resolvedView.songs.find((song) => song.id === libraryId)!.sections[0]!;
+    const text = serialize(buildSectionClipDoc(section, sourcesOf(store)));
+    const before = {
+      activeSectionId: store.activeSectionId,
+      graphCount: Object.keys(store.graphs).length,
+      nameCount: Object.keys(store.graphNames).length,
+      sectionCount: store.activeSong!.sections.length,
+    };
+
+    const res = store.materializePaste(text, { context: 'section', mint: testMint() });
+
+    expect(res.ok).toBe(false);
+    expect(res.ok === false && res.message).toContain('read-only');
+    expect(store.activeSectionId).toBe(before.activeSectionId);
+    expect(Object.keys(store.graphs)).toHaveLength(before.graphCount);
+    expect(Object.keys(store.graphNames)).toHaveLength(before.nameCount);
+    expect(store.activeSong!.sections).toHaveLength(before.sectionCount);
+  });
 });
 
 describe('paste materialize — song', () => {

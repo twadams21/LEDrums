@@ -29,7 +29,7 @@
    `setProject` server apply is S45 — here the `patch` kind only round-trips (no remap). */
 
 import type { EffectDef, Preset, TriggerGraph, GraphNode } from './sim';
-import type { SetlistSection, Song } from '../app/setlist';
+import { makeSection, type SetlistSection, type Song } from '../app/setlist';
 import type { Project, CanvasScene } from '@ledrums/core';
 import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
@@ -417,7 +417,9 @@ function coerceSection(raw: unknown): SetlistSection | null {
       if (typeof v === 'string' || v === null) looks[busId] = v;
     }
   }
-  return { id: raw.id, name: typeof raw.name === 'string' ? raw.name : '', graphs, looks };
+  // External ClipDocs use the same ordered-set identity as the in-app model. Sanitizing here keeps
+  // a malformed payload from manufacturing two UI rows for one `(song, section, graphKey)`.
+  return makeSection(raw.id, typeof raw.name === 'string' ? raw.name : '', graphs, looks);
 }
 
 // ---- remap on materialize ---------------------------------------------------
@@ -649,12 +651,7 @@ function remapCanvasNode(node: GraphNode, remapSceneRef: (id: string) => string)
 
 /** Re-key a section under a fresh id, rewriting graph refs + look effect ids through the tables. */
 function remapSection(sec: SetlistSection, newId: string, remapGraphRef: (k: string) => string, remapEffectRef: (id: string) => string): SetlistSection {
-  return {
-    id: newId,
-    name: sec.name,
-    graphs: sec.graphs.map(remapGraphRef),
-    looks: mapLooks(sec.looks, remapEffectRef),
-  };
+  return makeSection(newId, sec.name, sec.graphs.map(remapGraphRef), mapLooks(sec.looks, remapEffectRef));
 }
 
 function findLocalGraphKey(graphs: Record<string, TriggerGraph>, remapped: TriggerGraph): string | undefined {

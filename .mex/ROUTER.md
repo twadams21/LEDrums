@@ -40,9 +40,27 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
 independent graph keys/objects by default; repeated keys already persisted remain explicit links;
 adding an existing graph defaults to Copy, with deliberate Link/Make independent actions for exact
-placements. The implementation uses repeated shared graph keys as linked-group identity and does
-not use automatic copy-on-write or current-selection ownership. Source: Trent's replacement
-contract for PR #201 in this session.
+placements. `SetlistSection.graphs` remains an ordered set: a key may occur once per section, while
+the exact supported placement identity is `(songId, sectionId, graphKey)`. Persistence and ClipDoc
+boundaries sanitize legacy repeats, and UI identity/counts use that same tuple. Canonical library
+sections are resolved for playback but are read-only until the existing detach flow is used;
+failed canonical or viewer operations do not mint graphs, names, clipboard snapshots, or active
+section ids. Create/copy-and-place and graph deletion each use one store-level undo checkpoint.
+The implementation uses repeated shared graph keys as linked-group identity and does not use
+placement IDs, automatic copy-on-write, or current-selection ownership. Source: Trent's PR #208
+remediation request on this machine; machine identity from `scutil --get ComputerName`.
+
+**PR #208 remediation (2026-09-06, branch `fix/section-copy-link-contract`, not merged):**
+ordered-set sanitization now agrees across setlist constructors, persistence, library references,
+ClipDoc remapping, and graph closure copies. Local placement commands validate before minting and
+copy the complete in-app clipboard; canonical references stay read-only with explicit reason text.
+Atomic store commands cover create/copy-and-place and delete undo. Link counts cover every local
+section placement once, including cross-song groups and legacy cross-section reuse. Sections UI
+disables viewer/canonical authoring affordances and exposes Copy as the default with explicit Link;
+strict shots captured picker, linked status/dialog, canonical read-only, and viewer-disabled states.
+Evidence: focused 162 tests, full 2,518 web + 1,402 core + 601 server + 98 IO + 13 protocol +
+57 worker + 83 desktop tests green; full typecheck/build green; strict shots on the dedicated
+LEDrums Vite port were console-clean. Remaining delivery: commit/push this branch and let PR CI run.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

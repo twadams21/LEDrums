@@ -49,6 +49,8 @@
 
   let editing = $state(false);
   const active = $derived(store.activeSectionId === section.id);
+  const canArrange = $derived(store.canEditActiveSong && store.isLocalSong(song.id));
+  const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library section is read-only — detach a copy in Objects to edit it');
 
   let listEl = $state<HTMLDivElement | null>(null);
 
@@ -77,10 +79,10 @@
   }
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateSection(section.id) },
-    { label: 'Copy', icon: Copy, onSelect: () => void store.copySectionToClipboard(section.id) },
-    { label: 'Paste', icon: ClipboardPaste, onSelect: () => void store.pasteSectionFromClipboard() },
-    { label: 'Delete', icon: Trash2, danger: true, onSelect: () => store.removeSection(section.id) },
+    { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.duplicateSection(section.id) },
+    { label: canArrange ? 'Copy' : `Copy — ${blockedReason}`, icon: Copy, disabled: !canArrange, onSelect: () => void store.copySectionToClipboard(section.id) },
+    { label: canArrange ? 'Paste' : `Paste — ${blockedReason}`, icon: ClipboardPaste, disabled: !canArrange, onSelect: () => void store.pasteSectionFromClipboard() },
+    { label: canArrange ? 'Delete' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => store.removeSection(section.id) },
   ]);
 </script>
 
@@ -95,7 +97,7 @@
   <div
     class="section-drag"
     role="group"
-    draggable={store.canEdit && !editing}
+    draggable={canArrange && !editing}
     aria-label={`Drag ${section.name}`}
     ondragstart={onSectionDragStart}
     ondragend={onDragEnd}
@@ -108,11 +110,13 @@
       onCommit={(name) => store.renameSection(section.id, name)}
       {actions}
       renameLabel="Section name"
+      renameDisabled={!canArrange}
+      renameDisabledLabel={blockedReason}
     >
       {#snippet trailing()}<span class="colcount">{section.graphs.length}</span>{/snippet}
       {#snippet quickActions()}
-        <IconButton icon={Copy} label="Copy section to clipboard" size={13} onclick={() => void store.copySectionToClipboard(section.id)} />
-        <IconButton icon={ClipboardPaste} label="Paste section" size={13} onclick={() => void store.pasteSectionFromClipboard()} />
+        <IconButton icon={Copy} label={canArrange ? 'Copy section to clipboard' : `Copy disabled — ${blockedReason}`} size={13} disabled={!canArrange} onclick={() => void store.copySectionToClipboard(section.id)} />
+        <IconButton icon={ClipboardPaste} label={canArrange ? 'Paste section' : `Paste disabled — ${blockedReason}`} size={13} disabled={!canArrange} onclick={() => void store.pasteSectionFromClipboard()} />
       {/snippet}
     </EditableRow>
   </div>
@@ -141,7 +145,7 @@
       <p class="empty">No graphs yet.</p>
     {/if}
 
-    <button class="addgraph" type="button" title="Add a graph" onclick={() => onAddGraph(section.id)}>
+    <button class="addgraph" type="button" disabled={!canArrange} title={canArrange ? 'Add a graph' : blockedReason} onclick={() => onAddGraph(section.id)}>
       <Plus size={13} aria-hidden="true" /> graph
     </button>
   </div>

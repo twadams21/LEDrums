@@ -160,6 +160,19 @@ describe('duplicateGraph (any graph)', () => {
 });
 
 describe('deleteGraph (any graph)', () => {
+  it('is undoable with its graph name and placements restored', () => {
+    const store = new TriggerLab(fakeClient);
+    const key = store.createGraph('Undo me');
+    const sectionId = store.activeSong!.sections[0]!.id;
+    store.addGraphToSection(sectionId, key);
+    store.deleteGraph(key);
+    expect(store.graphs[key]).toBeUndefined();
+    expect(store.undo()).toBe(true);
+    expect(store.graphNames[key]).toBe('Undo me');
+    expect(store.graphs[key]).toBeDefined();
+    expect(store.activeSong!.sections.find((section) => section.id === sectionId)?.graphs).toContain(key);
+  });
+
   it('removes the graph from graphs + graphNames + graphLibrary', () => {
     const store = new TriggerLab(fakeClient);
     const key = store.createGraph('Doomed');

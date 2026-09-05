@@ -23,6 +23,8 @@
 
   let editing = $state(false);
   const sub = $derived(describeTriggerSource(store.triggerSource(graph.key), store.drums).sub);
+  const canEdit = $derived(store.canEditActiveSong);
+  const blockedReason = $derived(store.activeSongEditBlockReason ?? 'Library graph is read-only');
 
   function remove(): void {
     store.deleteGraph(graph.key);
@@ -30,9 +32,9 @@
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Open', icon: SquarePen, onSelect: () => onOpen(graph.key) },
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(graph.key) },
+    { label: canEdit ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canEdit, onSelect: () => store.duplicateGraph(graph.key) },
     { label: 'Copy', icon: Copy, onSelect: () => void store.copyGraphToClipboard(graph.key) },
-    { label: 'Delete', icon: Trash2, danger: true, onSelect: remove },
+    { label: canEdit ? 'Delete' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canEdit, onSelect: remove },
   ]);
 </script>
 
@@ -46,11 +48,13 @@
   onCommit={(name) => store.renameGraph(graph.key, name)}
   {actions}
   renameLabel="Graph name"
+  renameDisabled={!canEdit}
+  renameDisabledLabel={blockedReason}
 >
   {#snippet quickActions()}
-    <IconButton icon={Pencil} label="Rename graph" size={13} onclick={() => (editing = true)} />
-    <IconButton icon={CopyPlus} label="Duplicate graph" size={13} onclick={() => store.duplicateGraph(graph.key)} />
+    <IconButton icon={Pencil} label={canEdit ? 'Rename graph' : `Rename disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={() => (editing = true)} />
+    <IconButton icon={CopyPlus} label={canEdit ? 'Duplicate graph' : `Duplicate disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={() => store.duplicateGraph(graph.key)} />
     <IconButton icon={Copy} label="Copy graph to clipboard" size={13} onclick={() => void store.copyGraphToClipboard(graph.key)} />
-    <IconButton icon={Trash2} label="Delete graph" size={13} onclick={remove} />
+    <IconButton icon={Trash2} label={canEdit ? 'Delete graph' : `Delete disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={remove} />
   {/snippet}
 </EditableRow>

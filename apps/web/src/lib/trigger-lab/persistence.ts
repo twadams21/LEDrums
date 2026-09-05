@@ -454,10 +454,14 @@ export function serializeSongLibrary(lib: SongLibrary): PersistedSongLibrary {
 export function coerceLibrarySong(raw: unknown): LibrarySong | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || !raw.id) return null;
+  // Canonical library sections follow the same ordered-set invariant as show sections. Reuse the
+  // persisted-song migration so a malformed/older write cannot expose a duplicate key that the
+  // setlist UI can never identify as two placements.
+  const sections = migrateSongs([{ id: raw.id, name: raw.name, sections: raw.sections }])[0]?.sections ?? [];
   return {
     id: raw.id,
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'Untitled Song',
-    sections: Array.isArray(raw.sections) ? (raw.sections as SetlistSection[]) : [],
+    sections,
     graphs: isObject(raw.graphs) ? (raw.graphs as Record<string, TriggerGraph>) : {},
     graphNames: isObject(raw.graphNames) ? (raw.graphNames as Record<string, string>) : {},
     effects: Array.isArray(raw.effects) ? (raw.effects as EffectDef[]) : [],

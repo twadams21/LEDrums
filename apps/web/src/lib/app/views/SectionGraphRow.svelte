@@ -44,6 +44,8 @@
   const placementCount = $derived(graphPlacementCount(store.songs, graphKey));
   const reused = $derived(placementCount > 1);
   const localPlacement = $derived(store.songs.some((candidate) => candidate.id === song.id && candidate.sections.some((s) => s.id === section.id && s.graphs.includes(graphKey))));
+  const canArrange = $derived(store.canEdit && localPlacement);
+  const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library placement is read-only — detach a copy in Objects to edit it');
   const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
 
   /* The native HTML5 drag ghost snapshots the whole row — grip, status dot, and the
@@ -69,11 +71,11 @@
   }
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(graphKey) },
-    ...(store.canEdit && localPlacement ? [{ label: 'Link to placement…', icon: Link2, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
-    ...(store.canEdit && localPlacement && reused ? [{ label: 'Make independent', icon: Link2, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
-    { label: 'Remove from section', icon: X, onSelect: removeFromSection },
-    { label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => store.deleteGraph(graphKey) },
+    { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.copyGraphToSection(section.id, graphKey) },
+    ...(localPlacement ? [{ label: store.canEdit ? 'Link to placement…' : 'Link — Another client is editing', icon: Link2, disabled: !store.canEdit, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
+    ...(localPlacement && reused ? [{ label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`, icon: Link2, disabled: !canArrange, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
+    { label: canArrange ? 'Remove from section' : `Remove from section — ${blockedReason}`, icon: X, disabled: !canArrange, onSelect: removeFromSection },
+    { label: canArrange ? 'Delete graph' : `Delete graph — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => store.deleteGraph(graphKey) },
   ]);
 </script>
 
@@ -82,12 +84,12 @@
   class:dragging
   role="listitem"
   data-graph-row
-  draggable={store.canEdit && !editing}
+  draggable={canArrange && !editing}
   aria-label={`Drag ${store.graphLabel(graphKey)}`}
   ondragstart={handleDragStart}
   ondragend={handleDragEnd}
 >
-  {#if store.canEdit && !editing}
+  {#if canArrange && !editing}
     <!-- Explicit drag affordance: the grab cursor is confined to this grip rather than smeared
          across the whole row (R12). Faint at rest, brightens with the row on hover. -->
     <span class="grip" aria-hidden="true"><GripVertical size={13} /></span>
@@ -102,20 +104,25 @@
     onCommit={(name) => store.renameGraph(graphKey, name)}
     {actions}
     renameLabel="Graph name"
+    renameDisabled={!canArrange}
+    renameDisabledLabel={blockedReason}
   >
     {#snippet trailing()}
       {#if reused}
-        <span class="linked-status" title={`Linked in ${placementCount} sections`} aria-label={`Linked in ${placementCount} sections`}>
+        <span class="linked-status" title={`Linked in ${placementCount} placements`} aria-label={`Linked in ${placementCount} placements`}>
           <Link2 size={12} aria-hidden="true" />{placementCount}
         </span>
       {/if}
     {/snippet}
     {#snippet quickActions()}
-      <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
+      {#if localPlacement}
+        <IconButton icon={Link2} label={store.canEdit ? 'Link to placement…' : `Link disabled — ${blockedReason}`} size={12} disabled={!store.canEdit} onclick={() => onLink(song.id, section.id, graphKey)} />
+      {/if}
+      <IconButton icon={X} label={canArrange ? 'Remove from section' : `Remove disabled — ${blockedReason}`} size={12} disabled={!canArrange} onclick={removeFromSection} />
     {/snippet}
   </EditableRow>
 
-  {#if store.canEdit && !editing}
+  {#if canArrange && !editing}
     <!-- Compact drag image: rendered off-screen (never display:none — Chrome won't snapshot
          a hidden node) and handed to setDragImage on dragstart. Icon + name only, no ✕. -->
     <div class="drag-ghost" bind:this={ghostEl} aria-hidden="true">

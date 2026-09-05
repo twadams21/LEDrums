@@ -18,6 +18,8 @@
     onLink,
     onCreate,
     onClose,
+    disabled = false,
+    disabledReason,
   }: {
     store: TriggerLab;
     /** The section awaiting a graph, or null when the picker is closed. */
@@ -26,6 +28,8 @@
     onLink: (graphKey: string) => void;
     onCreate: () => void;
     onClose: () => void;
+    disabled?: boolean;
+    disabledReason?: string;
   } = $props();
 
   const sourceSub = (key: string): string =>
@@ -35,8 +39,9 @@
 <Drawer open={!!section} {onClose} title="Add a graph" side="right" width="320px">
   {#if section}
     <p class="picker-ctx">{section.name}</p>
+    {#if disabled && disabledReason}<p class="picker-reason">{disabledReason}</p>{/if}
     <div class="picker-list">
-      <button class="picker-item new" onclick={onCreate}>
+      <button class="picker-item new" disabled={disabled} title={disabledReason} onclick={onCreate}>
         <Plus size={14} aria-hidden="true" />
         <span>New graph</span>
         <span class="picker-tag">empty</span>
@@ -52,10 +57,10 @@
           {#if inSection}
             <span class="picker-tag">in section</span>
           {:else}
-            <button class="picker-action primary" type="button" aria-label={`Add ${g.label} as a copy`} onclick={() => onCopy(g.key)}>
+            <button class="picker-action primary" type="button" disabled={disabled} title={disabledReason} aria-label={`Add ${g.label} as a copy`} onclick={() => onCopy(g.key)}>
               <CopyPlus size={13} aria-hidden="true" /> Copy
             </button>
-            <button class="picker-action" type="button" aria-label={`Link ${g.label} to this section`} onclick={() => onLink(g.key)}>
+            <button class="picker-action" type="button" disabled={disabled} title={disabledReason} aria-label={`Link ${g.label} to this section`} onclick={() => onLink(g.key)}>
               <Link2 size={13} aria-hidden="true" /> Link
             </button>
           {/if}
@@ -76,6 +81,12 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+  }
+  .picker-reason {
+    margin: 0 0 var(--space-3);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.4;
   }
   .picker-item {
     display: flex;
@@ -110,6 +121,11 @@
   .picker-action:hover {
     border-color: var(--border-accent);
     color: var(--ink);
+  }
+  .picker-action:disabled,
+  .picker-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
   .picker-action.primary {
     border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
