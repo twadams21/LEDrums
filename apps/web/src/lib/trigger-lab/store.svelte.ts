@@ -363,6 +363,7 @@ function pasteSuccessMessage(res: RemapResult): string {
     project slice (routing/geometry/IO), which is server-owned and NOT part of `AuthoredState`.
     Keeping both in one stack entry preserves ordering across mixed trigger/patch edits. */
 interface UndoEntry {
+  documentId: string;
   authored: AuthoredState;
   project: Project | null;
 }
@@ -552,9 +553,7 @@ export class TriggerLab {
       if (patch.presets) this.presets = [...this.presets, ...patch.presets];
     },
     toAuthored: () => this.toAuthored(),
-    applyShow: (show) => this.applyShow(show),
-    resetAuthoredToSeed: () => this.resetAuthoredToSeed(),
-    normalizeGraphs: () => this.normalizeGraphs(),
+    replaceDocument: (show) => this.replaceDocument(show),
     setActiveSectionId: (id) => (this.activeSectionId = id),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
@@ -1203,16 +1202,42 @@ export class TriggerLab {
     this.applyAuthored(seedAuthored());
   }
 
-  /** Load a show's authored content into the live runes: reset to the blank seed, apply the
-      show's (partial-tolerant, detached) authored over it, then re-run the graph normalizers.
-      A FULL swap — no field of the previously-active show bleeds through. Clears the sim's
-      pending-fire queue so stale delay fires from the outgoing show cannot materialise
-      (mirrors core `engine.ts` `setShow()` clearing `pendingFires`). */
-  private applyShow(show: Show): void {
+  /** The sole document replacement boundary, including same-id server adoption. History is
+      session-local to this document revision; an in-flight gesture cannot suppress its first edit. */
+  private replaceDocument(show: Show): void {
+    this.undoStack = [];
+    this.gestureDepth = 0;
+    this.gesturePending = false;
+    this.gestureSuppressPrev = false;
+    this.suppressUndoSnapshot = false;
     this.resetAuthoredToSeed();
     this.applyAuthored($state.snapshot(show.authored));
     this.normalizeGraphs();
-    this.sim.clearPendingFires();
+    this.galleryBlock = null;
+    this.settingsBlock = null;
+    this.envTarget = null;
+    this.liveNodePositions = {};
+    this.sectionClipboard = null;
+    this.midi.cancelLearn();
+    this.osc.cancel();
+    this.replaceRuntime();
+    // Equal-content Save As is still a new runtime lifetime on the connected engine.
+    this.engineSync.reset();
+    this.syncShowToServer();
+    this.syncTransport();
+  }
+
+  /** Re-instantiation, not stopAll: the existing Sim owns private sequence/PRNG/latch/delay
+      state and registry references. No new Sim contract is needed to release all of them. */
+  private replaceRuntime(): void {
+    this.sim = new Sim(this.buses, this.resolvedView.effects, this.resolvedView.presets);
+    this.sim.pixelModel = this.labModel.pm;
+    this.sim.bpm = this.bpm;
+    this.sim.beatsPerBar = this.beatsPerBar;
+    this.serverVoices = [];
+    this.busLevels = {};
+    this.frameBuf.fill(0);
+    this.snapshot();
   }
 
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
@@ -1276,6 +1301,7 @@ export class TriggerLab {
       this.suppressUndoSnapshot = true;
     }
     this.undoStack.push({
+      documentId: this.activeShowId,
       authored: structuredClone(this.toAuthored()),
       // The project is server-owned and lives outside AuthoredState, so it snapshots separately
       // ($state.snapshot strips the rune proxy before the clone, same as toAuthored).
@@ -1339,13 +1365,15 @@ export class TriggerLab {
     if (this.isViewer) return false;
     const prev = this.undoStack.pop();
     if (!prev) return false;
+    if (prev.documentId !== this.activeShowId) {
+      this.undoStack = [];
+      return false;
+    }
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
     this.applyAuthored(prev.authored);
     this.normalizeGraphs();
-    this.sim = new Sim(this.buses, this.effects, this.presets);
-    this.sim.pixelModel = this.labModel.pm;
-    this.sim.clearPendingFires();
+    this.replaceRuntime();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
     // project untouched and sends nothing.

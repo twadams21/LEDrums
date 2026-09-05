@@ -17,8 +17,7 @@
     getter/setter/forwarders so callers + tests are unchanged. The authored-state SWAP machinery
     (reset-to-seed / apply-authored / graph normalize) spans EVERY authored cluster — graphs, buses,
     presets, effects, sections — not just shows/songs, so it stays in the store and is reached through
-    the injected {@link ShowsControllerHost} (`toAuthored`/`applyShow`/`resetAuthoredToSeed`/
-    `normalizeGraphs`). The graph MODEL the resolution + closure extraction read/merge is likewise
+    the injected {@link ShowsControllerHost} (`toAuthored`/`replaceDocument`). The graph MODEL the resolution + closure extraction read/merge is likewise
     store-owned and reached through the host, as is the section-arrangement boundary (R24 owns
     `activeSectionId`) and the WS link. The store keeps the sim-play + section-arrangement surfaces. */
 
@@ -47,7 +46,7 @@ import {
 import { ShowLibrarySync } from './store/show-library-sync';
 import { SongLibrarySync } from './store/song-library-sync';
 import { nid, freshId, reserveIds } from './store/ids';
-import { seedSongs } from './store/seed';
+import { seedSongs, seedAuthored } from './store/seed';
 import { authoredIdsFromLibrary, idsFromSongLibrary } from './store/reserve-library-ids';
 import * as showsLib from './store/shows';
 import * as songRefsLib from './store/song-library-refs';
@@ -130,12 +129,8 @@ export interface ShowsControllerHost {
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped) — spans every authored
       cluster, so it is owned by the store. */
   toAuthored(): AuthoredState;
-  /** Load a show's authored content into the live runes (full swap, no cross-show bleed). */
-  applyShow(show: Show): void;
-  /** Reset every authored rune to the blank-document seed. */
-  resetAuthoredToSeed(): void;
-  /** Re-run the graph back-compat normalizers (idempotent) after a seed / library swap. */
-  normalizeGraphs(): void;
+  /** Replace the document's authored state, history and runtime as one lifetime boundary. */
+  replaceDocument(show: Show): void;
   /** Re-point the active section (R24 owns the rune) — song switch selects the song's first section. */
   setActiveSectionId(id: string | null): void;
   /** Whether this client is a read-only viewer (S2) — authoring no-ops then. */
@@ -303,8 +298,8 @@ export class ShowsController {
   // --- show document lifecycle (new / open / save / save-as / rename / delete / close) ---
   // A show is the authored content given identity; the store's live authored runes mirror the ACTIVE
   // show. Every switch flushes the outgoing show's edits into its library slot, then fully swaps the
-  // runes via the host's applyShow (no cross-show bleed). The new active content reaches the engine
-  // through the same debounced autosave path as any other authored edit.
+  // runes/history/runtime via the host's replaceDocument. Replacements reset connected playback;
+  // ordinary authored edits continue through the debounced autosave path.
 
   /** Create a blank show (seed content) and switch to it. Name defaults to the first unused "Untitled
       Show [N]". The previous show's edits are flushed to its slot first. Returns the new id. */
@@ -313,10 +308,9 @@ export class ShowsController {
     this.flushActiveToLibrary();
     const id = this.freshShowId();
     const label = name?.trim() || showsLib.nextShowName(this.showLibrary);
-    this.host.resetAuthoredToSeed();
-    this.host.normalizeGraphs();
-    this.showLibrary = showsLib.withShow(this.showLibrary, { id, name: label, authored: this.host.toAuthored() });
-    this.activeShowId = id;
+    const show = { id, name: label, authored: seedAuthored() };
+    this.showLibrary = showsLib.withShow(this.showLibrary, show);
+    this.activateDocument(show);
     return id;
   }
 
@@ -325,8 +319,7 @@ export class ShowsController {
   openShow(id: string): void {
     if (id === this.activeShowId || !this.showLibrary[id]) return;
     this.flushActiveToLibrary();
-    this.activeShowId = id;
-    this.host.applyShow(this.showLibrary[id]!);
+    this.activateDocument(this.showLibrary[id]!);
   }
 
   /** Deliberately persist the active show NOW (flush runes → slot → storage). Autosave already covers
@@ -344,9 +337,9 @@ export class ShowsController {
     this.flushActiveToLibrary();
     const id = this.freshShowId();
     const label = name.trim() || showsLib.nextShowName(this.showLibrary);
-    // The clone's content == the current live runes, so no reload is needed after the switch.
-    this.showLibrary = showsLib.withShow(this.showLibrary, { id, name: label, authored: this.host.toAuthored() });
-    this.activeShowId = id;
+    const show = { id, name: label, authored: this.host.toAuthored() };
+    this.showLibrary = showsLib.withShow(this.showLibrary, show);
+    this.activateDocument(show);
     return id;
   }
 
@@ -367,15 +360,13 @@ export class ShowsController {
     if (plan.kind === 'reseed') {
       // deleted the only show → start over from a blank Untitled (mirrors closeShow's reset).
       const freshShowId = this.freshShowId();
-      this.host.resetAuthoredToSeed();
-      this.host.normalizeGraphs();
-      this.showLibrary = { [freshShowId]: { id: freshShowId, name: 'Untitled Show', authored: this.host.toAuthored() } };
-      this.activeShowId = freshShowId;
+      const show = { id: freshShowId, name: 'Untitled Show', authored: seedAuthored() };
+      this.showLibrary = { [freshShowId]: show };
+      this.activateDocument(show);
       return;
     }
     this.showLibrary = plan.library;
-    this.activeShowId = plan.activeShowId;
-    if (plan.reload) this.host.applyShow(plan.reload);
+    if (plan.reload) this.activateDocument(plan.reload);
   }
 
   /** Close the active show: it's already saved in the library, so just switch to a fresh blank
@@ -383,6 +374,13 @@ export class ShowsController {
   closeShow(): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
     this.newShow();
+  }
+
+  /** All replacements, including same-id server revisions and same-content Save As, cross this
+      boundary. Ordinary saves, renames and deleting an inactive show do not. */
+  private activateDocument(show: Show): void {
+    this.activeShowId = show.id;
+    this.host.replaceDocument(show);
   }
 
   /** Smallest unused show id (survives reload — the global nid counter + the live library). */
@@ -636,8 +634,8 @@ export class ShowsController {
       the blank seed and re-normalize. A FULL swap — no field of the prior library bleeds through. */
   private adoptLibrary(lib: ShowLibrary): void {
     this.showLibrary = lib.shows;
-    this.activeShowId = lib.activeShowId;
-    this.host.applyShow(lib.shows[lib.activeShowId]!);
+    reserveIds(authoredIdsFromLibrary(lib));
+    this.activateDocument(lib.shows[lib.activeShowId]!);
   }
 
   /** Push the current library to the server when it actually changed (sig-guarded so an unchanged
