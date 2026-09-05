@@ -1,11 +1,14 @@
 <script lang="ts">
   /* A quiet, honest code-load state. No fabricated progress, moving skeleton or
-     minimum display time. The caller delays pending feedback, never ready content. */
+     minimum display time. The caller delays pending text, never ready content:
+     the status region itself mounts immediately (empty) so its text change is
+     announced as a live update rather than an inserted node. */
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
-  let { label, failed = false, onRetry }: {
+  let { label, failed = false, pending = true, onRetry }: {
     label: string;
     failed?: boolean;
+    pending?: boolean;
     onRetry?: () => void;
   } = $props();
 </script>
@@ -18,7 +21,7 @@
       {:else}Reopen the app when it’s safe to interrupt. Saved edits are kept.{/if}
     </p>
     {#if onRetry}<button type="button" onclick={onRetry}>Try again</button>{/if}
-  {:else}
+  {:else if pending}
     <p>Loading {label}…</p>
   {/if}
 </div>

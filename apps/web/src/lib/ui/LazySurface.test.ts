@@ -21,12 +21,19 @@ describe('LazySurface', () => {
     const resource = lazyResource(() => work.promise);
     render(Harness, { resource });
     flushSync();
-    expect(screen.getByLabelText('Editor').getAttribute('aria-busy')).toBe('true');
-    expect(screen.queryByRole('status')).toBeNull();
+    const busy = screen.getByLabelText('Editor');
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    // The live region is mounted at once, empty, beside the busy reserve — never
+    // inside it, where assistive tech may suppress the announcement.
+    const status = screen.getByRole('status');
+    expect(status.textContent?.trim()).toBe('');
+    expect(status.closest('[aria-busy]')).toBeNull();
+    expect(busy.querySelector('[role]')).toBeNull();
     await vi.advanceTimersByTimeAsync(199);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('status').textContent?.trim()).toBe('');
     await vi.advanceTimersByTimeAsync(1);
-    expect(screen.getByRole('status').textContent).toContain('Loading Editor');
+    expect(screen.getByRole('status')).toBe(status);
+    expect(status.textContent).toContain('Loading Editor');
     work.resolve('Ready');
     await resource.load();
     flushSync();
@@ -57,6 +64,7 @@ describe('LazySurface', () => {
     flushSync();
     expect(screen.queryByTestId('loaded')).toBeNull();
     expect(screen.getByLabelText('B')).toBeTruthy();
+    expect(screen.getByRole('status').textContent?.trim()).toBe('');
     b.resolve('current B');
     await second.load();
     flushSync();
