@@ -1,40 +1,18 @@
-/* =============================================================================
-   TRIGGER LAB — throwaway simulation.  NOT the engine, NOT production.
-
-   Decides three branches before committing the core model:
-     1. Voice model  — layers-as-buses with a mono/poly polyphony rule.
-     2. Block set    — a trigger behavior-tree (Wwise/FMOD-style containers).
-     3. Section change — timed morph (rides the bus crossfade/voice-stealing).
-
-   An effect (e.g. Swirl) has parameters + named presets; a placed clip is an
-   INSTANCE of effect+preset that owns its params — a preset is a snapshot you
-   Apply onto a clip or Save from it, never a live binding. Params can be driven by envelopes over a
-   voice's life. Voices are abstract "lights" (a pattern + params + envelope).
-   Delete this whole directory once the branches are decided.
-
-   STRUCTURE (S3.3 split): this core file holds the Block-tree model, the
-   effect/preset/bus/voice/section types, and the `Sim` class (voice lifecycle +
-   graph evaluation). The cohesive sub-concerns live alongside and are
-   re-exported below so the public `./sim` surface is unchanged:
-     - `./sim.envelopes`         — ADSR shapes/sampling + param primitives.
-     - `./sim.trigger-source`    — TriggerSource matching + value normalization.
-     - `./sim.graph-compilation` — trigger-graph types, block→graph, velocity fold.
-   ============================================================================= */
+/* Production offline adapter. The browser owns relative time, input tables, authored
+ * section recall and delayed graph scheduling. Core owns graph evaluation, capped voice
+ * allocation/retirement, envelopes, splice motion and all float rendering. This is not a
+ * second renderer: render.ts only quantizes this Sim's final frame for the preview.
+ * Adjacent modules retain the authoring/tree compatibility exports used by the store. */
 
 import {
-  lifeEnvelopeGain,
-  resolveVoiceLife,
+  Framebuffer,
   voice,
-  voice as coreVoice,
-  type BlendMode,
-  type CurveValue,
   type PixelModel,
   type EffectCategory,
   type EffectTag,
   type PlayType,
-  type ResolvedModifier,
 } from '@ledrums/core';
-import { type EaseSpec, type EnvMap, type Mapping, type ParamSpec, type ParamValues } from './sim.envelopes';
+import { type EnvMap, type ParamSpec, type ParamValues } from './sim.envelopes';
 import { type TriggerGraph } from './sim.graph-compilation';
 
 // Re-export the extracted modules so the public `./sim` API is unchanged.
@@ -194,71 +172,10 @@ export interface Bus {
 
 export type VoicePhase = 'attack' | 'sustain' | 'release';
 
-export interface Voice extends voice.GeometryState {
-  id: string;
-  effectId: string;
-  busId: string;
-  mode: PlayMode;
-  scope: Scope;
-  /** Raw targetId from the play node — resolved to a pixel range by the renderer.
-   *  Encoding: drum = drumId; hoop = `"<drumId>#<hoopIndex>"`. Absent = auto. */
-  targetId?: string;
-  sourceDrumId: string | null;
-  /** hit velocity 0..1 at spawn — drives a hosted generator's synthetic trigger. */
-  velocity: number;
-  /** per-trigger RNG seed (item C) — mirrors the core Voice field; derived at spawn so
-      random-look generator effects differ per fire yet replay exactly. */
-  seed: number;
-  /** hosted legacy-generator id (offline preview delegates to the core generator), or
-      null for a pattern voice. Mirrors the core Voice field. */
-  generatorId?: string | null;
-  /** per-voice generator state (from the core EffectGenerator's createState) — built
-      lazily by the offline renderer and persisted for the voice's life. */
-  genState?: unknown;
-  /** resolved modifier chain (mirrors the core Voice field) — applied by the offline
-      renderer between render and blend. Resolved from graph topology at spawn (S29). */
-  modifiers?: ResolvedModifier[];
-  /** per-voice, per-modifier state (parallel to `modifiers`), built lazily by the chain
-      runner and reset per voice — mirrors `genState`. */
-  modState?: unknown[];
-  /** resolved modulation mappings onto this voice's effect params (doc 10) — mirrors the
-      core Voice field; applied by the offline renderer's param sweep. Populated from graph
-      topology at spawn (S34). */
-  modulations?: Mapping[];
-  mixBlendMode?: BlendMode;
-  mixInputs?: voice.MixInput[];
-  /** Splice members — one per non-blank splice slot; mirrors the core Voice field. */
-  spliceInputs?: voice.MixInput[];
-  /** Resolved splice layout (bands, chase, tints) for {@link spliceInputs}. */
-  splice?: voice.SpliceConfig;
-  /** Accumulated motion time for a `latched` splice — mirrors the core Voice field. */
-  spliceMotionMs?: number;
-  /** resolved param snapshot at spawn. */
-  params: ParamValues;
-  attackMs: number;
-  /** Curve the attack rises on (absent → linear) — mirrors the core Voice field. */
-  attackEase?: EaseSpec;
-  sustainMs: number;
-  releaseMs: number;
-  /** authored amplitude-over-life curve + the real-time width of its x axis, both resolved at
-      spawn through the SAME core helper the engine uses. Mirrors the core Voice fields. */
-  lifeEnvelope?: CurveValue | null;
-  lifeSpanMs?: number;
-  phase: VoicePhase;
-  level: number;
-  bornAtMs: number;
-  releaseAtMs: number | null;
-  releaseFromLevel: number;
-  via: string;
-  deckGain: number;
-  /** Eval state prefix this voice was spawned under (the firing graph's KEY, or `'preview'` for a
-      caller that supplies none) — scopes origin-keyed liveness for R13 delay-overlap Mix
-      composition. Mirrors the core Voice field. */
-  pad?: string;
-  /** Graph node that produced this voice's layer — read by the sim's `isLayerLive` mirror so a
-      delayed branch composes with still-live Mix members. Mirrors the core Voice field. */
-  originNodeId?: string;
-}
+/** View-facing compatibility shape: dock fixtures need not manufacture pool bookkeeping.
+ * Actual Sim voices are canonical core voices from VoicePool, never this partial shape. */
+type PoolFields = 'active' | 'liveParams' | 'specs' | 'generatorId' | 'genState';
+export type Voice = Omit<voice.Voice, PoolFields> & Partial<Pick<voice.Voice, PoolFields>>;
 
 export interface LogEntry {
   t: number;
@@ -290,11 +207,6 @@ type PlayDraft = voice.PlayDraft;
     importers keep the `TriggerCtx` name on the `./sim` surface. */
 export type TriggerCtx = voice.EvalTriggerCtx;
 
-/** Per-trigger voice seed — the core VoicePool recipe (same base constant). */
-function deriveSeedFromCounter(counter: number): number {
-  return voice.deriveSeed(0x1ed5eed5, counter);
-}
-
 /** Resolve a param spec list to its default values. */
 export function defaultParams(effect: EffectDef): ParamValues {
   const out: ParamValues = {};
@@ -312,10 +224,17 @@ export class Sim {
   lastDt = 0;
 
   buses: Bus[];
-  voices: Voice[] = [];
-  /** Per-instance monotonic voice counter (ids + per-trigger seeds). Instance-scoped so two
-      Sims fed identical inputs replay identically — a shared module counter would not. */
-  private voiceSeq = 0;
+  /** Active view of the core slab, in slab order. Mutate authored content through the adapter,
+      not this array. Pool identities/seeds/stealing are shared with the connected engine. */
+  private activeVoices: voice.Voice[] = [];
+  get voices(): readonly voice.Voice[] { return this.activeVoices; }
+  private readonly pool = new voice.VoicePool();
+  private readonly compositor = voice.createDefaultCompositor();
+  private framebuffer: Framebuffer | null = null;
+  private tickRevision = 0;
+  private renderedRevision = -1;
+  private renderedModel: PixelModel | null = null;
+  private readonly busById = new Map<string, voice.Bus>();
   log: LogEntry[] = [];
 
   private effectsById = new Map<string, EffectDef>();
@@ -362,10 +281,6 @@ export class Sim {
       in the eval/render-truth path (item 2): identical input sequences replay exactly. */
   private prng = new voice.Prng(0x1a2b3c4d);
 
-  /** Live MIDI CC value table (S37) — the offline mirror of the core engine's `ccTable`.
-      Keyed by controller+channel → 0..1 (see core `ccKey`). Fed by {@link setCc} from the
-      store's WebMIDI forward so the preview tracks CC exactly like the connected engine; the
-      render sweep reads it per frame via `render.ts` `modCtxFor`. */
   /**
    * Accumulated motion time per `(pad, splice node)` for `latched` splices — the offline
    * mirror of the engine's own map. Advanced only while a voice for that key is alive, and
@@ -373,13 +288,16 @@ export class Sim {
    */
   private spliceMotionMs = new Map<string, number>();
 
-  /**
-   * The kit geometry, set by the store once the lab model is built. Needed only so a cascading
-   * splice voice can be extended to outlive its cascade (the span depends on how many hoops and
-   * drums there are) — everything else in the sim is geometry-free.
-   */
-  pixelModel: PixelModel | null = null;
+  /** Immutable model revisions supplied by the store. Assignment also releases stale
+   * visual state immediately, even while the browser is not rendering. */
+  private model: PixelModel | null = null;
+  get pixelModel(): PixelModel | null { return this.model; }
+  set pixelModel(model: PixelModel | null) {
+    this.model = model;
+    if (model) for (const v of this.voices) voice.ensureGeometryState(v, model);
+  }
 
+  /** Live MIDI CC values, read by the shared compositor alongside OSC/note tables. */
   ccTable = new Map<string, number>();
 
   /** Live OSC value table — the offline mirror of the core engine's `oscTable`. Keyed by OSC
@@ -485,7 +403,7 @@ export class Sim {
       latched: this.latched,
       prng: this.prng,
       presetsById: this.presetsById as Map<string, voice.Preset>,
-      isVoiceAlive: (id: string) => this.voices.some((v) => v.id === id),
+      isVoiceAlive: (id: string) => this.pool.isVoiceAlive(id),
       mixMemberSnapshots: this.mixMemberSnapshots,
       isLayerLive: (pad, originNodeId) => this.isLayerLive(pad, originNodeId),
     };
@@ -495,9 +413,7 @@ export class Sim {
       of core `VoicePool.isLayerLive`. A member is live while a voice spawned under `pad`
       still carries its origin (as its own producer or as a Mix member). */
   private isLayerLive(pad: string, originNodeId: string): boolean {
-    return this.voices.some(
-      (v) => v.pad === pad && (v.originNodeId === originNodeId || !!v.mixInputs?.some((mi) => mi.originNodeId === originNodeId)),
-    );
+    return this.pool.isLayerLive(pad, originNodeId);
   }
 
   private enqueueCorePending(descriptor: voice.PendingDescriptor): void {
@@ -516,157 +432,24 @@ export class Sim {
 
   // --- voice lifecycle -----------------------------------------------------
 
-  private spawn(a: PlayAction, sourceDrumId: string | null = null, velocity = 1): Voice | null {
-    const effect = this.effect(a.effectId);
-    if (!effect) return null;
-    const bus = this.bus(a.busId || effect.busId);
-    if (!bus) return null;
+  private syncBuses(): void {
+    this.busById.clear();
+    for (const bus of this.buses) this.busById.set(bus.id, bus);
+  }
 
-    if (bus.polyphony === 'mono') {
-      for (const v of this.voices) {
-        if (v.busId === bus.id && v.phase !== 'release') this.release(v);
-      }
-    }
-
-    // B1 — a delayed Mix re-composition supersedes the prior still-live composite at the same
-    // (pad, originNodeId): release it so their shared members aren't composited twice. Mirrors
-    // core `VoicePool.spawn`; release the oldest still-live match (see S2 for the multi-instance
-    // aliasing note). Immediate/`delay 0` spawns never set the flag, so multiplicity is untouched.
-    if (a.supersedePriorVoice && a.originNodeId) {
-      let prior: Voice | null = null;
-      for (const v of this.voices) {
-        if (v.phase === 'release') continue;
-        if (v.pad !== this.stateKey || v.originNodeId !== a.originNodeId) continue;
-        if (!prior || v.bornAtMs < prior.bornAtMs) prior = v;
-      }
-      if (prior) this.release(prior);
-    }
-
-    // per-trigger seed (item C) — same recipe as the core VoicePool, so random-look
-    // generator effects differ per fire yet replay exactly given the same inputs.
-    // Computed BEFORE the literal: the local `voice` shadows the core namespace inside it.
-    const seed = deriveSeedFromCounter(this.voiceSeq + 1);
-    // Dwell + amplitude curve, resolved by the SAME core function the engine's pool calls —
-    // the two paths agree by construction rather than by two copies of the arithmetic.
-    const life = resolveVoiceLife(effect.generatorId, a.params, this.bpm, effect.sustainMs, a.lifeEnvelope);
-    /** Realise a composite member (Mix branch or splice) into a sub-voice — the offline
-        mirror of core `VoicePool.spawn`'s `toMember`. */
-    const toMember = (input: voice.MixInputDraft, index: number): voice.MixInput | null => {
-      const inputEffect = this.effect(input.effectId);
-      if (!inputEffect?.generatorId) return null;
-      return {
-        generatorId: inputEffect.generatorId,
-        scope: input.scope,
-        targetId: input.targetId,
-        sourceDrumId,
-        velocity,
-        seed: (seed ^ Math.imul(index + 1, 0x9e3779b9)) >>> 0,
-        params: { ...input.params },
-        liveParams: {},
-        specs: inputEffect.params,
-        modulations: input.modulations,
-        genState: null,
-        modifiers: input.modifiers,
-        modState: undefined,
-        opacity: input.opacity,
-        originNodeId: input.originNodeId,
-      };
-    };
-    // Splice members stay index-aligned with `splice.inputBySlot`; a dropped member would
-    // slide every later slot's content onto the wrong splice, so remap the slot table.
-    const spliceMembers: voice.MixInput[] = [];
-    const spliceRemap = new Map<number, number>();
-    a.spliceInputs?.forEach((input, index) => {
-      const member = toMember(input, index);
-      if (!member) return;
-      spliceRemap.set(index, spliceMembers.length);
-      spliceMembers.push(member);
+  private spawn(a: PlayAction, sourceDrumId: string | null = null, velocity = 1): voice.Voice | null {
+    this.syncBuses();
+    const v = this.pool.spawn(a, sourceDrumId, velocity, {
+      effectsById: this.effectsById, busById: this.busById, latched: this.latched,
+      timeMs: this.timeMs, bpm: this.bpm, pad: this.stateKey,
     });
-    const spliceConfig =
-      a.splice && spliceMembers.length
-        ? { ...a.splice, inputBySlot: a.splice.inputBySlot.map((i) => (i < 0 ? -1 : spliceRemap.get(i) ?? -1)) }
-        : undefined;
-    // Via the `coreVoice` alias: the local `const voice` below shadows the `voice` namespace for
-    // this whole function (TDZ), which is the same trap the `seed` comment above warns about.
-    // The span depends on the MODEL (hoops per drum, drum count) — see `extendForCascade`.
-    const cascadeExtraMs = spliceConfig && this.pixelModel ? coreVoice.maxCascadeDelayMs(this.pixelModel, spliceConfig) : 0;
-    const voice: Voice = {
-      id: `v${++this.voiceSeq}`,
-      effectId: a.effectId,
-      busId: bus.id,
-      mode: a.mode,
-      scope: a.scope,
-      targetId: a.targetId,
-      sourceDrumId,
-      velocity,
-      seed,
-      generatorId: effect.generatorId ?? null,
-      genState: null,
-      mixInputs: a.mixInputs?.map(toMember).filter((input): input is voice.MixInput => input !== null),
-      spliceInputs: spliceConfig ? spliceMembers : undefined,
-      splice: spliceConfig,
-      modifiers: a.modifiers,
-      modState: undefined,
-      modulations: a.modulations,
-      mixBlendMode: a.mixBlendMode,
-      params: { ...a.params },
-      // A node-owned envelope wins over the hosting effect's, mirroring core's VoicePool.
-      attackMs: a.attackMs ?? effect.attackMs,
-      attackEase: a.attackEase,
-      // Sustain follows the effect's OWN life param when it declares one, and an authored
-      // `lifeEnvelope` takes over from there (mirrors core VoicePool.spawn through the same
-      // core helper) — otherwise the category envelope reaps the voice before the effect's
-      // internal fade finishes and its Decay slider looks inert. A splice's own hold beats
-      // both: that voice's dwell is authored on the node.
-      sustainMs: a.sustainMs ?? life.sustainMs,
-      lifeEnvelope: life.envelope,
-      lifeSpanMs: life.spanMs,
-      releaseMs: a.releaseMs ?? effect.releaseMs,
-      phase: 'attack',
-      level: 0,
-      bornAtMs: this.timeMs,
-      releaseAtMs: null,
-      releaseFromLevel: 1,
-      via: a.via,
-      deckGain: 1,
-      pad: this.stateKey,
-      originNodeId: a.originNodeId,
-    };
-    // A cascading splice has to outlive its cascade or the far side of the kit never lights;
-    // mirrors the engine's `shapeCascadeVoice`.
-    if (cascadeExtraMs > 0) voice.sustainMs += cascadeExtraMs;
-    // Under a per-unit envelope the voice's own attack must get out of the way, or the unit
-    // revealed at age 0 ramps on a squared curve while later ones ramp linearly. Moved into the
-    // hold rather than dropped, so the voice still outlives the last unit. Mirrors the engine.
-    if (voice.splice?.waitMode === 'fade' || voice.splice?.waitMode === 'pulse') {
-      voice.sustainMs += voice.attackMs;
-      voice.attackMs = 0;
-    }
-    this.voices.push(voice);
-    if (a.latchKey) this.latched.set(a.latchKey, voice.id);
-    return voice;
+    voice.shapeCascadeVoice(v, this.pixelModel);
+    this.activeVoices = this.pool.pool.filter((v) => v.active);
+    return v;
   }
 
-  /** Advance the latched-motion accumulator once per `(pad, splice node)` with a live voice,
-      then stamp it onto those voices. Mirrors the engine's `advanceLatchedSpliceMotion`. */
-  private advanceLatchedSpliceMotion(dtMs: number): void {
-    const advanced = new Set<string>();
-    for (const v of this.voices) {
-      if (v.splice?.motionMode !== 'latched') continue;
-      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
-      if (!advanced.has(key)) {
-        advanced.add(key);
-        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dtMs));
-      }
-      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
-    }
-  }
-
-  private release(v: Voice): void {
-    if (v.phase === 'release') return;
-    v.phase = 'release';
-    v.releaseAtMs = this.timeMs;
-    v.releaseFromLevel = v.level;
+  private release(v: voice.Voice): void {
+    voice.releaseVoice(v, this.timeMs);
   }
 
   stopBus(busId: string): void {
@@ -744,55 +527,44 @@ export class Sim {
   // --- tick ----------------------------------------------------------------
 
   tick(dtMs: number): void {
+    this.tickRevision++;
     this.timeMs += dtMs;
     this.lastDt = dtMs;
     this.beat += (dtMs / 60000) * this.bpm;
 
     this.drainPendingFires();
-    this.advanceLatchedSpliceMotion(dtMs);
-
-    for (const v of this.voices) {
-      const age = this.timeMs - v.bornAtMs;
-      // The authored life envelope multiplies the attack/sustain level and nothing else —
-      // release already ramps from where the curve left the voice. Byte-identical to the
-      // pre-envelope tick when `lifeEnvelope` is absent. Mirrors core `advanceEnvelopes`.
-      if (v.phase === 'attack') {
-        // Eased like the engine's `advanceEnvelopes`, so a curve reads the same in the preview.
-        const t = v.attackMs <= 0 ? 1 : Math.min(1, age / v.attackMs);
-        v.level = v.attackEase ? coreVoice.ease(v.attackEase, t) : t;
-        if (v.level >= 1) v.phase = 'sustain';
-        v.level *= lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
-      } else if (v.phase === 'sustain') {
-        if (v.mode === 'oneshot') {
-          v.level = lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
-          if (age >= v.attackMs + v.sustainMs) this.release(v);
-        } else {
-          v.level = (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(age / 480))) * lifeEnvelopeGain(v.lifeEnvelope, age, v.lifeSpanMs ?? 0);
-        }
-      } else {
-        const bus = this.bus(v.busId);
-        const ramp = Math.max(60, v.mode === 'oneshot' ? v.releaseMs : (bus?.crossfadeMs ?? v.releaseMs));
-        const since = this.timeMs - (v.releaseAtMs ?? this.timeMs);
-        v.level = Math.max(0, v.releaseFromLevel * (1 - since / ramp));
-      }
-    }
-
-    const dead = this.voices.filter((v) => v.phase === 'release' && v.level <= 0.001);
-    if (dead.length) {
-      const deadIds = new Set(dead.map((v) => v.id));
-      this.voices = this.voices.filter((v) => !deadIds.has(v.id));
-      for (const [k, id] of this.latched) if (id && deadIds.has(id)) this.latched.set(k, null);
-    }
+    this.syncBuses();
+    voice.advanceEnvelopes(this.pool.pool, this.timeMs, this.busById);
+    voice.reapDeadVoices(this.pool.pool, this.latched);
+    voice.advanceLatchedSpliceMotion(this.pool.pool, this.spliceMotionMs, dtMs);
+    this.activeVoices = this.pool.pool.filter((v) => v.active);
   }
 
   /** 0..1 progress through a voice's life — drives param envelopes. */
   voicePhase(v: Voice): number {
-    const age = this.timeMs - v.bornAtMs;
-    if (v.mode === 'oneshot') {
-      const life = Math.max(1, v.attackMs + v.sustainMs + v.releaseMs);
-      return Math.min(1, age / life);
-    }
-    return (age / 1500) % 1;
+    return voice.voicePhase(v, this.timeMs);
+  }
+
+  /** Offline float render: the core compositor owns generation, scope, modifiers and
+   * composite math. Buffers/caches belong to this Sim, never module-global preview state.
+   * The browser may repaint a paused tick or request an immediate hit preview between ticks.
+   * Return that tick's frame, don't integrate its dt twice. A geometry revision is the only
+   * repaint-only invalidation: it restarts visual state on the new model. Newly spawned
+   * voices start at level zero and become visible on the next tick, as in the engine. */
+  render(model: PixelModel): Readonly<Float32Array> {
+    if (this.framebuffer && this.renderedRevision === this.tickRevision && this.renderedModel === model) return this.framebuffer.rgba;
+    if (!this.framebuffer || this.framebuffer.pixelCount !== model.pixelCount) this.framebuffer = new Framebuffer(model.pixelCount);
+    for (const v of this.voices) voice.applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
+    const bar = Math.floor(this.beat / this.beatsPerBar);
+    this.compositor.render(this.pool.pool, model, {
+      timeMs: this.timeMs, dt: this.lastDt,
+      transport: { timeMs: this.timeMs, beat: this.beat, bar, beatInBar: this.beat - bar * this.beatsPerBar,
+        bpm: this.bpm, beatsPerBar: this.beatsPerBar, playing: true },
+      cc: this.ccTable, osc: this.oscTable, notes: this.noteTable,
+    }, this.framebuffer);
+    this.renderedRevision = this.tickRevision;
+    this.renderedModel = model;
+    return this.framebuffer.rgba;
   }
 
   // --- section recall (branch 3) -------------------------------------------

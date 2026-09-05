@@ -35,6 +35,7 @@ import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
+import { shapeCascadeVoice, advanceLatchedSpliceMotion } from './runtime-policy';
 import { ensureGeometryState } from './geometry-state';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { ccKey, ccValue01, noteKey, noteValue01, oscValue01, type NoteState } from './modulation';
@@ -57,7 +58,7 @@ import { relativeNavTarget, type NavAxis } from './navigation';
 import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
-import { SPLICE_FILL_EFFECT_ID, maxCascadeDelayMs, spliceFillEffectDef } from './splice';
+import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -388,13 +389,7 @@ class VoiceBusEngine implements RenderEngine {
    * reads — so none of this stretches an individual unit's attack/hold/fade.
    */
   private shapeCascadeVoice(voice: Voice | null): void {
-    if (!voice?.splice || !this.model) return;
-    const extra = maxCascadeDelayMs(this.model, voice.splice);
-    if (extra > 0) voice.sustainMs += extra;
-    if (voice.splice.waitMode === 'fade' || voice.splice.waitMode === 'pulse') {
-      voice.sustainMs += voice.attackMs;
-      voice.attackMs = 0;
-    }
+    shapeCascadeVoice(voice, this.model);
   }
 
   /**
@@ -405,16 +400,7 @@ class VoiceBusEngine implements RenderEngine {
    * pattern, so counting dt twice would double its speed for as long as they overlap.
    */
   private advanceLatchedSpliceMotion(dt: number): void {
-    const advanced = new Set<string>();
-    for (const v of this.voices.pool) {
-      if (!v.active || v.splice?.motionMode !== 'latched') continue;
-      const key = `${v.pad ?? ''}#${v.originNodeId ?? ''}`;
-      if (!advanced.has(key)) {
-        advanced.add(key);
-        this.spliceMotionMs.set(key, (this.spliceMotionMs.get(key) ?? 0) + Math.max(0, dt));
-      }
-      v.spliceMotionMs = this.spliceMotionMs.get(key) ?? 0;
-    }
+    advanceLatchedSpliceMotion(this.voices.pool, this.spliceMotionMs, dt);
   }
 
   // --- input -------------------------------------------------------------

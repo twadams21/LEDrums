@@ -23,14 +23,21 @@ describe('live geometry replacement', () => {
             c.render([voice], model, runtimeFrame(time), fb);
             return fb.rgba;
           };
-          render(v, runtimeModel(), 16);
-          let time = 32;
+          const firstModel = runtimeModel();
+          render(v, firstModel, 16);
+          const stateOf = () => (v.spliceInputs?.[0] ?? v.mixInputs?.[0] ?? v).genState;
+          let previousState = stateOf();
+          render(v, firstModel, 32);
+          expect(stateOf()).toBe(previousState); // unchanged geometry retains trails/particles
+          let time = 48;
           for (const model of [runtimeModel([8, 8]), runtimeModel([2, 2]), runtimeModel([2, 2], true)]) {
             const actual = render(v, model, time);
             const fresh = runtimeVoice({}, action, generator);
             const expected = render(fresh, model, time, createDefaultCompositor());
             expect([...actual].every(Number.isFinite)).toBe(true);
             expect(actual).toEqual(expected);
+            expect(stateOf()).not.toBe(previousState);
+            previousState = stateOf();
             time += 16;
           }
         });

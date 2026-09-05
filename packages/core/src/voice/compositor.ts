@@ -63,7 +63,7 @@ function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | nu
  * `Sim.voicePhase`: one-shots run across their full A+S+R; sustained voices loop a
  * fixed 1.5s window.
  */
-export function voicePhase(v: Voice, timeMs: number): number {
+export function voicePhase(v: Pick<Voice, 'bornAtMs' | 'mode' | 'attackMs' | 'sustainMs' | 'releaseMs'>, timeMs: number): number {
   const age = timeMs - v.bornAtMs;
   if (v.mode === 'oneshot') {
     const life = Math.max(1, v.attackMs + v.sustainMs + v.releaseMs);

@@ -150,6 +150,9 @@ export class VoicePool {
     const slot = this.acquireSlot();
     if (!slot) return null;
 
+    // Stealing is retirement too: drop every latch to the old identity BEFORE reusing
+    // the slot. Otherwise an indefinitely running poly bus retains stale latch ids.
+    if (slot.active) for (const [key, id] of deps.latched) if (id === slot.id) deps.latched.set(key, null);
     slot.active = true;
     slot.id = `v${++this.voiceSeq}`;
     slot.effectId = a.effectId;

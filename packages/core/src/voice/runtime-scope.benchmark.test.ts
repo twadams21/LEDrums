@@ -4,9 +4,9 @@ import { getEffect } from '../effects/registry';
 import { applyEffectiveParams, createDefaultCompositor } from './compositor';
 import { runtimeFrame, runtimeHoopModel, runtimeVoice } from './runtime-test-fixtures';
 
-// Deliberately explicit opt-in by filename; no performance thresholds or % assertions.
+// Opt in with LEDRUMS_HEALTH_BENCH=1; ordinary tests don't run timing workloads.
 // Same 1,024 pixels, 100 warm-up + 500 sampled ticks, dt=16, deterministic seeds.
-it('reports scoped render work and tick timing (synthetic, not hardware latency)', () => {
+it.runIf(process.env.LEDRUMS_HEALTH_BENCH === '1')('reports scoped render work and tick timing (synthetic, not hardware latency)', () => {
   const rows: object[] = [];
   for (const voices of [1, 16]) for (const hoops of [1, 4, 16]) {
     const model = runtimeHoopModel(hoops);
