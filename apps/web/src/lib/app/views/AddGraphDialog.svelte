@@ -1,8 +1,8 @@
 <script lang="ts">
   /* "+ Add graph" — the Trigger rail's picker (#177). A Dialog over the graph library with a
-     filter box: every existing graph can be added to the active section as a LINK (the same
-     key in a second place — reuse by reference, badged on the card) or as a COPY (duplicate
-     under a name you give), and the same modal carries the brand-new-graph form. Thin over
+     filter box: every existing graph defaults to a COPY (duplicate under a name you give),
+     with LINK as the explicit shared-key alternative. The same modal carries the brand-new-graph
+     form. Thin over
      tested store verbs (addGraphToSection / duplicateGraph / renameGraph / createGraph) and
      the pure `add-graph-rows` filter; the caller opens the graph it gets back. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
@@ -130,15 +130,15 @@
         {:else}
           {#if row.inSection}<span class="ag-tag">in section</span>{/if}
           <IconButton
-            icon={Link2}
-            label={row.inSection ? 'Already linked in this section' : 'Add as a link — one graph, two places'}
-            disabled={row.inSection}
-            onclick={() => link(row.key)}
+            icon={CopyPlus}
+            label="Add as a copy — independent graph (default)"
+            onclick={() => ((copying = row.key), (naming = false))}
           />
           <IconButton
-            icon={CopyPlus}
-            label="Add as a copy — an independent graph"
-            onclick={() => ((copying = row.key), (naming = false))}
+            icon={Link2}
+            label={row.inSection ? 'Already linked in this section' : 'Add as a link — one graph, shared edits'}
+            disabled={row.inSection}
+            onclick={() => link(row.key)}
           />
         {/if}
       </li>

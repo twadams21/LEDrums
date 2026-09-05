@@ -131,13 +131,28 @@ export function removeSection(song: Song, sectionId: string): Song {
   return { ...song, sections: song.sections.filter((s) => s.id !== sectionId) };
 }
 
-/** Deep-copy a section under a NEW id (name defaults to "<name> copy"). The `graphs` list is
-    copied so the clone is an INDEPENDENT section — editing one section's list never touches
-    the other. The keys themselves stay references into store.graphs, so the copy shares the
-    SAME underlying graphs (reuse); only the section's ordered key list is duplicated, never
-    the graphs. Backs the section copy/paste in the store. */
+/** Copy a section's arrangement under a NEW id (name defaults to "<name> copy"). Graph content
+    is cloned by the store operation that owns the graph map; this pure structural helper only
+    copies the ordered key list and looks. */
 export function cloneSection(section: SetlistSection, newId: string, newName?: string): SetlistSection {
   return { id: newId, name: newName ?? `${section.name} copy`, graphs: [...section.graphs], looks: { ...section.looks } };
+}
+
+/** Replace one exact graph placement while preserving the section's order. The caller owns the
+    graph map; this only changes the placement identity used for explicit linking/unlinking. */
+export function replaceGraphPlacement(
+  song: Song,
+  sectionId: string,
+  fromGraphKey: string,
+  toGraphKey: string,
+): Song {
+  return mapSection(song, sectionId, (section) => {
+    const index = section.graphs.indexOf(fromGraphKey);
+    if (index < 0 || (fromGraphKey !== toGraphKey && section.graphs.includes(toGraphKey))) return section;
+    const graphs = [...section.graphs];
+    graphs[index] = toGraphKey;
+    return { ...section, graphs };
+  });
 }
 
 export function renameSection(song: Song, sectionId: string, name: string): Song {

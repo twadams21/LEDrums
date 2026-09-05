@@ -94,7 +94,7 @@ import {
   writeStoredSongLibrary,
   type ShowsControllerHost,
 } from './shows-controller.svelte';
-import { SectionsController, type SectionsControllerHost } from './sections-controller.svelte';
+import { SectionsController, type SectionClipboard, type SectionsControllerHost } from './sections-controller.svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
   acceptsChannel,
@@ -108,7 +108,7 @@ import {
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
 import { findFreePosition } from '../app/views/node-placement';
-import { padKey, seedGraphs, seedAuthored } from './store/seed';
+import { padKey, seedGraphKey, seedGraphNames, seedGraphs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { announceSystemActions } from './store/system-toasts';
 import { idsFromLibrarySong } from './store/reserve-library-ids';
@@ -377,9 +377,9 @@ export class TriggerLab {
       / duplicateGraph() (keyed `graph-<n>`) are all first-class, generic graphs that
       rename / duplicate / delete uniformly. */
   graphs = $state<Record<string, voice.TriggerGraph>>(seedGraphs());
-  /** display labels for EVERY graph key — pad keys included (seeded by pad-label hydration,
-      e.g. "Kick · center"), authored keys named at create/duplicate time. */
-  graphNames = $state<Record<string, string>>({});
+  /** display labels for EVERY graph key — seeded keys and authored keys alike; legacy pad keys
+      fall back to their kit-derived label when no persisted name exists. */
+  graphNames = $state<Record<string, string>>(seedGraphNames());
   /** mutable preset library — snapshots you Apply onto / Save from play nodes (S39). */
   presets = $state<Preset[]>(structuredClone(PRESETS));
   /** User-authored canvas scene documents (U5). Each projects a virtual `canvas:<id>`
@@ -392,7 +392,7 @@ export class TriggerLab {
   playing = $state(true);
   beatsPerBar = $state(4);
 
-  selectedPadKey = $state<string | null>(padKey(PADS[2]!));
+  selectedPadKey = $state<string | null>(seedGraphKey('intro', PADS[2]!));
 
   // popups (targets are play nodes from the active graph)
   galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
@@ -414,6 +414,20 @@ export class TriggerLab {
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
     setSongs: (songs) => (this.songs = songs),
+    recordUndo: () => this.pushUndoSnapshot(),
+    graphs: () => $state.snapshot(this.graphs) as Record<string, TriggerGraph>,
+    graphNames: () => $state.snapshot(this.graphNames) as Record<string, string>,
+    mergeGraphModel: (patch) => {
+      if (patch.graphs) this.graphs = { ...this.graphs, ...patch.graphs };
+      if (patch.graphNames) this.graphNames = { ...this.graphNames, ...patch.graphNames };
+    },
+  cloneSectionGraphs: (section, graphs, graphNames) =>
+      graphsLib.cloneSectionGraphs(
+        section,
+        $state.snapshot(graphs) as Record<string, TriggerGraph>,
+        $state.snapshot(graphNames) as Record<string, string>,
+        () => freshId('graph', (k) => k in this.graphs),
+      ),
     linkOpen: () => this.link === 'open',
     recallSectionLook: (look) => {
       this.sim.recallSection(look);
@@ -433,10 +447,10 @@ export class TriggerLab {
   }
   /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
       Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
-  get sectionClipboard(): SetlistSection | null {
+  get sectionClipboard(): SectionClipboard | null {
     return this.sectionsCtl.sectionClipboard;
   }
-  set sectionClipboard(v: SetlistSection | null) {
+  set sectionClipboard(v: SectionClipboard | null) {
     this.sectionsCtl.sectionClipboard = v;
   }
 
@@ -554,6 +568,7 @@ export class TriggerLab {
       if (patch.effects) this.effects = [...this.effects, ...patch.effects];
       if (patch.presets) this.presets = [...this.presets, ...patch.presets];
     },
+    recordUndo: () => this.pushUndoSnapshot(),
     toAuthored: () => this.toAuthored(),
     replaceDocument: (show, source) => this.replaceDocument(show, source),
     saveNow: () => {
@@ -1936,9 +1951,13 @@ export class TriggerLab {
       }
       return resolved;
     }
-    const key = padKey(pad);
-    const g = graphs[key];
-    return g ? [{ graph: g, label: `${pad.drumLabel} · ${pad.zoneLabel}`, key }] : [];
+    const legacyKey = padKey(pad);
+    const legacyGraph = graphs[legacyKey];
+    if (legacyGraph) return [{ graph: legacyGraph, label: this.graphLabel(legacyKey), key: legacyKey }];
+    // Fresh seeded shows no longer carry an unreferenced canonical pad key. Preserve the old
+    // no-section fallback by selecting the first graph explicitly bound to this pad instead.
+    const seeded = Object.entries(graphs).find(([, graph]) => sourceMatchesPad(triggerSourceOf(graph), pad.drumId, String(pad.zone)));
+    return seeded ? [{ graph: seeded[1], label: this.graphLabel(seeded[0]), key: seeded[0] }] : [];
   }
 
   hit(pad: Pad): void {
@@ -2438,6 +2457,21 @@ export class TriggerLab {
   addGraphToSection(sectionId: string, graphKey: string): void {
     this.sectionsCtl.addGraphToSection(sectionId, graphKey);
   }
+  /** Link one exact placement to another placement's graph. */
+  linkGraphPlacement(
+    sourceSongId: string,
+    sourceSectionId: string,
+    sourceGraphKey: string,
+    targetSongId: string,
+    targetSectionId: string,
+    targetGraphKey: string,
+  ): void {
+    this.sectionsCtl.linkGraphPlacement(sourceSongId, sourceSectionId, sourceGraphKey, targetSongId, targetSectionId, targetGraphKey);
+  }
+  /** Make one linked placement an independent deep copy. */
+  unlinkGraphPlacement(songId: string, sectionId: string, graphKey: string): void {
+    this.sectionsCtl.unlinkGraphPlacement(songId, sectionId, graphKey);
+  }
   /** Remove a graph reference from a section's flat list. */
   removeGraphFromSection(sectionId: string, graphKey: string): void {
     this.sectionsCtl.removeGraphFromSection(sectionId, graphKey);
@@ -2627,7 +2661,8 @@ export class TriggerLab {
 
     const res = remapClipDoc(doc, this.remapCtx(opts.mint));
     if (isClipParseError(res)) return { ok: false, message: friendlyParseMessage(res.reason) };
-    this.applyRemapResult(res);
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => this.applyRemapResult(res));
     return { ok: true, kind: res.kind, message: pasteSuccessMessage(res) };
   }
 
@@ -2744,6 +2779,7 @@ export class TriggerLab {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.graphs[key];
     if (!src) return null;
+    this.pushUndoSnapshot();
     const newKey = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
     const clone = graphsLib.cloneGraph($state.snapshot(src) as TriggerGraph);
     this.graphs = { ...this.graphs, [newKey]: clone };
@@ -2788,6 +2824,7 @@ export class TriggerLab {
       const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey, nodeId: trig.id };
       if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
     }
+    this.pushUndoSnapshot();
     trig.source = source;
     return true;
   }

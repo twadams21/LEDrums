@@ -29,6 +29,7 @@
     onDragEnd,
     onGraphDragOver,
     onGraphDrop,
+    onLinkGraph,
   }: {
     store: TriggerLab;
     shell: ShellStore;
@@ -43,6 +44,7 @@
     onDragEnd: () => void;
     onGraphDragOver: (index: number, event: DragEvent) => void;
     onGraphDrop: (index: number, event: DragEvent) => void;
+    onLinkGraph: (songId: string, sectionId: string, graphKey: string) => void;
   } = $props();
 
   let editing = $state(false);
@@ -128,6 +130,7 @@
         graphKey={key}
         onDragStart={(event) => onGraphDragStart(key, event)}
         {onDragEnd}
+        onLink={onLinkGraph}
       />
     {/each}
     {#if draggingKind === 'graph' && dropIndex === section.graphs.length}

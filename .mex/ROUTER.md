@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Session Bootstrap
@@ -35,6 +35,14 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
+on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
+independent graph keys/objects by default; repeated keys already persisted remain explicit links;
+adding an existing graph defaults to Copy, with deliberate Link/Make independent actions for exact
+placements. The implementation uses repeated shared graph keys as linked-group identity and does
+not use automatic copy-on-write or current-selection ownership. Source: Trent's replacement
+contract for PR #201 in this session.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

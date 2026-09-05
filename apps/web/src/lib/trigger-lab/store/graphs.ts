@@ -1,7 +1,7 @@
 /* Generic-graph CRUD cores — build / clone / name / delete-everywhere / label, as PURE
    functions over the graphs map + names + songs (no runes/DOM). No authored/pad distinction:
-   pad graphs (keyed `drumId:zone`) and created graphs (keyed `graph-<n>`) are first-class and
-   uniform here. The store wraps these with rune assignment + selection bookkeeping. Extracted
+   seeded and created graphs are first-class and uniform here. Legacy pad keys (`drumId:zone`)
+   remain valid references. The store wraps these with rune assignment + selection bookkeeping. Extracted
    from store.svelte.ts unchanged in behaviour. */
 
 import { type Bus, type EffectDef, type GraphNode, type ParamValues, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
@@ -100,7 +100,7 @@ export function spliceNodeInit(buses: readonly Bus[] = []): Pick<GraphNode, 'spl
 }
 
 /** Human label for a graph key: the stored display name (`graphNames`, populated for every
-    graph incl. pad keys at hydrate), else a kit-derived pad label, else the raw key. */
+    graph at hydrate), else a kit-derived legacy pad label, else the raw key. */
 export function graphLabelOf(graphNames: Record<string, string>, key: string, pads: readonly Pad[]): string {
   return graphNames[key] ?? padLabelForKey(pads, key) ?? key;
 }
@@ -148,6 +148,34 @@ export function cloneSongGraphs(
   }
   const sections = song.sections.map((sec) => ({ ...sec, graphs: sec.graphs.map((k) => remap.get(k) ?? k) }));
   return { song: { ...song, sections }, graphs: nextGraphs, graphNames: nextNames };
+}
+
+/** Deep-copy the graph closure referenced by one section. A source key is cloned once per
+    operation, so a repeated placement remains an explicit link to one new graph. Missing graph
+    keys stay dangling rather than being silently repaired. */
+export function cloneSectionGraphs(
+  section: setlist.SetlistSection,
+  graphs: Record<string, TriggerGraph>,
+  graphNames: Record<string, string>,
+  mintKey: () => string,
+): { section: setlist.SetlistSection; graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+  const remap = new Map<string, string>();
+  const nextGraphs: Record<string, TriggerGraph> = {};
+  const nextNames: Record<string, string> = {};
+  for (const key of section.graphs) {
+    const source = graphs[key];
+    if (!source || remap.has(key)) continue;
+    const newKey = mintKey();
+    remap.set(key, newKey);
+    nextGraphs[newKey] = cloneGraph(source);
+    const name = graphNames[key];
+    if (typeof name === 'string') nextNames[newKey] = name;
+  }
+  return {
+    section: { ...section, graphs: section.graphs.map((key) => remap.get(key) ?? key), looks: { ...section.looks } },
+    graphs: nextGraphs,
+    graphNames: nextNames,
+  };
 }
 
 /** Delete a graph everywhere: drop it from `graphs` + `graphNames`, and purge its key from

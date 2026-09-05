@@ -13,9 +13,12 @@
      2. parse — defensively read arbitrary clipboard text into a ClipDoc, NEVER throwing
         (mirrors `deserializeShowLibrary`): foreign / malformed / wrong-version text yields a
         typed {@link ClipParseError}, so the paste UI can toast rather than crash.
-     3. remap-on-materialize — re-key every incoming id through the id-reservation discipline
-        (`nid`/`freshId`), EXCEPT (a) a dep whose CONTENT already exists locally (reuse it — so
-        A->B->A round-trips and double-pastes create no duplicate closure), and (b) built-in
+     3. remap-on-materialize — graph placements always receive fresh graph keys and detached graph
+        objects. Other reusable dependencies may reuse local content, and built-in effect ids stay
+        canonical. Explicit linking is a section-placement action, never an implicit paste result.
+        Every graph source key is cloned once per paste operation, so repeated references remain
+        links inside the pasted section/song.
+        (`nid`/`freshId`), EXCEPT (a) a dep whose CONTENT already exists locally (reuse it), and (b) built-in
         effect ids (registry-backed shared vocabulary — never re-keyed even when content
         differs). Every internal ref (section->graph keys, play-node effect/preset ids,
         preset->effect, look effect ids) is rewritten through the remap table; node/edge ids
@@ -419,8 +422,8 @@ function coerceSection(raw: unknown): SetlistSection | null {
 
 // ---- remap on materialize ---------------------------------------------------
 
-/** The local show state a paste reconciles against — its graphs/effects/presets (for
-    content-reuse) and which effect ids are built-in registry vocabulary (never re-keyed). */
+/** The local show state a paste reconciles against — its graphs/effects/presets and which effect
+    ids are built-in registry vocabulary (never re-keyed). Graphs themselves are always detached. */
 export interface RemapContext {
   graphs: Record<string, TriggerGraph>;
   effects: readonly EffectDef[];
@@ -471,12 +474,12 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
   };
 }
 
-/** The materialized result of a paste: the NEW closure objects to union into the show (reused
-    ones are absent) plus the primary object with every ref rewritten to its final local id. The
+/** The materialized result of a paste: the NEW detached graph closure to union into the show plus
+    the primary object with every ref rewritten to its final local id. The
     store (S44) unions the closure and inserts the primary; this function stays pure. */
 export interface RemapResult {
   kind: 'graph' | 'section' | 'song';
-  /** fresh graphs to add (key -> graph, refs already remapped). Reused graphs are absent. */
+  /** fresh graphs to add (key -> graph, refs already remapped). Every pasted graph is fresh. */
   graphs: Record<string, TriggerGraph>;
   graphNames: Record<string, string>;
   /** fresh (non-builtin, non-reused) effects to add. */
@@ -485,7 +488,7 @@ export interface RemapResult {
   presets: Preset[];
   /** fresh (non-reused) canvas scenes to add. */
   canvasScenes: CanvasScene[];
-  /** kind 'graph': the final graph key (reused or fresh) to reference. */
+  /** kind 'graph': the fresh graph key to reference. */
   graphKey?: string;
   /** kind 'section': the fresh section with graph refs + looks remapped. */
   section?: SetlistSection;
@@ -494,11 +497,10 @@ export interface RemapResult {
 }
 
 /**
- * Materialize an authored ClipDoc against a local show: re-key + reuse. Builds the remap table
- * in dependency order (effects -> presets -> graphs -> sections/song); every incoming id is
- * mapped to a fresh local id EXCEPT (a) a built-in effect id (kept verbatim) and (b) a dep whose
- * content already exists locally (mapped to the existing id, emitting nothing — the reuse that
- * makes A->B->A round-trips and double-pastes create no duplicate closure). Node/edge ids and
+ * Materialize an authored ClipDoc against a local show. Builds the remap table in dependency
+ * order (effects -> presets -> graphs -> sections/song); every incoming graph is mapped to a
+ * fresh local id, while reusable library dependencies may retain their canonical/local id.
+ * Node/edge ids and
  * modulation `param:`/`mod` ports are graph-internal and copied verbatim, so modifier wiring and
  * modulation edges survive. Returns a typed error for the non-authored `patch` kind (S45 owns it).
  */
@@ -571,15 +573,11 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
     return id;
   };
 
-  // (3) Graphs (deps): remap internal refs, then reuse-or-mint by content.
+  // (3) Graphs (deps): remap internal refs, then always mint a detached graph key. This is the
+  // default copy boundary for external ClipDocs; users can link placements explicitly afterward.
   const graphMap = new Map<string, string>();
   for (const [oldKey, g] of Object.entries(doc.deps.graphs ?? {})) {
     const remapped = remapGraph(g, remapEffectRef, remapPresetRef, remapSceneRef);
-    const reuseKey = findLocalGraphKey(ctx.graphs, remapped);
-    if (reuseKey) {
-      graphMap.set(oldKey, reuseKey);
-      continue;
-    }
     const newKey = mint.graph();
     graphMap.set(oldKey, newKey);
     out.graphs[newKey] = remapped;
@@ -590,18 +588,13 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
 
   // (4) Payload materialization.
   if (doc.kind === 'graph') {
-    // The graph IS the payload — treat it as a dep leaf (reuse-or-mint by content) so pasting an
-    // identical graph twice creates exactly one.
+    // The graph IS the payload — always detach it, even when identical content already exists in
+    // this show. A later explicit Link action can intentionally share the resulting key.
     const remapped = remapGraph(doc.payload.graph, remapEffectRef, remapPresetRef, remapSceneRef);
-    const reuseKey = findLocalGraphKey(ctx.graphs, remapped) ?? findLocalGraphKey(out.graphs, remapped);
-    if (reuseKey) {
-      out.graphKey = reuseKey;
-    } else {
-      const newKey = mint.graph();
-      out.graphKey = newKey;
-      out.graphs[newKey] = remapped;
-      if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
-    }
+    const newKey = mint.graph();
+    out.graphKey = newKey;
+    out.graphs[newKey] = remapped;
+    if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
   } else if (doc.kind === 'section') {
     out.section = remapSection(doc.payload.section, mint.section(), remapGraphRef, remapEffectRef);
   } else {

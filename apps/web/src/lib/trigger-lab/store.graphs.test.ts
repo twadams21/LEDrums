@@ -33,6 +33,11 @@ class MemStorage {
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
 const kickCentre = (store: TriggerLab) => store.pads.find((p) => p.drumId === 'kick' && p.zone === 0)!;
+const seededKickKey = (store: TriggerLab): string =>
+  store.activeSong!.sections[0]!.graphs.find((key) => {
+    const source = store.triggerSource(key);
+    return source?.kind === 'drum' && source.drumId === 'kick' && source.zone === '0';
+  })!;
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -58,26 +63,28 @@ function withRaf(body: () => void): void {
 describe('pad-label hydration', () => {
   it('seeds a friendly display name for every pad graph (no raw keys)', () => {
     const store = new TriggerLab(fakeClient);
-    expect(store.graphNames['kick:0']).toBe('Kick · center');
+    const key = seededKickKey(store);
+    expect(store.graphNames[key]).toBe('Kick · center');
     // every named key is a real graph, and none are authored — the seed has only pad graphs.
     expect(Object.keys(store.graphNames).every((k) => k in store.graphs)).toBe(true);
-    expect(Object.keys(store.graphNames).some((k) => k.startsWith('graph-') || k.startsWith('graph:'))).toBe(false);
+    expect(Object.keys(store.graphNames).every((k) => k.startsWith('graph:seed:'))).toBe(true);
   });
 
   it('graphLabel resolves a pad key to its friendly name', () => {
     const store = new TriggerLab(fakeClient);
-    expect(store.graphLabel('kick:0')).toBe('Kick · center');
+    expect(store.graphLabel(seededKickKey(store))).toBe('Kick · center');
   });
 
   it('does not overwrite a user rename of a pad graph across reload (idempotent)', () => {
     withRaf(() => {
       const store = new TriggerLab(fakeClient);
       store.start();
-      store.renameGraph('kick:0', 'Big Kick');
+      const key = seededKickKey(store);
+      store.renameGraph(key, 'Big Kick');
       store.stop();
 
       const reloaded = new TriggerLab(fakeClient);
-      expect(reloaded.graphNames['kick:0']).toBe('Big Kick'); // hydrate left the rename alone
+      expect(reloaded.graphNames[seededKickKey(reloaded)]).toBe('Big Kick'); // hydrate left the rename alone
     });
   });
 });
@@ -93,9 +100,10 @@ describe('renameGraph (any graph)', () => {
 
   it('relabels a PAD graph (graphNames + graphLabel)', () => {
     const store = new TriggerLab(fakeClient);
-    store.renameGraph('kick:0', 'Thump');
-    expect(store.graphNames['kick:0']).toBe('Thump');
-    expect(store.graphLabel('kick:0')).toBe('Thump');
+    const key = seededKickKey(store);
+    store.renameGraph(key, 'Thump');
+    expect(store.graphNames[key]).toBe('Thump');
+    expect(store.graphLabel(key)).toBe('Thump');
   });
 
   it('keeps the existing label on a blank name (no clear)', () => {
@@ -126,7 +134,8 @@ describe('duplicateGraph (any graph)', () => {
 
   it('clones a PAD graph under a fresh authored key, label "<pad> copy", source copied', () => {
     const store = new TriggerLab(fakeClient);
-    const clone = store.duplicateGraph('kick:0')!;
+    const source = seededKickKey(store);
+    const clone = store.duplicateGraph(source)!;
     expect(clone.startsWith('graph-')).toBe(true); // a first-class generic graph, not a pad key
     expect(store.graphNames[clone]).toBe('Kick · center copy');
     // trigger source copied verbatim — the clone still fires the kick centre until rebound.
@@ -165,14 +174,15 @@ describe('deleteGraph (any graph)', () => {
 
   it('deletes a PAD graph too (gone from graphs, graphNames, its seeded sections)', () => {
     const store = new TriggerLab(fakeClient);
-    const sectionsWithKick = store.activeSong!.sections.filter((s) => s.graphs.includes('kick:0')).length;
+    const key = seededKickKey(store);
+    const sectionsWithKick = store.activeSong!.sections.filter((s) => s.graphs.includes(key)).length;
     expect(sectionsWithKick).toBeGreaterThan(0); // seeded into sections
 
-    store.deleteGraph('kick:0');
-    expect(store.graphs['kick:0']).toBeUndefined();
-    expect('kick:0' in store.graphNames).toBe(false);
-    expect(store.graphLibrary.some((g) => g.key === 'kick:0')).toBe(false);
-    for (const song of store.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain('kick:0');
+    store.deleteGraph(key);
+    expect(store.graphs[key]).toBeUndefined();
+    expect(key in store.graphNames).toBe(false);
+    expect(store.graphLibrary.some((g) => g.key === key)).toBe(false);
+    for (const song of store.songs) for (const sec of song.sections) expect(sec.graphs).not.toContain(key);
   });
 
   it('purges the key from every section across ALL songs (no dangling refs)', () => {
@@ -223,7 +233,7 @@ describe('deleteGraph (any graph)', () => {
 describe('deleted pad graph → silence, no respawn', () => {
   it('a hit on the pad fires nothing once its graph is deleted', () => {
     const store = new TriggerLab(fakeClient);
-    store.deleteGraph('kick:0'); // also purges it from the active section
+    store.deleteGraph(seededKickKey(store)); // also purges it from the active section
     store.hit(kickCentre(store));
     expect(store.log).toHaveLength(0); // no graph resolves for the pad → silent
   });
@@ -232,13 +242,14 @@ describe('deleted pad graph → silence, no respawn', () => {
     withRaf(() => {
       const store = new TriggerLab(fakeClient);
       store.start();
-      store.deleteGraph('kick:0');
+      const key = seededKickKey(store);
+      store.deleteGraph(key);
       store.stop(); // flush authored slice → localStorage
 
       const reloaded = new TriggerLab(fakeClient); // a "reload" hydrates from storage
-      expect(reloaded.graphs['kick:0']).toBeUndefined(); // gone, not reseeded
-      expect('kick:0' in reloaded.graphNames).toBe(false);
-      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain('kick:0');
+      expect(reloaded.graphs[key]).toBeUndefined(); // gone, not reseeded
+      expect(key in reloaded.graphNames).toBe(false);
+      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain(key);
     });
   });
 });

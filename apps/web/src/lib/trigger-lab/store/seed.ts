@@ -16,15 +16,13 @@ export const padKey = (p: Pad): string => `${p.drumId}:${p.zone}`;
     starts from (used by pad-label hydration + the graphLabel fallback). */
 export const padLabel = (p: Pad): string => `${p.drumLabel} · ${p.zoneLabel}`;
 
-/** Seed one demo song from the fixture sections, each section being the FLAT list of every
-    pad's graph key (U4). Each pad graph declares a `drum` source from its padKey (the
-    constructor's unionTriggerSources back-fill), so a hit fires only the matching pad's
-    graph — reproducing the pre-section per-zone behaviour exactly while every section is a
-    real, editable, reusable graph list. References are by graph key, so the same key in two
-    sections is the same graph, not a copy; layering a drum is now two graphs in the section
-    that share a source (each pad appears once in the seed). */
+/** Stable, section-owned seed key. It is deliberately distinct from the legacy pad key so a
+    fresh show cannot accidentally link its sections through the old canonical identity. */
+export const seedGraphKey = (sectionId: string, p: Pad): string => `graph:seed:${sectionId}:${padKey(p)}`;
+
+/** Seed one demo song from the fixture sections. Every section gets its own graph key and graph
+    object by default; the labels and ordered pad list remain the same as the fixture. */
 export function seedSongs(): Song[] {
-  const padKeys = PADS.map(padKey);
   return [
     {
       id: 'set-1',
@@ -32,15 +30,27 @@ export function seedSongs(): Song[] {
       // Seed each fixture section's per-bus `looks` (S16) so the demo looks are AUTHORED content
       // (editable in the Section inspector, persisted, bridged to the engine) — the store's
       // `sections` look-list derives from these, so there's no separate fixture look array to drift.
-      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, padKeys, s.looks)),
+      sections: SECTIONS.map((s) => setlist.makeSection(s.id, s.name, PADS.map((p) => seedGraphKey(s.id, p)), s.looks)),
     },
   ];
 }
 
-/** The pad-derived trigger graphs, keyed by padKey — the kit's built-in graph set, seeded
-    fresh for a blank document (each pad's tree compiled to a graph). */
+/** The section-owned pad-derived trigger graphs for a blank document. */
 export function seedGraphs(): Record<string, TriggerGraph> {
-  return Object.fromEntries(PADS.map((p) => [padKey(p), treeToGraph(p.tree)]));
+  return Object.fromEntries(
+    SECTIONS.flatMap((section) =>
+      PADS.map((p) => {
+        const graph = treeToGraph(p.tree);
+        const trigger = graph.nodes.find((node) => node.kind === 'trigger');
+        if (trigger) trigger.source = { kind: 'drum', drumId: p.drumId, zone: String(p.zone) };
+        return [seedGraphKey(section.id, p), graph] as const;
+      }),
+    ),
+  );
+}
+
+export function seedGraphNames(): Record<string, string> {
+  return Object.fromEntries(SECTIONS.flatMap((section) => PADS.map((p) => [seedGraphKey(section.id, p), padLabel(p)])));
 }
 
 /** A blank document's authored content — the clean-slate seed a fresh/new show starts from,
@@ -50,7 +60,7 @@ export function seedGraphs(): Record<string, TriggerGraph> {
 export function seedAuthored(): AuthoredState {
   return {
     graphs: seedGraphs(),
-    graphNames: {},
+    graphNames: seedGraphNames(),
     songs: seedSongs(),
     songRefs: [],
     buses: BUSES.map((b) => ({ ...b })),
@@ -59,7 +69,7 @@ export function seedAuthored(): AuthoredState {
     // Only USER-AUTHORED scenes live in the show document (D4) — the built-in canvas
     // library ships in core and is surfaced read-only via `store.allCanvasScenes`.
     canvasScenes: [],
-    selectedPadKey: padKey(PADS[2]!),
+    selectedPadKey: seedGraphKey(SECTIONS[0]?.id ?? 'intro', PADS[2]!),
     activeSongId: 'set-1',
     activeSectionId: SECTIONS[0]?.id ?? null,
     bpm: 120,

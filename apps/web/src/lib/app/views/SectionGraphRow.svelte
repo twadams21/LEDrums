@@ -6,16 +6,16 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Song, SetlistSection } from '../setlist';
-  import { isReused } from '../setlist';
+  import { graphPlacementCount } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
-  import StatusDot from '../../ui/StatusDot.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
+  import Link2 from '@lucide/svelte/icons/link-2';
 
   let {
     store,
@@ -25,6 +25,7 @@
     graphKey,
     onDragStart,
     onDragEnd,
+    onLink,
   }: {
     store: TriggerLab;
     shell: ShellStore;
@@ -33,13 +34,16 @@
     graphKey: string;
     onDragStart: (event: DragEvent) => void;
     onDragEnd: () => void;
+    onLink: (songId: string, sectionId: string, graphKey: string) => void;
   } = $props();
 
   let editing = $state(false);
   let dragging = $state(false);
   let ghostEl = $state<HTMLDivElement | null>(null);
   const current = $derived(store.activeSectionId === section.id && store.selectedPadKey === graphKey);
-  const reused = $derived(isReused(song, graphKey));
+  const placementCount = $derived(graphPlacementCount(store.songs, graphKey));
+  const reused = $derived(placementCount > 1);
+  const localPlacement = $derived(store.songs.some((candidate) => candidate.id === song.id && candidate.sections.some((s) => s.id === section.id && s.graphs.includes(graphKey))));
   const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
 
   /* The native HTML5 drag ghost snapshots the whole row — grip, status dot, and the
@@ -66,6 +70,8 @@
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(graphKey) },
+    ...(store.canEdit && localPlacement ? [{ label: 'Link to placement…', icon: Link2, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
+    ...(store.canEdit && localPlacement && reused ? [{ label: 'Make independent', icon: Link2, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
     { label: 'Remove from section', icon: X, onSelect: removeFromSection },
     { label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => store.deleteGraph(graphKey) },
   ]);
@@ -98,7 +104,11 @@
     renameLabel="Graph name"
   >
     {#snippet trailing()}
-      {#if reused}<StatusDot tone="accent" />{/if}
+      {#if reused}
+        <span class="linked-status" title={`Linked in ${placementCount} sections`} aria-label={`Linked in ${placementCount} sections`}>
+          <Link2 size={12} aria-hidden="true" />{placementCount}
+        </span>
+      {/if}
     {/snippet}
     {#snippet quickActions()}
       <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
@@ -135,6 +145,14 @@
   }
   .graph-drag:hover {
     border-color: var(--border-strong);
+  }
+  .linked-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--accent);
+    font: var(--text-2xs) var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   /* Drag source: dim the original so the moving row reads as the compact drag image,
      not a second full-layout copy. Opacity only — no layout jump. */

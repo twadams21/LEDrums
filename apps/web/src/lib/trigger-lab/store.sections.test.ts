@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
+import { makeNode } from './sim';
+import { STORAGE_KEY, VERSION } from './persistence';
 import type { WSClient } from '../ws/client';
 import type { ClientMessage } from '../ws/protocol-types';
 
@@ -48,11 +50,37 @@ const kickCentre = (store: TriggerLab) => store.pads.find((p) => p.drumId === 'k
 describe('seed: sections are flat graph lists of every pad', () => {
   it('every section lists every pad graph key (and defaults the first section active)', () => {
     const store = new TriggerLab(fakeClient);
-    const padKeys = store.pads.map((p) => `${p.drumId}:${p.zone}`);
     expect(store.activeSong!.sections.length).toBeGreaterThan(0);
-    for (const sec of store.activeSong!.sections) expect(sec.graphs).toEqual(padKeys);
+    const keys = store.activeSong!.sections.flatMap((section) => section.graphs);
+    expect(keys).toHaveLength(store.activeSong!.sections.length * store.pads.length);
+    expect(new Set(keys)).toHaveLength(keys.length);
+    for (const sec of store.activeSong!.sections) {
+      expect(sec.graphs).toHaveLength(store.pads.length);
+      for (const key of sec.graphs) expect(store.graphs[key]).toBeDefined();
+    }
     expect(store.activeSectionId).toBe(store.activeSong!.sections[0]!.id);
     expect(store.activeSection?.id).toBe(store.activeSectionId);
+  });
+});
+
+describe('legacy repeated graph keys', () => {
+  it('loads repeated persisted keys as explicit links without splitting them', () => {
+    const graph = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: VERSION,
+      data: {
+        graphs: { 'kick:0': graph },
+        songs: [{ id: 'legacy', name: 'Legacy', sections: [
+          { id: 'a', name: 'Verse A', graphs: ['kick:0'], looks: {} },
+          { id: 'b', name: 'Verse B', graphs: ['kick:0'], looks: {} },
+        ] }],
+        activeSongId: 'legacy',
+        activeSectionId: 'a',
+      },
+    }));
+    const store = new TriggerLab(fakeClient);
+    expect(store.songs[0]!.sections.map((section) => section.graphs[0])).toEqual(['kick:0', 'kick:0']);
+    expect(store.graphs['kick:0']).toBeDefined();
   });
 });
 
@@ -137,7 +165,13 @@ describe('copy / paste section (clipboard)', () => {
     const pasted = sections[sections.length - 1]!;
     expect(pasted.id).not.toBe(src.id); // fresh id
     expect(pasted.name).toBe(`${src.name} copy`);
-    expect(pasted.graphs).toEqual(src.graphs); // same graph references (reuse), copied list
+    expect(pasted.graphs).not.toEqual(src.graphs); // graph closure is copied, not linked
+    expect(pasted.graphs).toHaveLength(src.graphs.length);
+    for (const [index, key] of pasted.graphs.entries()) {
+      expect(store.graphs[key]).toEqual(store.graphs[src.graphs[index]!]);
+      expect(store.graphs[key]).not.toBe(store.graphs[src.graphs[index]!]);
+      expect(store.graphNames[key]).toBe(store.graphNames[src.graphs[index]!]);
+    }
     expect(store.activeSectionId).toBe(pasted.id); // the new section is now active
   });
 
@@ -161,7 +195,9 @@ describe('copy / paste section (clipboard)', () => {
     store.copySection(src.id);
     store.removeGraphFromSection(src.id, key); // mutate the source AFTER copying
     store.pasteSection();
-    expect(store.activeSong!.sections.at(-1)!.graphs).toContain(key); // paste reflects copy-time list
+    const pastedKey = store.activeSong!.sections.at(-1)!.graphs[0]!;
+    expect(pastedKey).not.toBe(key); // paste reflects copy-time content, under a fresh key
+    expect(store.graphs[pastedKey]).toEqual(store.graphs[key]);
   });
 
   it('paste with an empty clipboard is a no-op', () => {
@@ -177,6 +213,55 @@ describe('copy / paste section (clipboard)', () => {
     store.copySection('no-such-section');
     expect(store.sectionClipboard).toBeNull();
   });
+
+  it('links exact placements across three sections and linked edits propagate', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const sourceKey = sections[0]!.graphs[0]!;
+    const targetKeys = sections.slice(1, 3).map((section) => section.graphs[0]!);
+
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKeys[0]!);
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[2]!.id, targetKeys[1]!);
+    expect(store.activeSong!.sections.slice(0, 3).map((section) => section.graphs[0])).toEqual([sourceKey, sourceKey, sourceKey]);
+
+    const before = store.graphs[sourceKey]!.nodes.length;
+    store.selectedPadKey = sourceKey;
+    store.addNode('play', 0, 0);
+    expect(store.activeSong!.sections.slice(0, 3).every((section) => store.graphs[section.graphs[0]!]!.nodes.length === before + 1)).toBe(true);
+  });
+
+  it('unlinks one placement into an independent copy, and undo restores the link', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const sourceKey = sections[0]!.graphs[0]!;
+    const targetKey = sections[1]!.graphs[0]!;
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKey);
+    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
+
+    const independentKey = store.activeSong!.sections[1]!.graphs[0]!;
+    expect(independentKey).not.toBe(sourceKey);
+    expect(store.graphs[independentKey]).toEqual(store.graphs[sourceKey]);
+    store.selectedPadKey = independentKey;
+    store.addNode('play', 0, 0);
+    expect(store.graphs[sourceKey]!.nodes.length).not.toBe(store.graphs[independentKey]!.nodes.length);
+
+    expect(store.undo()).toBe(true);
+    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(independentKey);
+    expect(store.undo()).toBe(true);
+    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(sourceKey);
+    expect(store.graphs[sourceKey]).toBeDefined();
+  });
+
+  it('undoing a section duplicate removes its cloned graph closure too', () => {
+    const store = new TriggerLab(fakeClient);
+    const beforeSections = store.activeSong!.sections.length;
+    const beforeGraphs = Object.keys(store.graphs).length;
+    store.duplicateSection(store.activeSong!.sections[0]!.id);
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + store.pads.length);
+    expect(store.undo()).toBe(true);
+    expect(store.activeSong!.sections).toHaveLength(beforeSections);
+    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
+  });
 });
 
 describe('hit resolution = active section graphs whose drum source matches the pad', () => {
@@ -189,7 +274,11 @@ describe('hit resolution = active section graphs whose drum source matches the p
 
   it('fires nothing when the active section has no graph matching the pad', () => {
     const store = new TriggerLab(fakeClient);
-    store.removeGraphFromSection(store.activeSectionId!, 'kick:0');
+    const key = store.activeSection!.graphs.find((graphKey) => {
+      const source = store.triggerSource(graphKey);
+      return source?.kind === 'drum' && source.drumId === 'kick';
+    })!;
+    store.removeGraphFromSection(store.activeSectionId!, key);
     store.hit(kickCentre(store));
     expect(store.log).toHaveLength(0); // the section gates resolution — no fallback while active
   });

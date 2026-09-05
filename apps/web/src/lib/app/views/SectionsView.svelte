@@ -15,6 +15,8 @@
   import { sectionsDndPreview } from './sections-dnd-preview.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
+  import LinkPlacementDialog from './LinkPlacementDialog.svelte';
+  import type { SetlistSection, Song } from '../setlist';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -104,14 +106,30 @@
 
   // graph picker: the section awaiting a graph (or null when closed)
   let pendingSectionId = $state<string | null>(null);
+  let linkSource = $state<{ song: Song; section: SetlistSection; graphKey: string } | null>(null);
   const pendingSection = $derived(
     pendingSectionId ? (sections.find((s) => s.id === pendingSectionId) ?? null) : null,
   );
 
-  function place(graphKey: string): void {
+  function copyAndPlace(graphKey: string): void {
+    if (!pendingSectionId) return;
+    const key = store.duplicateGraph(graphKey);
+    if (!key) return;
+    store.addGraphToSection(pendingSectionId, key);
+    store.selectGraphInSection(pendingSectionId, key);
+    shell.setView('trigger');
+    pendingSectionId = null;
+  }
+  function linkAndPlace(graphKey: string): void {
     if (!pendingSectionId) return;
     store.addGraphToSection(pendingSectionId, graphKey);
     pendingSectionId = null;
+  }
+
+  function openLinkDialog(songId: string, sectionId: string, graphKey: string): void {
+    const sourceSong = store.songs.find((candidate) => candidate.id === songId);
+    const sourceSection = sourceSong?.sections.find((candidate) => candidate.id === sectionId);
+    if (sourceSong && sourceSection) linkSource = { song: sourceSong, section: sourceSection, graphKey };
   }
   /** Author a fresh graph, add it to the pending section, activate + open it for editing. */
   function createAndPlace(): void {
@@ -253,6 +271,7 @@
             onDragEnd={clearDrag}
             onGraphDragOver={(index, event) => graphDragOver(sec.id, index, event)}
             onGraphDrop={(index, event) => dropOnGraph(sec.id, index, event)}
+            onLinkGraph={openLinkDialog}
           />
         {/each}
         {#if draggingKind === 'section' && sectionLine}
@@ -292,9 +311,19 @@
 <GraphPickerDrawer
   {store}
   section={pendingSection}
-  onPlace={place}
+  onCopy={copyAndPlace}
+  onLink={linkAndPlace}
   onCreate={createAndPlace}
   onClose={() => (pendingSectionId = null)}
+/>
+
+<LinkPlacementDialog
+  {store}
+  open={!!linkSource}
+  sourceSong={linkSource?.song ?? null}
+  sourceSection={linkSource?.section ?? null}
+  sourceGraphKey={linkSource?.graphKey ?? null}
+  onClose={() => (linkSource = null)}
 />
 
 <style>
