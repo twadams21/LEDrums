@@ -9,6 +9,8 @@ Implementation only; no controller commands were sent to physical hardware and n
 
 Four regressions failed against the previous implementation (watcher departure during acquisition, failed return-to-live retry, controller replacement during acquisition, out-of-order requests). After implementation, all six added lifecycle regressions passed; controller-monitor + client-message suites: **81 tests**, server typecheck: green.
 
+Independent review found a rebind gap: a failed old-controller cleanup lost its retry state when the client was replaced. Fixed by retaining unresolved mode state per destination without retaining retired clients/credentials. Same-host credential refresh uses the fresh client and preserves the visible pattern until acknowledgement; leaving and re-adopting a destination restores its unresolved state and permits explicit recovery. Added both integration regressions; **25 controller-monitor tests** and server typecheck pass after this correction.
+
 This is best-effort remote cleanup, not a guarantee an unreachable controller returns to live. Failures remain observable with the captured destination. Real PixLite timing/reconnect verification remains outstanding.
 
 ## P09 — GPU buffer lifetime

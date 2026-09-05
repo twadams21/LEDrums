@@ -2,17 +2,24 @@ import type { PixliteClient } from '@ledrums/io';
 import type { ControllerTestPattern } from './ws-protocol';
 import type { MonitorDraft } from './monitor';
 
+interface ModeState {
+  pattern: ControllerTestPattern | null;
+  needsLive: boolean;
+}
+
 interface Owner {
   client: PixliteClient;
   host: string;
-  pattern: ControllerTestPattern | null;
-  needsLive: boolean;
+  state: ModeState;
 }
 
 /** Serializes takeover/return-to-live across controller replacement and in-flight requests.
  * Ownership is captured when a command is requested, never read again after an await. */
 export function createControllerTestMode(changed: () => void, monitor?: (event: MonitorDraft) => void) {
   let current: Owner | null = null;
+  // Retain only unresolved device state, not retired clients/credentials. Re-adoption can
+  // recover with a fresh client. Never evict uncertainty merely because navigation changed.
+  const unresolved = new Map<string, ModeState>();
   let chain = Promise.resolve();
 
   function enqueue(work: () => Promise<void>): Promise<void> {
@@ -29,13 +36,14 @@ export function createControllerTestMode(changed: () => void, monitor?: (event: 
   }
 
   async function revert(owner: Owner, reason: 'client' | 'auto'): Promise<void> {
-    if (!owner.needsLive) return;
+    if (!owner.state.needsLive) return;
     try {
       await owner.client.modeLive();
       // A failed return-to-live must remain retryable. Do not clear before acknowledgement.
-      owner.needsLive = false;
-      owner.pattern = null;
-      if (current === owner) changed();
+      owner.state.needsLive = false;
+      owner.state.pattern = null;
+      if (unresolved.get(owner.host) === owner.state) unresolved.delete(owner.host);
+      if (current?.state === owner.state) changed();
       event(owner, reason === 'auto' ? 'Controller back to live (auto)' : 'Controller back to live');
     } catch (err) {
       event(owner, 'Controller back-to-live failed', err);
@@ -45,21 +53,29 @@ export function createControllerTestMode(changed: () => void, monitor?: (event: 
   return {
     bind(client: PixliteClient, host: string): void {
       const previous = current;
-      current = { client, host, pattern: null, needsLive: false };
-      // Queued after any old acquisition, before any future command for the new client.
-      if (previous) void enqueue(() => revert(previous, 'auto'));
+      const next: Owner = {
+        client, host, state: unresolved.get(host) ?? { pattern: null, needsLive: false },
+      };
+      current = next;
+      // Same destination: use refreshed credentials, preserving state until acknowledgement.
+      // Different destination: keep cleanup on the old device, never redirect it to the new one.
+      if (previous) {
+        const cleanup = previous.host === host ? next : previous;
+        void enqueue(() => revert(cleanup, 'auto'));
+      }
     },
-    get pattern(): ControllerTestPattern | null { return current?.pattern ?? null; },
+    get pattern(): ControllerTestPattern | null { return current?.state.pattern ?? null; },
     set(pattern: ControllerTestPattern): Promise<void> {
       const owner = current;
       if (!owner) return Promise.resolve();
       return enqueue(async () => {
         if (owner !== current) return; // replacement cancelled a not-yet-started acquisition
-        owner.needsLive = true; // even a failed response can leave the device's mode uncertain
+        owner.state.needsLive = true; // even a failed response can leave the device's mode uncertain
+        unresolved.set(owner.host, owner.state);
         try {
           await owner.client.modeTestData(pattern);
-          owner.pattern = pattern;
-          if (current === owner) changed();
+          owner.state.pattern = pattern;
+          if (current?.state === owner.state) changed();
           event(owner, 'Controller test pattern');
         } catch (err) {
           event(owner, 'Controller test pattern failed', err);
