@@ -503,6 +503,18 @@ describe('resolveSplices', () => {
     }
   });
 
+  it('resolves the 1/32 family to exact chase timings at 120 BPM', () => {
+    const chaseMs = (division: string) =>
+      resolveSplices(
+        spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', spliceRateMode: 'beats', spliceDivision: division }),
+        120,
+      )!.config.chaseMs;
+
+    expect(chaseMs('1/32')).toBeCloseTo(62.5, 10);
+    expect(chaseMs('dotted-1/32')).toBeCloseTo(93.75, 10);
+    expect(chaseMs('triplet-1/32')).toBeCloseTo(125 / 3, 10);
+  });
+
   it('takes a free-time rate verbatim, and reports 0 when the chase is off', () => {
     const cfg = (over: Partial<GraphNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], ...over }), 120)!.config;
