@@ -189,12 +189,26 @@ async function main(): Promise<void> {
    * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
    * has no file yet); the web then seeds the server from its localStorage cache on connect. */
   const showLibraryLoad = inspectShowLibraryFile();
+  const songLibraryLoad = inspectSongLibraryFile();
+  /** Import-only guard (legacy three-file boot, no atomic authority yet). The blob loaders map a
+   * present-but-unversioned file (missing/string/non-numeric `version`) to null, and null is a
+   * legitimate "no library yet" slot — so without this check the first boot snapshot/edit would
+   * commit an authority with a NULL library and permanently supersede the drummer's original
+   * file. Fail closed BEFORE anything is loaded or written: an existing file that is not a
+   * versioned envelope is an unsupported format, not an absent library. Once the atomic
+   * envelope exists it is authoritative and stale import files are ignored, as before. */
+  if (!recoveredState) {
+    for (const [kind, load] of [['show', showLibraryLoad], ['song', songLibraryLoad]] as const) {
+      if (load.source === 'invalid') {
+        throw new Error(`Unsupported ${kind} library file ${load.path}: not a versioned library envelope (numeric "version" required). Refusing to import it as an empty library; fix or move the file before starting.`);
+      }
+    }
+  }
   let liveShowLibrary: ShowLibraryBlob | null = recoveredState ? recoveredState.showLibrary as ShowLibraryBlob | null : loadShowLibrary();
 
   /** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
    * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
    * flushed on shutdown). `null` until the first client pushes one. */
-  const songLibraryLoad = inspectSongLibraryFile();
   let liveSongLibrary: SongLibraryBlob | null = recoveredState ? recoveredState.songLibrary as SongLibraryBlob | null : loadSongLibrary();
   validateLibraryVersions(liveShowLibrary, liveSongLibrary);
   if (voiceHost) voiceHost.prepareProject(project0, showFromLibraries(liveShowLibrary, liveSongLibrary), selectionFromLibrary(liveShowLibrary)).commit();

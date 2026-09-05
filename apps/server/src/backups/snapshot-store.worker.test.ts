@@ -24,7 +24,7 @@ async function make(options: Partial<SnapshotStoreDeps> = {}) {
 function gate() { let release!: () => void; const ready = new Promise<void>(r => { release = r; }); return { ready, release }; }
 
 describe('bounded worker snapshot owner', () => {
-  it('never stringifies or parses snapshot JSON on the calling thread', async () => {
+  it('never stringifies snapshot JSON on the calling thread; a read parses its validated text exactly once on main', async () => {
     const current = { project: { marker: 'p11-offthread-marker' }, showLibrary: null, songLibrary: null };
     const { s } = await make({ readCurrent: () => current });
     const stringify = vi.spyOn(JSON, 'stringify');
@@ -36,7 +36,9 @@ describe('bounded worker snapshot owner', () => {
     const parse = vi.spyOn(JSON, 'parse');
     try {
       expect((await s.read(meta!.id))!.files).toEqual(current);
-      expect(parse.mock.calls.some(args => args[0].includes('p11-offthread-marker'))).toBe(false);
+      // Deliberate boundary (P1 depth fix): the worker validates envelope + budget and returns
+      // TEXT; the iterative main-thread parse replaces a recursive structured clone of the object.
+      expect(parse.mock.calls.filter(args => String(args[0]).includes('p11-offthread-marker'))).toHaveLength(1);
     } finally { parse.mockRestore(); }
   });
   it('refuses admission before readCurrent/clone, preserves both revisions, then retries', async () => {
@@ -114,6 +116,40 @@ describe('bounded worker snapshot owner', () => {
     expect(await s.restore('1000-boot')).toBeNull();
     expect(apply).not.toHaveBeenCalled();
     const read = s.read('1000-boot'); await s.close(); expect(await read).toBeNull();
+  });
+  it('a deep (3,000-level) but valid, in-budget snapshot reads back; offsite handoff cannot fail the local write', async () => {
+    // Exact P1/P2 counterexamples: decoded objects crossing the worker boundary overflowed the
+    // structured-clone stack, so a SUCCESSFUL safety snapshot returned null on read, and the
+    // optional onSnapshot bundle preparation failed the pack BEFORE the local write.
+    let nested: unknown = 0; for (let i = 0; i < 3000; i++) nested = { x: nested };
+    const p = defaultProject(); p.name = 'before'; p.output.state = 'disabled';
+    const files = { project: p, showLibrary: null, songLibrary: { version: 1, data: { songs: {}, extra: nested } } };
+    const handoff = vi.fn();
+    for (const onSnapshot of [undefined, handoff]) {
+      const { s } = await make({ readCurrent: () => files, onSnapshot });
+      const meta = await s.snapshot('pre-risk');
+      expect(meta).not.toBeNull();
+      expect(await s.list()).toHaveLength(1);
+      const bundle = await s.read(meta!.id);
+      expect(bundle).not.toBeNull();
+      expect(bundle!.files.project).toEqual(p);
+      expect(JSON.stringify(bundle!.files.songLibrary)).toBe(JSON.stringify(files.songLibrary));
+      // The local write also covers a restore: the safety checkpoint is the deep fixture itself.
+      expect(await s.restore(meta!.id)).toEqual(meta);
+    }
+    expect(handoff).toHaveBeenCalledTimes(2); // snapshot + restore's pre-risk on the offsite store
+    expect(handoff.mock.calls[0]![1].files.project.name).toBe('before');
+  });
+  it('offsite handoff receives the call-time revision even when the live source mutates, and its failure is isolated', async () => {
+    const p = defaultProject(); p.name = 'call-time'; p.output.state = 'disabled';
+    const files = { project: p, showLibrary: null, songLibrary: null };
+    const seen: string[] = [];
+    const { s } = await make({ readCurrent: () => files, onSnapshot: (_m, bundle) => { seen.push((bundle.files.project as { name: string }).name); throw new Error('offsite down'); } });
+    const work = s.snapshot('boot');
+    p.name = 'mutated-after-call';
+    expect(await work).not.toBeNull();
+    expect(seen).toEqual(['call-time']);
+    expect(await s.list()).toHaveLength(1);
   });
   it.each(['busy', 'oversize', 'worker'] as const)('actual named-load coordinator aborts on %s safety refusal before persistence/live commit', async fault => {
     const p = defaultProject(); p.output.state = 'disabled'; p.name = 'old';

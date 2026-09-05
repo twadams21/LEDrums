@@ -10,6 +10,8 @@ import { defaultProject } from '@ledrums/core';
 import WebSocket from 'ws';
 import type { ClientMessage, ServerMessage } from './ws-protocol';
 import { LIVE_STATE_FILE } from './project-storage';
+import { SHOW_LIBRARY_FILE } from './show-library';
+import { SONG_LIBRARY_FILE } from './song-library';
 
 async function freePorts() {
   const tcp = createServer(); tcp.listen(0); await once(tcp, 'listening');
@@ -177,6 +179,42 @@ for (const mode of ['voice', 'legacy']) describe(`real ${process.env.P11_SEA_BIN
       await app.stop(); app = undefined;
       const saved = JSON.parse(await readFile(join(dir, LIVE_STATE_FILE), 'utf8'));
       expect(saved.files.showLibrary).toBeNull(); expect(saved.files.songLibrary).toBeNull();
+    } finally { await app?.stop(); await rm(dir, { recursive: true, force: true }); }
+  }, 30_000);
+
+  it.each([
+    ['show', SHOW_LIBRARY_FILE, { version: '2', data: { activeShowId: 'kept', shows: { kept: {} } } }],
+    ['song', SONG_LIBRARY_FILE, { data: { songs: { kept: {} } } }],
+  ])('import refuses an existing %s library file without a numeric version instead of superseding it with null', async (kind, file, blob) => {
+    const dir = await mkdtemp(join(tmpdir(), 'ledrums-import-guard-'));
+    const project = defaultProject(); project.output.state = 'disabled'; project.output.host = '127.0.0.1'; project.output.broadcast = false;
+    await writeFile(join(dir, 'default.local.json'), JSON.stringify(project));
+    const original = JSON.stringify(blob);
+    await writeFile(join(dir, file), original);
+    let app: Awaited<ReturnType<typeof start>> | undefined;
+    try {
+      await expect(start(dir, mode).then((a) => { app = a; })).rejects.toThrow(new RegExp(`Unsupported ${kind} library file`));
+      // Fail closed: the original import file is untouched and no atomic authority was created.
+      expect(await readFile(join(dir, file), 'utf8')).toBe(original);
+      await expect(readFile(join(dir, LIVE_STATE_FILE))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally { await app?.stop(); await rm(dir, { recursive: true, force: true }); }
+  }, 30_000);
+
+  it('an existing atomic authority still wins over a stale, now-invalid legacy library file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ledrums-authority-precedence-'));
+    const project = defaultProject(); project.name = 'authority'; project.output.state = 'disabled';
+    project.output.host = '127.0.0.1'; project.output.broadcast = false;
+    const library = { version: 2, data: { activeShowId: 'authority', shows: {} } };
+    await writeFile(join(dir, LIVE_STATE_FILE), JSON.stringify({ version: 1, files: { project, showLibrary: library, songLibrary: null } }));
+    await writeFile(join(dir, SHOW_LIBRARY_FILE), JSON.stringify({ version: '2', data: { shows: {} } }));
+    await writeFile(join(dir, SONG_LIBRARY_FILE), JSON.stringify({ data: { songs: {} } }));
+    let app: Awaited<ReturnType<typeof start>> | undefined;
+    try {
+      app = await start(dir, mode);
+      expect(app.states()[0]!.project.name).toBe('authority');
+      expect(app.states()[0]!.showLibrary).toEqual(library);
+      expect(app.states()[0]!.songLibrary).toBeNull();
+      expect(app.messages.filter((m) => m.t === 'error')).toEqual([]);
     } finally { await app?.stop(); await rm(dir, { recursive: true, force: true }); }
   }, 30_000);
 

@@ -262,6 +262,8 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
         const createdAt = Math.max(deps.now(), lastStamp + 1, (newest?.createdAt ?? 0) + 1);
         lastStamp = createdAt;
         const meta = { id: stemFor(createdAt, reason), createdAt, reason };
+        // Compressed bytes and the optional off-site text are independent: the local write
+        // never waits on, or fails with, bundle preparation for an optional consumer.
         const packed = await serializer.pack(capture.key, meta, !!deps.onSnapshot);
         try {
           await (deps.write ?? writeFileAtomic)(pathFor(meta.id), packed.compressed);
@@ -271,8 +273,12 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
         }
         lastContent = result.value.digest;
         await rotate();
+        // Off-site preparation runs AFTER the local snapshot is committed and inside its own
+        // guard: the text is the call-time revision (worker-retained capture), so a live source
+        // that mutated meanwhile still hands off coherent data; a parse or callback failure is
+        // logged and never turns the successful local snapshot into a failure.
         try {
-          if (packed.bundle) deps.onSnapshot?.(meta, packed.bundle);
+          if (packed.text !== undefined) deps.onSnapshot?.(meta, JSON.parse(packed.text) as SnapshotBundle);
         } catch (err) {
           log(`[snapshot-store] off-site hand-off ${meta.id} failed: ${String(err)}`);
         }

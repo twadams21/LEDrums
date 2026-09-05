@@ -29,7 +29,7 @@ describe('real inline serializer worker', () => {
     const capture = s.capture(current); current.project.revision = 2;
     expect((await capture.ready).digest).toHaveLength(64);
     const packed = await s.pack(capture.key, meta, true);
-    expect(packed.bundle?.files.project).toEqual({ revision: 1 });
+    expect(JSON.parse(packed.text!).files.project).toEqual({ revision: 1 });
     expect(packed.compressed).toBeInstanceOf(Uint8Array);
   });
   it('refuses bytes after clone, frees aggregate reservations on release, and permits retry', async () => {
@@ -39,7 +39,7 @@ describe('real inline serializer worker', () => {
     await expect(s.capture(files()).ready).rejects.toMatchObject({ code: 'oversize' });
     await s.release(one.key);
     const two = s.capture(files()); await two.ready;
-    expect(await s.pack(two.key, meta, false)).not.toHaveProperty('bundle', expect.anything());
+    expect(await s.pack(two.key, meta, false)).not.toHaveProperty('text', expect.anything());
   });
   it('settles synchronous clone errors and asynchronous stringify errors without poisoning later work', async () => {
     const s = make();
@@ -61,7 +61,7 @@ describe('real inline serializer worker', () => {
     const failed = await Promise.allSettled([a.ready, b.ready]);
     expect(failed.map(x => x.status)).toEqual(['rejected', 'rejected']);
     const retry = s.capture(files()); await retry.ready;
-    await expect(s.pack(retry.key, meta, true)).resolves.toHaveProperty('bundle');
+    await expect(s.pack(retry.key, meta, true)).resolves.toHaveProperty('text');
     expect(starts).toBe(2);
   });
   it('bounds transport admission before clone and times out a hung worker', async () => {

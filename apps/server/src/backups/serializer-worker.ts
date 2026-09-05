@@ -56,7 +56,7 @@ async function readBundle(path, id) {
     || !('project' in b.files) || !('showLibrary' in b.files) || !('songLibrary' in b.files)
     || b.createdAt + '-' + b.reason !== id) throw new Error('Invalid snapshot envelope');
   if (Buffer.byteLength(JSON.stringify(b.files)) > limits.maxJsonBytes) oversize();
-  return b;
+  return { text, bundle: b };
 }
 async function execute(m) {
   switch (m.op) {
@@ -81,10 +81,13 @@ async function execute(m) {
       const compressed = gzipSync(text);
       // Transfer an exact-sized standalone allocation; never clone a pooled Buffer slab.
       const bytes = new Uint8Array(compressed.length); bytes.set(compressed);
-      return { compressed: bytes, bundle: m.withBundle ? JSON.parse(text) : undefined };
+      // Decoded objects never cross the thread boundary: structured clone recurses per nesting
+      // level and overflows the stack on deep (but valid, in-budget) JSON, whereas a string
+      // clone is a flat copy and JSON.parse is iterative. The optional bundle travels as text.
+      return { compressed: bytes, text: m.withBundle ? text : undefined };
     }
-    case 'read': return readBundle(m.path, m.snapshotId);
-    case 'digest': return hash(JSON.stringify((await readBundle(m.path, m.snapshotId)).files));
+    case 'read': return (await readBundle(m.path, m.snapshotId)).text;
+    case 'digest': return hash(JSON.stringify((await readBundle(m.path, m.snapshotId)).bundle.files));
     default: throw new Error('Unknown serializer operation');
   }
 }
@@ -175,7 +178,9 @@ export function createSnapshotSerializer(options: SerializerOptions = {}) {
       const key = ++captureKey;
       return { key, ready: request<{ digest: string; bytes: number }>({ op: 'capture', key, files }) };
     },
-    pack: (key: number, meta: SnapshotMeta, withBundle: boolean) => request<{ compressed: Uint8Array; bundle?: SnapshotBundle }>({ op: 'pack', key, meta, withBundle }),
+    /** `text` (the exact envelope JSON, present iff `withBundle`) is parsed by the CALLER, after
+     * its local write, so an optional consumer can never fail the compressed bytes. */
+    pack: (key: number, meta: SnapshotMeta, withBundle: boolean) => request<{ compressed: Uint8Array; text?: string }>({ op: 'pack', key, meta, withBundle }),
     async release(key: number) {
       try { return await request<null>({ op: 'release', key }); }
       catch (error) {
@@ -185,7 +190,9 @@ export function createSnapshotSerializer(options: SerializerOptions = {}) {
         throw error;
       }
     },
-    read: (path: string, snapshotId: string) => request<SnapshotBundle>({ op: 'read', path, snapshotId }),
+    /** The worker validates envelope/budget and returns the JSON TEXT; parsing happens on the
+     * caller's thread (iterative, depth-safe — a successful snapshot is always readable). */
+    read: async (path: string, snapshotId: string) => JSON.parse(await request<string>({ op: 'read', path, snapshotId })) as SnapshotBundle,
     digest: (path: string, snapshotId: string) => request<string>({ op: 'digest', path, snapshotId }),
     /** Immediate cancellation settles every RPC, then joins every retiring worker. Owner drains
      * accepted store operations first for graceful close; tests may cancel to exercise failure. */
