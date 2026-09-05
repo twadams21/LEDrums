@@ -19,15 +19,18 @@
     "test": "pnpm -r run test",
     "typecheck": "pnpm -r run typecheck",
     "gates": "node scripts/with-gate-lock.mjs pnpm run gates:run",
-    "gates:run": "pnpm typecheck && pnpm test",
+    "gates:run": "pnpm typecheck && pnpm test && pnpm dead-code:verify",
+    "dead-code": "knip --include files,dependencies,unlisted,unresolved,binaries",
+    "dead-code:exports": "knip --exports",
+    "dead-code:verify": "node scripts/verify-dead-code.mjs",
     "lint": "pnpm -r run lint",
     "clean": "pnpm -r exec rimraf dist .svelte-kit node_modules/.vite"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "knip": "5.50.0",
     "playwright-core": "^1.61.1",
     "rimraf": "^6.0.1",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "typescript": "^5.7.2"
   }
 }

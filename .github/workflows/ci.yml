@@ -27,6 +27,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm dead-code:verify
 
   # Desktop path: build the self-contained server sidecar (esbuild + pinned-LTS Node SEA, which
   # runs its own smoke test) and compile the Tauri Rust shell. macOS is the shipped target and
@@ -47,6 +48,6 @@ jobs:
           workspaces: apps/desktop/src-tauri
       - run: pnpm install --frozen-lockfile
       # Stage everything generate_context!/cargo needs (web-dist resource + shell bundle + sidecar).
-      - run: pnpm --filter @ledrums/desktop prepare:bundle
+      - run: pnpm --filter @ledrums/desktop run prepare:bundle
       - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
       - run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
