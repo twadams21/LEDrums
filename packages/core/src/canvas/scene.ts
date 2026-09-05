@@ -80,13 +80,12 @@ export function createCanvasSceneEffect(scene: CanvasScene): EffectGenerator<Can
       const model = ctx.model;
       // Thumbnails / older callers render without createState; models can also be
       // rebuilt live (kit transform edits) — memoize the table on model identity.
-      if (!state || state.forModel !== model || !state.table) {
-        state = {
-          table: buildSamplerTable(model, scene.sampler),
-          forModel: model,
-          uv: [0, 0],
-          rgb: [0, 0, 0],
-        };
+      if (!state) {
+        state = { table: null, forModel: null, uv: [0, 0], rgb: [0, 0, 0] };
+      }
+      if (state.forModel !== model || !state.table) {
+        state.table = buildSamplerTable(model, scene.sampler);
+        state.forModel = model;
       }
       const t = (ctx.timeMs / 1000) * pnum(params, 'speed', 1);
       const bri = pnum(params, 'brightness', 1);

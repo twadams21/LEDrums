@@ -257,11 +257,17 @@ export function createDefaultCompositor(): Compositor {
   /** Band layouts by {@link spliceLayoutKey} — bounded, cleared wholesale when it fills
       (layouts are cheap to rebuild; an unbounded cache would leak across shows). */
   const spliceLayouts = new Map<string, SpliceUnit[]>();
+  let spliceLayoutModel: PixelModel | null = null;
   const SPLICE_LAYOUT_CACHE_CAP = 64;
 
   return {
     render(voices, model, frame, dst): void {
       dst.clear();
+      // Equal pixel totals/ranges can hide changed hoop or drum boundaries.
+      if (spliceLayoutModel !== model) {
+        spliceLayouts.clear();
+        spliceLayoutModel = model;
+      }
       const timeMs = frame.timeMs;
       const frameCtx: FrameModCtx = {
         timeMs,

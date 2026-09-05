@@ -44,6 +44,17 @@ export function releaseVoice(v: Voice, timeMs: number): void {
   v.releaseFromLevel = v.level;
 }
 
+/** Retain the lightweight pool slot, not the dead voice's pixel-sized accumulators or
+ * composite sub-voices. Spawn creates fresh state anyway; keeping it cannot aid reuse. */
+export function deactivateVoice(v: Voice): void {
+  v.active = false;
+  v.genState = null;
+  v.modState = undefined;
+  v.mixInputs = undefined;
+  v.spliceInputs = undefined;
+  v.splice = undefined;
+}
+
 export class VoicePool {
   /** Fixed-size slab; `active` marks occupancy. Iterated directly by the engine for
       envelope tick, compositing, and stats. */
@@ -56,7 +67,7 @@ export class VoicePool {
 
   /** Authored content changed: free every slot so eval starts clean & deterministic. */
   reset(): void {
-    for (const v of this.pool) v.active = false;
+    for (const v of this.pool) deactivateVoice(v);
   }
 
   findActiveVoice(id: string): Voice | null {

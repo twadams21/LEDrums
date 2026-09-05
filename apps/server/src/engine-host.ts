@@ -95,7 +95,10 @@ export class EngineHost {
     if (this.timer) return;
     this.reloadOutputSettings();
     this.lastWall = performance.now();
-    this.fpsWindowStart = this.lastWall;
+    // step() measures this window in engine time, not process uptime.
+    this.fpsWindowStart = this.engineTimeMs;
+    this.fpsTicks = 0;
+    this.measuredFps = 0;
     this.accumulator = 0;
     this.scheduleNext();
   }

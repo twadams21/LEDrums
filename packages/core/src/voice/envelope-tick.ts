@@ -5,7 +5,7 @@
  * No allocation, no array churn — they mutate the pre-sized pool in place.
  */
 import { lifeEnvelopeGain } from '../effects/voice-life';
-import { releaseVoice } from './voice-pool';
+import { deactivateVoice, releaseVoice } from './voice-pool';
 import { ease } from './easing';
 import type { Bus, Voice } from './types';
 
@@ -50,7 +50,7 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
 export function reapDeadVoices(pool: readonly Voice[], latched: Map<string, string | null>): void {
   for (const v of pool) {
     if (v.active && v.phase === 'release' && v.level <= 0.001) {
-      v.active = false;
+      deactivateVoice(v);
       for (const [k, id] of latched) if (id === v.id) latched.set(k, null);
     }
   }

@@ -14,12 +14,12 @@ import { registerCanvasScene, unregisterCanvasScene, tryGetCanvasEffect } from '
 import { CANVAS_PARAM_SPEC, createCanvasSceneEffect } from './scene';
 import type { CanvasScene } from './types';
 
-function model(): PixelModel {
+function model(pixelsPerHoop = 16): PixelModel {
   return buildPixelModel(
     parseKit({
       global: { ledDensityPxPerM: 40, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
       drums: [
-        { id: 'd0', diameterIn: 8, pixelsPerHoop: 16, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+        { id: 'd0', diameterIn: 8, pixelsPerHoop, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
         { id: 'd1', diameterIn: 8, pixelsPerHoop: 16, hoopSpacingMm: 50, origin: { x: 600, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
       ],
     }),
@@ -86,6 +86,31 @@ describe('canvas scene adapter — one seam, no fork (D4)', () => {
     const a = renderFrame(m, { canvasRotDeg: 33, canvasScale: 1.4 }, 1234);
     const b = renderFrame(m, { canvasRotDeg: 33, canvasScale: 1.4 }, 1234);
     expect(a.rgba).toEqual(b.rgba);
+  });
+
+  it('retains and reuses the rebuilt sampler table after model replacement', () => {
+    const original = model();
+    const replacement = model(8);
+    const gen = createCanvasSceneEffect(scene);
+    const state = gen.createState!(original);
+    const oldTable = state.table;
+    const uv = state.uv;
+    const rgb = state.rgb;
+    const fb = new Framebuffer(replacement.pixelCount);
+
+    gen.render(ctx(replacement), {}, fb, state);
+    expect(fb.rgba).toEqual(renderFrame(replacement).rgba);
+    expect(state.forModel).toBe(replacement);
+    expect(state.table).not.toBe(oldTable);
+    const rebuiltTable = state.table;
+    expect(rebuiltTable).not.toBeNull();
+    expect(state.uv).toBe(uv);
+    expect(state.rgb).toBe(rgb);
+
+    fb.clear();
+    gen.render(ctx(replacement), {}, fb, state);
+    expect(state.table).toBe(rebuiltTable);
+    expect(fb.rgba).toEqual(renderFrame(replacement).rgba);
   });
 
   it('exposes the full scene-level param surface via the standard paramSpec', () => {

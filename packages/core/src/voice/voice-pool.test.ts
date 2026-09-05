@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VoicePool, type SpawnDeps } from './voice-pool';
+import { reapDeadVoices } from './envelope-tick';
 import type { PlayAction } from './eval-graph';
 import type { Bus, EffectDef, ResolvedModifier } from './types';
 
@@ -63,6 +64,49 @@ describe('VoicePool — mono steal resets voice age (S25)', () => {
     const sampleAt = 1200;
     expect(sampleAt - b!.bornAtMs).toBe(200);
     expect(sampleAt - a!.bornAtMs).toBe(1200);
+  });
+});
+
+describe('VoicePool — inactive slots release render state', () => {
+  for (const dispose of ['reap', 'reset'] as const) {
+    it(`${dispose} drops heavyweight state while retaining the reusable slot`, () => {
+      const pool = new VoicePool();
+      const context = deps(0);
+      const member = { ...action, opacity: 1, originNodeId: 'member' };
+      const v = pool.spawn({ ...action, mixInputs: [member] }, null, 1, context)!;
+      v.genState = { buffer: new Float32Array(4096) };
+      v.modState = [{ buffer: new Float32Array(4096) }];
+      v.mixInputs![0]!.genState = { buffer: new Float32Array(4096) };
+      // Both composite forms own sub-voice state and must release those references.
+      v.spliceInputs = v.mixInputs;
+      context.latched.set('toggle', v.id);
+
+      if (dispose === 'reap') {
+        v.phase = 'release';
+        v.level = 0;
+        reapDeadVoices(pool.pool, context.latched);
+        expect(context.latched.get('toggle')).toBeNull();
+      } else {
+        pool.reset();
+      }
+
+      expect(v.active).toBe(false);
+      expect(v.genState).toBeNull();
+      expect(v.modState).toBeUndefined();
+      expect(v.mixInputs).toBeUndefined();
+      expect(v.spliceInputs).toBeUndefined();
+      expect(pool.spawn(action, null, 1, deps(100))).toBe(v);
+    });
+  }
+
+  it('does not clear state from still-live voices during reaping', () => {
+    const pool = new VoicePool();
+    const v = pool.spawn(action, null, 1, deps(0))!;
+    const state = { buffer: new Float32Array(16) };
+    v.genState = state;
+    reapDeadVoices(pool.pool, new Map());
+    expect(v.active).toBe(true);
+    expect(v.genState).toBe(state);
   });
 });
 
