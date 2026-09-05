@@ -7,9 +7,11 @@
   import { TriggerLab } from './lib/trigger-lab/store.svelte';
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
-  import { isEditableShortcutTarget, platformShortcutModifier } from './lib/app/primary-shortcut';
+  import { platformShortcutModifier } from './lib/app/primary-shortcut';
   import { decideDeleteKey, isDeleteKey } from './lib/app/delete-key';
   import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
+  import { claimPerformanceKey, decidePerformanceKey } from './lib/app/performance-key';
+  import { performanceKeyTarget } from './lib/app/performance-key-target';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
@@ -62,10 +64,10 @@
     { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
   ];
 
-  // Performance keys (approved wave-3 shell): 1–9 fire the active section's graphs
-  // 1–9 (0 → graph 10); ←/→ step through the active song's sections. Skip while
-  // typing in a control; leave arrows alone inside the flow canvas (xyflow nudges
-  // the selected node with them).
+  // Performance keys belong to the focused Perform surface. The decision helper yields to
+  // editable text, open popups, roving controls, and the graph canvas so each physical key has
+  // exactly one owner. The capture-phase claim is what prevents a focused control from acting
+  // after the performance action.
   function onKey(e: KeyboardEvent): void {
     // With the Settings modal open, the workspace shortcuts must not act on the surface
     // BEHIND it (Backspace deleted the selected node through the modal) — including the
@@ -74,8 +76,8 @@
     // applies — the WKWebView history-back hazard is the same whichever surface has focus.
     const settingsOpen = shell.settingsPane !== null;
     if (!settingsOpen && dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
-    const el = e.target as HTMLElement | null;
-    const editable = isEditableShortcutTarget(e.target);
+    const target = performanceKeyTarget(e.target);
+    const editable = target.isEditableTarget;
     if (isDeleteKey(e.key)) {
       const selection = shell.selection;
       const node =
@@ -100,19 +102,22 @@
       }
       return;
     }
-    if (editable || settingsOpen) return;
-    if (/^[0-9]$/.test(e.key)) {
-      const index = e.key === '0' ? 9 : Number(e.key) - 1;
-      store.fireSectionGraph(index);
+    const perf = decidePerformanceKey({
+      key: e.key,
+      view: shell.view,
+      settingsOpen,
+      ...target,
+    });
+    claimPerformanceKey(e, perf);
+    if (perf.fireGraphIndex !== undefined) {
+      store.fireSectionGraph(perf.fireGraphIndex);
       return;
     }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
+    if (perf.sectionStep !== undefined) {
       const sections = store.activeSong?.sections ?? [];
       if (sections.length === 0) return;
       const cur = sections.findIndex((s) => s.id === store.activeSectionId);
-      const step = e.key === 'ArrowRight' ? 1 : -1;
-      const next = sections[(cur + step + sections.length) % sections.length];
+      const next = sections[(cur + perf.sectionStep + sections.length) % sections.length];
       if (next) store.setActiveSection(next.id);
     }
   }

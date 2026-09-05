@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Session Bootstrap
@@ -35,6 +35,17 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Performance keyboard ownership replacement (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent in-session on Trent’s MacBook Pro as a current-main replacement for PR #200
+commit `4c2273bd`. A pure decision helper gives digit/left-right ownership to the Perform view
+only; editable targets, open Select/combobox/listbox popups, radio/toggle/segmented controls,
+and flow-canvas arrow movement retain their keyboard actions. App-owned events are claimed in
+capture with both `preventDefault()` and `stopPropagation()`, with no focus blur. The server now
+authorizes `fireGraph` for viewers because Perform’s keyboard is an engine input; the voice host
+still validates and executes the graph intent. Focused web/server tests, full typecheck, full test,
+and strict Perform/Trigger/Settings ui-shot captures are green. Work is local and not merged or
+shipped; no new reusable visual component or design-system artifact was needed.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
