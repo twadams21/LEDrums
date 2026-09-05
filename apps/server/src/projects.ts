@@ -29,7 +29,11 @@ function serializeProject(project: Project): string {
 // These envelopes are NOT bare Projects. Compare names before IO, independent of the host
 // filesystem's case rules (macOS commonly aliases Default.State.Local to the live authority).
 const INTERNAL_BLOB_NAMES = new Set(['default.state.local', 'default.shows.local', 'default.songs.local']);
-function isInternalBlobName(name: string): boolean { return INTERNAL_BLOB_NAMES.has(name.toLowerCase()); }
+function isInternalBlobName(name: string): boolean {
+  // Reserve Unicode compatibility/case forms conservatively too. On macOS, long-s (ſ)
+  // aliases ASCII s even though plain toLowerCase() leaves it unchanged.
+  return INTERNAL_BLOB_NAMES.has(name.normalize('NFKC').toUpperCase().toLowerCase());
+}
 function isNamedProjectFile(file: string): boolean {
   return file.endsWith('.json') && !isInternalBlobName(file.slice(0, -5));
 }

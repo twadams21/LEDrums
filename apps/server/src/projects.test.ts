@@ -34,7 +34,8 @@ const healed = (p: Project): Project => ({ ...p, kit: reconcileOutputs(p.kit) })
 
 describe('projects', () => {
   it.each(['default.state.local', 'Default.State.Local', 'DEFAULT.STATE.LOCAL',
-    'Default.Shows.Local', 'DEFAULT.SONGS.LOCAL'])('reserves internal slot %s regardless of filesystem case rules', async (name) => {
+    'Default.Shows.Local', 'DEFAULT.SONGS.LOCAL', 'default.ſtate.local',
+    'default.ſhows.local', 'default.ſongs.local'])('reserves internal slot %s regardless of filesystem case rules', async (name) => {
     const dir = mkdtempSync(join(tmp, 'reserved-'));
     const file = join(dir, `${name}.json`);
     const authority = JSON.stringify({ version: 1, files: { project: defaultProject(),
