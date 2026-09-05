@@ -32,7 +32,7 @@ All workers use isolated worktrees off merged audit `ea18f61`, commit but do not
 | P15 trustworthy dead-code tooling + verified deletion | verified scoped baseline | `77c1d2a0`; pure-JS pin, seeded-fixture check, held files retained |
 | Lazy route loading / bundle measurements | integrated; final review blockers fixed `424da809`, independently verified | `9581516c` + `424da809`; 16/16 production browser matrix; isolated initial-JS reduction 22.42% (not re-measured), no established startup-timing win |
 | Integrated review, full gates | local gates green on `424da809` (4,759 tests / 4 skipped; build; design-system; SEA 16/16; browser matrix + strict shots) | evidence: `docs/reports/2026-09-05-health-integration-review.md` |
-| PR / CI / merge | NOT STARTED — branch UNPUSHED and UNMERGED, awaiting push authorization | no publication, deploy or Worker migration included |
+| PR / CI / merge | DONE — PR #203 merged to `main` as `c4cbbf5d` (merge commit); PR CI 33958929445 and main CI 33959083908 green | NOT released/deployed: no OTA tag, GitHub Release, Worker deployment or migration |
 
 ## Verification notes
 

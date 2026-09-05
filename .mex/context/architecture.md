@@ -48,7 +48,7 @@ is currently on `fix/health-integration` (not yet declared merged):
   are bounded `waitUntil` work, not an awaited part of error persistence. Existing installations
   must migrate/backfill with writers quiesced before deploying this code.
 Project replacement/async backup ownership and review corrections are integrated locally (HEAD
-`424da809`, unpushed); see `docs/plans/2026-09-05-health-implementation.md` and the scoped reports.
+`424da809`, merged to `main` via PR #203 as `c4cbbf5d`, not released); see `docs/plans/2026-09-05-health-implementation.md` and the scoped reports.
 Legacy three-file import fails closed when a present library file lacks a numeric `version`.
 Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
 host/sim until its live responsibilities have been transferred and tested.
