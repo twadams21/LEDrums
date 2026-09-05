@@ -19,6 +19,7 @@
   import Eyebrow from '../../ui/Eyebrow.svelte';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import MousePointerClick from '@lucide/svelte/icons/mouse-pointer-click';
+  import LockKeyhole from '@lucide/svelte/icons/lock-keyhole';
   import SubtypeSwitcher from './inspectors/SubtypeSwitcher.svelte';
   import TriggerSourceInspector from './inspectors/TriggerSourceInspector.svelte';
   import PlayNodeInspector from './inspectors/PlayNodeInspector.svelte';
@@ -89,7 +90,16 @@
      (buttons, selects, inputs, the bits-ui triggers) is disabled by the browser, and the CSS
      below dims the panel + neutralises the div-based slider drags. The store mutators already
      no-op for a viewer — this makes that visible. -->
-<fieldset class="inspector" disabled={!store.canEdit}>
+<fieldset class="inspector" disabled={node ? !store.canEditSelectedGraph : !store.canEdit}>
+  {#if node && !store.canEditSelectedGraph}
+    <div class="readonly-banner" role="status">
+      <LockKeyhole size={16} aria-hidden="true" />
+      <div>
+        <strong>Read-only reference</strong>
+        <p>{store.selectedGraphEditBlockReason}</p>
+      </div>
+    </div>
+  {/if}
   {#if node && node.kind === 'trigger'}
     <TriggerSourceInspector {store} {node} />
   {:else if node && node.kind === 'envelope'}
@@ -214,6 +224,34 @@
   .inspector:disabled :global(.slider),
   .inspector:disabled :global(.seg) {
     pointer-events: none;
+  }
+  .readonly-banner {
+    display: flex;
+    gap: var(--space-2);
+    margin: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+  }
+  .readonly-banner :global(svg) {
+    flex: 0 0 auto;
+    color: var(--accent);
+  }
+  .readonly-banner strong,
+  .readonly-banner p {
+    display: block;
+    margin: 0;
+  }
+  .readonly-banner strong {
+    font-size: var(--text-xs);
+  }
+  .readonly-banner p {
+    margin-top: var(--space-1);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: var(--leading-normal);
   }
   .ihead {
     display: flex;

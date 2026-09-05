@@ -272,7 +272,7 @@ export function serialize(doc: ClipDoc): string {
 
 // ---- parse (defensive, never throws) ----------------------------------------
 
-export type ClipParseReason = 'not-json' | 'not-object' | 'foreign' | 'unsupported-version' | 'unknown-kind' | 'malformed';
+export type ClipParseReason = 'not-json' | 'not-object' | 'foreign' | 'unsupported-version' | 'unknown-kind' | 'malformed' | 'unresolved-dependency';
 
 export interface ClipParseError {
   parseError: true;
@@ -388,9 +388,13 @@ function coerceSongDoc(payload: Record<string, unknown>, deps: unknown, m: ClipD
   const song = payload.song;
   if (typeof song.id !== 'string' || !Array.isArray(song.sections)) return err('malformed', 'Song payload malformed.');
   const sections: SetlistSection[] = [];
+  const sectionIds = new Set<string>();
   for (const raw of song.sections) {
     const sec = coerceSection(raw);
-    if (sec) sections.push(sec);
+    if (sec && !sectionIds.has(sec.id)) {
+      sectionIds.add(sec.id);
+      sections.push(sec);
+    }
   }
   const name = typeof song.name === 'string' ? song.name : '';
   return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'song', payload: { song: { id: song.id, name, sections } }, deps: coerceDeps(deps), meta: m };
@@ -409,7 +413,7 @@ function coercePatchDoc(payload: Record<string, unknown>, m: ClipDocMeta): Patch
     a non-object or id-less entry is unusable (null → dropped by the caller); otherwise keep the
     string graph refs + the string|null look values that survived. */
 function coerceSection(raw: unknown): SetlistSection | null {
-  if (!isObject(raw) || typeof raw.id !== 'string') return null;
+  if (!isObject(raw) || typeof raw.id !== 'string' || !raw.id) return null;
   const graphs = Array.isArray(raw.graphs) ? raw.graphs.filter((k): k is string => typeof k === 'string') : [];
   const looks: Record<string, string | null> = {};
   if (isObject(raw.looks)) {
@@ -433,6 +437,8 @@ export interface RemapContext {
   /** Local canvas scenes — for content-reuse: a pasted scene identical to a local one reuses its
       id (so A→B→A round-trips and double-pastes create no duplicate scene). */
   canvasScenes?: readonly CanvasScene[];
+  /** Section ids already present in the destination resolved view. */
+  sectionIds?: readonly string[];
   /** True for a registry-backed effect id (pattern + generator fixtures) — shared vocabulary
       present in every show, so its id is kept verbatim even if the incoming content differs. */
   isBuiltInEffectId: (id: string) => boolean;
@@ -455,9 +461,10 @@ export interface RemapMint {
     come off the shared monotonic counter. Effect minting also dedups against ids minted EARLIER
     in the same pass (`freshEffectId` is name-derived, not counter-backed, so without this two
     same-name effects in one closure would mint the same id — the other minters are immune). */
-export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes'>): RemapMint {
+export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes' | 'sectionIds'>): RemapMint {
   const mintedEffectIds = new Set<string>();
   const mintedSceneIds = new Set<string>();
+  const usedSectionIds = new Set(ctx.sectionIds ?? []);
   return {
     graph: () => freshId('graph', (k) => k in ctx.graphs),
     effect: (name) => {
@@ -466,7 +473,12 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
       return id;
     },
     preset: () => freshId('preset', (k) => ctx.presets.some((p) => p.id === k)),
-    section: () => nid('section'),
+    section: () => {
+      let id = nid('section');
+      while (usedSectionIds.has(id)) id = nid('section');
+      usedSectionIds.add(id);
+      return id;
+    },
     song: () => nid('song'),
     scene: () => {
       const id = freshId('scene', (k) => (ctx.canvasScenes ?? []).some((s) => s.id === k) || mintedSceneIds.has(k));
@@ -598,8 +610,14 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
     out.graphs[newKey] = remapped;
     if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
   } else if (doc.kind === 'section') {
+    if (doc.payload.section.graphs.some((key) => !graphMap.has(key))) {
+      return err('unresolved-dependency', 'Section payload references a graph that is missing from its dependency closure.');
+    }
     out.section = remapSection(doc.payload.section, mint.section(), remapGraphRef, remapEffectRef);
   } else {
+    if (doc.payload.song.sections.some((section) => section.graphs.some((key) => !graphMap.has(key)))) {
+      return err('unresolved-dependency', 'Song payload references a graph that is missing from its dependency closure.');
+    }
     out.song = {
       id: mint.song(),
       name: doc.payload.song.name,

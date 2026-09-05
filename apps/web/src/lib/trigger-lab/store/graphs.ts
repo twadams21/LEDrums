@@ -121,8 +121,8 @@ function padLabelForKey(pads: readonly Pad[], key: string): string | null {
 
     Effects / presets are deliberately NOT copied: they are show-level library objects the user picks
     from (the Objects view lists them per show, not per song), and the clipboard song paste treats
-    them the same way. A dangling reference (a key with no graph) is carried through untouched —
-    faithful to the source song rather than silently repaired.
+    them the same way. A dangling local reference is dropped from the copy. Canonical `lib:*`
+    references are kept because they resolve outside the local graph map.
 
     Pure: `mintKey` is injected so the caller owns id minting and tests stay deterministic. Pass
     plain (snapshotted) graphs — {@link cloneGraph} structured-clones them. */
@@ -137,7 +137,7 @@ export function cloneSongGraphs(
   const nextNames: Record<string, string> = {};
   for (const key of setlist.referencedGraphs(song)) {
     const src = graphs[key];
-    if (!src) continue; // dangling ref: leave the key as-is (the copy is as broken as the source)
+    if (!src) continue;
     const newKey = mintKey();
     remap.set(key, newKey);
     nextGraphs[newKey] = cloneGraph(src);
@@ -147,7 +147,12 @@ export function cloneSongGraphs(
     if (typeof name === 'string') nextNames[newKey] = name;
   }
   const sections = song.sections.map((sec) =>
-    setlist.makeSection(sec.id, sec.name, sec.graphs.map((k) => remap.get(k) ?? k), sec.looks),
+    setlist.makeSection(
+      sec.id,
+      sec.name,
+      sec.graphs.filter((k) => remap.has(k) || k.startsWith('lib:')).map((k) => remap.get(k) ?? k),
+      sec.looks,
+    ),
   );
   return { song: { ...song, sections }, graphs: nextGraphs, graphNames: nextNames };
 }
@@ -175,7 +180,12 @@ export function cloneSectionGraphs(
     if (typeof name === 'string') nextNames[newKey] = name;
   }
   return {
-    section: setlist.makeSection(normalized.id, normalized.name, normalized.graphs.map((key) => remap.get(key) ?? key), normalized.looks),
+    section: setlist.makeSection(
+      normalized.id,
+      normalized.name,
+      normalized.graphs.filter((key) => remap.has(key) || key.startsWith('lib:')).map((key) => remap.get(key) ?? key),
+      normalized.looks,
+    ),
     graphs: nextGraphs,
     graphNames: nextNames,
   };

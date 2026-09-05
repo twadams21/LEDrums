@@ -124,6 +124,44 @@ describe('TriggerLab autosave (save on edit)', () => {
     } finally { ax.stopAutosave(); }
   });
 
+  it('does not autosave or add history for canonical graph mutation attempts', () => {
+    const store = new TriggerLab(fakeClient);
+    const libraryId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const section = store.activeSong!.sections[0]!;
+    const graphKey = section.graphs.find((key) => store.resolvedView.graphs[key])!;
+    store.selectGraphInSection(section.id, graphKey);
+    const node = store.selectedGraph!.nodes.find((candidate) => candidate.kind === 'effect')!;
+
+    const ax = store as unknown as { startAutosave(): void; stopAutosave(): void };
+    ax.startAutosave();
+    try {
+      flushSync();
+      vi.advanceTimersByTime(500);
+      const before = localStorage.getItem(SONGS_STORAGE_KEY);
+      const beforeNodeCount = store.selectedGraph!.nodes.length;
+      const beforeEdgeCount = store.selectedGraph!.edges.length;
+      const beforeParams = { ...node.params };
+
+      expect(store.canEditSelectedGraph).toBe(false);
+      expect(store.addNode('effect', 100, 100)).toBeNull();
+      store.setParam(node, 'hue', 0.12);
+      store.removeNode(node);
+      store.connect('trigger', node.id);
+      flushSync();
+      vi.advanceTimersByTime(500);
+
+      expect(localStorage.getItem(SONGS_STORAGE_KEY)).toBe(before);
+      expect(store.selectedGraph!.nodes).toHaveLength(beforeNodeCount);
+      expect(store.selectedGraph!.edges).toHaveLength(beforeEdgeCount);
+      expect(node.params).toEqual(beforeParams);
+      expect(store.undo()).toBe(false);
+    } finally {
+      ax.stopAutosave();
+    }
+  });
+
   it('tracks optional field add/delete and array changes, and disposes outgoing graph subscriptions', () => {
     const store = new TriggerLab(fakeClient);
     const ax = store as unknown as { startAutosave(): void; stopAutosave(): void };

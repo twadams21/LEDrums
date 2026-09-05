@@ -101,11 +101,11 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
     expect(store.selectedPadKey).toBe(key); // graph opened in the canvas
   });
 
-  it('selectGraphInSection ignores an unknown graph key but still activates the section', () => {
+  it('selectGraphInSection rejects an unknown graph key without activating another section', () => {
     const store = new TriggerLab(fakeClient);
     const id = store.activeSong!.sections[1]!.id;
     store.selectGraphInSection(id, 'no-such-graph');
-    expect(store.activeSectionId).toBe(id);
+    expect(store.activeSectionId).not.toBe(id);
     expect(store.selectedPadKey).not.toBe('no-such-graph');
   });
 });

@@ -321,6 +321,8 @@ function friendlyParseMessage(reason: ClipParseReason): string {
       return 'That was copied from a newer version of LEDrums.';
     case 'unknown-kind':
       return 'That clipboard content can’t be pasted here.';
+    case 'unresolved-dependency':
+      return 'That clipboard section is incomplete — its required graph data is missing.';
     default:
       return 'The clipboard didn’t contain anything pasteable.';
   }
@@ -837,6 +839,29 @@ export class TriggerLab {
         ? null
         : 'Library song is read-only — detach a copy in Objects to edit it',
   );
+
+  /** Ownership of a graph in the current resolved document. Local graphs may be unplaced (the
+      Objects view can open them), while canonical graphs are only editable after detachment. */
+  graphOwnership(graphKey: string | null = this.selectedPadKey): 'local' | 'canonical' | 'missing' {
+    if (!graphKey) return 'missing';
+    if (graphKey.startsWith('lib:')) {
+      return this.resolvedView.graphs[graphKey] && this.resolvedGraphPlacement(graphKey) ? 'canonical' : 'missing';
+    }
+    return this.graphs[graphKey] ? 'local' : 'missing';
+  }
+  canEditGraph(graphKey: string | null): boolean {
+    return this.canEdit && this.graphOwnership(graphKey) === 'local';
+  }
+  canEditSelectedGraph = $derived(this.canEditGraph(this.selectedPadKey));
+  selectedGraphEditBlockReason = $derived(
+    this.isViewer
+      ? 'Another client is editing'
+      : this.graphOwnership() === 'canonical'
+        ? 'This is a read-only library reference — detach the song in Objects to edit it'
+        : this.graphOwnership() === 'missing'
+          ? 'Select a graph placed in this section'
+          : null,
+  );
   /** Stable local-song membership guard for controllers and view identity checks. */
   isLocalSong(songId: string): boolean {
     return this.songs.some((song) => song.id === songId);
@@ -997,10 +1022,14 @@ export class TriggerLab {
   // {@link showsCtl} (R23) — the store exposes them via the getters alongside its field. Consumers
   // (selectedGraph, graphLabel, showSource, the paste/clipboard region) read through those getters.
 
-  // Read through the RESOLVED graphs (S42): selecting a referenced library graph opens the
-  // library's rune-backed proxy, so editing its nodes writes through to the canonical copy
-  // (propagation) — while a local graph resolves to the same proxy it always did.
-  selectedGraph: voice.TriggerGraph | null = $derived(this.selectedPadKey ? this.resolvedView.graphs[this.selectedPadKey] ?? null : null);
+  // Read through the RESOLVED graphs (S42), but only after the selection seam has established a
+  // real placement for canonical keys. Local unplaced graphs remain first-class Objects entries.
+  selectedGraph: voice.TriggerGraph | null = $derived.by(() => {
+    const key = this.selectedPadKey;
+    if (!key) return null;
+    if (this.graphs[key]) return this.resolvedView.graphs[key] ?? this.graphs[key] ?? null;
+    return this.resolvedGraphPlacement(key) ? this.resolvedView.graphs[key] ?? null : null;
+  });
   beatPhase = $derived((this.beat % 4) / 4);
 
   // `shows`/`activeShow` (show derived) and `activeSong` (over the RESOLVED song list) are owned by
@@ -2041,7 +2070,7 @@ export class TriggerLab {
       the active section lists, and is a no-op when the section has fewer graphs. */
   fireSectionGraph(index: number): void {
     const key = this.activeSection?.graphs[index];
-    const graph = key ? this.graphs[key] : undefined;
+    const graph = key ? this.resolvedView.graphs[key] : undefined;
     if (!key || !graph) return;
     this.selectedPadKey = key; // show the graph that fired
     this.markGraphFire(key); // card indicator + live-on-trigger node previews
@@ -2111,6 +2140,7 @@ export class TriggerLab {
    * tells the engine to fire this section's graphs.
    */
   setActiveSection(sectionId: string): void {
+    if (!this.activeSong?.sections.some((section) => section.id === sectionId)) return;
     this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
     // Offline preview only: when connected the server engine spawns this section's looks
@@ -2132,9 +2162,13 @@ export class TriggerLab {
    * graph key is unknown.
    */
   selectGraphInSection(sectionId: string, graphKey: string): void {
+    const placement = this.resolvedView.songs
+      .flatMap((song) => song.sections.map((section) => ({ songId: song.id, section })))
+      .find(({ section }) => section.id === sectionId && section.graphs.includes(graphKey));
+    if (!placement || !this.resolvedView.graphs[graphKey]) return;
+    if (this.activeSongId !== placement.songId) this.setActiveSong(placement.songId);
     this.setActiveSection(sectionId);
-    // Resolved lookup (S42) so a referenced section's `lib:<id>/…` graph is selectable/openable.
-    if (this.resolvedView.graphs[graphKey]) this.selectedPadKey = graphKey;
+    this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -2607,6 +2641,26 @@ export class TriggerLab {
     return undefined;
   }
 
+  private resolvedGraphPlacement(graphKey: string): { songId: string; sectionId: string } | undefined {
+    for (const song of this.resolvedView.songs) {
+      const section = song.sections.find((candidate) => candidate.graphs.includes(graphKey));
+      if (section) return { songId: song.id, sectionId: section.id };
+    }
+    return undefined;
+  }
+
+  /** Select a graph from the Objects view or a section. Unplaced local graphs remain selectable;
+      canonical graphs must have a real resolved placement before they can enter the editor. */
+  selectGraph(graphKey: string): void {
+    if (!this.resolvedView.graphs[graphKey]) return;
+    const placement = this.resolvedGraphPlacement(graphKey);
+    if (placement) {
+      this.selectGraphInSection(placement.sectionId, graphKey);
+      return;
+    }
+    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
+  }
+
   /** Serialize a ClipDoc to the system clipboard and toast the outcome. */
   private async writeClip(doc: ClipDoc, okMessage: string): Promise<void> {
     const generation = this.documentGeneration;
@@ -2651,6 +2705,7 @@ export class TriggerLab {
       effects: $state.snapshot(this.effects) as EffectDef[],
       presets: $state.snapshot(this.presets) as Preset[],
       canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
+      sectionIds: this.resolvedView.songs.flatMap((song) => song.sections.map((section) => section.id)),
       isBuiltInEffectId: (id) => EFFECTS.some((e) => e.id === id),
       mint,
     };
@@ -2819,7 +2874,7 @@ export class TriggerLab {
       Inspector + Sections rename fields call. A blank name keeps the existing label (mirrors
       {@link renameSong}); an unknown key (not in `graphs`) is a no-op. Persists via autosave. */
   renameGraph(key: string, name: string): void {
-    if (!this.canEditActiveSong) return; // viewer or canonical library: authoring no-op
+    if (!this.canEditGraph(key)) return;
     if (!(key in this.graphs)) return;
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -2834,7 +2889,7 @@ export class TriggerLab {
       duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
       the user places it where they want (reuse is by reference). Persists via autosave. */
   duplicateGraph(key: string): string | null {
-    if (!this.canEditActiveSong) return null; // viewer or canonical library: authoring no-op
+    if (!this.canEditGraph(key)) return null;
     const src = this.graphs[key];
     if (!src) return null;
     this.pushUndoSnapshot();
@@ -2853,7 +2908,7 @@ export class TriggerLab {
       deleted graph was the open/selected one, clear the selection. An unknown key (not in
       `graphs`) is a no-op. Persists via the authored autosave. */
   deleteGraph(key: string): void {
-    if (!this.canEditActiveSong) return; // viewer or canonical library: authoring no-op
+    if (!this.canEditGraph(key)) return;
     if (!(key in this.graphs)) return;
     this.pushUndoSnapshot();
     const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
@@ -2871,7 +2926,7 @@ export class TriggerLab {
       WS message: resolving a fire from the source is a later slice. No-op if the graph or
       its trigger node is missing. */
   setTriggerSource(graphKey: string, source: TriggerSource): boolean {
-    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
+    if (!this.canEditGraph(graphKey)) return false;
     const g = this.graphs[graphKey];
     if (!g) return false;
     const trig = g.nodes.find((n) => n.kind === 'trigger');
@@ -2971,7 +3026,7 @@ export class TriggerLab {
   /** Clone `src` into the selected graph with a fresh id at a free position near `(x, y)`,
       select it, and return it. Node-only (no wires). Refuses the trigger kind + viewers. */
   private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
-    if (this.isViewer) return null;
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g || isAnchorNode(src)) return null;
     const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
@@ -3001,7 +3056,7 @@ export class TriggerLab {
 
   /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
   addNode(kind: NodeKind, x: number, y: number, options: AddNodeOptions = {}): GraphNode | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g || kind === 'trigger' || kind === 'output') return null;
     this.pushUndoSnapshot();
@@ -3080,7 +3135,7 @@ export class TriggerLab {
       a chosen modifier directly, vs `addNode('modifier')` which seeds the first one). Unknown
       ids are still placed — the inspector/chain runner tolerate an unresolved modifierId. */
   addModifierNode(modifierId: string, x: number, y: number): GraphNode | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g) return null;
     this.pushUndoSnapshot();
@@ -3093,7 +3148,7 @@ export class TriggerLab {
   }
 
   moveNode(node: GraphNode, x: number, y: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     // R15: only checkpoint undo when the node actually moved. A zero-displacement commit — a drag
     // (or a splice-drop onto a wire) that ends where it started — must not push an undo entry, or
     // Ctrl/Z after a splice pops an empty position checkpoint before it reaches the splice wiring.
@@ -3112,7 +3167,7 @@ export class TriggerLab {
   }
 
   removeNode(node: GraphNode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     const g = this.selectedGraph;
     if (!g || isAnchorNode(node)) return;
     this.pushUndoSnapshot();
@@ -3133,7 +3188,7 @@ export class TriggerLab {
       refused, else `null` on success — so the caller can surface *why* (a reason toast, R03).
       A viewer / missing-graph no-op returns `null` (nothing the user did wrong to explain). */
   connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): WireRejection | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g) return null;
     const rejection = classifyConnection(g, fromId, toId, fromPort, toPort);
@@ -3163,7 +3218,7 @@ export class TriggerLab {
     return null;
   }
   disconnect(edgeId: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     const g = this.selectedGraph;
     if (!g || !g.edges.some((e) => e.id === edgeId)) return;
     this.pushUndoSnapshot();
@@ -3181,7 +3236,7 @@ export class TriggerLab {
     fromPort?: string,
     toPort?: ToPort,
   ): WireRejection | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g) return null;
     const rejection = classifyReconnect(g, edgeId, fromId, toId, fromPort, toPort);
@@ -3212,7 +3267,7 @@ export class TriggerLab {
       once. No-op (returns false) when the splice is invalid; announces a successful splice with one
       toast. */
   spliceOnDrop(edgeId: string, nodeId: string): boolean {
-    if (this.isViewer) return false;
+    if (!this.canEditSelectedGraph) return false;
     const g = this.selectedGraph;
     if (!g || !canSplice(g, edgeId, nodeId)) return false;
     const edge = g.edges.find((e) => e.id === edgeId)!;
@@ -3232,14 +3287,14 @@ export class TriggerLab {
   }
 
   setMixBlendMode(node: GraphNode, mode: BlendMode): void {
-    if (this.isViewer || node.kind !== 'mix') return;
+    if (!this.canEditSelectedGraph || node.kind !== 'mix') return;
     this.pushUndoSnapshot();
     node.mixBlendMode = mode;
   }
 
     /** Change a node's kind, seeding kind-specific defaults and pruning invalid wires. */
   changeKind(node: GraphNode, kind: NodeKind): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (isAnchorNode(node) || kind === 'trigger' || kind === 'output') return;
     if (node.kind === kind) return;
 
@@ -3299,7 +3354,7 @@ export class TriggerLab {
   }
 
   setMode(node: GraphNode, mode: PlayMode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if ((node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice') || node.mode === mode) return;
     this.pushUndoSnapshot();
     node.mode = mode;
@@ -3308,7 +3363,7 @@ export class TriggerLab {
   /** Set the render scope on a play node (kit / drum / hoop). Clearing targetId on
       scope change prevents a stale targetId from a previous scope from leaking. */
   setScope(node: GraphNode, scope: Scope): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.scope = scope;
@@ -3318,25 +3373,25 @@ export class TriggerLab {
   /** Set (or clear) the per-play-node target id: drum = drumId, hoop = "drumId#hoopIndex".
       Pass undefined or empty string to clear (auto = firing/source drum). */
   setTargetId(node: GraphNode, targetId: string | undefined): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'play' && node.kind !== 'effect' && node.kind !== 'splice' && node.kind !== 'scope' && node.kind !== 'output') return;
     this.pushUndoSnapshot();
     node.targetId = targetId || undefined;
   }
   setNoRepeat(node: GraphNode, v: boolean): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'random' || node.noRepeat === v) return;
     this.pushUndoSnapshot();
     node.noRepeat = v;
   }
   setChance(node: GraphNode, p: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'chance' || node.p === p) return;
     this.pushUndoSnapshot();
     node.p = p;
   }
   setSwitchOn(node: GraphNode, on: SwitchOn): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch') return;
     this.pushUndoSnapshot();
     node.on = on;
@@ -3367,7 +3422,7 @@ export class TriggerLab {
   }
 
   setValueMode(node: GraphNode, mode: ValueMode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     this.pushUndoSnapshot();
     node.valueMode = mode;
@@ -3375,13 +3430,13 @@ export class TriggerLab {
     if (mode === 'gate') this.stripBandPorts(node);
   }
   setThreshold(node: GraphNode, threshold: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     this.pushUndoSnapshot();
     node.threshold = vsw.clamp01(threshold);
   }
   setInvert(node: GraphNode, invert: boolean): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     this.pushUndoSnapshot();
     node.invert = invert;
@@ -3392,7 +3447,7 @@ export class TriggerLab {
   /** Switch a delay node between absolute-time (`'time'`) and musical-division
       (`'beats'`) modes. Guards `node.kind === 'delay'`. */
   setDelayMode(node: GraphNode, mode: 'time' | 'beats'): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.delayMode = mode;
@@ -3400,7 +3455,7 @@ export class TriggerLab {
 
   /** Set the absolute delay time in milliseconds. Guards `node.kind === 'delay'`. */
   setDelayMs(node: GraphNode, ms: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.ms = Math.max(0, ms);
@@ -3409,7 +3464,7 @@ export class TriggerLab {
   /** Set the musical division string (e.g. `'1/8'`, `'dotted-1/4'`). Guards
       `node.kind === 'delay'`. */
   setDivision(node: GraphNode, division: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'delay') return;
     this.pushUndoSnapshot();
     node.division = division;
@@ -3428,7 +3483,7 @@ export class TriggerLab {
     node: GraphNode,
     patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint'>>,
   ): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'splice') return;
     this.pushUndoSnapshot();
     Object.assign(node, patch);
@@ -3439,7 +3494,7 @@ export class TriggerLab {
       rather than arriving blank, so raising the count reads as "cut finer", not "add gaps".
       Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
   setSpliceCount(node: GraphNode, count: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'splice') return;
     const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
     if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
@@ -3456,7 +3511,7 @@ export class TriggerLab {
       Pads the authored rows out to `index` so the inspector can edit a slot that is currently
       being filled by the cycling fallback. Guards `node.kind === 'splice'`. */
   setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'splice' || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
     this.pushUndoSnapshot();
     const rows = [...(node.splices ?? [])];
@@ -3467,7 +3522,7 @@ export class TriggerLab {
 
   /** Append a splice, keeping the band count in step with the authored rows. */
   addSplice(node: GraphNode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'splice') return;
     const rows = node.splices ?? [];
     if (rows.length >= voice.MAX_SPLICE_COUNT) return;
@@ -3479,7 +3534,7 @@ export class TriggerLab {
   /** Remove a splice, keeping the band count in step. The last row cannot be removed — a splice
       node with no splices renders nothing, which is a deletion, not an edit. */
   removeSplice(node: GraphNode, index: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'splice') return;
     const rows = node.splices ?? [];
     if (index < 0 || index >= rows.length || rows.length <= 1) return;
@@ -3493,7 +3548,7 @@ export class TriggerLab {
       the node: no cross-graph target exists, so song/section copies carry their binding verbatim
       and can never reset the original. Persists via the authored autosave like every node edit. */
   setSequenceResetSource(node: GraphNode, source: TriggerSource | null): boolean {
-    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return false;
     if (node.kind !== 'sequence') return false;
     // BINDING GUARD — resets share with each other but block pads/triggers and globals.
     // A `drum` source is never refused: it lives in the pad namespace, which is what keeps
@@ -3521,7 +3576,7 @@ export class TriggerLab {
   /** Append a band by splitting the final "rest" band (a new cutoff between the last
       cutoff and 1). Appending never disturbs existing band ports. */
   addBand(node: GraphNode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     this.pushUndoSnapshot();
     node.bands = vsw.addBand(node.bands);
@@ -3529,7 +3584,7 @@ export class TriggerLab {
   /** Remove cutoff `cutoffIndex` (merging band cutoffIndex+1 down into it), keeping at
       least one cutoff (≥2 bands). Remaps the outgoing band ports to match. */
   removeBand(node: GraphNode, cutoffIndex: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     if (!vsw.canRemoveBand(node.bands, cutoffIndex)) return;
     this.pushUndoSnapshot();
@@ -3539,7 +3594,7 @@ export class TriggerLab {
   /** Set cutoff `cutoffIndex`, clamped WITHIN its neighbours so cutoffs stay ascending
       without reordering — reordering would scramble which band each port maps to. */
   setBandCutoff(node: GraphNode, cutoffIndex: number, value: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'switch' || node.on !== 'value') return;
     const bands = node.bands ?? [0.5];
     if (cutoffIndex < 0 || cutoffIndex >= bands.length) return;
@@ -3677,7 +3732,7 @@ export class TriggerLab {
       swaps are allowed; the node's playType follows the selected effect so the gallery is a
       full-library browser rather than a type-locked picker. */
   pickEffect(node: GraphNode, effectId: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!isEffectNode(node)) return;
     const eff = this.selectableEffects.find((e) => e.id === effectId);
     if (!eff) return;
@@ -3710,7 +3765,7 @@ export class TriggerLab {
       No-op when the node is already that collection, or when the library has nothing in it
       (a collection with no non-deprecated effect cannot be entered). */
   setPlayCollection(node: GraphNode, playType: PlayType): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!isEffectNode(node)) return;
     if (this.playCollectionOf(node) === playType) return;
 
@@ -3798,7 +3853,7 @@ export class TriggerLab {
 
   /** Point a canvas play node at a scene, seeding its default preset params. */
   setCanvasScene(node: GraphNode, sceneId: string): void {
-    if (this.isViewer || !isEffectNode(node)) return;
+    if (!this.canEditSelectedGraph || !isEffectNode(node)) return;
     const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
     if (!scene) return;
     const eff = canvasScenesLib.canvasEffectDef(scene);
@@ -3817,7 +3872,7 @@ export class TriggerLab {
   /** Add a typed play node (D3). Canvas seeds/selects a scene; other types seed a matching
       effect. Returns the created node (or null for viewers / no graph). */
   addPlayNode(playType: PlayType, x: number, y: number): GraphNode | null {
-    if (this.isViewer) return null;
+    if (!this.canEditSelectedGraph) return null;
     const g = this.selectedGraph;
     if (!g) return null;
 
@@ -3860,7 +3915,7 @@ export class TriggerLab {
 
   /** Route a play node to a layer/bus ('' → the effect's default). */
   setBus(node: GraphNode, busId: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if ((!isEffectNode(node) && node.kind !== 'splice') || node.busId === busId) return;
     this.pushUndoSnapshot();
     node.busId = busId;
@@ -3878,7 +3933,7 @@ export class TriggerLab {
       snapshot, never a live binding (S39): later param edits stay node-local. No-op off a play
       node or for an unknown preset. */
   selectPreset(node: GraphNode, presetId: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!isEffectNode(node)) return;
     const pr = this.presetById(presetId);
     if (!pr) return;
@@ -3891,7 +3946,7 @@ export class TriggerLab {
       (the explicit "Apply" action; {@link selectPreset} already applies when the choice changes).
       No-op when the node's `presetId` resolves to nothing. */
   applyPreset(node: GraphNode): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!isEffectNode(node)) return;
     const pr = this.presetById(node.presetId);
     if (!pr) return;
@@ -3903,7 +3958,7 @@ export class TriggerLab {
       Returns the new preset id, or null off a play node / unknown effect. Persists via the
       authored autosave. */
   saveNodeAsPreset(node: GraphNode, name?: string): string | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return null;
     if (!isEffectNode(node)) return null;
     const eff = this.effectOf(node);
     if (!eff) return null;
@@ -3919,7 +3974,7 @@ export class TriggerLab {
   /** Author a param value onto a play or modifier node — always node-local now that presets are
       snapshots (S39: no linked write-through to a shared preset). */
   setParam(node: GraphNode, key: string, value: ParamValue): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     node.params = penv.setParamValue(node.params, key, value);
@@ -3931,7 +3986,7 @@ export class TriggerLab {
       The scalar param is left untouched underneath: it still sets the envelope's time span, and
       detaching returns to it with nothing lost. */
   setLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     this.writeLifeEnvelope(node, value);
@@ -3941,7 +3996,7 @@ export class TriggerLab {
       per pointermove. The control commits once at gesture end through {@link setLifeEnvelope},
       so the stack gets one entry per gesture instead of one per frame. */
   updateLifeEnvelope(node: GraphNode, value: CurveValue): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     this.writeLifeEnvelope(node, value);
   }
@@ -3954,7 +4009,7 @@ export class TriggerLab {
   /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
       modifier's default params so its inspector controls resolve. No-op off a modifier. */
   setModifierId(node: GraphNode, modifierId: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'modifier' || node.modifierId === modifierId) return;
     this.pushUndoSnapshot();
     node.modifierId = modifierId;
@@ -3963,7 +4018,7 @@ export class TriggerLab {
   }
   /** Toggle a modifier node's bypass (identity when true; the chain keeps its state slot). */
   setModifierBypass(node: GraphNode, bypass: boolean): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'modifier') return;
     this.pushUndoSnapshot();
     node.bypass = bypass;
@@ -3980,13 +4035,13 @@ export class TriggerLab {
   }
   /** Set or clear the envelope on a param (seeds a preset curve; 'none' removes it). */
   setEnvKind(node: GraphNode, key: string, kind: EnvKind): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     node.env = penv.setEnvKind(node.env, key, kind);
   }
   setEnvAmount(node: GraphNode, key: string, amount: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     if (!node.env[key]) return;
     this.pushUndoSnapshot();
@@ -3994,7 +4049,7 @@ export class TriggerLab {
   }
   /** Replace the curve breakpoints (marks the envelope as hand-edited / custom). */
   setEnvPoints(node: GraphNode, key: string, points: EnvPoint[]): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     if (!node.env[key]) return;
     this.pushUndoSnapshot();
@@ -4002,7 +4057,7 @@ export class TriggerLab {
   }
   /** Set the ADSR shape on a param's envelope (regenerates the render curve). */
   setEnvAdsr(node: GraphNode, key: string, adsr: AdsrShape): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!nodeHasParams(node)) return;
     this.pushUndoSnapshot();
     node.env = penv.setEnvAdsr(node.env, key, adsr);
@@ -4029,7 +4084,7 @@ export class TriggerLab {
 
   /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
   addModInput(node: GraphNode, param: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (!isEffectNode(node) && node.kind !== 'modifier') return;
     const next = mg.addModInput(node.modInputs, param);
     if (!next) return;
@@ -4081,7 +4136,7 @@ export class TriggerLab {
 
   /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */
   removeModInput(node: GraphNode, param: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     this.pushUndoSnapshot();
     node.modInputs = mg.removeModInput(node.modInputs, param);
     const g = this.selectedGraph;
@@ -4133,7 +4188,7 @@ export class TriggerLab {
   }
 
   private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
     if (edge) mut(edge);
   }
@@ -4165,7 +4220,7 @@ export class TriggerLab {
   }
   /** Set the envelope source node's shape (regenerates its render curve; single source). */
   setEnvelopeNodeAdsr(node: GraphNode, adsr: AdsrShape): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'envelope') return;
     let e = node.env[voice.ENVELOPE_NODE_KEY];
     if (!e) {
@@ -4185,7 +4240,7 @@ export class TriggerLab {
   }
   /** Patch the LFO source node's settings (seeds defaults first so partial edits are safe). */
   setLfo(node: GraphNode, patch: Partial<voice.LfoSettings>): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'lfo') return;
     node.lfo = { ...(node.lfo ?? voice.defaultLfoSettings()), ...patch };
   }
@@ -4213,7 +4268,7 @@ export class TriggerLab {
       (validation, not a throw); an out-of-range value is likewise ignored, leaving the prior
       binding untouched. Valid range 1..127. */
   setCcController(node: GraphNode, controller: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'cc') return;
     if (!this.isBindableCcController(controller)) return; // 0 reserved + out-of-range rejected
     node.ccController = Math.round(controller);
@@ -4222,7 +4277,7 @@ export class TriggerLab {
   /** Set the CC node's channel filter (1..16), or null for omni (any channel). Out-of-range
       numeric channels are ignored (the prior filter stays). */
   setCcChannel(node: GraphNode, channel: number | null): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'cc') return;
     if (channel === null) {
       node.ccChannel = null;
@@ -4242,7 +4297,7 @@ export class TriggerLab {
   }
   /** Switch the cc node between MIDI CC and OSC as its live input. */
   setCcNodeSource(node: GraphNode, source: 'midi' | 'osc'): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'cc') return;
     node.ccSource = source;
   }
@@ -4252,7 +4307,7 @@ export class TriggerLab {
   }
   /** Set the cc node's OSC address (trimmed). Empty is allowed (⇒ neutral until set). */
   setOscNodeAddress(node: GraphNode, address: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
+    if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'osc') return;
     node.oscAddress = address.trim();
   }

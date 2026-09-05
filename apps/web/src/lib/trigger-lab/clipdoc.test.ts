@@ -272,6 +272,36 @@ describe('remapClipDoc — re-key + ref rewrite', () => {
 // ---- remap: graph-copy semantics -------------------------------------------
 
 describe('remapClipDoc — graph copies with canonical dependencies', () => {
+  it('fails closed when a section dependency is unresolved instead of inserting a broken placement', () => {
+    const doc: ClipDoc = {
+      app: 'ledrums',
+      v: 2,
+      kind: 'section',
+      payload: { section: makeSection('s1', 'Broken', ['missing']) },
+      deps: { graphs: {} },
+      meta: { exportedAt: '' },
+    };
+
+    const result = remapClipDoc(doc, ctx());
+    expect(isClipParseError(result)).toBe(true);
+    if (isClipParseError(result)) expect(result.reason).toBe('unresolved-dependency');
+  });
+
+  it('fails closed for one unresolved section inside a song', () => {
+    const doc: ClipDoc = {
+      app: 'ledrums',
+      v: 2,
+      kind: 'song',
+      payload: { song: makeSong('song-1', 'Broken', [makeSection('s1', 'Broken', ['missing'])]) },
+      deps: { graphs: {} },
+      meta: { exportedAt: '' },
+    };
+
+    const result = remapClipDoc(doc, ctx());
+    expect(isClipParseError(result)).toBe(true);
+    if (isClipParseError(result)) expect(result.reason).toBe('unresolved-dependency');
+  });
+
   it('copies a graph even when identical content already exists locally', () => {
     const src = sources({ graphs: { 'g-kick': playGraph('fx-kick', 'fx-kick:default') }, graphNames: { 'g-kick': 'Kick' }, effects: [effect('fx-kick')], presets: [preset('fx-kick:default', 'fx-kick')] });
     const doc = buildGraphClipDoc('g-kick', src);

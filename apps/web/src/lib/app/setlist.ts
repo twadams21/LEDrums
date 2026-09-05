@@ -53,7 +53,27 @@ export function makeSong(
   name: string,
   sections: SetlistSection[] = [makeSection(`${id}-s1`, 'Section 1')],
 ): Song {
-  return { id, name, sections };
+  return { id, name, sections: sanitizeUniqueSectionIds([{ id, name, sections }])[0]?.sections ?? [] };
+}
+
+/**
+ * Keep section ids globally unique across a resolved song list. Persistence and import callers
+ * use this at their trust boundaries; the first valid section wins so malformed data is repaired
+ * deterministically without changing the order of surviving content.
+ */
+export function sanitizeUniqueSectionIds(songs: readonly Song[], reserved = new Set<string>()): Song[] {
+  return songs.map((song) => {
+    let changed = false;
+    const sections = song.sections.filter((section) => {
+      if (!section.id || reserved.has(section.id)) {
+        changed = true;
+        return false;
+      }
+      reserved.add(section.id);
+      return true;
+    });
+    return changed ? { ...song, sections } : song;
+  });
 }
 
 // ---- immutable section/song edits ------------------------------------------

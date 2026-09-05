@@ -185,7 +185,7 @@ export interface ShotSeam {
   /** Leave one graph unplaced so the Add Graph drawer shows default Copy and explicit Link. */
   previewGraphPicker(): void;
   /** Switch the active song to a canonical library reference for the read-only shot. */
-  previewCanonicalReadonly(): void;
+  previewCanonicalReadonly(view?: 'sections' | 'trigger'): void;
   /** Seed a viewer presence state for the disabled-authoring shot. */
   previewViewer(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
@@ -234,7 +234,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!key) return;
     const section = this.store.activeSectionId;
     if (section) this.store.selectGraphInSection(section, key);
-    else this.store.selectedPadKey = key;
+    else this.store.selectGraph(key);
   }
 
   newGraph(): void {
@@ -690,14 +690,26 @@ class ShotSeamImpl implements ShotSeam {
     this.shell.setView('sections');
   }
 
-  previewCanonicalReadonly(): void {
+  previewCanonicalReadonly(view: 'sections' | 'trigger' = 'trigger'): void {
     const local = this.store.songs[0];
     if (!local) return;
     const libraryId = this.store.exportSongToLibrary(local.id);
     if (!libraryId) return;
     this.store.importSongReference(libraryId);
     this.store.setActiveSong(libraryId);
-    this.shell.setView('sections');
+    const section = this.store.activeSong?.sections[0];
+    const graphKey = section?.graphs.find((key) => this.store.resolvedView.graphs[key]);
+    if (!section || !graphKey) {
+      this.shell.setView(view);
+      return;
+    }
+    this.store.selectGraphInSection(section.id, graphKey);
+    const node = this.store.selectedGraph?.nodes.find(
+      (candidate) =>
+        (candidate.kind === 'effect' || candidate.kind === 'play') && candidate.effectId,
+    ) ?? this.store.selectedGraph?.nodes.find((candidate) => candidate.kind !== 'output');
+    if (node) this.shell.select({ kind: 'node', nodeId: node.id });
+    this.shell.setView(view);
   }
 
   previewViewer(): void {
@@ -897,7 +909,7 @@ class ShotSeamImpl implements ShotSeam {
         this.previewGraphPicker();
         break;
       case 'canonical-readonly':
-        this.previewCanonicalReadonly();
+        this.previewCanonicalReadonly(arg === 'sections' ? 'sections' : 'trigger');
         break;
       case 'viewer':
         this.previewViewer();

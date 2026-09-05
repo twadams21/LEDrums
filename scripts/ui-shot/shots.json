@@ -118,6 +118,16 @@
     "state": "view:sections",
     "target": "main.center"
   },
+  "canonical-section-readonly": {
+    "state": "canonical-readonly:sections",
+    "target": "main.center",
+    "settle": 300
+  },
+  "canonical-inspector-readonly": {
+    "state": "view:trigger,canonical-readonly",
+    "target": "Inspector",
+    "settle": 300
+  },
   "section-detail": {
     "state": "view:sections",
     "target": "main.center"
