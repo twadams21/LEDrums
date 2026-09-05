@@ -15,6 +15,11 @@ export class Prng {
     this.state = seed >>> 0;
   }
 
+  /** Independent cursor for a render checkpoint; never exposes or shares mutable state. */
+  clone(): Prng {
+    return new Prng(this.state);
+  }
+
   /** Re-seed in place (e.g. on engine reset) — restores a reproducible stream. */
   reseed(seed: number): void {
     this.state = seed >>> 0;

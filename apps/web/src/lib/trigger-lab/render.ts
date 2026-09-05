@@ -4,7 +4,8 @@
 import type { Sim } from './sim';
 import type { LabModel } from './kit';
 
-/** Render once after the sim tick; additive composition has already happened in float. */
+/** Present the current tick, including paused input/registry edits. Sim owns checkpointed
+ * float composition; repeated paints never integrate temporal state cumulatively. */
 export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   buf.fill(0);
   const rgba = sim.render(lab.pm);

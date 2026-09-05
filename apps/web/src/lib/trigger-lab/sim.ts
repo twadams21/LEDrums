@@ -6,6 +6,7 @@
 
 import {
   Framebuffer,
+  tryGetEffect,
   voice,
   type PixelModel,
   type EffectCategory,
@@ -234,6 +235,8 @@ export class Sim {
   private tickRevision = 0;
   private renderedRevision = -1;
   private renderedModel: PixelModel | null = null;
+  private renderedPresentation = '';
+  private renderedGenerators: unknown[] = [];
   private readonly busById = new Map<string, voice.Bus>();
   log: LogEntry[] = [];
 
@@ -548,22 +551,39 @@ export class Sim {
   /** Offline float render: the core compositor owns generation, scope, modifiers and
    * composite math. Buffers/caches belong to this Sim, never module-global preview state.
    * The browser may repaint a paused tick or request an immediate hit preview between ticks.
-   * Return that tick's frame, don't integrate its dt twice. A geometry revision is the only
-   * repaint-only invalidation: it restarts visual state on the new model. Newly spawned
-   * voices start at level zero and become visible on the next tick, as in the engine. */
+   * Clean paints reuse the frame. Dirty paints re-evaluate from the SAME pre-render
+   * checkpoint, replacing (not cumulatively advancing) this tick's visual state. This
+   * includes public tempo/input table writes and live canvas registry replacements.
+   * Effect/preset upserts are spawn-time definitions; existing voice params stay snapshots.
+   * Newly spawned voices start at level zero and become visible on the next tick. */
   render(model: PixelModel): Readonly<Float32Array> {
-    if (this.framebuffer && this.renderedRevision === this.tickRevision && this.renderedModel === model) return this.framebuffer.rgba;
+    // These adapter inputs are public, so setter-only revision counters are insufficient.
+    // Do not serialize voices/opaque render state: only small presentation input tables.
+    const presentation = JSON.stringify([this.timeMs, this.beat, this.bpm, this.beatsPerBar,
+      [...this.ccTable], [...this.oscTable], [...this.noteTable], this.voices.map((v) => v.id)]);
+    const generators: unknown[] = [];
+    const collect = (v: voice.GeometryState & { generatorId?: string | null }): void => {
+      generators.push(v.generatorId ? tryGetEffect(v.generatorId) : undefined);
+      for (const member of v.mixInputs ?? []) collect(member);
+      for (const member of v.spliceInputs ?? []) collect(member);
+    };
+    for (const v of this.voices) collect(v);
+    if (this.framebuffer && this.renderedRevision === this.tickRevision && this.renderedModel === model &&
+      this.renderedPresentation === presentation && generators.length === this.renderedGenerators.length &&
+      generators.every((g, i) => g === this.renderedGenerators[i])) return this.framebuffer.rgba;
     if (!this.framebuffer || this.framebuffer.pixelCount !== model.pixelCount) this.framebuffer = new Framebuffer(model.pixelCount);
     for (const v of this.voices) voice.applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
     const bar = Math.floor(this.beat / this.beatsPerBar);
-    this.compositor.render(this.pool.pool, model, {
+    this.compositor.renderPresentation(this.pool.pool, model, {
       timeMs: this.timeMs, dt: this.lastDt,
       transport: { timeMs: this.timeMs, beat: this.beat, bar, beatInBar: this.beat - bar * this.beatsPerBar,
         bpm: this.bpm, beatsPerBar: this.beatsPerBar, playing: true },
       cc: this.ccTable, osc: this.oscTable, notes: this.noteTable,
-    }, this.framebuffer);
+    }, this.framebuffer, this.tickRevision);
     this.renderedRevision = this.tickRevision;
     this.renderedModel = model;
+    this.renderedPresentation = presentation;
+    this.renderedGenerators = generators;
     return this.framebuffer.rgba;
   }
 

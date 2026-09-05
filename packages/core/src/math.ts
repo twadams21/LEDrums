@@ -52,19 +52,27 @@ export function wrap(v: number, mod: number): number {
   return ((v % mod) + mod) % mod;
 }
 
+/** A callable RNG whose cursor can be forked without sharing the closure's mutable state. */
+export interface SeededRandom {
+  (): number;
+  clone(): SeededRandom;
+}
+
 /**
  * Mulberry32 — a tiny, fast, seedable PRNG. Deterministic given a seed, which is
  * exactly what stateful effects (pixel-accum) need for replay determinism (R13).
  */
-export function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): SeededRandom {
   let a = seed >>> 0;
-  return function next(): number {
+  const next = function (): number {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  next.clone = () => mulberry32(a);
+  return next;
 }
 
 /** Deterministic 32-bit string hash (FNV-1a) — used to derive RNG seeds from clip ids. */

@@ -21,6 +21,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { ensureGeometryState } from './geometry-state';
+import { createRenderCheckpoint } from './render-checkpoint';
 import { createGeneratorBridge } from './generator-bridge';
 import { applyScopedModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
@@ -126,6 +127,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     generatorId: input.generatorId,
     genState: input.genState,
     renderModel: input.renderModel,
+    renderGenerator: input.renderGenerator,
     mixInputs: undefined,
     modifiers: input.modifiers,
     modState: input.modState,
@@ -139,6 +141,8 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     releaseMs: host.releaseMs,
     phase: host.phase,
     level: 1,
+    // Metadata only: the host applies its envelope gain once, after composition.
+    lifeEnvelope: host.lifeEnvelope,
     bornAtMs: host.bornAtMs,
     releaseAtMs: host.releaseAtMs,
     releaseFromLevel: host.releaseFromLevel,
@@ -149,6 +153,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
 
 function syncMixInputState(input: MixInput, rendered: Voice): void {
   input.genState = rendered.genState;
+  input.renderGenerator = rendered.renderGenerator;
   input.modState = rendered.modState;
 }
 
@@ -252,6 +257,11 @@ export interface Compositor {
   ): void;
 }
 
+/** Offline presentation wrapper. Ordinary render callers pay no checkpoint cost. */
+export interface PresentationCompositor extends Compositor {
+  renderPresentation(voices: readonly Voice[], model: PixelModel, frame: CompositorFrame, dst: Framebuffer, tick: number): void;
+}
+
 /**
  * The default compositor: additive accumulation of every live voice into `dst`.
  * Drum-scoped voices touch only their drum's pixel range. Assumes each voice's
@@ -261,8 +271,9 @@ export interface Compositor {
  * per-voice allocation is the bridge's merged params object (see `generator-bridge.ts`).
  * Generators run few voices (mono buses, level gating), so this stays well within budget.
  */
-export function createDefaultCompositor(): Compositor {
+export function createDefaultCompositor(): PresentationCompositor {
   const generators = createGeneratorBridge();
+  const checkpoint = createRenderCheckpoint();
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
   /** One buffer per splice member, grown on demand and reused across voices + frames. */
@@ -274,6 +285,10 @@ export function createDefaultCompositor(): Compositor {
   const SPLICE_LAYOUT_CACHE_CAP = 64;
 
   return {
+    renderPresentation(voices, model, frame, dst, tick): void {
+      checkpoint(voices, model, tick);
+      this.render(voices, model, frame, dst);
+    },
     render(voices, model, frame, dst): void {
       dst.clear();
       // Equal pixel totals/ranges can hide changed hoop or drum boundaries.

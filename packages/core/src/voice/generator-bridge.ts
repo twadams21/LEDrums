@@ -45,8 +45,8 @@ export interface GeneratorBridge {
 
 export function createGeneratorBridge(): GeneratorBridge {
   let genScratch: Framebuffer | null = null;
-  /** Cached default param record per generator id (incl. enum/colour string defaults). */
-  const genDefaults = new Map<string, ResolvedParams>();
+  /** Defaults belong to the registry adapter, not its id (live upserts can replace it). */
+  const genDefaults = new WeakMap<object, ResolvedParams>();
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
   const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
   const genTriggers: Trigger[] = [genTrigger];
@@ -81,16 +81,20 @@ export function createGeneratorBridge(): GeneratorBridge {
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
       }
+      if (v.renderGenerator !== gen) {
+        v.genState = null;
+        v.renderGenerator = gen;
+      }
       // Build per-voice state lazily and persist it for the voice's life. The voice's
       // per-trigger seed (item C) decorrelates RNG-backed effects across fires.
       if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
 
       // Resolved params: generator defaults (incl. enum/colour) overlaid with the
       // voice's live numeric/bool params (envelopes already applied by the engine).
-      let defs = genDefaults.get(gen.id);
+      let defs = genDefaults.get(gen);
       if (!defs) {
         defs = defaultParams(gen.paramSpec);
-        genDefaults.set(gen.id, defs);
+        genDefaults.set(gen, defs);
       }
       const params: ResolvedParams = { ...defs };
       const lp = v.liveParams;

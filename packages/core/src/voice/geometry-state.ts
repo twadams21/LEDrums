@@ -1,4 +1,5 @@
 import type { PixelModel } from '../geometry/pixel-model';
+import type { EffectGenerator } from '../effects/types';
 
 /** Runtime-only geometry ownership, shared by voices and composite members. Model objects
  * are immutable revisions: even an equal-total replacement invalidates trails/particles.
@@ -6,6 +7,8 @@ import type { PixelModel } from '../geometry/pixel-model';
  */
 export interface GeometryState {
   renderModel?: PixelModel;
+  /** Registry adapter identity; a live canvas upsert must also rebuild its sampler. */
+  renderGenerator?: EffectGenerator;
   genState?: unknown;
   modState?: unknown[];
   mixInputs?: GeometryState[];
