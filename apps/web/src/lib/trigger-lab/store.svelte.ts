@@ -429,7 +429,9 @@ export class TriggerLab {
     return this.sectionsCtl.activeSectionId;
   }
   set activeSectionId(id: string | null) {
-    this.sectionsCtl.activeSectionId = id;
+    const activeSong = this.activeSong;
+    this.sectionsCtl.activeSectionId =
+      id !== null && !activeSong?.sections.some((section) => section.id === id) ? null : id;
   }
   /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
       Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
@@ -2075,8 +2077,9 @@ export class TriggerLab {
    * tells the engine to fire this section's graphs.
    */
   setActiveSection(sectionId: string): void {
-    this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
+    if (!look) return;
+    this.activeSectionId = sectionId;
     // Offline preview only: when connected the server engine spawns this section's looks
     // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
     // outbound authority gate (S12) — the sim resolves only while the link is closed.

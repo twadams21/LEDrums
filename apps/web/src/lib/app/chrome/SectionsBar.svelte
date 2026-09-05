@@ -1,13 +1,20 @@
 <script lang="ts">
   /* Sections bar (tabbed chrome row 3): the active song's sections as a chip row,
      the active section raised. Firing a chip is the same setActiveSection recall
-     the Perform pads and ←/→ keys drive. */
+     the Perform pads and ←/→ keys drive. The add affordance stays visible while
+     gated so presence resolution cannot make the compact chrome jump. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
+  import Plus from '@lucide/svelte/icons/plus';
+  import { NO_ACTIVE_SONG_REASON, VIEWING_REASON } from './edit-gate';
 
   let { store }: { store: TriggerLab } = $props();
 
   const sections = $derived(store.activeSong?.sections ?? []);
+  const addBlockedReason = $derived(
+    !store.canEdit ? VIEWING_REASON : !store.activeSong ? NO_ACTIVE_SONG_REASON : undefined,
+  );
 </script>
 
 <div class="bar" role="navigation" aria-label="Sections">
@@ -27,6 +34,14 @@
         {sec.name}<span class="cnt">{sec.graphs.length}</span>
       </button>
     {/each}
+    <IconButton
+      icon={Plus}
+      label="Add section"
+      size={13}
+      disabled={Boolean(addBlockedReason)}
+      disabledReason={addBlockedReason}
+      onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
+    />
   </div>
 </div>
 

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SongsBar from './SongsBar.svelte';
+import { VIEWING_REASON } from './edit-gate';
 
 /* SongsBar replaces the rail's SongRail in the tabbed chrome. These lock the
    chrome→store wiring: one chip per resolved setlist song (references wear a
@@ -52,14 +53,25 @@ describe('SongsBar', () => {
     expect(store.setActiveSong).toHaveBeenCalledWith('s2');
   });
 
-  it('adds a song from the bar button; hidden for a read-only viewer', async () => {
+  it('adds a song from the bar button; stays disabled, explained, and reactive for a viewer', async () => {
     const store = mockStore();
     const { getByLabelText } = render(SongsBar, { props: { store } });
     await fireEvent.click(getByLabelText('Add song'));
     expect(store.createSong).toHaveBeenCalledTimes(1);
 
-    const viewer = render(SongsBar, { props: { store: mockStore({ canEdit: false }) } });
-    expect(within(viewer.container).queryByLabelText('Add song')).toBeNull();
+    const viewerStore = mockStore({ canEdit: false });
+    const viewer = render(SongsBar, { props: { store: viewerStore } });
+    const add = within(viewer.container).getByLabelText('Add song') as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    expect(viewer.container.textContent).toContain(VIEWING_REASON);
+    await fireEvent.click(add);
+    expect(viewerStore.createSong).not.toHaveBeenCalled();
+
+    viewerStore.canEdit = true;
+    await viewer.rerender({ store: viewerStore });
+    expect(add.disabled).toBe(false);
+    await fireEvent.click(add);
+    expect(viewerStore.createSong).toHaveBeenCalledTimes(1);
   });
 
   it('renders a referenced library song (resolved tail) with a Library tooltip and empty-setlist copy', () => {

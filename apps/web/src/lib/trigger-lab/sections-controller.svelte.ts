@@ -87,10 +87,15 @@ export class SectionsController {
   /** Mutate the active song immutably via the pure setlist ops, then store it back. The single
       chokepoint for every section + graph-slot edit, so the viewer read-only guard here covers
       addSection/renameSection/removeSection + add/remove/reorder graphs (S2). */
-  private updateActiveSong(fn: (song: Song) => Song): void {
-    if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
+  private updateActiveSong(fn: (song: Song) => Song): boolean {
+    if (!this.host.activeSong()) {
+      this.activeSectionId = null;
+      return false; // no target: never retain or create an orphan active section
+    }
+    if (this.host.isViewer()) return false; // read-only viewer (S2): authoring no-op
     const id = this.host.activeSongId();
     this.host.setSongs(this.host.songs().map((s) => (s.id === id ? fn(s) : s)));
+    return true;
   }
 
   /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
@@ -132,10 +137,16 @@ export class SectionsController {
     }
   }
   addSongSection(name: string): void {
+    if (!this.host.activeSong()) {
+      this.activeSectionId = null;
+      return; // no active song: no section and no active id
+    }
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
     const id = nid('section');
-    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)));
-    this.activeSectionId = id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)))) return;
+    // The active song can change through a resolved/library boundary while the edit is
+    // being applied. Only activate an id that exists in the post-edit song.
+    if (this.host.activeSong()?.sections.some((section) => section.id === id)) this.activeSectionId = id;
   }
 
   /** Rename a section of the active song (no-op-safe on an unknown id). Persists via the
@@ -179,8 +190,8 @@ export class SectionsController {
     if (!clip) return;
     const id = nid('section');
     const clone = setlist.cloneSection(clip, id);
-    this.updateActiveSong((song) => setlist.addSection(song, clone));
-    this.activeSectionId = id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, clone))) return;
+    if (this.host.activeSong()?.sections.some((section) => section.id === id)) this.activeSectionId = id;
   }
 
   /** Duplicate a section in one step (copy + paste): appends an independent "<name> copy"
@@ -195,7 +206,9 @@ export class SectionsController {
       Mirrors {@link pasteSection}'s tail without the in-app clipboard clone (the caller supplies the
       remapped section). */
   insertSection(section: SetlistSection): void {
-    this.updateActiveSong((song) => setlist.addSection(song, section));
-    this.activeSectionId = section.id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, section))) return;
+    if (this.host.activeSong()?.sections.some((candidate) => candidate.id === section.id)) {
+      this.activeSectionId = section.id;
+    }
   }
 }

@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Session Bootstrap
@@ -35,6 +35,9 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Chrome section-add gate replacement (2026-09-06, local `feat/chrome-section-add-gate`, current-main reimplementation of PR #199):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. Not merged or shipped; the new PR must supersede #199.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

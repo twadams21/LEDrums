@@ -24,7 +24,7 @@
       {/snippet}
     </Tooltip.Trigger>
     <Tooltip.Portal>
-      <Tooltip.Content {side} sideOffset={6} class="lab-tt">{text}</Tooltip.Content>
+      <Tooltip.Content {side} sideOffset={6} class="lab-tt" role="tooltip">{text}</Tooltip.Content>
     </Tooltip.Portal>
   </Tooltip.Root>
 </Tooltip.Provider>

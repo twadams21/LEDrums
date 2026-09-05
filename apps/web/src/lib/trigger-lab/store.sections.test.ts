@@ -82,6 +82,21 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
   });
 });
 
+describe('section creation boundary', () => {
+  it('does not mint a section or an orphan activeSectionId without an active song', () => {
+    const store = new TriggerLab(fakeClient);
+    store.activeSectionId = store.activeSong!.sections[0]!.id;
+    store.songs = [];
+    store.activeSongId = 'missing-song';
+
+    store.addSongSection('Orphan');
+
+    expect(store.activeSong).toBeNull();
+    expect(store.songs).toHaveLength(0);
+    expect(store.activeSectionId).toBeNull();
+  });
+});
+
 describe('section graph-list mutators', () => {
   it('addGraphToSection appends (idempotent) + removeGraphFromSection removes', () => {
     const store = new TriggerLab(fakeClient);
