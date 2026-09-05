@@ -100,6 +100,8 @@ export class OutputManager {
   private unsubscribe?: () => void;
   private lastError: string | null = null;
   private retiredError: string | null = null;
+  private readonly drains = new Set<Promise<void>>();
+  private closeCompletion: Promise<void> | null = null;
   /** Wire prefixes that may still be lit, copied at submission time — never a borrowed DmxMap.
    * Includes queued/unconfirmed packets conservatively, not just completed local sends. */
   private readonly coverage = new Map<number, number>();
@@ -127,6 +129,7 @@ export class OutputManager {
   }
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
+    this.closeCompletion = null; // an explicit restart/reconfiguration opens a new lifetime
     settings = { ...settings }; // callbacks retain the destination as it was configured
     if (!this.settings || this.settings.state !== settings.state || outputDestination(this.settings) !== outputDestination(settings)) {
       this.resetSummary();
@@ -208,8 +211,23 @@ export class OutputManager {
       this.retiredError = `Retired output ${settings ? outputDestination(settings) : ''}: ${String(error)}`;
       if (settings) this.monitorError('Output close failed', settings, this.retiredError);
     };
-    try { output.close((error) => { if (error) failed(error); }); }
-    catch (error) { failed(error); }
+    let finish!: () => void;
+    const drain = new Promise<void>((resolve) => { finish = resolve; });
+    this.drains.add(drain);
+    // Real UDP adapters bound their drain at 250ms. Also bound buggy/legacy adapters that
+    // never invoke completion; keep this timer referenced so shutdown can actually await it.
+    let settled = false;
+    const done = (error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      try { if (error) failed(error); }
+      catch { /* A throwing diagnostic subscriber cannot strand the shutdown barrier. */ }
+      finally { this.drains.delete(drain); finish(); }
+    };
+    const deadline = setTimeout(() => done(new Error('Output close completion timed out (500ms)')), 500);
+    try { output.close((error) => done(error)); }
+    catch (error) { done(error); }
   }
 
   /**
@@ -422,9 +440,13 @@ export class OutputManager {
     };
   }
 
-  close(): void {
+  close(): Promise<void> {
+    if (this.closeCompletion) return this.closeCompletion;
     this.teardown();
     this.identify = null;
+    // Includes adapters retired by earlier destination changes, not only the current one.
+    this.closeCompletion = Promise.all([...this.drains]).then(() => {});
+    return this.closeCompletion;
   }
 
   private resetSummary(): void {

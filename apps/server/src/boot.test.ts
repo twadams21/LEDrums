@@ -1,0 +1,41 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createShutdown } from './boot';
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+describe('shutdown durability barrier', () => {
+  it.each([false, true])('stops frames immediately and always awaits UDP before exit (disk failure=%s)', async (diskFailure) => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const disk = deferred(), udp = deferred(), controller = deferred();
+    const events: string[] = [];
+    const stop = vi.fn(() => { events.push('stop-frames'); return udp.promise; });
+    const autosaver = { markDirty() {}, dispose() {}, flush: vi.fn(async () => { events.push('flush'); }) };
+    const exit = vi.fn();
+    const shutdown = createShutdown({
+      host: { stop }, voiceHost: null, clients: [],
+      oscInput: { close() {} }, wss: { close() {} }, server: { close() {} },
+      statsTimer: setInterval(() => {}, 1000),
+      controllerMonitor: { stop: () => controller.promise },
+      tunnelControl: { start() {}, stop() {} },
+      beginShutdown: () => events.push('reject-new-work'), drainOperations: () => disk.promise.then(() => {
+        if (diskFailure) throw new Error('injected disk failure');
+      }),
+      autosaver, showLibraryAutosaver: autosaver, songLibraryAutosaver: autosaver,
+    }, exit);
+    const completion = shutdown();
+    expect(shutdown()).toBe(completion);
+    expect(stop).toHaveBeenCalledOnce();
+    expect(events).toEqual(['reject-new-work', 'stop-frames']);
+    disk.resolve();
+    await vi.waitFor(() => expect(autosaver.flush).toHaveBeenCalledTimes(3));
+    expect(exit).not.toHaveBeenCalled();
+    controller.resolve(); await Promise.resolve(); expect(exit).not.toHaveBeenCalled();
+    udp.resolve(); await completion;
+    expect(exit).toHaveBeenCalledWith(diskFailure ? 1 : 0);
+    errorLog.mockRestore();
+  });
+});

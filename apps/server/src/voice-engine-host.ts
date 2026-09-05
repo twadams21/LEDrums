@@ -615,13 +615,12 @@ export class VoiceEngineHost {
     this.scheduleNext();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.dmxMap);
-    this.output.close();
+    return this.output.close();
   }
 
   private scheduleNext(): void {
@@ -642,7 +641,7 @@ export class VoiceEngineHost {
     // Drain accumulated time in fixed steps. At 120fps a 100ms pause is 12 steps,
     // so the catch-up budget is double the legacy host's to keep wall-clock honest.
     let steps = 0;
-    while (this.accumulator >= TICK_MS && steps < 12) {
+    while (this.timer !== null && this.accumulator >= TICK_MS && steps < 12) {
       this.step(TICK_MS);
       this.accumulator -= TICK_MS;
       steps++;

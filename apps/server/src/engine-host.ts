@@ -99,13 +99,12 @@ export class EngineHost {
     this.scheduleNext();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.engine.getDmxMap());
-    this.output.close();
+    return this.output.close();
   }
 
   private scheduleNext(): void {
@@ -125,7 +124,7 @@ export class EngineHost {
 
     // Drain accumulated time in fixed steps (catch up at most a few frames).
     let steps = 0;
-    while (this.accumulator >= TICK_MS && steps < 6) {
+    while (this.timer !== null && this.accumulator >= TICK_MS && steps < 6) {
       this.step(TICK_MS);
       this.accumulator -= TICK_MS;
       steps++;

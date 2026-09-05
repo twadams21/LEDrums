@@ -41,6 +41,8 @@ export interface BootDeps {
    * Only banner-printed when the gate is active (the bypass is moot on an open gate). */
   hostToken: string | null;
   monitor?: (event: MonitorDraft) => void;
+  beginShutdown?(): void;
+  drainOperations?(): Promise<void>;
 }
 
 /** Every non-internal IPv4 address of this machine — what a peer on the LAN can reach it at.
@@ -68,7 +70,10 @@ export function lanUrls(p: number): string[] {
  * clean exit never loses the last edit.
  */
 export function boot(deps: BootDeps): void {
+  let stopping = false;
+  const shutdown = createShutdown({ ...deps, beginShutdown: () => { stopping = true; deps.beginShutdown?.(); } });
   deps.server.listen(deps.port, () => {
+    if (stopping) return;
     if (deps.voiceHost) deps.voiceHost.start();
     else deps.host.start();
     console.log(`LEDrums server listening on http://localhost:${deps.port}${deps.voiceMode ? ' [voice engine]' : ''}`);
@@ -98,16 +103,31 @@ export function boot(deps: BootDeps): void {
     if (deps.tunnelAtBoot) deps.tunnelControl.start();
   });
 
-  let shuttingDown = false;
-  async function shutdown(): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+}
+
+type ShutdownDeps = Pick<BootDeps, 'statsTimer' | 'snapshotTimer' | 'controllerMonitor' | 'beginShutdown' | 'drainOperations'
+  | 'autosaver' | 'showLibraryAutosaver' | 'songLibraryAutosaver' | 'tunnelControl'> & {
+    host: Pick<EngineHost, 'stop'>;
+    voiceHost: Pick<VoiceEngineHost, 'stop'> | null;
+    oscInput: Pick<OscInput, 'close'>;
+    clients: Iterable<{ close(): void }>;
+    wss: { close(): void };
+    server: { close(): void };
+  };
+
+/** Exported shutdown seam: stop frames synchronously, then await actual adapter and disk queues. */
+export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void = process.exit): () => Promise<void> {
+  let completion: Promise<void> | null = null;
+  return () => {
+    if (completion) return completion;
+    deps.beginShutdown?.();
     clearInterval(deps.statsTimer);
     if (deps.snapshotTimer) clearInterval(deps.snapshotTimer);
     const controllerStopped = deps.controllerMonitor?.stop();
     deps.tunnelControl.stop();
-    if (deps.voiceHost) deps.voiceHost.stop();
-    else deps.host.stop();
+    const outputStopped = (deps.voiceHost ?? deps.host).stop();
     deps.oscInput.close();
     for (const ws of deps.clients) {
       try {
@@ -121,15 +141,24 @@ export function boot(deps: BootDeps): void {
     // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
     // never rejects (write errors are logged), but guard exit-on-error just in case. The project
     // and both libraries are flushed (independent slots).
-    await Promise.all([
-      Promise.resolve(controllerStopped).catch(() => {}),
-      deps.autosaver.flush().catch(() => {}),
-      deps.showLibraryAutosaver.flush().catch(() => {}),
-      deps.songLibraryAutosaver.flush().catch(() => {}),
-    ]);
-    process.exit(0);
-  }
-
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+    completion = (async () => {
+      let failed = false;
+      try { await deps.drainOperations?.(); }
+      catch (error) { failed = true; console.error('[shutdown] operation drain failed:', error); }
+      // Disk failure must not skip the UDP/controller barrier and force-exit over pending zeros.
+      const results = await Promise.allSettled([
+        outputStopped,
+        Promise.resolve(controllerStopped).catch(() => {}),
+        deps.autosaver.flush().catch(() => {}),
+        deps.showLibraryAutosaver.flush().catch(() => {}),
+        deps.songLibraryAutosaver.flush().catch(() => {}),
+      ]);
+      if (results.some((r) => r.status === 'rejected')) failed = true;
+      exit(failed ? 1 : 0);
+    })().catch((error) => {
+      console.error('[shutdown] drain failed:', error);
+      exit(1);
+    });
+    return completion;
+  };
 }
