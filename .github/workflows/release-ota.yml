@@ -121,7 +121,7 @@ jobs:
           RELEASE_SHA: ${{ steps.source.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: apps/desktop/.node-version
       # ota.mjs uses only Node built-ins — no pnpm install needed here.
       - id: plan
         run: node apps/desktop/scripts/ota.mjs ci-plan --tag "$RELEASE_TAG"
@@ -155,7 +155,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: apps/desktop/.node-version
           cache: pnpm
       # Both darwin targets: cargo compiles the shell twice, then tauri lipos the pair.
       - uses: dtolnay/rust-toolchain@stable
@@ -234,7 +234,7 @@ jobs:
           RELEASE_SHA: ${{ needs.plan.outputs.sha }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: apps/desktop/.node-version
       - uses: actions/download-artifact@v4
         with:
           name: bundle-universal

@@ -23,6 +23,10 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertSeaBuildEnvironment } from './sea-node.mjs';
+
+// Refuse before invoking Tauri (which would otherwise stage web/Rust artifacts first).
+assertSeaBuildEnvironment({ universal: true });
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');

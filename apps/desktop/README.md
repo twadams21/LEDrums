@@ -47,11 +47,19 @@ It runs `tauri build --target universal-apple-darwin` with `LEDRUMS_SIDECAR_UNIV
 the **parity guard**. Output lands under
 `src-tauri/target/universal-apple-darwin/release/bundle/macos/`.
 
-One-time prerequisite — both Rust darwin targets:
+Prerequisites — both Rust darwin targets and the **exact** pinned Node active in your shell:
 
 ```bash
 rustup target add x86_64-apple-darwin aarch64-apple-darwin
+# From the repository root, using nvm (or activate the same version with your Node manager):
+nvm install "$(cat apps/desktop/.node-version)"
+nvm use "$(cat apps/desktop/.node-version)"
 ```
+
+Universal builds reject any active Node version mismatch **before creating sidecar artifacts**,
+even another Node 22 patch. `--bundle-only` does not bypass that strict-mode check.
+`PREPARE_SKIP_SIDECAR=1` remains available for local host-only iteration, but is rejected in
+universal/CI mode: those builds must regenerate the pinned sidecar, not reuse an old one.
 
 Three separate things inside the bundle have to be fat, and only the first is Tauri's job:
 
@@ -127,8 +135,9 @@ native deps (`bufferutil`, `utf-8-validate`) are marked external so only the pur
 is used — no node-gyp / native addons. The result needs **no Node installed** on the user's
 machine.
 
-The script ends with a **smoke test**: it boots the produced binary briefly to confirm the SEA
-loads, and warns loudly if it does not.
+The script ends with a **smoke test**: it boots the produced binary briefly and **fails the
+build** unless the server reaches its listening banner. Telemetry and public tunneling are
+forced off for this probe.
 
 > **Cross-target:** Node SEA copies the *host* `node` executable; it is not a cross-compiler.
 > Produce each platform's binary **on that platform** (or in its CI), passing `--triple` if
@@ -139,8 +148,9 @@ loads, and warns loudly if it does not.
 > *executing* `node`, and the SEA steps don't need to: the blob is arch-independent (this script
 > sets `useSnapshot: false` + `useCodeCache: false`, the two options that would bake a
 > host-specific V8 artifact into it) and `postject` edits the Mach-O structurally. So
-> `--universal` generates the blob once with the host Node, downloads the pinned LTS for **both**
-> darwin arches, injects the same blob into each, `lipo -create`s the pair, ad-hoc signs the fat
+> `--universal` generates the blob once with the exact pinned host Node, uses that same executable
+> as the host runtime, downloads the **same version** for the foreign darwin arch, injects the same
+> blob into each, `lipo -create`s the pair, ad-hoc signs the fat
 > result, and asserts `lipo -archs` lists both before continuing. The foreign arch has **no
 > fallback** — if its pinned Node can't be fetched the build fails rather than emit a thin binary.
 >
@@ -149,18 +159,40 @@ loads, and warns loudly if it does not.
 > `tauri-build`'s build script runs once per cargo target and resolves `externalBin` against the
 > **per-arch** triples, while the bundler resolves it against the **build** target.
 
-> **Pinned SEA Node (handled automatically):** Node "Current" (odd-major) lines such as **v25**
-> trigger a postject Mach-O bug on macOS — the produced binary crashes at launch with
-> `dyld: ... unsupported thread-local, larger than 4GB`. Even-major **LTS** lines (v20/22/24)
-> are fine. Rather than depend on the dev's active Node, `build-sidecar.mjs` **pins a known-good
-> LTS** (`22.23.1` by default) and uses it as the SEA base whenever the active Node isn't already
-> on that line: it downloads + checksum-verifies the official build from nodejs.org into
-> `apps/desktop/.node-pin/` (cached; gitignored) and builds against it. So `pnpm tauri build`
-> works on any machine — including a Node-25 default — and produces a **reproducible** binary
-> (same Node everywhere, not "whatever the builder had"). Override with
-> `LEDRUMS_SEA_NODE_VERSION=<ver>`. Offline on an LTS line, it falls back to the active Node; on a
-> Current line with no network it fails loudly rather than ship a broken binary. The smoke test
-> still boots the result to confirm it loads.
+### Exact SEA Node version policy
+
+**One source: `apps/desktop/.node-version`.** Release plan/build/publish and desktop CI use
+`setup-node`'s `node-version-file`; `sea-node.mjs` reads the same file for generation and both
+injection targets. To change it, review that file's bump and repeat sidecar startup/architecture
+checks. `LEDRUMS_SEA_NODE_VERSION` can no longer select a different version (it fails with the
+migration instruction). Matching only the major version is never sufficient for SEA blobs.
+
+| Build | Active Node differs from the exact pin |
+| --- | --- |
+| Universal macOS, or any CI build | Fail before sidecar artifacts; activate the pinned version. No download-based launcher correction, no offline fallback. |
+| Local host-only, macOS/Linux/Windows | Download the exact host pin; probe its actual `--version`; use that **one executable** for both blob and runtime. Works from a Node-25 development shell. |
+| Local host-only, pinned download unavailable | Preserve the even-major ≥20 offline fallback, with an explicit **NON-REPRODUCIBLE** warning. Both blob and runtime use the same active executable. Older/odd-major Nodes fail. |
+
+Downloads are checksum-verified against the official nodejs.org distribution and cached under
+`apps/desktop/.node-pin/`. A cache receipt records the version/platform/archive name and the
+extracted executable's SHA256; foreign binaries cannot be executed here to query their version,
+so reuse requires that receipt and digest to match. Old receipt-less or modified caches refresh
+from the verified archive. A host binary reporting the wrong version **fails**, not falls back.
+This is accidental-corruption protection, not authentication against a malicious local cache owner.
+
+The local offline exception is intentionally **not a reproducible release environment**. Node
+Current (notably v25) has produced postject Mach-O startup failures, so it is not an offline
+fallback; every successful build still has to pass the real SEA listening-banner smoke test.
+These pins guarantee version parity, not byte-for-byte reproducibility of signed Tauri bundles.
+
+Local tests (no uploads):
+
+```bash
+node --test apps/desktop/scripts/sea-node.test.mjs apps/desktop/scripts/release-workflow.test.mjs apps/desktop/scripts/mach-o.test.mjs
+```
+
+They include a real CLI mismatch smoke proving refusal occurs before esbuild, downloads and
+artifact directories, plus local fallback policy and workflow pin/architecture contracts.
 
 ## macOS signing
 
