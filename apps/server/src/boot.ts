@@ -17,7 +17,7 @@ export interface BootDeps {
   voiceHost: VoiceEngineHost | null;
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
-  controllerMonitor?: { stop(): void };
+  controllerMonitor?: { stop(): void | Promise<void> };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -41,6 +41,8 @@ export interface BootDeps {
    * Only banner-printed when the gate is active (the bypass is moot on an open gate). */
   hostToken: string | null;
   monitor?: (event: MonitorDraft) => void;
+  beginShutdown?(): void;
+  drainOperations?(): Promise<void>;
 }
 
 /** Every non-internal IPv4 address of this machine — what a peer on the LAN can reach it at.
@@ -68,7 +70,10 @@ export function lanUrls(p: number): string[] {
  * clean exit never loses the last edit.
  */
 export function boot(deps: BootDeps): void {
+  let stopping = false;
+  const shutdown = createShutdown({ ...deps, beginShutdown: () => { stopping = true; deps.beginShutdown?.(); } });
   deps.server.listen(deps.port, () => {
+    if (stopping) return;
     if (deps.voiceHost) deps.voiceHost.start();
     else deps.host.start();
     console.log(`LEDrums server listening on http://localhost:${deps.port}${deps.voiceMode ? ' [voice engine]' : ''}`);
@@ -98,37 +103,63 @@ export function boot(deps: BootDeps): void {
     if (deps.tunnelAtBoot) deps.tunnelControl.start();
   });
 
-  let shuttingDown = false;
-  async function shutdown(): Promise<void> {
-    if (shuttingDown) return;
-    shuttingDown = true;
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
+}
+
+type ShutdownDeps = Pick<BootDeps, 'statsTimer' | 'snapshotTimer' | 'controllerMonitor' | 'beginShutdown' | 'drainOperations'
+  | 'autosaver' | 'showLibraryAutosaver' | 'songLibraryAutosaver' | 'tunnelControl'> & {
+    host: Pick<EngineHost, 'stop'>;
+    voiceHost: Pick<VoiceEngineHost, 'stop'> | null;
+    oscInput: Pick<OscInput, 'close'>;
+    clients: Iterable<{ close(): void }>;
+    wss: { close(): void };
+    server: { close(): void };
+  };
+
+/** Exported shutdown seam: stop frames synchronously, then await actual adapter and disk queues. */
+export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void = process.exit): () => Promise<void> {
+  let completion: Promise<void> | null = null;
+  return () => {
+    if (completion) return completion;
+    deps.beginShutdown?.();
     clearInterval(deps.statsTimer);
     if (deps.snapshotTimer) clearInterval(deps.snapshotTimer);
-    deps.controllerMonitor?.stop();
+    const controllerStopped = deps.controllerMonitor?.stop();
     deps.tunnelControl.stop();
-    if (deps.voiceHost) deps.voiceHost.stop();
-    else deps.host.stop();
+    const outputStopped = (deps.voiceHost ?? deps.host).stop();
     deps.oscInput.close();
-    for (const ws of deps.clients) {
-      try {
-        ws.close();
-      } catch {
-        /* ignore */
-      }
-    }
+    // Stop new connections now, but keep accepted clients (and their editor identity)
+    // alive until the authoring queue drains. WebSocketServer.close does not close clients.
     deps.wss.close();
     deps.server.close();
     // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
     // never rejects (write errors are logged), but guard exit-on-error just in case. The project
     // and both libraries are flushed (independent slots).
-    await Promise.all([
-      deps.autosaver.flush().catch(() => {}),
-      deps.showLibraryAutosaver.flush().catch(() => {}),
-      deps.songLibraryAutosaver.flush().catch(() => {}),
-    ]);
-    process.exit(0);
-  }
-
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+    completion = (async () => {
+      let failed = false;
+      try { await deps.drainOperations?.(); }
+      catch (error) { failed = true; console.error('[shutdown] operation drain failed:', error); }
+      for (const ws of deps.clients) {
+        try { ws.close(); } catch { /* already disconnected */ }
+      }
+      // Disk failure must not skip the UDP/controller barrier and force-exit over pending zeros.
+      const results = await Promise.allSettled([
+        outputStopped,
+        // Accepted authoring drains after the first stop. A queued setOutput can open a
+        // new adapter lifetime; close it too rather than exiting over its pending datagrams.
+        (deps.voiceHost ?? deps.host).stop(),
+        Promise.resolve(controllerStopped).catch(() => {}),
+        deps.autosaver.flush().catch(() => {}),
+        deps.showLibraryAutosaver.flush().catch(() => {}),
+        deps.songLibraryAutosaver.flush().catch(() => {}),
+      ]);
+      if (results.some((r) => r.status === 'rejected')) failed = true;
+      exit(failed ? 1 : 0);
+    })().catch((error) => {
+      console.error('[shutdown] drain failed:', error);
+      exit(1);
+    });
+    return completion;
+  };
 }

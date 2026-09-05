@@ -1,5 +1,8 @@
 import {
   advanceTransport,
+  BUILTIN_CANVAS_SCENES,
+  registerCanvasScene,
+  unregisterCanvasScene,
   applyDrumVelocity,
   blockingRoutingIssues,
   buildDmxMap,
@@ -35,6 +38,7 @@ import {
 } from '@ledrums/core';
 import { graphFiredMonitorLabel, graphMonitorDestination } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
+import { TickRate } from './tick-rate';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 import type { MonitorDraft } from './monitor';
@@ -87,7 +91,8 @@ const TAP_MAX_BPM = 300;
  * legacy layer/clip/binding path stays untouched and this is easy to rip out.
  */
 export class VoiceEngineHost {
-  readonly engine: voice.RenderEngine;
+  private activeEngine: voice.RenderEngine;
+  get engine(): voice.RenderEngine { return this.activeEngine; }
   private project: Project;
   /** Live kit geometry (shares the reference held by `project.kit`); mutated in place
    * by the runtime-mutable setters below so the active render reflects edits at once. */
@@ -114,10 +119,8 @@ export class VoiceEngineHost {
   private pendingInputWall: number | null = null;
   lastLatencyMs = 0;
 
-  /** Measured loop rate (frames ticked per second), updated ~1/s. */
-  private measuredFps = 0;
-  private fpsTicks = 0;
-  private fpsWindowStart = 0;
+  /** Completed ticks per real second, including pauses dropped by the accumulator. */
+  private readonly tickRate = new TickRate();
 
   /** Preview frame sink (wired by `main` to broadcast over WS). */
   onFrame?: (rgb: Uint8Array) => void;
@@ -154,11 +157,47 @@ export class VoiceEngineHost {
   ) {
     this.project = project;
     this.kit = project.kit;
-    this.engine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
+    this.activeEngine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
     this.output = output;
     this.model = buildPixelModel(this.kit);
     this.dmxMap = this.buildMapSafe(this.kit);
     this.engine.setModel(this.model);
+  }
+
+  /** Stage a fresh runtime; never call setModel/setShow on the live engine mid-transaction. */
+  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId?: string; sectionId: string }): { applyOutput(): void; commit(): void } {
+    const model = buildPixelModel(project.kit);
+    const dmxMap = buildDmxMap(project.kit, model);
+    const engine = voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
+    engine.setModel(model);
+    // Core setShow registers canvas scenes globally. Strip that IO-like side effect during
+    // preflight; the host publishes registrations only in the synchronous successful commit.
+    for (const scene of show?.canvasScenes ?? []) {
+      if (!scene || typeof scene.id !== 'string' || !Array.isArray(scene.elements)) throw new Error('Invalid canvas scene');
+    }
+    if (show) engine.setShow({ ...show, canvasScenes: undefined });
+    if (selection) engine.applyInput({ kind: 'recallSection', timeMs: 0, ...selection });
+    return {
+      applyOutput: () => this.output.applySettings(project.output, dmxMap),
+      commit: () => {
+        this.syncCanvasScenes(show);
+        this.activeEngine = engine;
+        this.project = project;
+        this.kit = project.kit;
+        this.model = model;
+        this.dmxMap = dmxMap;
+        this.currentShow = show;
+        this.activeSongId = selection?.songId ?? show?.songs?.[0]?.id ?? null;
+        this.engineTimeMs = this.beat = 0;
+        this.accumulator = this.transmitAccum = this.previewAccum = 0;
+        this.pendingInputWall = null;
+        this.lastLatencyMs = 0;
+        this.transmitMuted = false;
+        this.tapTimes.length = 0;
+        this.lastWall = nowWall();
+        this.tickRate.reset(this.lastWall);
+      },
+    };
   }
 
   // --- geometry ------------------------------------------------------------
@@ -322,10 +361,22 @@ export class VoiceEngineHost {
 
   /** Replace the show the engine runs (authored voice-bus content). Retains it + reseeds
    * the active song so transport recall maps indices against the current arrangement. */
+  private syncCanvasScenes(next: voice.Show | null): void {
+    const ids = new Set(next?.canvasScenes?.map((s) => s.id) ?? []);
+    for (const scene of this.currentShow?.canvasScenes ?? []) {
+      if (ids.has(scene.id)) continue;
+      unregisterCanvasScene(scene.id);
+      const builtin = BUILTIN_CANVAS_SCENES.find((s) => s.id === scene.id);
+      if (builtin) registerCanvasScene(builtin);
+    }
+    for (const scene of next?.canvasScenes ?? []) registerCanvasScene(scene);
+  }
+
   setShow(show: voice.Show): void {
+    this.syncCanvasScenes(show);
     this.currentShow = show;
     this.activeSongId = show.songs?.[0]?.id ?? null;
-    this.engine.setShow(show);
+    this.engine.setShow({ ...show, canvasScenes: undefined });
   }
 
   /** The live Show, for the global transport-recall index→id mapping (null before setShow). */
@@ -611,21 +662,17 @@ export class VoiceEngineHost {
     if (this.timer) return;
     this.reloadOutputSettings();
     this.lastWall = nowWall();
-    // step() measures this window in engine time, not process uptime.
-    this.fpsWindowStart = this.engineTimeMs;
-    this.fpsTicks = 0;
-    this.measuredFps = 0;
+    this.tickRate.reset(this.lastWall);
     this.accumulator = 0;
     this.scheduleNext();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.dmxMap);
-    this.output.close();
+    return this.output.close();
   }
 
   private scheduleNext(): void {
@@ -646,7 +693,7 @@ export class VoiceEngineHost {
     // Drain accumulated time in fixed steps. At 120fps a 100ms pause is 12 steps,
     // so the catch-up budget is double the legacy host's to keep wall-clock honest.
     let steps = 0;
-    while (this.accumulator >= TICK_MS && steps < 12) {
+    while (this.timer !== null && this.accumulator >= TICK_MS && steps < 12) {
       this.step(TICK_MS);
       this.accumulator -= TICK_MS;
       steps++;
@@ -671,14 +718,7 @@ export class VoiceEngineHost {
     const transport = this.transport(dt);
     this.engine.tick(this.engineTimeMs, dt, transport);
 
-    // Loop-rate measurement (rolling 1s window).
-    this.fpsTicks++;
-    const sinceWindow = this.engineTimeMs - this.fpsWindowStart;
-    if (sinceWindow >= 1000) {
-      this.measuredFps = (this.fpsTicks * 1000) / sinceWindow;
-      this.fpsTicks = 0;
-      this.fpsWindowStart = this.engineTimeMs;
-    }
+    this.tickRate.tick(nowWall());
 
     let emittedFrame = false;
 
@@ -721,7 +761,7 @@ export class VoiceEngineHost {
     return {
       engine: this.engine.stats(),
       latencyMs: this.lastLatencyMs,
-      fps: this.measuredFps,
+      fps: this.tickRate.rate,
       output: this.output.status(),
     };
   }

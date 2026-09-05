@@ -36,11 +36,11 @@ function deps(
   store: ReturnType<typeof fakeStore> = fakeStore(),
   notify: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined),
 ): IngestDeps & { store: ReturnType<typeof fakeStore>; notify: ReturnType<typeof vi.fn> } {
-  return { store, notify, now: NOW, rateWindowMs: 60_000, rateMaxNewRows: 3 };
+  return { store, notify, waitUntil() {}, now: NOW, rateWindowMs: 60_000, rateMaxNewRows: 3 };
 }
 
 describe('ingestBatch (#122)', () => {
-  it('inserts a new report and pings Discord exactly once (first occurrence)', async () => {
+  it('inserts a new report and schedules its claimed notification', async () => {
     const d = deps();
     const res = await ingestBatch(d, batch([wireReport()]));
     expect(res.status).toBe(200);
@@ -93,7 +93,7 @@ describe('ingestBatch (#122)', () => {
       /* the real notifier swallows; ingest must not depend on it */
     };
     const store = fakeStore();
-    const res = await ingestBatch({ store, notify, now: NOW, rateWindowMs: 60_000, rateMaxNewRows: 3 }, batch([wireReport()]));
+    const res = await ingestBatch({ store, notify, waitUntil() {}, now: NOW, rateWindowMs: 60_000, rateMaxNewRows: 3 }, batch([wireReport()]));
     expect(res.status).toBe(200);
     expect(store.rows).toHaveLength(1);
   });

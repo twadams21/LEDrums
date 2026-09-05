@@ -46,6 +46,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, w
 import net from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertSeaBuildEnvironment, matchesNodeCacheReceipt, PINNED_NODE_VERSION as PINNED_NODE, resolveSeaNode } from './sea-node.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
@@ -67,6 +68,10 @@ const universal =
   process.env.LEDRUMS_SIDECAR_UNIVERSAL === '1' ||
   tripleArg === UNIVERSAL_TRIPLE ||
   process.env.TAURI_ENV_TARGET_TRIPLE === UNIVERSAL_TRIPLE;
+
+// Fail before mkdir/esbuild/blob creation. A floating CI Node 22 must not silently generate a
+// blob for a different patch's runtime. --bundle-only does not bypass a strict build's pin.
+assertSeaBuildEnvironment({ universal });
 
 if (universal && process.platform !== 'darwin') {
   throw new Error(`--universal is macOS-only (lipo); this host is ${process.platform}.`);
@@ -138,10 +143,9 @@ if (bundleOnly) {
 // version decides SEA/postject compatibility. Node "Current" (odd-major) lines such as v25 hit a
 // postject Mach-O bug on macOS — the produced binary crashes at launch with
 // `dyld: unsupported thread-local, larger than 4GB`. Even-major LTS lines (v20/22/24) are fine.
-// So we PIN a known-good LTS and use it for the SEA steps regardless of the dev's active Node:
-// `pnpm tauri build` then works on any machine (incl. a Node-25 default) and produces reproducible
-// artifacts. Override the version with LEDRUMS_SEA_NODE_VERSION.
-const PINNED_NODE = (process.env.LEDRUMS_SEA_NODE_VERSION || '22.23.1').replace(/^v/, '');
+// The exact pin lives in ../.node-version, shared with setup-node. Universal/CI builds require
+// that ACTIVE version; local host-only builds may fetch it (or use the explicit offline policy
+// in sea-node.mjs). The selected executable is both blob generator and host-only runtime.
 
 /**
  * Download + checksum-verify + cache the pinned Node build for one platform/arch, returning the
@@ -159,9 +163,20 @@ async function fetchPinnedNode(platform, arch) {
   const cacheRoot = join(desktopDir, '.node-pin');
   const nodeBin = isWin ? join(cacheRoot, name, 'node.exe') : join(cacheRoot, name, 'bin', 'node');
 
-  if (existsSync(nodeBin)) {
-    console.log(`[sidecar] using cached pinned Node v${PINNED_NODE} (${platform}-${arch})`);
-    return nodeBin;
+  // Foreign-arch Nodes cannot be executed here to ask --version. Reuse only binaries whose
+  // digest still matches the receipt from a checksum-verified official version/arch archive.
+  // Old receipt-less caches are refreshed once; a modified binary is never silently trusted.
+  const receiptFile = join(cacheRoot, `${name}.verified.json`);
+  if (existsSync(nodeBin) && existsSync(receiptFile)) {
+    try {
+      const receipt = JSON.parse(readFileSync(receiptFile, 'utf8'));
+      if (matchesNodeCacheReceipt(name, readFileSync(nodeBin), receipt)) {
+        console.log(`[sidecar] using verified cached pinned Node v${PINNED_NODE} (${platform}-${arch})`);
+        return nodeBin;
+      }
+    } catch {
+      // Invalid receipt is a cache miss, not permission to inject into an unverified runtime.
+    }
   }
 
   mkdirSync(cacheRoot, { recursive: true });
@@ -187,6 +202,10 @@ async function fetchPinnedNode(platform, arch) {
   const ex = spawnSync('tar', ['-xf', archive, '-C', cacheRoot], { stdio: 'inherit' });
   rmSync(archive, { force: true });
   if (ex.status !== 0 || !existsSync(nodeBin)) throw new Error('extraction failed');
+  writeFileSync(receiptFile, JSON.stringify({
+    name,
+    sha256: createHash('sha256').update(readFileSync(nodeBin)).digest('hex'),
+  }));
   console.log(`[sidecar] pinned Node ready: ${nodeBin}`);
   return nodeBin;
 }
@@ -195,40 +214,24 @@ async function fetchPinnedNode(platform, arch) {
 const hostNodePlatform = process.platform === 'win32' ? 'win' : process.platform; // darwin | linux | win
 const hostNodeArch = { x64: 'x64', arm64: 'arm64' }[process.arch] ?? process.arch;
 
-/**
- * Resolve a Node executable to use as the SEA base for the HOST. Uses the active Node when it is
- * already on the pinned line; otherwise downloads the pinned LTS. Falls back to the active Node
- * only when it is an even-major LTS and the download is unavailable (offline CI); refuses to
- * produce a known-broken binary on a Current line.
- */
-async function resolveBuildNode() {
-  const wantMajor = PINNED_NODE.split('.')[0];
-  const curMajor = process.versions.node.split('.')[0];
-  if (curMajor === wantMajor) return process.execPath; // already on the pinned line
+// Probe the chosen executable's EXACT version, not merely the launcher's major. The local
+// fallback uses this same executable for injection too; universal mode never falls back.
+const selectedNode = await resolveSeaNode({
+  universal,
+  fetchNode: () => fetchPinnedNode(hostNodePlatform, hostNodeArch),
+});
+const buildNode = selectedNode.path;
+const seaBaseLabel = `v${selectedNode.version} (${selectedNode.source})`;
+console.log(`[sidecar] SEA generator/runtime: ${seaBaseLabel}`);
 
-  try {
-    console.log(`[sidecar] active Node is v${process.versions.node}; using the pinned LTS instead.`);
-    return await fetchPinnedNode(hostNodePlatform, hostNodeArch);
-  } catch (e) {
-    const major = Number(curMajor);
-    if (major >= 20 && major % 2 === 0) {
-      console.warn(
-        `[sidecar] could not fetch pinned Node (${e.message}); falling back to the active Node ` +
-          `v${process.versions.node} — an even-major LTS line, so SEA should still work.`,
-      );
-      return process.execPath;
-    }
-    throw new Error(
-      `Cannot build a working SEA: active Node v${process.versions.node} is a non-LTS line known to ` +
-        `crash via postject on macOS, and fetching the pinned LTS v${PINNED_NODE} failed (${e.message}). ` +
-        `Fix: run on an LTS Node (even major ≥20), or set LEDRUMS_SEA_NODE_VERSION with network access.`,
-    );
+// Resolve BOTH injection targets before generating the blob. The host runtime is exactly the
+// probed generator, and the foreign runtime comes only from the verified pinned distribution.
+const universalNodes = new Map();
+if (universal) {
+  for (const arch of ['x64', 'arm64']) {
+    universalNodes.set(arch, arch === hostNodeArch ? buildNode : await fetchPinnedNode('darwin', arch));
   }
 }
-
-// The blob generator must be a node we can EXECUTE, so it is always the host's.
-const buildNode = await resolveBuildNode();
-const seaBaseLabel = buildNode === process.execPath ? `v${process.versions.node} (active)` : `pinned v${PINNED_NODE}`;
 
 const seaConfigFile = join(sidecarDir, 'sea-config.json');
 const blobFile = join(sidecarDir, 'server.blob');
@@ -280,17 +283,7 @@ if (universal) {
   // fallback: if its pinned Node cannot be fetched we must fail, never quietly ship a thin binary.
   const slices = [];
   for (const arch of ['x64', 'arm64']) {
-    const isHost = arch === hostNodeArch;
-    const nodeExe =
-      isHost && buildNode === process.execPath && process.versions.node === PINNED_NODE
-        ? process.execPath
-        : await fetchPinnedNode('darwin', arch).catch((e) => {
-            throw new Error(
-              `universal build needs the pinned Node v${PINNED_NODE} for darwin-${arch} and it could not ` +
-                `be fetched (${e.message}). Refusing to emit a single-architecture sidecar. ` +
-                `Fix connectivity, or pre-populate apps/desktop/.node-pin/.`,
-            );
-          });
+    const nodeExe = universalNodes.get(arch);
     const slice = join(sidecarDir, `ledrums-server.${arch}`);
     await makeSea(nodeExe, slice);
     slices.push(slice);
@@ -387,6 +380,10 @@ const verdict = await new Promise((resolveVerdict) => {
       OSC_PORT: String(probeOscPort),
       LEDRUMS_WEB_ROOT: sidecarDir,
       LEDRUMS_PROJECTS_DIR: sidecarDir,
+      // A packaging probe must never ship telemetry or start a public tunnel, even when the
+      // invoking developer shell has production settings exported.
+      LEDRUMS_TELEMETRY: 'off',
+      LEDRUMS_TUNNEL: 'off',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -427,7 +424,7 @@ if (!verdict.ok) {
   if (DYLD_TLV.test(verdict.out)) {
     console.error(
       '[sidecar] The dyld thread-local error should not happen with the pinned LTS — clear\n' +
-        '          apps/desktop/.node-pin/ and rebuild, or set LEDRUMS_SEA_NODE_VERSION to an LTS.\n',
+        '          apps/desktop/.node-pin/ and rebuild using apps/desktop/.node-version.\n',
     );
   }
   process.exit(1);

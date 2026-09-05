@@ -32,10 +32,62 @@ feeding the trusted-host server HTTP input path. `workers/error-ingest` is a dep
 Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older “no cloud
 backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
 
-Ownership audit and planned shared modules: `docs/plans/2026-09-05-codebase-health-audit.md`
-(P01 document/history/sim lifetime, P02 authoritative project replacement, P08 offline adapter).
+Ownership audit: `docs/plans/2026-09-05-codebase-health-audit.md`. The follow-up implementation
+is currently on `fix/health-integration` (not yet declared merged):
+- Core compositor/pool/envelope/member policies now also drive the offline Sim; geometry changes
+  use immutable model identity, and modifier definitions explicitly declare scope execution policy.
+- The store owns document replacement and creates a fresh Sim; `document-history.ts` owns
+  structurally shared, identity-guarded, byte-estimated checkpoints. Persistence materializes at
+  debounce/explicit flush boundaries, not on each drag event.
+- `udp-output.ts` owns adapter readiness and bounded local-send/drain callbacks. OutputManager
+  retains transmitted coverage across maps; packet acceptance is not controller acknowledgement.
+- Controller test state belongs to its destination, independently of HTTP client credentials.
+  Only acknowledged return-to-live clears unresolved ownership; old clients are not retained in
+  the recovery ledger.
+- Worker admission/notification identity belongs to one D1 transactional ledger. Notifications
+  are bounded `waitUntil` work, not an awaited part of error persistence. Existing installations
+  must migrate/backfill with writers quiesced before deploying this code.
+Project replacement/async backup ownership and review corrections are integrated locally (HEAD
+`424da809`, unpushed); see `docs/plans/2026-09-05-health-implementation.md` and the scoped reports.
+Legacy three-file import fails closed when a present library file lacks a numeric `version`.
 Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
 host/sim until its live responsibilities have been transferred and tested.
+
+Local P02/P11 branch `fix/health-project-backups` (2026-09-05): server
+`project-replacement.ts` owns full load/restore/bulk transitions across both hosts and libraries;
+`project-storage.ts` writes one atomic `default.state.local.json` envelope. Once present, that
+file—not a mix of the older three files—is the cold-start authority. The active OutputManager
+survives runtime replacement. The integration P11 follow-up now puts snapshot JSON/hash/gzip and
+backup read/parse in a persistent literal-eval Node worker (source and actual pinned SEA verified).
+Two accepted snapshots are count-admitted before synchronous structured clone; 32 MiB/files and
+64 MiB retained-JSON limits apply AFTER clone/stringify, not to pre-clone heap. Safety refusal
+aborts replacement. Main retains a SHA-256 cadence digest, not full JSON. Close joins the worker;
+crash/timeout rejects outstanding work and retry creates a new worker. Read results and the
+optional off-site bundle cross the worker boundary as JSON TEXT (flat clone) and are parsed
+iteratively on main, so a deep-but-valid snapshot that passed validation is always readable; the
+local write commits before and independently of off-site preparation. Measured default burst
+stalls improve by refusing excess attempts; accepted clone submission is slower on the 6.4 MB
+fixture, and atomic live-state/off-site JSON parse remain synchronous main-thread boundaries.
+See `docs/reports/2026-09-05-health-backup-worker.md` for exact measurements/defaults and
+`docs/reports/2026-09-05-health-projects.md` for migration/durability. Neither local result says
+these changes have shipped or meet a render budget.
+
+P02 review corrections on the integration branch (2026-09-05; source:
+`docs/reports/2026-09-05-health-project-review-fixes.md`): shutdown stops ingress first and retains
+client authorization until accepted authoring drains; ordinary takeover remains execution-checked.
+Internal library/live-state filenames are case-insensitively excluded from named Project IO.
+Server and browser share pure canvas voice-definition/parameter builders and library-version
+constants. Server preflight and production library setters accept exactly show v2/song v1; the
+browser remains the canonical migration owner. Recover older libraries on copies, never by
+changing the version tag or falling back to stale import files. No library schema was copied.
+
+Web code-loading boundaries (SA-26, local branch `perf/health-lazy-surfaces`):
+`app/lazy-views.ts` owns Trigger/Sections/Objects imports; `settings/lazy-panes.ts` owns the
+seven Settings pane imports. Perform/necessary Three and the Settings Dialog/nav remain eager.
+`ui/lazy-resource.svelte.ts` caches code, not mounted instances; `ui/lazy-component.ts` owns
+constrained fetch recovery through a host-wide stylesheet registry (Vite remembers failed
+preloads for the page lifetime) with boundary-scoped retry and exact-URL/attempt-window evidence. See `docs/reports/2026-09-05-health-bundle.md` for browser evidence
+and the deliberate safe-reopen fallback when in-place recovery cannot be established.
 
 ## Historical System Overview
 Authored content + live input → render loop → pixels → wire & screen.

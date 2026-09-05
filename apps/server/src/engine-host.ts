@@ -1,5 +1,6 @@
 import { Engine, getHoopPixelRange, type InputEvent, type Project } from '@ledrums/core';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
+import { TickRate } from './tick-rate';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 
 /** Stats reported to clients (the ServerMessage `stats` shape, sans `t`). */
@@ -31,7 +32,8 @@ const PREVIEW_FPS = 30; // WS preview broadcast throttle
  * emitted afterwards (R14) and surfaced via {@link getStats}.
  */
 export class EngineHost {
-  readonly engine: Engine;
+  private activeEngine: Engine;
+  get engine(): Engine { return this.activeEngine; }
   private readonly output: OutputManager;
 
   /** Cumulative dt fed to `engine.tick` — the clock inputs are stamped against. */
@@ -50,17 +52,32 @@ export class EngineHost {
   private pendingInputWall: number | null = null;
   lastLatencyMs = 0;
 
-  /** Measured loop rate (frames ticked per second), updated ~1/s. */
-  private measuredFps = 0;
-  private fpsTicks = 0;
-  private fpsWindowStart = 0;
+  /** Completed ticks per real second, including pauses dropped by the accumulator. */
+  private readonly tickRate = new TickRate();
 
   /** Preview frame sink (wired by `main` to broadcast over WS). */
   onFrame?: (rgb: Uint8Array) => void;
 
   constructor(project: Project, output: OutputManager = new OutputManager()) {
-    this.engine = new Engine(project);
+    this.activeEngine = new Engine(project);
     this.output = output;
+  }
+
+  /** Build off to the side; committing is a non-throwing pointer swap, no IO or model work. */
+  prepareProject(project: Project): { applyOutput(): void; commit(): void } {
+    const engine = new Engine(project);
+    return {
+      applyOutput: () => this.output.applySettings(project.output, engine.getDmxMap()),
+      commit: () => {
+        this.activeEngine = engine;
+        this.engineTimeMs = 0;
+        this.accumulator = this.transmitAccum = this.previewAccum = 0;
+        this.pendingInputWall = null;
+        this.lastLatencyMs = 0;
+        this.lastWall = performance.now();
+        this.tickRate.reset(this.lastWall);
+      },
+    };
   }
 
   // --- input ---------------------------------------------------------------
@@ -95,21 +112,17 @@ export class EngineHost {
     if (this.timer) return;
     this.reloadOutputSettings();
     this.lastWall = performance.now();
-    // step() measures this window in engine time, not process uptime.
-    this.fpsWindowStart = this.engineTimeMs;
-    this.fpsTicks = 0;
-    this.measuredFps = 0;
+    this.tickRate.reset(this.lastWall);
     this.accumulator = 0;
     this.scheduleNext();
   }
 
-  stop(): void {
+  stop(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    this.output.blackout(this.engine.getDmxMap());
-    this.output.close();
+    return this.output.close();
   }
 
   private scheduleNext(): void {
@@ -129,7 +142,7 @@ export class EngineHost {
 
     // Drain accumulated time in fixed steps (catch up at most a few frames).
     let steps = 0;
-    while (this.accumulator >= TICK_MS && steps < 6) {
+    while (this.timer !== null && this.accumulator >= TICK_MS && steps < 6) {
       this.step(TICK_MS);
       this.accumulator -= TICK_MS;
       steps++;
@@ -146,14 +159,7 @@ export class EngineHost {
     this.engine.tick(dt);
     this.engineTimeMs += dt;
 
-    // Loop-rate measurement (rolling 1s window).
-    this.fpsTicks++;
-    const sinceWindow = this.engineTimeMs - this.fpsWindowStart;
-    if (sinceWindow >= 1000) {
-      this.measuredFps = (this.fpsTicks * 1000) / sinceWindow;
-      this.fpsTicks = 0;
-      this.fpsWindowStart = this.engineTimeMs;
-    }
+    this.tickRate.tick(performance.now());
 
     let emittedFrame = false;
 
@@ -211,7 +217,7 @@ export class EngineHost {
     return {
       engine: this.engine.getStats(),
       latencyMs: this.lastLatencyMs,
-      fps: this.measuredFps,
+      fps: this.tickRate.rate,
       output: this.output.status(),
     };
   }

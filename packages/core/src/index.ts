@@ -33,6 +33,9 @@ export * from './canvas/types';
 export * from './canvas/elements';
 export * from './canvas/lenses';
 export * from './canvas/scene';
+export * from './canvas/voice-definition';
+export * from './effects/voice-param-spec';
+export * from './model/library-versions';
 export * from './canvas/registry';
 export * from './canvas/presets';
 

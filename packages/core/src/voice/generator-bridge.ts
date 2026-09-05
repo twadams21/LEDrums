@@ -22,7 +22,7 @@ import type { PixelModel } from '../geometry/pixel-model';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
-import { applyModifierChain } from '../modifiers/chain';
+import { applyScopedModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
 import type { ModSampleCtx } from './modulation';
 import type { Voice } from './types';
@@ -30,23 +30,25 @@ import type { Voice } from './types';
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
     GeneratorBridge.beginFrame} once per frame before rendering any voice. */
 export interface GeneratorBridge {
+  /** Drop the previous model/context without running a generator (presentation may stop). */
+  reset(): void;
   /** Refresh the reusable {@link RenderContext} for this frame (rebuilt only when the
       model identity changes; otherwise the existing context's fields are updated). */
   beginFrame(model: PixelModel, timeMs: number, dt: number, transport: TransportState): void;
   /**
-   * Render one generator voice into `dst` over pixel range `[start, end)`, scaled by
+   * Generate once, then mask into `dst` over canonical pixel `ranges`, scaled by
    * `level` (voice envelope × deck gain). Unknown generator ids render nothing (the
    * voice never falls through to the pattern path). `modCtx` (built by the compositor from
    * the voice's life phase + transport) lets a modified generator's chain modulate its
    * modifier params (doc 10); it is inert for an unmodified / unmodulated voice.
    */
-  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, start: number, end: number, dst: Framebuffer, modCtx: ModSampleCtx): void;
+  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, ranges: readonly PixelRange[], dst: Framebuffer, modCtx: ModSampleCtx): void;
 }
 
 export function createGeneratorBridge(): GeneratorBridge {
   let genScratch: Framebuffer | null = null;
-  /** Cached default param record per generator id (incl. enum/colour string defaults). */
-  const genDefaults = new Map<string, ResolvedParams>();
+  /** Defaults belong to the registry adapter, not its id (live upserts can replace it). */
+  const genDefaults = new WeakMap<object, ResolvedParams>();
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
   const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
   const genTriggers: Trigger[] = [genTrigger];
@@ -59,10 +61,13 @@ export function createGeneratorBridge(): GeneratorBridge {
   const voiceTransport: TransportState = {
     timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
   };
-  /** Reused pixel-range for the modifier chain (only touched by modified voices). */
-  const modRange: PixelRange = { start: 0, end: 0 };
 
   return {
+    reset(): void {
+      genCtx = null;
+      frameTransport = null;
+      genScratch = null;
+    },
     beginFrame(model, timeMs, dt, transport): void {
       frameTransport = transport;
       // The triggers array reference is stable; its single element is mutated per voice.
@@ -75,12 +80,17 @@ export function createGeneratorBridge(): GeneratorBridge {
       }
     },
 
-    renderVoice(v, model, timeMs, level, start, end, dst, modCtx): void {
+    renderVoice(v, model, timeMs, level, ranges, dst, modCtx): void {
+      if (!ranges.length) return;
       const gen = tryGetEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
       if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
         genScratch = new Framebuffer(model.pixelCount);
+      }
+      if (v.renderGenerator !== gen) {
+        v.genState = null;
+        v.renderGenerator = gen;
       }
       // Build per-voice state lazily and persist it for the voice's life. The voice's
       // per-trigger seed (item C) decorrelates RNG-backed effects across fires.
@@ -88,10 +98,10 @@ export function createGeneratorBridge(): GeneratorBridge {
 
       // Resolved params: generator defaults (incl. enum/colour) overlaid with the
       // voice's live numeric/bool params (envelopes already applied by the engine).
-      let defs = genDefaults.get(gen.id);
+      let defs = genDefaults.get(gen);
       if (!defs) {
         defs = defaultParams(gen.paramSpec);
-        genDefaults.set(gen.id, defs);
+        genDefaults.set(gen, defs);
       }
       const params: ResolvedParams = { ...defs };
       const lp = v.liveParams;
@@ -152,15 +162,13 @@ export function createGeneratorBridge(): GeneratorBridge {
       const mods = v.modifiers;
       if (mods && mods.length) {
         if (!v.modState) v.modState = [];
-        modRange.start = start;
-        modRange.end = end;
-        applyModifierChain(mods, v.modState, genScratch, modRange, model, genTrigger.ageMs, genCtx.dt, modCtx);
+        applyScopedModifierChain(mods, v.modState, genScratch, ranges, model, genTrigger.ageMs, genCtx.dt, modCtx);
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is
-      // applied inside the generator), masked to [start, end). dst.add clamps.
+      // applied inside the generator), masked to the selected pixel set. dst.add clamps.
       const src = genScratch.rgba;
-      for (let i = start; i < end; i++) {
+      for (const range of ranges) for (let i = range.start; i < range.end; i++) {
         const j = i * 4;
         const r = src[j]!;
         const g = src[j + 1]!;

@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import {
   defaultProject,
-  parseProject,
   reconcileOutputs,
   WS_PATH,
   WS_PORT,
@@ -20,9 +19,9 @@ import {
   oscRecall,
   parseSectionRecallAddress,
 } from './input-router';
-import { listProjects, loadProject, projectExists, projectFilePath, resolveProjectsDir, saveProjectAsync } from './projects';
-import { inspectShowLibraryFile, loadShowLibrary, saveShowLibraryAsync, type ShowLibraryBlob } from './show-library';
-import { inspectSongLibraryFile, loadSongLibrary, saveSongLibraryAsync, type SongLibraryBlob } from './song-library';
+import { listProjects, loadProject, projectExists, projectFilePath, resolveProjectsDir } from './projects';
+import { inspectShowLibraryFile, loadShowLibrary, type ShowLibraryBlob } from './show-library';
+import { inspectSongLibraryFile, loadSongLibrary, type SongLibraryBlob } from './song-library';
 import { createAutosaver } from './autosave';
 import { ClientRegistry } from './client-registry';
 import { serveStatic, resolveWebRoot } from './static-host';
@@ -39,7 +38,11 @@ import {
 import { boot, lanAddresses } from './boot';
 import { createControllerMonitor } from './controller-monitor';
 import { listNetworkAdapters } from './network-adapters';
-import { createClientMessageHandler } from './handlers/client-message';
+import { createClientMessageHandler, requiresEditor } from './handlers/client-message';
+import { createProjectReplacement, validateSnapshotFiles } from './project-replacement';
+import { createProjectStorage } from './project-storage';
+import { SerialQueue } from './serial-queue';
+import { selectionFromLibrary, showFromLibraries, validateLibraryVersions } from './project-show';
 import { createNativeMidiHandler } from './http/native-midi';
 import { createHostEventHandler } from './http/host-event';
 import { createUpdateStatusHandler } from './http/update-status';
@@ -65,739 +68,781 @@ import {
   type TunnelInfo,
 } from './ws-protocol';
 
-const port = Number(process.env.PORT) || WS_PORT;
-const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
+async function main(): Promise<void> {
+  const storage = createProjectStorage(resolveProjectsDir(process.env));
+  const recovered = await storage.read();
+  const recoveredState = recovered ? validateSnapshotFiles(recovered) : null;
+  const authoring = new SerialQueue();
+  let shuttingDown = false;
+  let authoringDrained = false;
+  const port = Number(process.env.PORT) || WS_PORT;
+  const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 
-/** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
- * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
-const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
+  /** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
+   * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
+  const VOICE_MODE = (process.env.LEDRUMS_ENGINE ?? '').toLowerCase() === 'voice';
 
-// --- remote access: outbound tunnel + room PIN (S3) --------------------------
+  // --- remote access: outbound tunnel + room PIN (S3) --------------------------
 
-/** Outbound Cloudflare tunnel config from env (null = don't start at boot — plain `pnpm dev`
- * never spawns cloudflared on its own). Tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv).
- * The IN-APP Share control works regardless: it starts a plain quick tunnel when no env config
- * exists. */
-const tunnelConfig = tunnelConfigFromEnv(process.env, port);
-const tunnelAtBoot = tunnelConfig !== null;
+  /** Outbound Cloudflare tunnel config from env (null = don't start at boot — plain `pnpm dev`
+   * never spawns cloudflared on its own). Tuned via LEDRUMS_TUNNEL* env (see tunnelConfigFromEnv).
+   * The IN-APP Share control works regardless: it starts a plain quick tunnel when no env config
+   * exists. */
+  const tunnelConfig = tunnelConfigFromEnv(process.env, port);
+  const tunnelAtBoot = tunnelConfig !== null;
 
-/** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, a boot-enabled
- * tunnel generates a per-run PIN now, and an in-app tunnel start mints one on demand
- * (ensurePin) — so a public URL is NEVER un-gated. */
-const pinGate = createMutablePinGate(resolvePin(process.env, tunnelAtBoot));
+  /** Room-PIN gate. Open (null) by default; an explicit LEDRUMS_PIN always gates, a boot-enabled
+   * tunnel generates a per-run PIN now, and an in-app tunnel start mints one on demand
+   * (ensurePin) — so a public URL is NEVER un-gated. */
+  const pinGate = createMutablePinGate(resolvePin(process.env, tunnelAtBoot));
 
-/** Share-tunnel lifecycle control (in-app start/stop + boot-time env start — one status truth).
- * Every status change re-broadcasts `state` so all clients' Share surfaces follow. */
-const tunnelControl = new TunnelControl({
-  createManager: (config) => new TunnelManager(config),
-  config: tunnelConfig ?? { mode: 'quick', port },
-  ensurePinGated: () => {
-    pinGate.ensurePin();
-  },
-  onChange: () => broadcastState(),
-  report: (event) => {
-    switch (event.kind) {
-      case 'ready':
-        monitor({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: event.detail });
-        console.log(`  Tunnel: ${event.detail}${pinGate.pin ? ` (PIN ${pinGate.pin})` : ''}`);
-        return;
-      case 'start-failed':
-        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: event.detail });
-        console.error(`[tunnel] failed to start (is cloudflared installed?): ${event.detail}`);
-        return;
-      case 'unexpected-exit':
-        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel exited unexpectedly', detail: event.detail });
-        console.error(`[tunnel] cloudflared exited unexpectedly (${event.detail}) — remote access is down`);
-        return;
-      case 'error':
-        monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: event.detail });
-        console.error('[tunnel] error:', event.detail);
-    }
-  },
-});
-
-/** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
- * hash) so the host's own window is admitted without the room PIN — while a stray local browser
- * tab/script that merely reached the loopback port cannot. Always present; only meaningful when the
- * gate is active (open gate admits everyone).
- *
- * The desktop shell INJECTS this via `LEDRUMS_HOST_TOKEN` at spawn (#139) so it holds the token
- * before the server has printed anything — the native MIDI bridge must never be gated on scraping a
- * banner line. A standalone `pnpm dev` server injects nothing and mints its own, unchanged. */
-const hostToken = resolveHostToken(process.env);
-
-// --- project + host ---------------------------------------------------------
-
-/** The single live project slot. Every authoritative mutation debounce-autosaves here,
- * and {@link initialProject} loads it on boot — so the persisted file is the source of
- * truth across restarts (a crash mid-flight recovers cleanly on the next boot). It is
- * machine-local runtime state, so it uses the repo's `.local` convention and is
- * gitignored (see apps/server/.gitignore) — never committed, never a hand-edited seed. */
-const LIVE_PROJECT = 'default.local';
-
-function initialProject(): { project: Project; source: 'seed' | 'file'; name: string; path: string } {
-  // Boot recovery: the live project file is authoritative — load + integrity-check it if
-  // present (failing loudly on dangling refs). Only on a truly fresh machine (no saved
-  // file) do we seed from the canonical in-code definition (defaultProject → DEFAULT_KIT),
-  // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
-  // the autosaver writes this slot and it is what subsequent boots restore.
-  const path = projectFilePath(LIVE_PROJECT);
-  // Both boot paths land on the canonical port count (4 normal / 8 expanded): loadProject already
-  // reconciles a saved file; the seed (fresh machine) reconciles here so DEFAULT_KIT's `outputs: []`
-  // boots as 4 real ports too — so the patch graph always renders exactly logicalOutputCount ports,
-  // never defaultRouting's hoops-per-output chunking (the "3 outputs" the drummer saw).
-  if (!projectExists(LIVE_PROJECT)) {
-    const seed = defaultProject();
-    return { project: { ...seed, kit: reconcileOutputs(seed.kit) }, source: 'seed', name: LIVE_PROJECT, path };
-  }
-  return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
-}
-
-const projectLoad = initialProject();
-const project0 = projectLoad.project;
-const host = new EngineHost(project0);
-/** Voice-bus host, only constructed in voice mode. It owns the live render + output;
- * the legacy `host` still backs the `state` message and the structural reducer so the
- * existing UI/project surface keeps working. Both hosts share the same `project0` object
- * by reference, so the voice host's in-place geometry/routing edits are visible through
- * `host.engine.getProject()` — which is what the autosaver persists. */
-const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
-
-/** Live persistence: debounce-autosave the authoritative project to {@link LIVE_PROJECT}
- * on every mutation. Async + atomic (temp + rename) and off the engine loop. */
-const autosaver = createAutosaver(() => saveProjectAsync(LIVE_PROJECT, host.engine.getProject()), 400, {
-  onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave scheduled' }),
-  onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave saved' }),
-  onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'project', label: 'Project autosave failed', detail: message }),
-});
-
-/** Server-authoritative show library: the authored show library (web-defined schema, persisted
- * as an opaque versioned blob) is owned by the server exactly like the routing project —
- * boot-recovered here, rebroadcast on cold load via {@link stateMessage}, autosaved on every
- * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
- * has no file yet); the web then seeds the server from its localStorage cache on connect. */
-const showLibraryLoad = inspectShowLibraryFile();
-let liveShowLibrary: ShowLibraryBlob | null = loadShowLibrary();
-
-/** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
- * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
- * flushed on shutdown). `null` until the first client pushes one. */
-const songLibraryLoad = inspectSongLibraryFile();
-let liveSongLibrary: SongLibraryBlob | null = loadSongLibrary();
-
-/** Debounce-autosave the live show library (async + atomic + off-loop). The save sink reads
- * the current slot at call time so the latest push is persisted; a null slot (nothing pushed
- * yet) is a no-op. */
-const showLibraryAutosaver = createAutosaver(
-  () => (liveShowLibrary ? saveShowLibraryAsync(liveShowLibrary) : Promise.resolve()),
-  400,
-  {
-    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
-    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
-    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
-  },
-);
-
-/** Debounce-autosave the live song library (mirrors {@link showLibraryAutosaver}). */
-const songLibraryAutosaver = createAutosaver(
-  () => (liveSongLibrary ? saveSongLibraryAsync(liveSongLibrary) : Promise.resolve()),
-  400,
-  {
-    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave scheduled' }),
-    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave saved' }),
-    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'song-library', label: 'Song library autosave failed', detail: message }),
-  },
-);
-
-// --- HTTP + static + WS -----------------------------------------------------
-
-// Resolve the web root once at boot — env-overridable so the packaged desktop shell can point
-// it at its bundled web dist (default reproduces today's apps/web/dist behavior).
-const webRoot = resolveWebRoot(process.env);
-
-let nativeHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
-let updateStatusHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
-let hostEventHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
-
-const server = createServer((req, res) => {
-  if (updateStatusHttpHandler?.(req, res)) return;
-  if (nativeHttpHandler?.(req, res)) return;
-  if (hostEventHttpHandler?.(req, res)) return;
-  serveStatic(req, res, webRoot);
-});
-
-const wss = new WebSocketServer({ server, path: WS_PATH });
-/** Many simultaneous clients with one editor (S1) — later clients are viewers that live-follow the
- * editor's broadcast. The engine/output loop runs independently, so client count (including zero)
- * never stops transmission. */
-const clients = new ClientRegistry<WebSocket>();
-
-/** Sockets that connected VIA the share tunnel (cf-* headers at admit). Such a client can never
- * start/stop the tunnel it rode in on — checked by the message handler. WeakSet: entries vanish
- * with the socket. */
-const tunnelClients = new WeakSet<WebSocket>();
-
-function broadcastJson(msg: ServerMessage): void {
-  const data = encodeServer(msg);
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(data);
-  }
-}
-
-const monitorBus = createMonitorBus(broadcastJson);
-// The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
-// error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
-let reporter: Reporter | null = null;
-// The off-site backups outbox (#123): a SECOND disk-backed ship-queue reusing the #122 transport
-// against a `/backups` route on the same Worker. Created in the same enablement block as the
-// reporter (endpoint/token present); null under dev / capture-only, where snapshotting stays local.
-let backupsQueue: ShipQueue<BackupRecord> | null = null;
-function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
-  const full = monitorBus.emit(event);
-  reporter?.observe(full);
-}
-
-// Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
-// Monitor bus as an `error` event. `onFatal` runs the Reporter's synchronous queue flush before the
-// process exits, so a crash report reaches disk (and ships on the next boot) even on a hard fault.
-let flushReportsSync: () => void = () => {};
-installProcessErrorCapture({ monitor, onFatal: () => flushReportsSync() });
-
-// --- Remote error reporting (#122) ------------------------------------------
-// On when the server serves the built web root (packaged/prod), off under the dev proxy;
-// `LEDRUMS_TELEMETRY=on|off` overrides. Shipping additionally needs an ingest endpoint + token
-// (baked in at build time via env); absent those, capture still feeds the local Monitor but nothing
-// leaves the machine. The queue/ship machinery is generic (reused by the backups spec #123).
-function appVersion(): string {
-  // Desktop config is the version source of truth (passed as env); package.json is the plain-dev
-  // fallback so a dev report still carries a version.
-  const fromEnv = process.env.LEDRUMS_APP_VERSION?.trim();
-  if (fromEnv) return fromEnv;
-  try {
-    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-      version?: string;
-    };
-    return pkg.version ?? '0.0.0-dev';
-  } catch {
-    return '0.0.0-dev';
-  }
-}
-
-if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
-  const endpoint = process.env.LEDRUMS_TELEMETRY_ENDPOINT?.trim();
-  const token = process.env.LEDRUMS_TELEMETRY_TOKEN?.trim();
-  if (endpoint && token) {
-    // Identity resolved once at boot (uptime is read per report). Session id distinguishes runs.
-    const session = randomUUID();
-    const machine = hostname();
-    const osPlatform = platform();
-    const osRelease = release();
-    const version = appVersion();
-    const queue = createShipQueue<ReportRecord>({
-      path: join(resolveProjectsDir(process.env), 'error-reports.jsonl'),
-      transport: createHttpTransport<ReportRecord>({ endpoint, token }),
-      // Upsert by dedup key so a render-loop error firing 120×/s collapses to ONE queued
-      // report whose count rises, instead of appending N near-identical rows (#137 C1).
-      keyOf: (r) => r.dedupKey,
-    });
-    reporter = createReporter({
-      queue,
-      now: () => Date.now(),
-      envelope: (origin) => ({
-        machine,
-        version,
-        engineMode: VOICE_MODE ? 'voice' : 'legacy',
-        platform: osPlatform,
-        osRelease,
-        session,
-        uptimeMs: Math.round(process.uptime() * 1000),
-        origin,
-      }),
-    });
-    // Off-site backups (#123) reuse the same Worker + token via the derived `/backups` route — one
-    // second disk-backed queue, no third shipping mechanism. Append-only (no keyOf: each snapshot
-    // ships once). Larger byte cap than error reports since a bundle carries the whole project.
-    const backupUrl = backupsEndpoint(endpoint);
-    if (backupUrl) {
-      backupsQueue = createShipQueue<BackupRecord>({
-        path: join(resolveProjectsDir(process.env), 'backups-outbox.jsonl'),
-        transport: createHttpTransport<BackupRecord>({ endpoint: backupUrl, token }),
-        maxItems: 100,
-        maxBytes: 8_000_000,
-      });
-    }
-    flushReportsSync = () => {
-      reporter?.persistSync();
-      backupsQueue?.persistSync();
-    };
-    // Clean shutdown (boot calls process.exit) + any exit path: flush both queues durably.
-    process.on('exit', () => {
-      reporter?.persistSync();
-      backupsQueue?.persistSync();
-    });
-    monitor({
-      type: 'system',
-      direction: 'local',
-      source: 'server',
-      destination: 'telemetry',
-      label: 'Remote error reporting enabled',
-      detail: `endpoint=${endpoint}${backupUrl ? ` · backups=${backupUrl}` : ''}`,
-    });
-  } else {
-    monitor({
-      type: 'system',
-      direction: 'local',
-      source: 'server',
-      destination: 'telemetry',
-      label: 'Remote error reporting: capturing to Monitor only (ingest endpoint/token unset)',
-    });
-  }
-}
-
-for (const event of startupDiagnostics({
-  voiceMode: VOICE_MODE,
-  port,
-  oscPort,
-  oscHosts: lanAddresses(),
-  webRoot,
-  webRootExists: existsSync(webRoot),
-  project: projectLoad,
-  showLibrary: showLibraryLoad,
-  songLibrary: songLibraryLoad,
-  tunnel: { enabled: tunnelAtBoot, url: tunnelControl.url },
-  pinRequired: pinGate.pin !== null,
-  hostTokenPresent: !!hostToken,
-})) {
-  monitor(event);
-}
-
-function monitorInput(msg: ClientMessage, origin: string): void {
-  const destination = VOICE_MODE ? 'voice-engine' : 'legacy-engine';
-  switch (msg.t) {
-    case 'midi':
-      monitor({
-        type: 'input',
-        direction: 'in',
-        source: origin,
-        destination,
-        label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
-        detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
-      });
-      return;
-    case 'cc':
-      monitor({
-        type: 'input',
-        direction: 'in',
-        source: origin,
-        destination,
-        label: `MIDI CC ${msg.controller}`,
-        detail: `value=${msg.value}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
-      });
-      return;
-    case 'programChange':
-      monitor({
-        type: 'input',
-        direction: 'in',
-        source: origin,
-        destination,
-        label: `MIDI program ${msg.value}`,
-        detail: msg.channel != null ? `channel=${msg.channel}` : undefined,
-      });
-      return;
-    case 'osc':
-      monitor({ type: 'input', direction: 'in', source: origin, destination, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
-      return;
-    case 'key':
-      monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
-      return;
-    case 'fireGraph':
-      monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
-      return;
-    case 'recallSection':
-      monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
-      return;
-  }
-}
-
-/** Re-broadcast presence to every client (each gets its own `youAreEditor`). Called on any
- * join/leave so every client's editor/viewer role + headcount stays current. */
-function broadcastPresence(): void {
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(encodeServer({ t: 'presence', ...clients.presenceFor(ws) }));
-  }
-}
-
-function broadcastBinary(rgb: Uint8Array): void {
-  broadcastPreview(clients, rgb);
-}
-
-/** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room
- * PIN. Always present (the Share button always renders, offering Start sharing when off). Only
- * ever reaches already-admitted clients (it rides the `state` message), so an un-authed
- * connection never learns the PIN. */
-function tunnelInfo(): TunnelInfo {
-  const error = tunnelControl.error;
-  return { status: tunnelControl.status, url: tunnelControl.url, pin: pinGate.pin, ...(error ? { error } : {}) };
-}
-
-/** Build the full `state` message reflecting the current engine/project. In voice mode
- * the voice host owns the live geometry, so its model is authoritative for the wire. */
-function stateMessage(): ServerMessage {
-  const model = voiceHost ? voiceHost.getModel() : host.engine.getModel();
-  return {
-    t: 'state',
-    project: host.engine.getProject(),
-    model: serializeModel(model),
-    effects: effectSpecs(),
-    projects: listProjects(),
-    output: (voiceHost ?? host).getOutputStatus(),
-    showLibrary: liveShowLibrary,
-    songLibrary: liveSongLibrary,
-    tunnel: tunnelInfo(),
-    // Where to point Sensory Percussion / a Max device, and whether the socket is actually
-    // bound (#139). Read at send time, so a client always gets the settled truth.
-    osc: oscListen,
-  };
-}
-
-if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
-// Tap tempo (global control 9) changes the transport bpm server-side; rebroadcast the
-// state so every client's transport readout follows instead of silently drifting.
-if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
-else host.onFrame = (rgb) => broadcastBinary(rgb);
-host.setOutputMonitor(monitor);
-voiceHost?.setOutputMonitor(monitor);
-voiceHost?.setMonitor(monitor);
-
-wss.on('connection', (ws, req) => {
-  // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
-  // registry or sent any presence/state/frames — so an un-authed client can neither view nor
-  // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
-  // admits everyone, so plain local dev is unchanged.
-  //
-  // Host bypass: the host's OWN app window is admitted without a PIN — but loopback alone is not
-  // proof of that (any local tab/script is also loopback), so the bypass requires the unguessable
-  // per-run host token the window was handed (plus loopback + not-via-cloudflared). Remote clients
-  // (cf-* headers) and LAN peers (non-loopback) can never satisfy it, so both stay gated.
-  const trustedLocal = isTrustedHost({
-    remoteAddress: req.socket.remoteAddress,
-    headers: req.headers,
-    url: req.url,
-    hostToken,
-  });
-  const decision = admitDecision(req.url, pinGate, trustedLocal);
-  if (!decision.ok) {
-    ws.close(decision.code, decision.reason);
-    return;
-  }
-
-  // Admit additively (no eviction) — the first client auto-claims the editor slot, later clients
-  // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
-  // the `state` below — messages are ordered on the socket), then ship its initial state.
-  clients.admit(ws);
-  if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
-  monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
-  broadcastPresence();
-  ws.send(encodeServer(stateMessage()));
-  monitorBus.replay((msg) => ws.send(encodeServer(msg)));
-
-  ws.on('message', (raw, isBinary) => {
-    if (isBinary) return; // clients send JSON only
-    let handled = false;
-    try {
-      const msg = decodeClient(raw.toString());
-      handled = true;
-      monitorInput(msg, 'ws');
-      handleClientMessage(msg, ws);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (handled) {
-        // Error escaped the handler — log, but keep the socket alive.
-        console.error('[ws] handler error:', message);
+  /** Share-tunnel lifecycle control (in-app start/stop + boot-time env start — one status truth).
+   * Every status change re-broadcasts `state` so all clients' Share surfaces follow. */
+  const tunnelControl = new TunnelControl({
+    createManager: (config) => new TunnelManager(config),
+    config: tunnelConfig ?? { mode: 'quick', port },
+    ensurePinGated: () => {
+      pinGate.ensurePin();
+    },
+    onChange: () => broadcastState(),
+    report: (event) => {
+      switch (event.kind) {
+        case 'ready':
+          monitor({ type: 'system', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel ready', detail: event.detail });
+          console.log(`  Tunnel: ${event.detail}${pinGate.pin ? ` (PIN ${pinGate.pin})` : ''}`);
+          return;
+        case 'start-failed':
+          monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel failed to start', detail: event.detail });
+          console.error(`[tunnel] failed to start (is cloudflared installed?): ${event.detail}`);
+          return;
+        case 'unexpected-exit':
+          monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel exited unexpectedly', detail: event.detail });
+          console.error(`[tunnel] cloudflared exited unexpectedly (${event.detail}) — remote access is down`);
+          return;
+        case 'error':
+          monitor({ type: 'error', direction: 'local', source: 'server/tunnel', destination: 'remote-access', label: 'Tunnel error', detail: event.detail });
+          console.error('[tunnel] error:', event.detail);
       }
-      monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: message });
-      ws.send(encodeServer({ t: 'error', message }));
+    },
+  });
+
+  /** Per-run host-session token (S4 desktop). Handed privately to the desktop app window (via its URL
+   * hash) so the host's own window is admitted without the room PIN — while a stray local browser
+   * tab/script that merely reached the loopback port cannot. Always present; only meaningful when the
+   * gate is active (open gate admits everyone).
+   *
+   * The desktop shell INJECTS this via `LEDRUMS_HOST_TOKEN` at spawn (#139) so it holds the token
+   * before the server has printed anything — the native MIDI bridge must never be gated on scraping a
+   * banner line. A standalone `pnpm dev` server injects nothing and mints its own, unchanged. */
+  const hostToken = resolveHostToken(process.env);
+
+  // --- project + host ---------------------------------------------------------
+
+  /** Legacy project import slot. Once default.state.local.json exists, its single atomic
+   * envelope is authoritative for project + BOTH libraries; the old files remain untouched
+   * for recovery, never mixed back into a newer envelope on startup. */
+  const LIVE_PROJECT = 'default.local';
+
+  function initialProject(): { project: Project; source: 'seed' | 'file'; name: string; path: string } {
+    // Boot recovery: the live project file is authoritative — load + integrity-check it if
+    // present (failing loudly on dangling refs). Only on a truly fresh machine (no saved
+    // file) do we seed from the canonical in-code definition (defaultProject → DEFAULT_KIT),
+    // so there is no hand-edited file to drift from the engine/lab kit. Once any edit lands,
+    // the autosaver writes this slot and it is what subsequent boots restore.
+    const path = projectFilePath(LIVE_PROJECT);
+    // Both boot paths land on the canonical port count (4 normal / 8 expanded): loadProject already
+    // reconciles a saved file; the seed (fresh machine) reconciles here so DEFAULT_KIT's `outputs: []`
+    // boots as 4 real ports too — so the patch graph always renders exactly logicalOutputCount ports,
+    // never defaultRouting's hoops-per-output chunking (the "3 outputs" the drummer saw).
+    if (!projectExists(LIVE_PROJECT)) {
+      const seed = defaultProject();
+      return { project: { ...seed, kit: reconcileOutputs(seed.kit) }, source: 'seed', name: LIVE_PROJECT, path };
     }
+    return { project: loadProject(LIVE_PROJECT), source: 'file', name: LIVE_PROJECT, path };
+  }
+
+  const projectLoad = recoveredState
+    ? { project: recoveredState.project, source: 'file' as const, name: LIVE_PROJECT, path: join(resolveProjectsDir(process.env), 'default.state.local.json') }
+    : initialProject();
+  const project0 = recoveredState?.project ?? projectLoad.project;
+  const host = new EngineHost(project0);
+  /** Voice-bus host, only constructed in voice mode. It owns the live render + output;
+   * the legacy `host` still backs the `state` message and the structural reducer so the
+   * existing UI/project surface keeps working. Both hosts share the same `project0` object
+   * by reference, so the voice host's in-place geometry/routing edits are visible through
+   * `host.engine.getProject()` — which is what the autosaver persists. */
+  const voiceHost = VOICE_MODE ? new VoiceEngineHost(project0) : null;
+
+  /** All three autosavers write the SAME atomic live-state envelope via one storage queue.
+   * Each write materializes a coherent live revision, including explicit null library slots. */
+  const currentFiles = (): SnapshotFiles => ({ project: host.engine.getProject(), showLibrary: liveShowLibrary, songLibrary: liveSongLibrary });
+  const persistCurrent = (): Promise<void> => storage.save(currentFiles());
+  const autosaver = createAutosaver(persistCurrent, 400, {
+    onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave scheduled' }),
+    onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'project', label: 'Project autosave saved' }),
+    onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'project', label: 'Project autosave failed', detail: message }),
   });
 
-  // On disconnect, drop the socket and re-broadcast presence (headcount changed, and the editor
-  // slot may have moved per the registry's election rule).
-  ws.on('close', () => {
-    clients.remove(ws);
-    controllerMonitor.dropWatcher(ws);
-    broadcastPresence();
+  /** Server-authoritative show library: the authored show library (web-defined schema, persisted
+   * as an opaque versioned blob) is owned by the server exactly like the routing project —
+   * boot-recovered here, rebroadcast on cold load via {@link stateMessage}, autosaved on every
+   * client push, flushed on shutdown. `null` until the first client pushes one (a fresh machine
+   * has no file yet); the web then seeds the server from its localStorage cache on connect. */
+  const showLibraryLoad = inspectShowLibraryFile();
+  const songLibraryLoad = inspectSongLibraryFile();
+  /** Import-only guard (legacy three-file boot, no atomic authority yet). The blob loaders map a
+   * present-but-unversioned file (missing/string/non-numeric `version`) to null, and null is a
+   * legitimate "no library yet" slot — so without this check the first boot snapshot/edit would
+   * commit an authority with a NULL library and permanently supersede the drummer's original
+   * file. Fail closed BEFORE anything is loaded or written: an existing file that is not a
+   * versioned envelope is an unsupported format, not an absent library. Once the atomic
+   * envelope exists it is authoritative and stale import files are ignored, as before. */
+  if (!recoveredState) {
+    for (const [kind, load] of [['show', showLibraryLoad], ['song', songLibraryLoad]] as const) {
+      if (load.source === 'invalid') {
+        throw new Error(`Unsupported ${kind} library file ${load.path}: not a versioned library envelope (numeric "version" required). Refusing to import it as an empty library; fix or move the file before starting.`);
+      }
+    }
+  }
+  let liveShowLibrary: ShowLibraryBlob | null = recoveredState ? recoveredState.showLibrary as ShowLibraryBlob | null : loadShowLibrary();
+
+  /** Server-authoritative SONG library — a second opaque versioned blob, owned + persisted exactly
+   * like {@link liveShowLibrary} (boot-recovered, rebroadcast on cold load, autosaved on push,
+   * flushed on shutdown). `null` until the first client pushes one. */
+  let liveSongLibrary: SongLibraryBlob | null = recoveredState ? recoveredState.songLibrary as SongLibraryBlob | null : loadSongLibrary();
+  validateLibraryVersions(liveShowLibrary, liveSongLibrary);
+  if (voiceHost) voiceHost.prepareProject(project0, showFromLibraries(liveShowLibrary, liveSongLibrary), selectionFromLibrary(liveShowLibrary)).commit();
+
+  /** Show edits schedule the same envelope writer; null is persisted, not silently skipped. */
+  const showLibraryAutosaver = createAutosaver(
+    persistCurrent,
+    400,
+    {
+      onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave scheduled' }),
+      onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'show-library', label: 'Show library autosave saved' }),
+      onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'show-library', label: 'Show library autosave failed', detail: message }),
+    },
+  );
+
+  /** Debounce-autosave the live song library (mirrors {@link showLibraryAutosaver}). */
+  const songLibraryAutosaver = createAutosaver(
+    persistCurrent,
+    400,
+    {
+      onScheduled: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave scheduled' }),
+      onSaved: () => monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'song-library', label: 'Song library autosave saved' }),
+      onError: (message) => monitor({ type: 'error', direction: 'local', source: 'server/autosave', destination: 'song-library', label: 'Song library autosave failed', detail: message }),
+    },
+  );
+
+  // --- HTTP + static + WS -----------------------------------------------------
+
+  // Resolve the web root once at boot — env-overridable so the packaged desktop shell can point
+  // it at its bundled web dist (default reproduces today's apps/web/dist behavior).
+  const webRoot = resolveWebRoot(process.env);
+
+  let nativeHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+  let updateStatusHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+  let hostEventHttpHandler: ((req: IncomingMessage, res: ServerResponse) => boolean) | null = null;
+
+  const server = createServer((req, res) => {
+    if (updateStatusHttpHandler?.(req, res)) return;
+    if (nativeHttpHandler?.(req, res)) return;
+    if (hostEventHttpHandler?.(req, res)) return;
+    serveStatic(req, res, webRoot);
   });
-  ws.on('error', () => {
-    clients.remove(ws);
-    controllerMonitor.dropWatcher(ws);
-    broadcastPresence();
-  });
-});
 
-// Shared collaborators handed to the extracted message handler. The broadcast/relay closures
-// capture the wiring so the handler stays free of module-level state + socket plumbing.
-const broadcastState = (): void => broadcastJson(stateMessage());
+  const wss = new WebSocketServer({ server, path: WS_PATH });
+  /** Many simultaneous clients with one editor (S1) — later clients are viewers that live-follow the
+   * editor's broadcast. The engine/output loop runs independently, so client count (including zero)
+   * never stops transmission. */
+  const clients = new ClientRegistry<WebSocket>();
 
-/** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
-function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
-  const data = encodeServer(msg);
-  for (const other of clients) {
-    if (other !== sender && other.readyState === other.OPEN) other.send(data);
+  /** Sockets that connected VIA the share tunnel (cf-* headers at admit). Such a client can never
+   * start/stop the tunnel it rode in on — checked by the message handler. WeakSet: entries vanish
+   * with the socket. */
+  const tunnelClients = new WeakSet<WebSocket>();
+
+  function broadcastJson(msg: ServerMessage): void {
+    const data = encodeServer(msg);
+    for (const ws of clients) {
+      if (ws.readyState === ws.OPEN) ws.send(data);
+    }
   }
-}
 
-// --- Project backups (#123) --------------------------------------------------
-// Snapshotting is ALWAYS on (local + cheap); only the off-site push follows #122's enablement rule
-// (the `backupsQueue` above is null under dev). A snapshot bundles the project + both libraries at
-// one instant; a restore replaces all three and cold-loads every client — so it is always coherent.
-
-/** A value is a usable versioned library blob iff it is an object with a numeric `version` — the same
- * opaque-envelope gate the persistence layer applies. Restore only re-adopts a library the snapshot
- * actually carried (a null slot at snapshot time leaves the current library untouched). */
-function isVersionedBlob(v: unknown): v is ShowLibraryBlob & SongLibraryBlob {
-  return !!v && typeof v === 'object' && typeof (v as { version?: unknown }).version === 'number';
-}
-
-/** Restore sink: replace the live project + libraries from a snapshot and reload every client exactly
- * like a cold load (mirrors the `loadProject` path). The project is re-parsed (validated) before it
- * touches the engine; the library slots are the module-level live state `stateMessage` reads. */
-function applyRestoredSnapshot(files: SnapshotFiles): void {
-  const project = parseProject(files.project);
-  host.engine.setProject(project);
-  host.reloadOutputSettings();
-  autosaver.markDirty();
-  if (isVersionedBlob(files.showLibrary)) {
-    liveShowLibrary = files.showLibrary;
-    showLibraryAutosaver.markDirty();
+  const monitorBus = createMonitorBus(broadcastJson);
+  // The error Reporter (#122) subscribes to EVERY Monitor event: non-error events become breadcrumbs,
+  // error events become deduplicated, shipped reports. Created below iff telemetry is enabled + wired.
+  let reporter: Reporter | null = null;
+  // The off-site backups outbox (#123): a SECOND disk-backed ship-queue reusing the #122 transport
+  // against a `/backups` route on the same Worker. Created in the same enablement block as the
+  // reporter (endpoint/token present); null under dev / capture-only, where snapshotting stays local.
+  let backupsQueue: ShipQueue<BackupRecord> | null = null;
+  function monitor(event: Parameters<typeof monitorBus.emit>[0]): void {
+    const full = monitorBus.emit(event);
+    reporter?.observe(full);
   }
-  if (isVersionedBlob(files.songLibrary)) {
-    liveSongLibrary = files.songLibrary;
-    songLibraryAutosaver.markDirty();
+
+  // Server process fault capture (#122): uncaught exceptions + unhandled rejections land on the same
+  // Monitor bus as an `error` event. `onFatal` runs the Reporter's synchronous queue flush before the
+  // process exits, so a crash report reaches disk (and ships on the next boot) even on a hard fault.
+  let flushReportsSync: () => void = () => {};
+  installProcessErrorCapture({ monitor, onFatal: () => flushReportsSync() });
+
+  // --- Remote error reporting (#122) ------------------------------------------
+  // On when the server serves the built web root (packaged/prod), off under the dev proxy;
+  // `LEDRUMS_TELEMETRY=on|off` overrides. Shipping additionally needs an ingest endpoint + token
+  // (baked in at build time via env); absent those, capture still feeds the local Monitor but nothing
+  // leaves the machine. The queue/ship machinery is generic (reused by the backups spec #123).
+  function appVersion(): string {
+    // Desktop config is the version source of truth (passed as env); package.json is the plain-dev
+    // fallback so a dev report still carries a version.
+    const fromEnv = process.env.LEDRUMS_APP_VERSION?.trim();
+    if (fromEnv) return fromEnv;
+    try {
+      const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+        version?: string;
+      };
+      return pkg.version ?? '0.0.0-dev';
+    } catch {
+      return '0.0.0-dev';
+    }
   }
-  broadcastState();
-  monitor({ type: 'persistence', direction: 'local', source: 'server', destination: 'backups', label: 'Snapshot restored — engine + clients reloaded' });
-}
 
-const snapshotOutbox = backupsQueue;
-const snapshotStore: SnapshotStore = createSnapshotStore({
-  dir: join(resolveProjectsDir(process.env), 'backups'),
-  now: () => Date.now(),
-  readCurrent: () => ({ project: host.engine.getProject(), showLibrary: liveShowLibrary, songLibrary: liveSongLibrary }),
-  applyRestored: applyRestoredSnapshot,
-  onSnapshot: snapshotOutbox ? (meta, bundle) => snapshotOutbox.enqueue(toBackupRecord(hostname(), meta, bundle)) : undefined,
-});
-
-// Boot snapshot: capture whatever state the app starts this session with BEFORE any client can
-// connect and mutate (the WS server isn't listening until boot() below). Trigger #3.
-snapshotStore.snapshot('boot');
-
-/** Change-driven cadence (#123): every 30 min, snapshot iff content changed (the store self-gates on
- * a content hash), so an idle session never churns retention. unref'd — never keeps the process up. */
-const SNAPSHOT_CADENCE_MS = 30 * 60_000;
-const snapshotTimer = setInterval(() => snapshotStore.snapshot('cadence'), SNAPSHOT_CADENCE_MS);
-(snapshotTimer as { unref?: () => void }).unref?.();
-
-/** PixLite controller monitor (S47, group L): discovery + adoption + the client-interest-gated poll
- * loop. ONE HttpPixliteClient per controller (its internal queue enforces the sequential rule). The
- * adopted controller is persisted as `project.controller` (data-only) and rehydrated at boot below.
- * All emitted `controllerStatus`/`controllerDiscovery` messages ride the normal JSON broadcast. */
-const controllerMonitor = createControllerMonitor({
-  createClient: ({ host: controllerHost, auth }) => new HttpPixliteClient({ host: controllerHost, auth }),
-  probe: (controllerHost, timeoutMs) => probeController(controllerHost, timeoutMs),
-  getOutputSettings: () => host.engine.getProject().output,
-  getController: () => host.engine.getProject().controller,
-  persistController: (controller) => {
-    // Store on the live project in place (no engine rebuild — the controller isn't geometry), then
-    // autosave + re-broadcast state so every client sees the adopted controller.
-    host.engine.getProject().controller = controller ?? undefined;
-    autosaver.markDirty();
-    broadcastState();
-  },
-  broadcast: broadcastJson,
-  monitor,
-});
-
-const handleClientMessage = createClientMessageHandler<WebSocket>({
-  clients,
-  host,
-  voiceHost,
-  autosaver,
-  showLibraryAutosaver,
-  songLibraryAutosaver,
-  broadcastJson,
-  broadcastPresence,
-  broadcastState,
-  stateMessage,
-  // The live show-library slot is owned here (boot-recovered + autosaved); the handler adopts a
-  // pushed library through this setter so stateMessage/the autosaver read the latest.
-  setShowLibrary: (lib) => {
-    liveShowLibrary = lib;
-  },
-  setSongLibrary: (lib) => {
-    liveSongLibrary = lib;
-  },
-  relayToOthers,
-  tunnelControl,
-  isTunnelClient: (ws) => tunnelClients.has(ws),
-  monitor,
-  listNetworkAdapters: () => listNetworkAdapters(),
-  // Project backups (#123): the list read, the server-side restore (pre-risk snapshot → atomic
-  // replace → cold-load reload, all in the store), and the append-only pre-risk trigger the bulk
-  // apply seams call before mutating.
-  backups: {
-    list: () => snapshotStore.list(),
-    restore: (id) => snapshotStore.restore(id) !== null,
-    // Returns whether the safety snapshot was taken: `snapshot('pre-risk')` returns null only when
-    // the WRITE fails (pre-risk never self-gates), so `!== null` is the fail-closed signal the risky-
-    // op seams check before mutating — a false makes them refuse rather than overwrite unprotected.
-    snapshotPreRisk: () => snapshotStore.snapshot('pre-risk') !== null,
-  },
-  controller: {
-    discover: () => controllerMonitor.discover(),
-    adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
-    setAuth: (password) => controllerMonitor.setAuth(password),
-    identify: (durationS) => controllerMonitor.identify(durationS),
-    setTestData: (pattern) => controllerMonitor.setTestData(pattern),
-    backToLive: () => controllerMonitor.backToLive(),
-    watch: (key) => controllerMonitor.watch(key),
-    dropWatcher: (key) => controllerMonitor.dropWatcher(key),
-  },
-});
-
-// --- native-MIDI + OTA HTTP routes ------------------------------------------
-
-// The native-MIDI bridge feeds decoded channel MIDI into the same WS client-message handler, but
-// has no real client to reply to — a no-op stub satisfies the handler's send/close surface without
-// opening a connection.
-const nativeInputSocket = {
-  close: () => {},
-  send: () => {},
-} as unknown as WebSocket;
-
-nativeHttpHandler = createNativeMidiHandler({
-  hostToken,
-  monitorInput: (msg) => monitorInput(msg, 'native-midi'),
-  dispatch: (msg) => handleClientMessage(msg, nativeInputSocket),
-  monitor,
-});
-
-// The desktop shell's own diagnostics (notably "the LEDrums MIDI port failed to come up") land on
-// the SAME Monitor stream as the server's native-MIDI errors — a packaged .app has no visible
-// stdout, so eprintln! alone means the drummer gets silence (#139).
-hostEventHttpHandler = createHostEventHandler({ hostToken, monitor });
-
-updateStatusHttpHandler = createUpdateStatusHandler({
-  endpoint: process.env.LEDRUMS_OTA_ENDPOINT,
-  currentVersion: process.env.LEDRUMS_APP_VERSION ?? null,
-});
-
-// --- OSC input --------------------------------------------------------------
-
-// Raw OSC inputs are engine inputs (not authoring), so they bypass the editor gate entirely —
-// the transport-recall handler just needs the voice host + broadcast sink.
-const oscVoiceDeps = { voiceHost, broadcastJson };
-const oscInput = new OscInput({ port: oscPort });
-
-// The listen surface a third-party sender (Sensory Percussion, a Max device) is configured
-// against, plus whether the transport is actually alive. Seeded optimistically because the bind
-// resolves a tick after construction; `onStatus` overwrites it with the truth — and always well
-// before `server.listen` admits the first client, so no client ever reads the optimistic value.
-let oscListen: OscListenInfo = { status: 'listening', port: oscPort, hosts: lanAddresses() };
-
-oscInput.onStatus((status) => {
-  oscListen = {
-    status: status.state,
-    port: status.port,
-    hosts: lanAddresses(),
-    ...(status.error ? { error: status.error } : {}),
-  };
-  if (status.state === 'error') {
-    // A dead OSC socket used to be completely silent — no terminal line, no Monitor row, no UI.
-    // Surface it the same way the native-MIDI bridge surfaces its faults.
-    monitor({ type: 'error', direction: 'local', source: 'server/osc', destination: 'osc-input', label: 'OSC input unavailable', detail: `${status.code ?? 'error'} on udp:${status.port} — ${status.error ?? 'socket error'}` });
-    console.error(`OSC input unavailable on udp:${status.port}: ${status.error ?? 'socket error'}`);
-  } else {
-    monitor({ type: 'system', direction: 'local', source: 'server/osc', destination: 'osc-input', label: `OSC bound on udp:${status.port}`, detail: oscListen.hosts.length ? `send OSC to ${oscListen.hosts.map((h) => `${h}:${status.port}`).join(' or ')}` : `send OSC to 127.0.0.1:${status.port}` });
+  if (isTelemetryEnabled(process.env, { servingBuiltWeb: existsSync(webRoot) })) {
+    const endpoint = process.env.LEDRUMS_TELEMETRY_ENDPOINT?.trim();
+    const token = process.env.LEDRUMS_TELEMETRY_TOKEN?.trim();
+    if (endpoint && token) {
+      // Identity resolved once at boot (uptime is read per report). Session id distinguishes runs.
+      const session = randomUUID();
+      const machine = hostname();
+      const osPlatform = platform();
+      const osRelease = release();
+      const version = appVersion();
+      const queue = createShipQueue<ReportRecord>({
+        path: join(resolveProjectsDir(process.env), 'error-reports.jsonl'),
+        transport: createHttpTransport<ReportRecord>({ endpoint, token }),
+        // Upsert by dedup key so a render-loop error firing 120×/s collapses to ONE queued
+        // report whose count rises, instead of appending N near-identical rows (#137 C1).
+        keyOf: (r) => r.dedupKey,
+      });
+      reporter = createReporter({
+        queue,
+        now: () => Date.now(),
+        envelope: (origin) => ({
+          machine,
+          version,
+          engineMode: VOICE_MODE ? 'voice' : 'legacy',
+          platform: osPlatform,
+          osRelease,
+          session,
+          uptimeMs: Math.round(process.uptime() * 1000),
+          origin,
+        }),
+      });
+      // Off-site backups (#123) reuse the same Worker + token via the derived `/backups` route — one
+      // second disk-backed queue, no third shipping mechanism. Append-only (no keyOf: each snapshot
+      // ships once). Larger byte cap than error reports since a bundle carries the whole project.
+      const backupUrl = backupsEndpoint(endpoint);
+      if (backupUrl) {
+        backupsQueue = createShipQueue<BackupRecord>({
+          path: join(resolveProjectsDir(process.env), 'backups-outbox.jsonl'),
+          transport: createHttpTransport<BackupRecord>({ endpoint: backupUrl, token }),
+          maxItems: 100,
+          maxBytes: 8_000_000,
+        });
+      }
+      flushReportsSync = () => {
+        reporter?.persistSync();
+        backupsQueue?.persistSync();
+      };
+      // Clean shutdown (boot calls process.exit) + any exit path: flush both queues durably.
+      process.on('exit', () => {
+        reporter?.persistSync();
+        backupsQueue?.persistSync();
+      });
+      monitor({
+        type: 'system',
+        direction: 'local',
+        source: 'server',
+        destination: 'telemetry',
+        label: 'Remote error reporting enabled',
+        detail: `endpoint=${endpoint}${backupUrl ? ` · backups=${backupUrl}` : ''}`,
+      });
+    } else {
+      monitor({
+        type: 'system',
+        direction: 'local',
+        source: 'server',
+        destination: 'telemetry',
+        label: 'Remote error reporting: capturing to Monitor only (ingest endpoint/token unset)',
+      });
+    }
   }
-  // Status settles at boot before any client exists, so this normally broadcasts to nobody. It
-  // matters for a LATER socket fault: without it, every connected UI keeps claiming OSC is live.
-  broadcastJson(stateMessage());
-});
 
-oscInput.on((e) => {
-  const event = oscToEvent(e, host.engineTimeMs);
-  if (!event || event.kind !== 'osc') return;
-  monitor({ type: 'input', direction: 'in', source: 'osc', destination: VOICE_MODE ? 'voice-engine' : 'legacy-engine', label: `OSC ${event.address}`, detail: `value=${event.value}` });
-  if (voiceHost) {
-    // A section-recall address (e.g. from a show-control system) is always consumed by the
-    // recall handler before the zone-map, exactly like the WS osc path; anything else is a
-    // normal OSC input.
-    if (parseSectionRecallAddress(event.address) !== null) {
-      const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-      if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
+  for (const event of startupDiagnostics({
+    voiceMode: VOICE_MODE,
+    port,
+    oscPort,
+    oscHosts: lanAddresses(),
+    webRoot,
+    webRootExists: existsSync(webRoot),
+    project: projectLoad,
+    showLibrary: showLibraryLoad,
+    songLibrary: songLibraryLoad,
+    tunnel: { enabled: tunnelAtBoot, url: tunnelControl.url },
+    pinRequired: pinGate.pin !== null,
+    hostTokenPresent: !!hostToken,
+  })) {
+    monitor(event);
+  }
+
+  function monitorInput(msg: ClientMessage, origin: string): void {
+    const destination = VOICE_MODE ? 'voice-engine' : 'legacy-engine';
+    switch (msg.t) {
+      case 'midi':
+        monitor({
+          type: 'input',
+          direction: 'in',
+          source: origin,
+          destination,
+          label: `MIDI ${msg.on ? 'note on' : 'note off'} ${msg.note}`,
+          detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+        });
+        return;
+      case 'cc':
+        monitor({
+          type: 'input',
+          direction: 'in',
+          source: origin,
+          destination,
+          label: `MIDI CC ${msg.controller}`,
+          detail: `value=${msg.value}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
+        });
+        return;
+      case 'programChange':
+        monitor({
+          type: 'input',
+          direction: 'in',
+          source: origin,
+          destination,
+          label: `MIDI program ${msg.value}`,
+          detail: msg.channel != null ? `channel=${msg.channel}` : undefined,
+        });
+        return;
+      case 'osc':
+        monitor({ type: 'input', direction: 'in', source: origin, destination, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
+        return;
+      case 'key':
+        monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
+        return;
+      case 'fireGraph':
+        monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
+        return;
+      case 'recallSection':
+        monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
+        return;
+    }
+  }
+
+  /** Re-broadcast presence to every client (each gets its own `youAreEditor`). Called on any
+   * join/leave so every client's editor/viewer role + headcount stays current. */
+  function broadcastPresence(): void {
+    for (const ws of clients) {
+      if (ws.readyState === ws.OPEN) ws.send(encodeServer({ t: 'presence', ...clients.presenceFor(ws) }));
+    }
+  }
+
+  function broadcastBinary(rgb: Uint8Array): void {
+    broadcastPreview(clients, rgb);
+  }
+
+  /** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room
+   * PIN. Always present (the Share button always renders, offering Start sharing when off). Only
+   * ever reaches already-admitted clients (it rides the `state` message), so an un-authed
+   * connection never learns the PIN. */
+  function tunnelInfo(): TunnelInfo {
+    const error = tunnelControl.error;
+    return { status: tunnelControl.status, url: tunnelControl.url, pin: pinGate.pin, ...(error ? { error } : {}) };
+  }
+
+  /** Build the full `state` message reflecting the current engine/project. In voice mode
+   * the voice host owns the live geometry, so its model is authoritative for the wire. */
+  function stateMessage(): ServerMessage {
+    const model = voiceHost ? voiceHost.getModel() : host.engine.getModel();
+    return {
+      t: 'state',
+      project: host.engine.getProject(),
+      model: serializeModel(model),
+      effects: effectSpecs(),
+      projects: listProjects(),
+      output: (voiceHost ?? host).getOutputStatus(),
+      showLibrary: liveShowLibrary,
+      songLibrary: liveSongLibrary,
+      tunnel: tunnelInfo(),
+      // Where to point Sensory Percussion / a Max device, and whether the socket is actually
+      // bound (#139). Read at send time, so a client always gets the settled truth.
+      osc: oscListen,
+    };
+  }
+
+  if (voiceHost) voiceHost.onFrame = (rgb) => broadcastBinary(rgb);
+  // Tap tempo (global control 9) changes the transport bpm server-side; rebroadcast the
+  // state so every client's transport readout follows instead of silently drifting.
+  if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
+  else host.onFrame = (rgb) => broadcastBinary(rgb);
+  host.setOutputMonitor(monitor);
+  voiceHost?.setOutputMonitor(monitor);
+  voiceHost?.setMonitor(monitor);
+
+  wss.on('connection', (ws, req) => {
+    if (shuttingDown) { ws.close(1001, 'Server shutting down'); return; }
+    // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
+    // registry or sent any presence/state/frames — so an un-authed client can neither view nor
+    // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
+    // admits everyone, so plain local dev is unchanged.
+    //
+    // Host bypass: the host's OWN app window is admitted without a PIN — but loopback alone is not
+    // proof of that (any local tab/script is also loopback), so the bypass requires the unguessable
+    // per-run host token the window was handed (plus loopback + not-via-cloudflared). Remote clients
+    // (cf-* headers) and LAN peers (non-loopback) can never satisfy it, so both stay gated.
+    const trustedLocal = isTrustedHost({
+      remoteAddress: req.socket.remoteAddress,
+      headers: req.headers,
+      url: req.url,
+      hostToken,
+    });
+    const decision = admitDecision(req.url, pinGate, trustedLocal);
+    if (!decision.ok) {
+      ws.close(decision.code, decision.reason);
       return;
     }
-    voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
-  } else {
-    host.markInput();
-    host.engine.applyEvent(event);
-  }
-  broadcastJson({ t: 'input', kind: 'osc', label: event.address, value: event.value });
-});
 
-// --- periodic stats ---------------------------------------------------------
+    // Admit additively (no eviction) — the first client auto-claims the editor slot, later clients
+    // are viewers. Broadcast presence to EVERY client FIRST (so this newcomer learns its role before
+    // the `state` below — messages are ordered on the socket), then ship its initial state.
+    clients.admit(ws);
+    if (isViaCloudflare(req.headers)) tunnelClients.add(ws);
+    monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
+    broadcastPresence();
+    ws.send(encodeServer(stateMessage()));
+    monitorBus.replay((msg) => ws.send(encodeServer(msg)));
 
-const statsTimer = setInterval(() => {
-  if (voiceHost) {
-    const s = voiceHost.getStats();
-    // Adapt the voice engine's stats onto the legacy `stats` shape, plus the additive
-    // `voice` extension carrying voiceCount + per-bus levels.
-    broadcastJson({
-      t: 'stats',
-      stats: {
-        timeMs: s.engine.timeMs,
-        beat: s.engine.beat,
-        bar: Math.floor(s.engine.beat / host.engine.getProject().composition.transport.beatsPerBar),
-        activeTriggers: s.engine.voiceCount,
-        tickCount: 0,
-        pixelCount: voiceHost.getModel().pixelCount,
-      },
-      latencyMs: s.latencyMs,
-      fps: s.fps,
-      output: s.output,
-      voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
+    ws.on('message', async (raw, isBinary) => {
+      if (shuttingDown || isBinary) return; // refuse new input/actions before decode or monitoring
+      let handled = false;
+      try {
+        const msg = decodeClient(raw.toString());
+        handled = true;
+        monitorInput(msg, 'ws');
+        await dispatchClientMessage(msg, ws);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (handled) {
+          // Error escaped the handler — log, but keep the socket alive.
+          console.error('[ws] handler error:', message);
+        }
+        monitor({ type: 'error', direction: 'local', source: 'server/ws', label: handled ? 'WebSocket handler error' : 'WebSocket decode error', detail: message });
+        ws.send(encodeServer({ t: 'error', message }));
+      }
     });
-    return;
+
+    // Ordinary disconnect/takeover still revokes queued authoring at execution. During shutdown,
+    // freeze that identity until accepted work drains: tunnel stop or a peer close must not undo
+    // admission. All new actions (including takeover) are already refused at ingress.
+    const disconnected = () => {
+      if (!shuttingDown || authoringDrained) clients.remove(ws);
+      controllerMonitor.dropWatcher(ws);
+      broadcastPresence();
+    };
+    ws.on('close', disconnected);
+    ws.on('error', disconnected);
+  });
+
+  // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
+  // capture the wiring so the handler stays free of module-level state + socket plumbing.
+  const broadcastState = (): void => broadcastJson(stateMessage());
+
+  /** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
+  function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
+    const data = encodeServer(msg);
+    for (const other of clients) {
+      if (other !== sender && other.readyState === other.OPEN) other.send(data);
+    }
   }
-  const s = host.getStats();
-  broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
-}, 10);
 
-// --- boot + shutdown --------------------------------------------------------
+  // --- Project backups (#123) --------------------------------------------------
+  // Snapshotting is ALWAYS on locally; stringify remains synchronous, gzip/fs are asynchronous.
+  // Only the off-site push follows #122's enablement rule
+  // (the `backupsQueue` above is null under dev). A snapshot bundles the project + both libraries at
+  // one instant; a restore replaces all three and cold-loads every client — so it is always coherent.
 
-// Rehydrate a controller already adopted on the loaded project (boot recovery) — sets up the
-// per-controller client so the first watcher's poll reports live status. No traffic until watched.
-controllerMonitor.hydrate();
+  const replacement = createProjectReplacement({
+    host, voiceHost,
+    isShuttingDown: () => shuttingDown,
+    readCurrent: currentFiles,
+    safetySnapshot: async () => await snapshotStore.snapshot('pre-risk') !== null,
+    flushAutosaves: async () => {
+      await Promise.all([autosaver.flush(), showLibraryAutosaver.flush(), songLibraryAutosaver.flush()]);
+    },
+    persist: (files) => storage.save(files),
+    commitLibraries: (files) => {
+      liveShowLibrary = files.showLibrary as ShowLibraryBlob | null;
+      liveSongLibrary = files.songLibrary as SongLibraryBlob | null;
+    },
+    broadcastState,
+  });
 
-boot({
-  server,
-  wss,
-  clients,
-  host,
-  voiceHost,
-  oscInput,
-  controllerMonitor,
-  port,
-  oscPort,
-  voiceMode: VOICE_MODE,
-  statsTimer,
-  snapshotTimer,
-  autosaver,
-  showLibraryAutosaver,
-  songLibraryAutosaver,
-  tunnelControl,
-  tunnelAtBoot,
-  pin: pinGate.pin,
-  hostToken,
-  monitor,
-});
+  const snapshotOutbox = backupsQueue;
+  const snapshotStore: SnapshotStore = createSnapshotStore({
+    dir: join(resolveProjectsDir(process.env), 'backups'),
+    now: () => Date.now(),
+    readCurrent: currentFiles,
+    applyRestored: (files) => replacement.restore(files),
+    restoreOwnsSafety: true,
+    onSnapshot: snapshotOutbox ? (meta, bundle) => snapshotOutbox.enqueue(toBackupRecord(hostname(), meta, bundle)) : undefined,
+  });
+
+  // Boot snapshot: capture whatever state the app starts this session with BEFORE any client can
+  // connect and mutate (the WS server isn't listening until boot() below). Trigger #3.
+  await snapshotStore.snapshot('boot');
+
+  /** Change-driven cadence (#123): every 30 min, snapshot iff content changed (the store self-gates on
+   * a content hash), so an idle session never churns retention. unref'd — never keeps the process up. */
+  const SNAPSHOT_CADENCE_MS = 30 * 60_000;
+  const snapshotTimer = setInterval(() => {
+    void snapshotStore.snapshot('cadence').catch((error) => console.error('[backups] cadence failed:', error));
+  }, SNAPSHOT_CADENCE_MS);
+  (snapshotTimer as { unref?: () => void }).unref?.();
+
+  /** PixLite controller monitor (S47, group L): discovery + adoption + the client-interest-gated poll
+   * loop. ONE HttpPixliteClient per controller (its internal queue enforces the sequential rule). The
+   * adopted controller is persisted as `project.controller` (data-only) and rehydrated at boot below.
+   * All emitted `controllerStatus`/`controllerDiscovery` messages ride the normal JSON broadcast. */
+  const controllerMonitor = createControllerMonitor({
+    createClient: ({ host: controllerHost, auth }) => new HttpPixliteClient({ host: controllerHost, auth }),
+    probe: (controllerHost, timeoutMs) => probeController(controllerHost, timeoutMs),
+    getOutputSettings: () => host.engine.getProject().output,
+    getController: () => host.engine.getProject().controller,
+    persistController: (controller) => {
+      // Store on the live project in place (no engine rebuild — the controller isn't geometry), then
+      // autosave + re-broadcast state so every client sees the adopted controller.
+      host.engine.getProject().controller = controller ?? undefined;
+      autosaver.markDirty();
+      broadcastState();
+    },
+    broadcast: broadcastJson,
+    monitor,
+  });
+
+  const handleClientMessage = createClientMessageHandler<WebSocket>({
+    clients,
+    host,
+    voiceHost,
+    replacement,
+    autosaver,
+    showLibraryAutosaver,
+    songLibraryAutosaver,
+    broadcastJson,
+    broadcastPresence,
+    broadcastState,
+    stateMessage,
+    // The live show-library slot is owned here (boot-recovered + autosaved); the handler adopts a
+    // pushed library through this setter so stateMessage/the autosaver read the latest.
+    setShowLibrary: (lib) => {
+      validateLibraryVersions(lib, null);
+      liveShowLibrary = lib;
+    },
+    setSongLibrary: (lib) => {
+      validateLibraryVersions(null, lib);
+      liveSongLibrary = lib;
+    },
+    relayToOthers,
+    tunnelControl,
+    isTunnelClient: (ws) => tunnelClients.has(ws),
+    monitor,
+    listNetworkAdapters: () => listNetworkAdapters(),
+    // Project backups (#123): the list read, the server-side restore (pre-risk snapshot → atomic
+    // replace → cold-load reload, all in the store), and the append-only pre-risk trigger the bulk
+    // apply seams call before mutating.
+    backups: {
+      list: () => snapshotStore.list(),
+      restore: async (id) => await snapshotStore.restore(id) !== null,
+      // Returns whether the safety snapshot was taken: `snapshot('pre-risk')` returns null only when
+      // the WRITE fails (pre-risk never self-gates), so `!== null` is the fail-closed signal the risky-
+      // op seams check before mutating — a false makes them refuse rather than overwrite unprotected.
+      snapshotPreRisk: async () => await snapshotStore.snapshot('pre-risk') !== null,
+    },
+    controller: {
+      discover: () => controllerMonitor.discover(),
+      adopt: (controllerHost) => controllerMonitor.adopt(controllerHost),
+      setAuth: (password) => controllerMonitor.setAuth(password),
+      identify: (durationS) => controllerMonitor.identify(durationS),
+      setTestData: (pattern) => controllerMonitor.setTestData(pattern),
+      backToLive: () => controllerMonitor.backToLive(),
+      watch: (key) => controllerMonitor.watch(key),
+      dropWatcher: (key) => controllerMonitor.dropWatcher(key),
+    },
+  });
+
+  /** Hardware inputs remain immediate; authored operations are FIFO across async load/restore.
+   * Re-check editor authority inside the handler when queued work actually executes. */
+  async function dispatchClientMessage(msg: ClientMessage, ws: WebSocket): Promise<void> {
+    if (shuttingDown) return;
+    const immediatePerformanceInput = msg.t === 'fireGraph' || msg.t === 'releaseBus';
+    if ((!immediatePerformanceInput && requiresEditor(msg.t)) || msg.t === 'listBackups' || msg.t === 'listProjects') {
+      await authoring.run(() => handleClientMessage(msg, ws));
+    } else {
+      await handleClientMessage(msg, ws);
+    }
+  }
+
+  // --- native-MIDI + OTA HTTP routes ------------------------------------------
+
+  // The native-MIDI bridge feeds decoded channel MIDI into the same WS client-message handler, but
+  // has no real client to reply to — a no-op stub satisfies the handler's send/close surface without
+  // opening a connection.
+  const nativeInputSocket = {
+    close: () => {},
+    send: () => {},
+  } as unknown as WebSocket;
+
+  nativeHttpHandler = createNativeMidiHandler({
+    hostToken,
+    monitorInput: (msg) => monitorInput(msg, 'native-midi'),
+    dispatch: (msg) => { void dispatchClientMessage(msg, nativeInputSocket).catch((error) => console.error('[input]', error)); },
+    monitor,
+  });
+
+  // The desktop shell's own diagnostics (notably "the LEDrums MIDI port failed to come up") land on
+  // the SAME Monitor stream as the server's native-MIDI errors — a packaged .app has no visible
+  // stdout, so eprintln! alone means the drummer gets silence (#139).
+  hostEventHttpHandler = createHostEventHandler({ hostToken, monitor });
+
+  updateStatusHttpHandler = createUpdateStatusHandler({
+    endpoint: process.env.LEDRUMS_OTA_ENDPOINT,
+    currentVersion: process.env.LEDRUMS_APP_VERSION ?? null,
+  });
+
+  // --- OSC input --------------------------------------------------------------
+
+  // Raw OSC inputs are engine inputs (not authoring), so they bypass the editor gate entirely —
+  // the transport-recall handler just needs the voice host + broadcast sink.
+  const oscVoiceDeps = { voiceHost, broadcastJson };
+  const oscInput = new OscInput({ port: oscPort });
+
+  // The listen surface a third-party sender (Sensory Percussion, a Max device) is configured
+  // against, plus whether the transport is actually alive. Seeded optimistically because the bind
+  // resolves a tick after construction; `onStatus` overwrites it with the truth — and always well
+  // before `server.listen` admits the first client, so no client ever reads the optimistic value.
+  let oscListen: OscListenInfo = { status: 'listening', port: oscPort, hosts: lanAddresses() };
+
+  oscInput.onStatus((status) => {
+    oscListen = {
+      status: status.state,
+      port: status.port,
+      hosts: lanAddresses(),
+      ...(status.error ? { error: status.error } : {}),
+    };
+    if (status.state === 'error') {
+      // A dead OSC socket used to be completely silent — no terminal line, no Monitor row, no UI.
+      // Surface it the same way the native-MIDI bridge surfaces its faults.
+      monitor({ type: 'error', direction: 'local', source: 'server/osc', destination: 'osc-input', label: 'OSC input unavailable', detail: `${status.code ?? 'error'} on udp:${status.port} — ${status.error ?? 'socket error'}` });
+      console.error(`OSC input unavailable on udp:${status.port}: ${status.error ?? 'socket error'}`);
+    } else {
+      monitor({ type: 'system', direction: 'local', source: 'server/osc', destination: 'osc-input', label: `OSC bound on udp:${status.port}`, detail: oscListen.hosts.length ? `send OSC to ${oscListen.hosts.map((h) => `${h}:${status.port}`).join(' or ')}` : `send OSC to 127.0.0.1:${status.port}` });
+    }
+    // Status settles at boot before any client exists, so this normally broadcasts to nobody. It
+    // matters for a LATER socket fault: without it, every connected UI keeps claiming OSC is live.
+    broadcastJson(stateMessage());
+  });
+
+  oscInput.on((e) => {
+    if (shuttingDown) return;
+    const event = oscToEvent(e, (voiceHost ?? host).engineTimeMs);
+    if (!event || event.kind !== 'osc') return;
+    monitor({ type: 'input', direction: 'in', source: 'osc', destination: VOICE_MODE ? 'voice-engine' : 'legacy-engine', label: `OSC ${event.address}`, detail: `value=${event.value}` });
+    if (voiceHost) {
+      // A section-recall address (e.g. from a show-control system) is always consumed by the
+      // recall handler before the zone-map, exactly like the WS osc path; anything else is a
+      // normal OSC input.
+      if (parseSectionRecallAddress(event.address) !== null) {
+        const target = oscRecall(voiceHost.getShow(), event.address, event.value);
+        if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
+        return;
+      }
+      voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });
+    } else {
+      host.markInput();
+      host.engine.applyEvent(event);
+    }
+    broadcastJson({ t: 'input', kind: 'osc', label: event.address, value: event.value });
+  });
+
+  // --- periodic stats ---------------------------------------------------------
+
+  const statsTimer = setInterval(() => {
+    if (voiceHost) {
+      const s = voiceHost.getStats();
+      // Adapt the voice engine's stats onto the legacy `stats` shape, plus the additive
+      // `voice` extension carrying voiceCount + per-bus levels.
+      broadcastJson({
+        t: 'stats',
+        stats: {
+          timeMs: s.engine.timeMs,
+          beat: s.engine.beat,
+          bar: Math.floor(s.engine.beat / host.engine.getProject().composition.transport.beatsPerBar),
+          activeTriggers: s.engine.voiceCount,
+          tickCount: 0,
+          pixelCount: voiceHost.getModel().pixelCount,
+        },
+        latencyMs: s.latencyMs,
+        fps: s.fps,
+        output: s.output,
+        voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
+      });
+      return;
+    }
+    const s = host.getStats();
+    broadcastJson({ t: 'stats', stats: s.engine, latencyMs: s.latencyMs, fps: s.fps, output: s.output });
+  }, 10);
+
+  // --- boot + shutdown --------------------------------------------------------
+
+  // Rehydrate a controller already adopted on the loaded project (boot recovery) — sets up the
+  // per-controller client so the first watcher's poll reports live status. No traffic until watched.
+  controllerMonitor.hydrate();
+
+  boot({
+    server,
+    wss,
+    clients,
+    host,
+    voiceHost,
+    oscInput,
+    controllerMonitor,
+    port,
+    oscPort,
+    voiceMode: VOICE_MODE,
+    statsTimer,
+    snapshotTimer,
+    beginShutdown: () => { shuttingDown = true; },
+    drainOperations: async () => {
+      try { await authoring.close(); }
+      finally { authoringDrained = true; }
+      await replacement.close();
+      await snapshotStore.close();
+      await storage.drain();
+    },
+    autosaver,
+    showLibraryAutosaver,
+    songLibraryAutosaver,
+    tunnelControl,
+    tunnelAtBoot,
+    pin: pinGate.pin,
+    hostToken,
+    monitor,
+  });
+}
+
+void main().catch((error) => { console.error('[boot] failed:', error); process.exitCode = 1; });

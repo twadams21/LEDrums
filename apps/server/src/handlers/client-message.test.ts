@@ -159,7 +159,7 @@ function voiceHarness() {
     },
     monitor: base.monitor,
   });
-  const handle = (msg: ClientMessage, ws: FakeSocket): void => {
+  const handle = (msg: ClientMessage, ws: FakeSocket): void | Promise<void> => {
     if (msg.t === 'midi') {
       base.monitor({
         type: 'input',
@@ -170,7 +170,7 @@ function voiceHarness() {
         detail: `velocity=${msg.velocity}${msg.channel != null ? `; channel=${msg.channel}` : ''}`,
       });
     }
-    handleInner(msg, ws);
+    return handleInner(msg, ws);
   };
   return { ...base, voiceHost, handle };
 }
@@ -435,11 +435,11 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
   }
 
-  it('validates, applies once, persists, and broadcasts fresh state (legacy engine)', () => {
+  it('validates, applies once, persists, and broadcasts fresh state (legacy engine)', async () => {
     const { handle, join, host, autosaver, monitor } = harness();
     const editor = join();
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, editor);
 
     const applied = host.engine.getProject();
     expect(applied.name).toBe('Rig B');
@@ -451,26 +451,26 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'system', label: 'Patch applied' }));
   });
 
-  it('leaves authored composition/setlist untouched (re-rigs only the device)', () => {
+  it('leaves authored composition/setlist untouched (re-rigs only the device)', async () => {
     const { handle, join, host } = harness();
     const editor = join();
     const before = host.engine.getProject();
     const composition = before.composition;
     const setlist = before.setlist;
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, editor);
 
     expect(host.engine.getProject().composition).toEqual(composition);
     expect(host.engine.getProject().setlist).toEqual(setlist);
   });
 
-  it('rejects an invalid payload with a user-visible error and zero partial apply', () => {
+  it('rejects an invalid payload with a user-visible error and zero partial apply', async () => {
     const { handle, join, host, autosaver, monitor } = harness();
     const editor = join();
     const before = host.engine.getProject();
 
     // kit is required (a kit with no drums fails kitSchema.drums.min(1)); no state may change.
-    handle({ t: 'setProject', patch: { kit: { drums: [] }, inputMap: {}, output: {} } } as unknown as ClientMessage, editor);
+    await handle({ t: 'setProject', patch: { kit: { drums: [] }, inputMap: {}, output: {} } } as unknown as ClientMessage, editor);
 
     const err = editor.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
     expect(err?.message).toMatch(/Invalid patch/);
@@ -480,7 +480,7 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid)' }));
   });
 
-  it('rejects a schema-valid but routing-invalid patch (hoop fan-out) with zero apply (F1)', () => {
+  it('rejects a schema-valid but routing-invalid patch (hoop fan-out) with zero apply (F1)', async () => {
     const { handle, join, host, autosaver, monitor } = harness();
     const editor = join();
     const before = host.engine.getProject();
@@ -501,7 +501,7 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     ];
     const patch = { name: 'Rig B', kit: { ...before.kit, outputs: fanOut }, inputMap: before.inputMap, output: before.output };
 
-    handle({ t: 'setProject', patch } as unknown as ClientMessage, editor);
+    await handle({ t: 'setProject', patch } as unknown as ClientMessage, editor);
 
     const err = editor.sent.find((m): m is Extract<ServerMessage, { t: 'error' }> => m.t === 'error');
     expect(err?.message).toMatch(/Invalid patch outputs/);
@@ -511,27 +511,27 @@ describe('setProject — bulk device re-rig (S45): validate → apply-once → p
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'error', label: 'Patch rejected (invalid routing)' }));
   });
 
-  it('bulk-adopts the same slices into the voice host (single kit reload)', () => {
+  it('bulk-adopts the same slices into the voice host (single kit reload)', async () => {
     const { handle, join, host, voiceHost } = voiceHarness();
     const editor = join();
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, editor);
 
     expect(voiceHost.getProject().name).toBe('Rig B');
     expect(voiceHost.getProject().output.host).toBe('10.0.0.9');
     expect(voiceHost.getProject().output.protocol).toBe('sacn');
   });
 
-  it('ignores a viewer setProject (read-only gate), applies once taken over', () => {
+  it('ignores a viewer setProject (read-only gate), applies once taken over', async () => {
     const { handle, join, host } = harness();
     join(); // editor (c1)
     const viewer = join(); // c2
 
-    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
     expect(host.engine.getProject().name).not.toBe('Rig B'); // rejected
 
-    handle({ t: 'takeover' }, viewer);
-    handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
+    await handle({ t: 'takeover' }, viewer);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, viewer);
     expect(host.engine.getProject().name).toBe('Rig B'); // now accepted
   });
 });
@@ -925,78 +925,78 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     return { name: 'Rig B', kit: cur.kit, inputMap: cur.inputMap, output: { ...cur.output, host: '10.0.0.9', protocol: 'sacn' as const } };
   }
 
-  it('listBackups replies to the requester with the store listing (ungated — a viewer may read)', () => {
+  it('listBackups replies to the requester with the store listing (ungated — a viewer may read)', async () => {
     const backups = fakeBackups();
     const { handle, join } = harness({ backups });
     join(); // first socket is editor
     const viewer = join();
-    handle({ t: 'listBackups' }, viewer);
+    await handle({ t: 'listBackups' }, viewer);
     const reply = viewer.sent.find((m) => m.t === 'backups');
     expect(reply).toEqual({ t: 'backups', items: [{ id: '1000-boot', createdAt: 1000, reason: 'boot' }] });
     expect(backups.list).toHaveBeenCalledTimes(1);
   });
 
-  it('restoreBackup runs the restore for a known id (the store applies + broadcasts)', () => {
+  it('restoreBackup runs the restore for a known id (the store applies + broadcasts)', async () => {
     const backups = fakeBackups();
     const { handle, join, monitor } = harness({ backups });
     const editor = join();
-    handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
+    await handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
     expect(backups.restore).toHaveBeenCalledWith('1000-boot');
     expect(editor.has('error')).toBe(false);
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ label: 'Backup restored' }));
   });
 
-  it('restoreBackup rejects an unknown id with a user-visible error, no crash', () => {
+  it('restoreBackup rejects an unknown id with a user-visible error, no crash', async () => {
     const backups = fakeBackups();
     const { handle, join } = harness({ backups });
     const editor = join();
-    handle({ t: 'restoreBackup', id: 'nope' }, editor);
+    await handle({ t: 'restoreBackup', id: 'nope' }, editor);
     expect(backups.restore).toHaveBeenCalledWith('nope');
     const err = editor.sent.find((m) => m.t === 'error');
     expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Unknown backup') });
   });
 
-  it('restoreBackup is editor-gated — a viewer cannot restore', () => {
+  it('restoreBackup is editor-gated — a viewer cannot restore', async () => {
     const backups = fakeBackups();
     const { handle, join } = harness({ backups });
     join(); // editor
     const viewer = join();
-    handle({ t: 'restoreBackup', id: '1000-boot' }, viewer);
+    await handle({ t: 'restoreBackup', id: '1000-boot' }, viewer);
     expect(backups.restore).not.toHaveBeenCalled();
   });
 
-  it('a bulk setProject takes a pre-risk snapshot BEFORE the mutation', () => {
+  it('a bulk setProject takes a pre-risk snapshot BEFORE the mutation', async () => {
     const backups = fakeBackups();
     const { handle, join, host } = harness({ backups });
     const editor = join();
     // Assert ordering: snapshotPreRisk fires, and the project really did change (mutation happened).
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, editor);
     expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
     expect(host.engine.getProject().name).toBe('Rig B');
   });
 
-  it('a REJECTED setProject takes no pre-risk snapshot (nothing was going to mutate)', () => {
+  it('a REJECTED setProject takes no pre-risk snapshot (nothing was going to mutate)', async () => {
     const backups = fakeBackups();
     const { handle, join } = harness({ backups });
     const editor = join();
     // kit with no drums fails validation before any mutation → no snapshot.
-    handle({ t: 'setProject', patch: { name: 'x', kit: { drums: [] } } as never }, editor);
+    await handle({ t: 'setProject', patch: { name: 'x', kit: { drums: [] } } as never }, editor);
     expect(backups.snapshotPreRisk).not.toHaveBeenCalled();
   });
 
-  it('REFUSES the setProject re-rig (fail-closed C1) when the pre-risk snapshot fails — no mutation', () => {
+  it('REFUSES the setProject re-rig (fail-closed C1) when the pre-risk snapshot fails — no mutation', async () => {
     const backups = fakeBackups({ snapshotPreRisk: () => false }); // safety snapshot WRITE failed
     const { handle, join, host } = harness({ backups });
     const editor = join();
     const before = host.engine.getProject().name;
-    handle({ t: 'setProject', patch: patchFrom(host) }, editor);
+    await handle({ t: 'setProject', patch: patchFrom(host) }, editor);
     expect(backups.snapshotPreRisk).toHaveBeenCalledTimes(1);
     expect(host.engine.getProject().name).toBe(before); // NOT 'Rig B' — the mutation was refused
     const err = editor.sent.find((m) => m.t === 'error');
     expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Backup failed') });
   });
 
-  it('restoreBackup surfaces a pre-risk-failure THROW from the store as a clear error (live state untouched)', () => {
+  it('restoreBackup surfaces a pre-risk-failure THROW from the store as a clear error (live state untouched)', async () => {
     const backups = fakeBackups({
       restore: () => {
         throw new Error('pre-risk safety snapshot failed; restore of 1000-boot refused (live state untouched)');
@@ -1005,9 +1005,9 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     const { handle, join, host } = harness({ backups });
     const editor = join();
     const before = host.engine.getProject();
-    handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
+    await handle({ t: 'restoreBackup', id: '1000-boot' }, editor);
     const err = editor.sent.find((m) => m.t === 'error');
-    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore aborted') });
+    expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore failed') });
     expect(host.engine.getProject()).toBe(before); // nothing applied
   });
 });

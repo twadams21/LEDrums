@@ -41,18 +41,55 @@ export function applyModifierChain(
   dt: number,
   modCtx?: ModSampleCtx,
 ): void {
+  runChain(chain, state, fb, [range], model, timeMs, dt, modCtx, false);
+}
+
+/** Scoped-runtime contract: full-output links (temporal/noise) run ONCE over the generated/assembled
+ * output, before the final scope mask. Their clocks/rings never advance per selected hoop.
+ * Other links operate independently on each canonical contiguous selected run. Adjacent
+ * ranges must be coalesced by the caller, so equivalent pixel sets have identical semantics.
+ * Chain order is retained (not a temporal/spatial sorting pass). Each spatial run has its
+ * own state, preventing range-sized scratch or seeded maps from bleeding between runs.
+ */
+export function applyScopedModifierChain(
+  chain: readonly ResolvedModifier[], state: unknown[], fb: Framebuffer,
+  ranges: readonly PixelRange[], model: PixelModel, timeMs: number, dt: number, modCtx?: ModSampleCtx,
+): void {
+  runChain(chain, state, fb, ranges, model, timeMs, dt, modCtx, true);
+}
+
+function runChain(
+  chain: readonly ResolvedModifier[], state: unknown[], fb: Framebuffer,
+  ranges: readonly PixelRange[], model: PixelModel, timeMs: number, dt: number,
+  modCtx: ModSampleCtx | undefined, scoped: boolean,
+): void {
+  if (!ranges.length) return;
   const ctx: ModifierContext = { model, timeMs, dt };
   for (let i = 0; i < chain.length; i++) {
     const link = chain[i]!;
     if (link.bypass) continue;
     const def = tryGetModifier(link.modifierId);
     if (!def) continue; // unknown id → skip (never throw on the render path)
-    if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
     let params = link.params;
     if (modCtx && link.modulations && link.modulations.length) {
       params = { ...link.params };
       applyModulations(link.params, params, link.modulations, def.paramSpec, modCtx);
     }
-    def.apply(ctx, params, fb, range, state[i]);
+    if (scoped && def.scopePolicy === 'range-local') {
+      // Opaque to callers, like every other modifier-state slot.
+      const byRange = (state[i] ??= new Map<string, unknown>()) as Map<string, unknown>;
+      for (const key of byRange.keys()) {
+        if (!ranges.some((r) => key === `${r.start}:${r.end}`)) byRange.delete(key);
+      }
+      for (const range of ranges) {
+        const key = `${range.start}:${range.end}`;
+        if (!byRange.has(key)) byRange.set(key, def.createState?.(model, range));
+        def.apply(ctx, params, fb, range, byRange.get(key));
+      }
+    } else {
+      const range = scoped ? { start: 0, end: model.pixelCount } : ranges[0]!;
+      if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
+      def.apply(ctx, params, fb, range, state[i]);
+    }
   }
 }

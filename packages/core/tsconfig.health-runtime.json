@@ -1,0 +1,14 @@
+{
+  "extends": "../../apps/web/tsconfig.json",
+  "compilerOptions": { "types": [] },
+  "include": [
+    "../../apps/web/node_modules/vite/client.d.ts",
+    "../../apps/web/src/lib/trigger-lab/sim.ts",
+    "../../apps/web/src/lib/trigger-lab/render.ts",
+    "../../apps/web/src/lib/trigger-lab/runtime-parity.test.ts",
+    "../../apps/web/src/lib/trigger-lab/render.geometry.test.ts",
+    "../../apps/web/src/lib/trigger-lab/generator-bridge.test.ts",
+    "../../apps/web/src/lib/trigger-lab/sim.splice.test.ts",
+    "../../apps/web/src/lib/trigger-lab/sim.life-envelope.test.ts"
+  ]
+}

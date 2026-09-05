@@ -99,6 +99,14 @@ export class SaveStatusController {
     }, remaining);
   }
 
+  /** A failed cache write must never settle to Saved, including a pending minimum-floor timer.
+      Existing idle presentation + the caller's error toast avoid inventing a new visual state. */
+  failed(): void {
+    this.clearTimer();
+    this.settling = false;
+    this.setStatus('idle');
+  }
+
   /** Cancel any pending transition (on teardown). Leaves the visible status untouched. */
   dispose(): void {
     this.clearTimer();

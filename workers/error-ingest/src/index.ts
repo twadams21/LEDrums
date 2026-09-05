@@ -30,7 +30,7 @@ function authed(req: Request, env: Env): boolean {
 }
 
 export default {
-  async fetch(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
     if (!authed(req, env)) return error(401, 'unauthorized');
@@ -55,6 +55,7 @@ export default {
         {
           store: d1Store(env.DB),
           notify: createDiscordNotifier(env.DISCORD_WEBHOOK_URL),
+          waitUntil: (promise) => ctx.waitUntil(promise),
           now: Date.now(),
           rateWindowMs: RATE_LIMIT_WINDOW_MS,
           rateMaxNewRows: RATE_LIMIT_MAX_NEW_ROWS,

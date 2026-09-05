@@ -74,7 +74,8 @@ describe('OutputManager state machine', () => {
     m.applySettings(settings('dry-run'), dmxMap);
     m.sendFrame(fb.rgba, dmxMap);
     expect(fake.sends).toHaveLength(0);
-    expect(m.status().packetsSent).toBeGreaterThan(0);
+    expect(m.status().packetsSent).toBe(0);
+    expect(m.status().packetsSimulated).toBeGreaterThan(0);
   });
 
   it('armed transmits one packet per universe', () => {
@@ -290,7 +291,8 @@ describe('OutputManager monitor diagnostics', () => {
     now += 1000;
     m.sendFrame(fb.rgba, dmxMap);
     const summary = events.find((e) => e.type === 'output' && e.label.includes('summary'));
-    expect(summary?.detail).toContain(`packets=${61 * dmxMap.universes.length}`);
+    expect(summary?.detail).toContain(`unconfirmed=${61 * dmxMap.universes.length}`);
+    expect(summary?.detail).toContain('locallyAccepted=0');
     expect(summary?.destination).toContain('artnet:127.0.0.1:');
   });
 
@@ -309,7 +311,7 @@ describe('OutputManager monitor diagnostics', () => {
 
     const summaries = events.filter((e) => e.type === 'output' && e.label.includes('dry-run summary'));
     expect(summaries).toHaveLength(1);
-    expect(summaries[0]!.detail).toContain(`packets=${11 * dmxMap.universes.length}`);
+    expect(summaries[0]!.detail).toContain(`simulated=${11 * dmxMap.universes.length}`);
   });
 
   it('emits one immediate blackout event for the operation', () => {
@@ -322,7 +324,7 @@ describe('OutputManager monitor diagnostics', () => {
     m.applySettings(settings('armed'), dmxMap);
     m.blackout(dmxMap);
 
-    const blackouts = events.filter((e) => e.label === 'Blackout sent');
+    const blackouts = events.filter((e) => e.label === 'Blackout requested');
     expect(blackouts).toHaveLength(1);
     expect(blackouts[0]).toMatchObject({ type: 'output', source: 'server' });
     expect(blackouts[0]!.detail).toContain(`packets=${dmxMap.universes.length}`);

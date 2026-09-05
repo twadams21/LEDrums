@@ -14,6 +14,7 @@ export const slide: ModifierDef<ScratchState> = {
   id: 'slide',
   name: 'Slide',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'offset', label: 'Offset', type: 'number', default: 0, min: -256, max: 256, step: 1, unit: 'px' },
     { key: 'edge', label: 'Edge', type: 'enum', default: 'wrap', options: ['wrap', 'clamp'] },

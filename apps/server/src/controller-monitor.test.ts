@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, parseProject, controllerSchema, type Controller, type OutputSettings } from '@ledrums/core';
 import { authHash, FakePixliteClient, makeFakeProber, type ControllerIdentity } from '@ledrums/io';
 import {
@@ -36,6 +36,7 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 interface HarnessOptions {
   initialController?: Controller;
+  additionalControllers?: Record<string, ControllerIdentity>;
   createClient?: (opts: { host: string; auth?: string }) => FakePixliteClient;
 }
 
@@ -53,7 +54,7 @@ function makeHarness(opts: HarnessOptions = {}) {
       createClientCalls.push(o);
       return (opts.createClient ?? (() => fake))(o);
     },
-    probe: makeFakeProber({ [CONTROLLER_HOST]: identity }),
+    probe: makeFakeProber({ [CONTROLLER_HOST]: identity, ...opts.additionalControllers }),
     getOutputSettings: () => outputSettings(),
     getController: () => persisted.controller,
     persistController: (c) => {
@@ -341,6 +342,147 @@ describe('controller monitor', () => {
 
     h.monitor.dropWatcher(b); // last watcher gone → auto-revert
     await flush();
+    expect(h.fake.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('returns to live if the last watcher leaves while acquisition is pending', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    const watcher = {};
+    h.monitor.watch(watcher);
+    await flush();
+    let resolve!: () => void;
+    vi.spyOn(h.fake, 'modeTestData').mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    const pending = h.monitor.setTestData({ op: 'rgbwCycle' });
+    await flush();
+    h.monitor.dropWatcher(watcher);
+    resolve();
+    await pending;
+    await flush();
+    expect(h.fake.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('keeps a failed return-to-live retryable and does not claim success early', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    await h.monitor.setTestData({ op: 'rgbwCycle' });
+    const live = vi.spyOn(h.fake, 'modeLive').mockRejectedValueOnce(new Error('temporarily unreachable'));
+    await h.monitor.backToLive();
+    expect(h.lastStatus()?.testPattern).toEqual({ op: 'rgbwCycle' });
+    await h.monitor.backToLive();
+    expect(live).toHaveBeenCalledTimes(2);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('uses the replacement client to retire a pending takeover on the same destination', async () => {
+    const old = new FakePixliteClient({ host: CONTROLLER_HOST });
+    const next = new FakePixliteClient({ host: CONTROLLER_HOST });
+    let count = 0;
+    const h = makeHarness({ createClient: () => count++ === 0 ? old : next });
+    await h.monitor.adopt(CONTROLLER_HOST);
+    let resolve!: () => void;
+    vi.spyOn(old, 'modeTestData').mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    const pending = h.monitor.setTestData({ op: 'rgbwCycle' });
+    await flush();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    resolve();
+    await pending;
+    await flush();
+    expect(old.modeLiveCalls).toBe(0);
+    expect(next.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('recovers unresolved takeover after switching destinations and re-adopting with a fresh client', async () => {
+    const otherHost = '192.168.9.78';
+    const old = new FakePixliteClient({ host: CONTROLLER_HOST });
+    const other = new FakePixliteClient({ host: otherHost });
+    const recovered = new FakePixliteClient({ host: CONTROLLER_HOST });
+    let calls = 0;
+    const h = makeHarness({
+      additionalControllers: { [otherHost]: other.identity as ControllerIdentity },
+      createClient: () => [old, other, recovered][calls++]!,
+    });
+    await h.monitor.adopt(CONTROLLER_HOST);
+    await h.monitor.setTestData({ op: 'rgbwCycle' });
+    vi.spyOn(old, 'modeLive').mockRejectedValueOnce(new Error('offline'));
+    await h.monitor.adopt(otherHost);
+    await flush();
+    expect(h.lastStatus()?.testPattern).toBeNull();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    expect(h.lastStatus()?.testPattern).toEqual({ op: 'rgbwCycle' });
+    await h.monitor.backToLive();
+    expect(recovered.modeLiveCalls).toBe(1);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('preserves takeover during credential refresh until the refreshed client acknowledges cleanup', async () => {
+    const old = new FakePixliteClient({ host: CONTROLLER_HOST });
+    const refreshed = new FakePixliteClient({ host: CONTROLLER_HOST });
+    let calls = 0;
+    const h = makeHarness({ createClient: () => calls++ === 0 ? old : refreshed });
+    await h.monitor.adopt(CONTROLLER_HOST);
+    await h.monitor.setTestData({ op: 'rgbwCycle' });
+    let reject!: (error: Error) => void;
+    const live = vi.spyOn(refreshed, 'modeLive').mockImplementationOnce(() => new Promise<void>((_resolve, r) => { reject = r; }));
+    h.monitor.setAuth('new-password');
+    await flush();
+    expect(h.monitor.currentStatus()?.testPattern).toEqual({ op: 'rgbwCycle' });
+    expect(old.modeLiveCalls).toBe(0);
+    reject(new Error('response lost'));
+    await flush();
+    expect(h.monitor.currentStatus()?.testPattern).toEqual({ op: 'rgbwCycle' });
+    await h.monitor.backToLive();
+    expect(live).toHaveBeenCalledTimes(2);
+    expect(h.lastStatus()?.testPattern).toBeNull();
+  });
+
+  it('serializes concurrent pattern requests instead of allowing out-of-order completions', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    let resolve!: () => void;
+    const send = vi.spyOn(h.fake, 'modeTestData')
+      .mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    const first = h.monitor.setTestData({ op: 'rgbwCycle' });
+    const second = h.monitor.setTestData({ op: 'colorFade' });
+    await flush();
+    expect(send).toHaveBeenCalledTimes(1);
+    resolve();
+    await Promise.all([first, second]);
+    expect(h.lastStatus()?.testPattern).toEqual({ op: 'colorFade' });
+  });
+
+  it('ignores a stale poll response from the previous controller generation', async () => {
+    const old = new FakePixliteClient({ host: CONTROLLER_HOST });
+    const next = new FakePixliteClient({ host: CONTROLLER_HOST });
+    let count = 0;
+    const h = makeHarness({ createClient: () => count++ === 0 ? old : next });
+    await h.monitor.adopt(CONTROLLER_HOST);
+    let resolve!: (stats: typeof old.stats) => void;
+    vi.spyOn(old, 'statisticRead').mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    const pending = h.monitor.pollOnce();
+    await flush();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    h.setNow(9999);
+    resolve(old.stats);
+    await pending;
+    expect(h.monitor.currentStatus()?.lastSeen).toBe(1000);
+    await h.monitor.pollOnce();
+    expect(h.monitor.currentStatus()?.lastSeen).toBe(9999);
+  });
+
+  it('shutdown waits for pending acquisition and then returns the controller to live', async () => {
+    const h = makeHarness();
+    await h.monitor.adopt(CONTROLLER_HOST);
+    let resolve!: () => void;
+    vi.spyOn(h.fake, 'modeTestData').mockImplementationOnce(() => new Promise<void>((r) => { resolve = r; }));
+    const pending = h.monitor.setTestData({ op: 'rgbwCycle' });
+    await flush();
+    const stopped = h.monitor.stop();
+    resolve();
+    await Promise.all([pending, stopped]);
     expect(h.fake.modeLiveCalls).toBe(1);
     expect(h.lastStatus()?.testPattern).toBeNull();
   });

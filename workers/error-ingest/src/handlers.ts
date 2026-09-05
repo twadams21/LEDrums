@@ -36,6 +36,7 @@ function toRow(r: WireReport, now: number): ReportRow {
 export interface IngestDeps {
   store: ReportStore;
   notify: DiscordNotifier;
+  waitUntil: (promise: Promise<unknown>) => void;
   now: number;
   rateWindowMs: number;
   rateMaxNewRows: number;
@@ -43,41 +44,30 @@ export interface IngestDeps {
 
 /**
  * Ingest a validated batch: upsert each report, rate-limiting only GENUINELY-NEW keys per machine
- * (repeats always upsert their count bump — never dropped), and firing the Discord webhook exactly
- * once per (machine, version, dedupKey) — its first occurrence. Repeat-count updates never ping.
+ * (repeats always upsert their count bump — never dropped). Persistence atomically claims at most
+ * one notification attempt per (machine, version, dedupKey). `pinged` is claimed/scheduled, NOT
+ * delivered: background work is best-effort, has no retry/outbox, and can be lost on termination.
  */
 export async function ingestBatch(deps: IngestDeps, batch: IngestBatch): Promise<HandlerResult> {
-  const { store, notify, now, rateWindowMs, rateMaxNewRows } = deps;
-  const budgets = new Map<string, number>(); // remaining new-row budget per machine, this request
+  const { store, notify, waitUntil, now, rateWindowMs, rateMaxNewRows } = deps;
   let accepted = 0;
   let rateLimited = 0;
   let pinged = 0;
 
   for (const r of batch.reports) {
-    const machine = r.envelope.machine;
-    const version = r.envelope.version;
-    const seen = await store.dedupKeySeen(machine, version, r.dedupKey);
-
-    if (!seen) {
-      // A new unique error — subject to the per-machine rate limit (a leaked token can annoy, not
-      // damage). Repeats (seen) bypass this entirely so a real machine's count bumps always land.
-      if (!budgets.has(machine)) {
-        const used = await store.countCreatedSince(machine, now - rateWindowMs);
-        budgets.set(machine, Math.max(0, rateMaxNewRows - used));
-      }
-      const remaining = budgets.get(machine)!;
-      if (remaining <= 0) {
-        rateLimited++;
-        continue;
-      }
-      budgets.set(machine, remaining - 1);
-    }
-
     const row = toRow(r, now);
-    await store.upsert(row);
+    const admission = await store.admit(row, { sinceMs: now - rateWindowMs, maxNewKeys: rateMaxNewRows });
+    if (!admission.accepted) {
+      rateLimited++;
+      continue;
+    }
     accepted++;
-    if (!seen) {
-      await notify(row);
+    if (admission.claimed) {
+      // Register each committed claim immediately; a later database failure must not prevent
+      // scheduling earlier admissions. Promise wrapping also contains a synchronous notifier throw.
+      waitUntil(Promise.resolve().then(() => notify(row)).catch(() => {
+        console.warn('[error-ingest] Notification task failed'); // never log thrown values / URLs
+      }));
       pinged++;
     }
   }

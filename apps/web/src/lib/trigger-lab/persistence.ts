@@ -12,7 +12,7 @@
    (older blob) and unknown fields (newer blob) are both tolerated without a
    version bump — bump VERSION only when an existing field changes incompatibly. */
 
-import type { CanvasScene } from '@ledrums/core';
+import { SHOWS_VERSION, SHOWS_PRIOR_VERSION, SONGS_VERSION, type CanvasScene } from '@ledrums/core';
 import type { Bus, EffectDef, Preset, TriggerGraph } from './sim';
 import type { SetlistSection, Song } from '../app/setlist';
 import type { LibrarySong } from './store/song-library';
@@ -316,11 +316,11 @@ export const SHOWS_STORAGE_KEY = 'ledrums:shows:v1';
     coerceAuthored}, so an additive authored field never needs a library bump.
     v2 (B6/A1): each show's hoop targetIds moved 0-based → 1-based; a v1 library is accepted and
     every show migrated on load (see {@link SHOWS_PRIOR_VERSION} / {@link migrateAuthoredHoopTargets}). */
-export const SHOWS_VERSION = 2;
+export { SHOWS_VERSION };
 
 /** The one prior library version {@link deserializeShowLibrary} still accepts, upgrading every
     show's hoop targetIds on load rather than discarding the whole library. */
-export const SHOWS_PRIOR_VERSION = 1;
+export { SHOWS_PRIOR_VERSION };
 
 /** A named show — the authored document given identity. `authored` is the SAME shape the
     single-blob path persists (reused, never duplicated). */
@@ -424,7 +424,7 @@ export const SONGS_STORAGE_KEY = 'ledrums:songs:v1';
 /** Song-library schema version (independent of {@link VERSION}/{@link SHOWS_VERSION}; same
     bump-only-on-incompatible rule). Each song's closure is coerced field-by-field, so an additive
     field on a LibrarySong never needs a bump. */
-export const SONGS_VERSION = 1;
+export { SONGS_VERSION };
 
 /** The persisted song library: canonical songs by id. Unlike {@link ShowLibrary} there is no
     "active" pointer — a library is a pool the shows reference, not a thing you open. */

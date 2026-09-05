@@ -20,6 +20,7 @@ export const levels: ModifierDef = {
   id: 'levels',
   name: 'Levels',
   category: 'color',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 2, step: 0.05 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 2, step: 0.05 },

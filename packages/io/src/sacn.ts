@@ -1,5 +1,5 @@
-import { createSocket, type Socket } from 'node:dgram';
-import type { PixelOutput } from './interfaces';
+import type { PixelOutput, PixelOutputStatus, PixelSendCallback } from './interfaces';
+import { UdpOutput, createOutputSocket, type OutputSocketFactory } from './udp-output';
 
 export const SACN_PORT = 5568;
 
@@ -83,43 +83,32 @@ export interface SacnOptions {
 
 /** sACN (E1.31) pixel output. Uses per-universe multicast unless `host` is given. */
 export class SacnOutput implements PixelOutput {
-  private socket: Socket;
+  private readonly transport: UdpOutput;
   private readonly cid = makeCid();
   private readonly opts: SacnOptions;
   private seq = 0;
-  private ready = false;
 
-  constructor(opts: SacnOptions = {}) {
+  constructor(opts: SacnOptions = {}, socketFactory: OutputSocketFactory = createOutputSocket) {
     this.opts = opts;
-    this.socket = createSocket({ type: 'udp4', reuseAddr: true });
-    this.socket.on('error', () => {});
-    this.socket.bind(() => {
-      try {
-        if (opts.iface) this.socket.setMulticastInterface(opts.iface);
-        this.socket.setMulticastTTL(16);
-      } catch {
-        /* ignore */
-      }
-      this.ready = true;
+    this.transport = new UdpOutput(socketFactory, opts.iface, (socket) => {
+      if (opts.iface) socket.setMulticastInterface(opts.iface);
+      socket.setMulticastTTL(16);
     });
+  }
+
+  onStatus(handler: (status: PixelOutputStatus) => void): () => void {
+    return this.transport.onStatus(handler);
   }
 
   nextFrame(): void {
     this.seq = (this.seq + 1) & 0xff;
   }
 
-  send(universe: number, channels: Uint8Array): void {
-    if (!this.ready) return;
+  send(universe: number, channels: Uint8Array, done?: PixelSendCallback): boolean {
     const pkt = encodeE131(universe, this.seq, channels, this.cid, this.opts.sourceName, this.opts.priority);
     const host = this.opts.host ?? sacnMulticastAddress(universe);
-    this.socket.send(pkt, this.opts.port ?? SACN_PORT, host, () => {});
+    return this.transport.send(pkt, this.opts.port ?? SACN_PORT, host, done);
   }
 
-  close(): void {
-    try {
-      this.socket.close();
-    } catch {
-      /* ignore */
-    }
-  }
+  close(done?: PixelSendCallback): void { this.transport.close(done); }
 }

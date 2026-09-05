@@ -36,6 +36,79 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
+Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
+checks: `docs/reports/2026-09-05-health-project-review-fixes.md`. Four blockers from frozen
+`96909f7f` review: preserve editor identity while accepted shutdown work drains (new ingress
+stops immediately; ordinary takeover still revokes), case-insensitive internal envelope name
+reservation, shared pure canvas voice specs/defaults, and fail-closed current library versions
+(show v2/song v1) before replacement or production library persistence. Browser migrations remain
+canonical; old data must be migrated on a copy, never merely version-relabeled. Actual-main FIFO
+shutdown/peer-disconnect/takeover regressions cover both modes with disabled output/temp storage.
+No UI surface, sa33 SnapshotStore/worker or sa29 checkpoint/modifier implementation overlap;
+later core repairs preserved. Local commit awaits independent re-review; no full sweep or shipping.
+
+**Health remediation — final blockers fixed, local gates green (2026-09-05, `fix/health-integration` HEAD `424da809`, UNPUSHED/UNMERGED):**
+Trent (this machine, `scutil` = "Trent’s MacBook Pro") chose to finish ALL slices rather than defer any, via Fable low-effort twux workers with Pi orchestrating. The seven independent-review blockers were corrected in `a591d3c4` (server: import-only guard fails closed on missing/string-version legacy library files before any boot snapshot, authority still wins; backup read/off-site pack cross the worker as JSON text, local write commits before isolated off-site handoff) and `424da809` (web: live region outside `aria-busy`, host-wide stylesheet registry with boundary-scoped recovery, exact-URL/attempt-window/initiator provenance, status 0 corroborated by HEAD probe). Independent reviewer verified diffs and counterprobes, then owned the serial integrated gate: frozen install, typecheck, **4,759 tests / 4 opt-in skips**, dead-code verify, build, design-system, diff-check, 16/16 production lazy matrix, 3 strict shots, pinned Node 22.23.1 SEA 16/16, desktop `prepare:bundle` smoke. Evidence: `docs/reports/2026-09-05-health-integration-review.md`. **P11 multi-MB stall-free acceptance is still PARTIAL** (clone submission stalls; text transport is a reliability fix). No PR, push, merge, release, deploy or Worker migration has happened; those need Trent's authorization. Full Tauri/ARM build unverified.
+
+**Health remediation implementation (2026-09-05, `fix/health-integration`, historical — superseded by the entry above):**
+Trent approved implementing all audit follow-ups without further questions, in-session;
+verified machine identity remains Trent’s MacBook Pro. The integrating agent selected conservative
+implementation defaults: clear history on document replacement, restart geometry-dependent visual
+state, 32 MiB estimated retained history plus 10,000-entry ceiling, and best-effort bounded ingest
+notifications. These are **implementation defaults, not separately stated user decisions**.
+Tracker: `docs/plans/2026-09-05-health-implementation.md`; scoped evidence:
+`docs/reports/2026-09-05-health-*.md`. Work includes shared core/offline rendering and voice policy,
+document lifetime/persistence ownership, observable output/old-coverage retirement, controller
+ownership, GPU disposal, true wall-clock FPS, immutable release source/exact SEA pin, atomic ingest
+admission and verified workspace dead-code roots. Project replacement/async backups and lazy UI
+loading were subsequently implemented; their review corrections and the integrated gate are recorded above.
+Unresolved controller cleanup now survives re-adoption/credential refresh (review regression fixed).
+No fixes in this new batch are declared merged/shipped yet. Worker rollout requires its documented
+claims-table migration with old writers quiesced; **migration, deployment and OTA publication are
+unexecuted and require separate authorization**. Held Patch files and the unrelated dirty prototype
+checkout remain untouched. The prior audit's undecided questions below are historical: its later
+implementation authorization and the agent-selected defaults above supersede the request to stop.
+
+**P11 bounded backup worker (2026-09-05, local integration follow-up):**
+Requested by Trent in-session (machine identity verified); evidence and explicit limits:
+`docs/reports/2026-09-05-health-backup-worker.md`. Snapshot JSON/hash/gzip and backup read/parse now
+run in one persistent literal-eval Node worker, verified in an actual pinned v22.23.1 SEA. Default
+admission is two snapshots before structured clone, with post-clone 32 MiB/files and 64 MiB retained
+JSON budgets; busy/oversize safety refusal aborts replacement. These budgets are agent-selected.
+Matched 6.4 MB × 8 source burst gap improved 367.28→152.05 ms **by accepting two and refusing six**;
+SEA 381.50→142.63 ms. Eight successful paced copies still take longer overall; accepted clone
+calls and returned-object read cloning are slower than the old stringify/parse on this fixture.
+No retained main-thread full-JSON signature, no silently coalesced pre-risk checkpoints. Storage
+JSON and off-site enqueue remain main-thread boundaries; no frame-budget or lower-RSS claim.
+Worker errors/timeouts/close/retry and source/SEA load/restore/cold recovery are verified locally;
+not pushed/shipped. The following P02/P11 entry is historical and its backup-JSON residual is
+superseded by this scoped report, not its atomic-storage/durability limitations.
+
+**P02/P11 project replacement + async backups (2026-09-05, local `fix/health-project-backups`):**
+Trent's resumed sa-19 request (machine identity verified); report and exact evidence:
+`docs/reports/2026-09-05-health-projects.md`. Shared load/restore/bulk coordinator stages both
+hosts, awaits safety backup + atomic persistence, preserves the active OutputManager's old
+coverage and emits one replacement state. New disk authority is `default.state.local.json`
+(project + both libraries in one rename); the old three files become import-only. Backup gzip/fs
+are async and queued; **JSON capture/parse are still synchronous, so P11 is only partially met**.
+Shutdown awaits output + disk queues, including an adapter reopened by accepted queued edits.
+Recovered 232-test scoped pass plus resumed 33-test narrow pass cover 237 distinct tests; server
+and IO scoped typechecks passed. Real-source server load/restore/shutdown/cold recovery checked
+in both modes with disabled output and temp storage. No full sweep, hardware, push or shipping;
+orchestrator must integrate later core/parity/state repairs. Original prototype checkout untouched.
+
+**SA-26 noninitial UI loading (local branch `perf/health-lazy-surfaces`, 2026-09-05):**
+requested by **Trent** in the SA-26/resume instructions (machine identity verified), implementing
+health-audit §6 without changing the parent's core/state work. Trigger/Sections/Objects and the
+seven Settings panes now load at their existing boundaries; Perform/necessary Three and modal
+chrome stay eager. Chrome recovery uses a fresh URL ONLY for a declared entry with witnessed
+HTTP failure; shared-module/opaque/evaluation failures instead explain safe reopening. No automatic
+reload or store reset. Browser regressions exercise real failed production requests, unchanged
+engine connection, warm/stale navigation, modal focus/Escape and persisted edits across explicit
+reload. Measurements, limitations and focused gates: `docs/reports/2026-09-05-health-bundle.md`.
+This is **local implementation evidence**, not merged/shipped status; parent owns the full sweep.
+
 **Codebase health audit (2026-09-05, branch `fix/codebase-health-audit`, base `763c422`):**
 requested by **Trent** in-session (machine identity verified). Work is isolated in
 `../ledrums-health-audit`; the original prototype checkout and its dirty F7 brief are untouched.

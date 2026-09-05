@@ -25,12 +25,37 @@ Read AGENTS, architecture and conventions. Source evidence from current code, no
 ## Gotchas
 
 - `rg`/`fd` tool wrappers may fail before searching; use the CLI through bash when that happens.
-- Core/offline action parity does not prove rendered-pixel or voice-lifetime parity. Compare frames and state evolution.
+- Core/offline action parity does not prove rendered-pixel or voice-lifetime parity. Compare frames and state evolution, including authored envelopes inside composites and input changes while paused. A tick-keyed cache must not freeze live modulation; invalidation must not advance trails twice.
+- Document replacement also invalidates outstanding clipboard promises and manual paste dialogs. Use a generation token, not just show identity (same-ID server replacement is still a new lifetime). Save As must not replay boot-only preset backfill over an already-live snapshot.
+- Controller cleanup belongs to its destination, not its disposable HTTP client. Test failed cleanup → leave → re-adopt, credential refresh while pending, and rapid A/B/A. Never clear uncertainty before acknowledgement.
 - Async UDP errors do not reach synchronous send catches. Packet attempts are not proof of controller receipt.
+- Full project replacement must preserve the active OutputManager's old coverage, stage both runtimes before mutation, and await safety backup. Test actual input/model/transport convergence and cold recovery without a browser resync in both modes.
+- One atomic envelope avoids torn three-file restores; a corrupt new authority must not silently fall back to stale imports. Document downgrade/export implications and the lack of fsync separately from rename atomicity.
+- Async gzip/fs does not make JSON capture asynchronous. Literal-eval workers survive SEA bundling without an external asset, but postMessage capture and returned-object deserialization still block main. Measure submission AND delivery separately, and verify an actual injected pinned-runtime SEA. Count accepted/refused requests: a bounded two-accepted burst is not an eight-checkpoint speedup. Post-clone JSON byte budgets are not pre-clone heap bounds; main-isolate heap improvement is not process RSS improvement. Preserve every accepted pre-risk revision, fail risk operations on refusal, and test queued capture loss/timeout/disposal/retry. Repeatable comparator/build: `apps/desktop/scripts/snapshot-worker-sea.probe.mjs`; evidence: `docs/reports/2026-09-05-health-backup-worker.md`.
+- Accepted authoring can reopen output after shutdown's first stop. Drain accepted operations, then close/await the final output lifetime too; test with deferred callbacks, not an immediate fake alone.
+- Shutdown must close admission before closing clients: execution-time editor checks otherwise discard already-queued work when socket teardown revokes authorization. Preserve identity during the drain (including peer/tunnel disconnect), not during ordinary takeover. Prove it through real main: FIFO named load → queued edit → ping barrier → SIGTERM → release FIFO → inspect cold storage in both modes.
+- Reserve internal envelope names case-insensitively before named Project IO, and test explicit case-variant filenames even on Linux. Protocol-shape validity is not library-version compatibility: reject unsupported versions before safety/persistence or run the canonical migration, never silently reinterpret old hoop ids.
+- Restored canvas effects need canonical parameter SPECS as well as preset values. Missing specs silently disable modulation; assert real rendered RGB at CC endpoints, not only projected object shape.
 - Dropping congested preview frames must not silently drop authoritative JSON messages.
 - Frame buffers owned by async transports cannot be blindly reused while outstanding sends may reference them.
 - Reaping a pooled object does not release its retained arrays unless references are cleared.
+- Three frees GPU attributes by reading them during geometry disposal: dispose BEFORE replacing attributes. Instrument actual browser WebGL creation/deletion across rebuilds and view remounts.
+- `pnpm dead-code:verify` checks actual reachability with a seeded dead source file. Keep the pure-JS Knip pin deliberate: newer releases can introduce native resolver bindings. Keep advisory unused exports separate from the verified file/dependency baseline.
+- New D1 claims code needs backfill and writer quiescence before deployment; merging application code is not a migration. Claims are notification attempts, not guaranteed delivery.
 - `pnpm test` passing with jsdom/Svelte warnings is not real-browser or hardware verification.
+- Bundle comparisons must hold core/state fixes constant. Preserve the pre-split production dist
+  and measure actual loaded JS at the same ready selector, not just the main chunk or Vite warning.
+- Native imports cache failures in Chrome. A mocked reject-once factory cannot prove retry:
+  abort an actual production entry, restore connectivity, verify the original URL stays rejected,
+  then assert recovery makes a fresh request without reloading the app/shared runtime. Chrome may
+  name the ENTRY when a dependency failed; require failed entry HTTP evidence before cache-busting.
+  Opaque/evaluation/shared-module failures need safe reopen guidance instead. Vite can report just
+  the first of several failed CSS preloads: await every witnessed failed stylesheet on recovery.
+  A failed Chrome stylesheet link can still have an empty `.sheet`; use HTTP evidence, not truthiness.
+  Assert the real ready-content selector, not just “fallback hidden” (the delayed-feedback window
+  deliberately has no fallback yet).
+- In modal browser checks a tooltip can legitimately consume Escape first. Move focus to a
+  non-tooltip navigation control and wait for the tooltip to close before asserting dialog dismissal.
 
 ## Verify
 

@@ -1,5 +1,5 @@
-import { createSocket, type Socket } from 'node:dgram';
-import type { PixelOutput } from './interfaces';
+import type { PixelOutput, PixelOutputStatus, PixelSendCallback } from './interfaces';
+import { UdpOutput, createOutputSocket, type OutputSocketFactory } from './udp-output';
 
 export const ARTNET_PORT = 6454;
 
@@ -36,31 +36,21 @@ export interface ArtNetOptions {
 
 /** Art-Net pixel output. One per-frame sequence counter is shared across universes. */
 export class ArtNetOutput implements PixelOutput {
-  private socket: Socket;
+  private readonly transport: UdpOutput;
   private readonly host: string;
   private readonly port: number;
   private seq = 0;
-  private ready = false;
 
-  constructor(opts: ArtNetOptions) {
+  constructor(opts: ArtNetOptions, socketFactory: OutputSocketFactory = createOutputSocket) {
     this.host = opts.host;
     this.port = opts.port ?? ARTNET_PORT;
-    this.socket = createSocket('udp4');
-    this.socket.on('error', () => {});
-    const onBound = (): void => {
-      if (opts.broadcast) {
-        try {
-          this.socket.setBroadcast(true);
-        } catch {
-          /* ignore */
-        }
-      }
-      this.ready = true;
-    };
-    // Bind to the given local interface (ephemeral port) so outbound packets leave the
-    // chosen NIC; otherwise bind ephemerally on the default interface.
-    if (opts.iface) this.socket.bind({ address: opts.iface }, onBound);
-    else this.socket.bind(onBound);
+    this.transport = new UdpOutput(socketFactory, opts.iface, (socket) => {
+      if (opts.broadcast) socket.setBroadcast(true);
+    });
+  }
+
+  onStatus(handler: (status: PixelOutputStatus) => void): () => void {
+    return this.transport.onStatus(handler);
   }
 
   nextFrame(): void {
@@ -68,17 +58,9 @@ export class ArtNetOutput implements PixelOutput {
     if (this.seq === 0) this.seq = 1; // 0 disables sequence tracking; keep it active
   }
 
-  send(universe: number, channels: Uint8Array): void {
-    if (!this.ready) return;
-    const pkt = encodeArtDmx(universe, this.seq, channels);
-    this.socket.send(pkt, this.port, this.host, () => {});
+  send(universe: number, channels: Uint8Array, done?: PixelSendCallback): boolean {
+    return this.transport.send(encodeArtDmx(universe, this.seq, channels), this.port, this.host, done);
   }
 
-  close(): void {
-    try {
-      this.socket.close();
-    } catch {
-      /* ignore */
-    }
-  }
+  close(done?: PixelSendCallback): void { this.transport.close(done); }
 }

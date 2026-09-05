@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertProjectIntegrity, parseProject, reconcileOutputs, type Project } from '@ledrums/core';
@@ -25,8 +26,22 @@ function serializeProject(project: Project): string {
   return JSON.stringify(parseProject(project), null, 2);
 }
 
+// These envelopes are NOT bare Projects. Compare names before IO, independent of the host
+// filesystem's case rules (macOS commonly aliases Default.State.Local to the live authority).
+const INTERNAL_BLOB_NAMES = new Set(['default.state.local', 'default.shows.local', 'default.songs.local']);
+function isInternalBlobName(name: string): boolean {
+  // Reserve Unicode compatibility/case forms conservatively too. On macOS, long-s (ſ)
+  // aliases ASCII s even though plain toLowerCase() leaves it unchanged.
+  return INTERNAL_BLOB_NAMES.has(name.normalize('NFKC').toUpperCase().toLowerCase());
+}
+function isNamedProjectFile(file: string): boolean {
+  return file.endsWith('.json') && !isInternalBlobName(file.slice(0, -5));
+}
+
 /** Resolve the final path for a persisted `<name>.json` project. */
 export function projectFilePath(name: string, dir: string = PROJECTS_DIR): string {
+  if (isInternalBlobName(name)) throw new Error('Reserved internal library/live-state filename');
+  if (!name || name === '.' || name === '..' || /[\\/\\\\\x00]/.test(name)) throw new Error('Invalid project name');
   return join(dir, `${name}.json`);
 }
 
@@ -34,12 +49,27 @@ export function projectFilePath(name: string, dir: string = PROJECTS_DIR): strin
 export function listProjects(dir: string = PROJECTS_DIR): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    .filter(isNamedProjectFile)
     .map((f) => f.replace(/\.json$/, ''))
     .sort();
 }
 
 /** True when a saved project file exists for `name`. */
+export async function listProjectsAsync(dir: string = PROJECTS_DIR): Promise<string[]> {
+  const files = await readdir(dir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  return files.filter(isNamedProjectFile).map((f) => f.slice(0, -5)).sort();
+}
+
+export async function loadProjectAsync(name: string, dir: string = PROJECTS_DIR): Promise<Project> {
+  const parsed = parseProject(JSON.parse(await readFile(projectFilePath(name, dir), 'utf8')));
+  const project = { ...parsed, kit: reconcileOutputs(parsed.kit) };
+  assertProjectIntegrity(project);
+  return project;
+}
+
 export function projectExists(name: string, dir: string = PROJECTS_DIR): boolean {
   return existsSync(projectFilePath(name, dir));
 }

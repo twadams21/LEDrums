@@ -6,8 +6,8 @@ import {
   type RgbOrder,
   type UniversePatch,
 } from '@ledrums/core';
-import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
-import { createOutputMonitorCoalescer, outputDestination, universeRangeLabel } from './output-monitor';
+import { ArtNetOutput, SacnOutput, type PixelOutput, type PixelOutputStatus } from '@ledrums/io';
+import { outputDestination, universeRangeLabel } from './output-monitor';
 import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
 
@@ -45,6 +45,17 @@ export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, f
 export type OutputFactory = (settings: OutputSettings) => PixelOutput;
 export type OutputMonitorSink = (event: Omit<MonitorEvent, 'id' | 'time'>) => void;
 
+/** Additive local diagnostics. The existing wire packetsSent field now means local acceptance
+ * only; it never includes dry-run or unobservable legacy sends, and is NOT a controller ACK. */
+export interface OutputManagerStatus extends OutputStatus {
+  readiness: PixelOutputStatus['state'] | 'unobservable';
+  packetsAttempted: number;
+  packetsAccepted: number;
+  packetsSkipped: number;
+  packetsUnconfirmed: number;
+  packetsSimulated: number;
+}
+
 export interface OutputManagerOptions {
   now?: () => number;
   monitorWindowMs?: number;
@@ -70,18 +81,39 @@ function defaultFactory(settings: OutputSettings): PixelOutput {
 /**
  * Output state machine (R15): `disabled → dry-run → armed`, defaulting to disabled.
  * Dry-run forms/counts packets without transmitting; arming opens a transport; any
- * transition away from armed, or a send error, emits a blackout failsafe.
+ * transition away from armed, or a send error, requests a blackout failsafe. Async errors
+ * defer that request until before the next frame, never overwriting live data from a callback.
  */
 export class OutputManager {
   private output: PixelOutput | null = null;
   private settings: OutputSettings | null = null;
   private signature = '';
   private packetsSent = 0;
+  private packetsAttempted = 0;
+  private packetsSkipped = 0;
+  private packetsUnconfirmed = 0;
+  private packetsSimulated = 0;
+  private readiness: OutputManagerStatus['readiness'] = 'closed';
+  private generation = 0;
+  private needsRebind = false;
+  private failsafePending = false;
+  private unsubscribe?: () => void;
   private lastError: string | null = null;
+  private retiredError: string | null = null;
+  private readonly drains = new Set<Promise<void>>();
+  private closeCompletion: Promise<void> | null = null;
+  /** Wire prefixes that may still be lit, copied at submission time — never a borrowed DmxMap.
+   * Includes queued/unconfirmed packets conservatively, not just completed local sends. */
+  private readonly coverage = new Map<number, number>();
+  private readonly retirements = new Map<number, { channels: number; pending: boolean }>();
   private universeCount = 0;
   private settingsMonitorSignature = '';
   private readonly now: () => number;
-  private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
+  private readonly monitorWindowMs: number;
+  private summaryStart: number | null = null;
+  private summary = { frames: 0, attempts: 0, accepted: 0, skipped: 0, unconfirmed: 0, simulated: 0, bytes: 0 };
+  private readonly summaryUniverses = new Set<number>();
+  private readonly diagnosticWindows = new Map<string, { at: number; repeats: number }>();
   /** Active hoop-identify override (E1): pixels [start,end) are forced full-on until `expiresAt`
    * (ms on this manager's clock). Composited over the live frame in {@link sendFrame} — a bounded,
    * fire-and-forget override that NEVER blocks or mutates the engine's frame buffer. */
@@ -93,42 +125,109 @@ export class OutputManager {
     opts: OutputManagerOptions = {},
   ) {
     this.now = opts.now ?? (() => performance.now());
-    this.outputDiag = createOutputMonitorCoalescer({ windowMs: opts.monitorWindowMs });
+    this.monitorWindowMs = opts.monitorWindowMs ?? 1000;
   }
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
+    this.closeCompletion = null; // an explicit restart/reconfiguration opens a new lifetime
+    settings = { ...settings }; // callbacks retain the destination as it was configured
+    if (!this.settings || this.settings.state !== settings.state || outputDestination(this.settings) !== outputDestination(settings)) {
+      this.resetSummary();
+    }
     this.universeCount = dmxMap.universes.length;
     // priority + iface are baked into the sender at construction, so a change to either must
     // re-create the transport (alongside protocol/host/broadcast/port).
     const sig = `${settings.protocol}|${settings.host}|${settings.broadcast}|${settings.port ?? ''}|${settings.iface ?? ''}|${settings.priority}`;
     if (settings.state === 'armed') {
-      if (!this.output || sig !== this.signature) {
-        this.teardown(dmxMap, settings);
+      if (!this.output || sig !== this.signature || this.needsRebind) {
+        this.teardown();
         try {
           this.output = this.factory(settings);
           this.signature = sig;
           this.lastError = null;
+          this.readiness = 'unobservable';
+          this.needsRebind = false;
+          const generation = ++this.generation;
+          this.unsubscribe = this.output.onStatus?.((status) => {
+            if (generation !== this.generation) return;
+            const recovered = this.readiness === 'error' && status.state === 'ready';
+            this.readiness = status.state;
+            this.needsRebind = status.state === 'closed'
+              || (status.state === 'error' && (status.phase === 'bind' || status.phase === 'setup'));
+            if (status.state === 'error') {
+              if (status.phase === 'send' || status.phase === 'socket') this.failsafePending = true;
+              this.lastError = `${status.phase}: ${status.code ?? ''} ${status.message}`;
+              this.monitorError('Output transport failed', settings, this.lastError);
+            } else {
+              this.lastError = status.state === 'binding' ? 'Output binding; local UDP readiness pending'
+                : status.state === 'closed' ? 'Output socket closed; transmission stopped' : null;
+              this.monitorCoalesced({ type: 'output', direction: 'out', source: 'server',
+                destination: outputDestination(settings), label: recovered ? 'Output recovered' : `Output ${status.state}`,
+                detail: 'Local UDP readiness only; controller receipt is not acknowledged' });
+            }
+          });
         } catch (err) {
           this.lastError = String(err);
+          this.readiness = 'error';
           this.output = null;
           this.monitorError('Output setup failed', settings, this.lastError);
         }
       }
     } else {
       // Leaving armed: blackout the rig, then drop the transport.
-      this.teardown(dmxMap, settings);
+      this.teardown();
     }
-    this.settings = settings;
+    this.settings = { ...settings };
+    if (this.output) this.retireCoverage(dmxMap);
     this.monitorSettings(settings, dmxMap);
   }
 
-  private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
+  private teardown(): void {
     if (this.output) {
-      this.blackout(dmxMap);
-      this.output.close();
-      this.output = null;
-      this.signature = '';
+      this.blackout(); // ONLY old transmitted coverage, never the incoming project's map
+      this.closeTransport();
     }
+  }
+
+  private closeTransport(): void {
+    const output = this.output;
+    const settings = this.settings;
+    this.output = null;
+    this.signature = '';
+    this.generation++;
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    this.readiness = 'closed';
+    this.failsafePending = false;
+    this.resetSummary();
+    if ([...this.retirements.values()].some((entry) => !entry.pending)) {
+      this.retiredError = `Retired output ${settings ? outputDestination(settings) : ''}: blackout incomplete; ${this.lastError ?? 'UDP was not ready'}`;
+      if (settings) this.monitorError('Output blackout incomplete', settings, this.retiredError);
+    }
+    this.coverage.clear();
+    this.retirements.clear();
+    if (!output) return;
+    const failed = (error: unknown): void => {
+      this.retiredError = `Retired output ${settings ? outputDestination(settings) : ''}: ${String(error)}`;
+      if (settings) this.monitorError('Output close failed', settings, this.retiredError);
+    };
+    let finish!: () => void;
+    const drain = new Promise<void>((resolve) => { finish = resolve; });
+    this.drains.add(drain);
+    // Real UDP adapters bound their drain at 250ms. Also bound buggy/legacy adapters that
+    // never invoke completion; keep this timer referenced so shutdown can actually await it.
+    let settled = false;
+    const done = (error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      try { if (error) failed(error); }
+      catch { /* A throwing diagnostic subscriber cannot strand the shutdown barrier. */ }
+      finally { this.drains.delete(drain); finish(); }
+    };
+    const deadline = setTimeout(() => done(new Error('Output close completion timed out (500ms)')), 500);
+    try { output.close((error) => done(error)); }
+    catch (error) { done(error); }
   }
 
   /**
@@ -181,47 +280,40 @@ export class OutputManager {
 
   /** Send a rendered frame according to the current state. */
   sendFrame(rgba: Float32Array, dmxMap: DmxMap): void {
+    this.universeCount = dmxMap.universes.length;
     const s = this.settings;
     if (!s || s.state === 'disabled') return;
+    this.summaryStart ??= this.now();
+    this.summary.frames++;
     if (s.state === 'dry-run') {
-      this.packetsSent += dmxMap.universes.length; // formed, not transmitted
-      this.monitorPacketSummary({
-        settings: s,
-        kind: 'dry-run',
-        universes: dmxMap.universes.map((patch) => patch.universe),
-        packets: dmxMap.universes.length,
-        nowMs: this.now(),
-      });
+      this.packetsSimulated += dmxMap.universes.length;
+      this.summary.simulated += dmxMap.universes.length;
+      for (const patch of dmxMap.universes) this.summaryUniverses.add(patch.universe);
+      this.monitorPacketSummary(s);
       return;
     }
     if (!this.output) return;
+    if (this.failsafePending) {
+      this.failsafePending = false;
+      this.queueBlackout();
+    }
+    this.retireCoverage(dmxMap); // also covers direct map changes between applySettings calls
     // Composite the hoop-identify override (E1) onto a scratch copy — full-on for the identified
     // hoop, live frame everywhere else. No-op (same buffer) when nothing is armed.
     const frame = this.withIdentify(rgba);
     try {
       this.output.nextFrame();
-      let packets = 0;
-      let byteCount = 0;
-      const universes: number[] = [];
       for (const patch of dmxMap.universes) {
         // Per-pixel RGB order (B5) comes from each pixel's owning output; the controller-level
         // `s.rgbOrder` is only the fallback for pixels whose output declared none (parity with
         // pre-B5 single-order behaviour).
         const bytes = frameToUniverseBytes(frame, patch, s.rgbOrder);
-        this.output.send(patch.universe, bytes);
-        this.packetsSent++;
-        packets++;
-        byteCount += bytes.length;
-        universes.push(patch.universe);
+        const queued = this.sendPacket(patch.universe, bytes, s);
+        if (queued !== false) {
+          this.coverage.set(patch.universe, Math.max(this.coverage.get(patch.universe) ?? 0, bytes.length));
+        }
       }
-      this.monitorPacketSummary({
-        settings: s,
-        kind: 'packet',
-        universes,
-        byteCount,
-        packets,
-        nowMs: this.now(),
-      });
+      this.monitorPacketSummary(s);
     } catch (err) {
       this.lastError = String(err);
       this.monitorError('Output send failed', s, this.lastError);
@@ -229,56 +321,151 @@ export class OutputManager {
     }
   }
 
-  /** Transmit an all-zero frame across every universe (failsafe). */
-  blackout(dmxMap: DmxMap): void {
-    if (!this.output) return;
-    try {
-      this.output.nextFrame();
-      let packets = 0;
-      const universes: number[] = [];
-      for (const patch of dmxMap.universes) {
-        const zero = new Uint8Array(patch.channelCount);
-        this.output.send(patch.universe, zero);
-        packets++;
-        universes.push(patch.universe);
+  private sendPacket(universe: number, bytes: Uint8Array, settings: OutputSettings,
+    complete?: (error: Error | null) => void): boolean | void {
+    const output = this.output;
+    if (!output) return false;
+    const generation = this.generation;
+    const byteCount = bytes.length;
+    this.packetsAttempted++;
+    this.summary.attempts++;
+    this.summaryUniverses.add(universe);
+    let completed = false;
+    const queued = output.send(universe, bytes, (error) => {
+      if (generation !== this.generation || completed) return;
+      completed = true;
+      if (error) {
+        if (!complete) this.failsafePending = true;
+        this.lastError = String(error);
+        this.monitorError(complete ? 'Output blackout failed' : 'Output send failed', settings, this.lastError);
+        complete?.(error);
+        return;
       }
-      if (this.settings) {
-        this.onMonitor?.({
-          type: 'output',
-          direction: 'out',
-          source: 'server',
-          destination: outputDestination(this.settings),
-          label: 'Blackout sent',
-          detail: `packets=${packets}; universes=${universeRangeLabel(universes)}`,
-        });
-      }
-    } catch (err) {
-      this.lastError = String(err);
-      if (this.settings) this.monitorError('Output blackout failed', this.settings, this.lastError);
+      this.packetsSent++;
+      this.summary.accepted++;
+      this.summary.bytes += byteCount;
+      complete?.(null);
+      this.monitorPacketSummary(settings);
+    });
+    if (queued === false) {
+      this.packetsSkipped++;
+      this.summary.skipped++;
+    } else if (queued === undefined && !completed) {
+      // Deliberate compatibility: legacy fakes still send, but cannot establish acceptance.
+      this.packetsUnconfirmed++;
+      this.summary.unconfirmed++;
     }
+    return queued;
   }
 
-  status(): OutputStatus {
+  private queueRetirement(universe: number, channels: number): void {
+    const previous = this.retirements.get(universe);
+    // This coverage may have been lit AFTER a previously queued blackout. It needs a new
+    // request even when the older request is longer; its late callback cannot retire this one.
+    this.retirements.set(universe, { channels: Math.max(channels, previous?.channels ?? 0), pending: false });
+  }
+
+  private retireCoverage(dmxMap: DmxMap): void {
+    const next = new Map(dmxMap.universes.map((patch) => [patch.universe, patch.channelCount]));
+    for (const [universe, channels] of this.coverage) {
+      if (channels <= (next.get(universe) ?? 0)) continue;
+      this.queueRetirement(universe, channels);
+      this.coverage.delete(universe);
+    }
+    this.flushRetirements();
+  }
+
+  /** Best-effort blackout of retained coverage, plus an optional explicit emergency map.
+   * Failed/skipped retirements remain owned here and retry BEFORE the next live frame. */
+  blackout(dmxMap?: DmxMap): void {
+    if (!this.output) return;
+    this.queueBlackout(dmxMap);
+    this.flushRetirements();
+  }
+
+  private queueBlackout(dmxMap?: DmxMap): void {
+    for (const [universe, channels] of this.coverage) this.queueRetirement(universe, channels);
+    for (const patch of dmxMap?.universes ?? []) this.queueRetirement(patch.universe, patch.channelCount);
+    this.coverage.clear();
+  }
+
+  private flushRetirements(): void {
+    const output = this.output;
+    const settings = this.settings;
+    if (!output || !settings) return;
+    const ready = [...this.retirements].filter(([, entry]) => !entry.pending);
+    if (ready.length === 0) return;
+    const failed = (error: unknown): void => {
+      this.lastError = String(error);
+      this.monitorError('Output blackout failed', settings, this.lastError);
+    };
+    try { output.nextFrame(); }
+    catch (error) { failed(error); return; }
+    for (const [universe, entry] of ready) {
+      entry.pending = true;
+      try {
+        const queued = this.sendPacket(universe, new Uint8Array(entry.channels), settings, (error) => {
+          if (this.retirements.get(universe) !== entry) return;
+          if (error) entry.pending = false;
+          else this.retirements.delete(universe);
+        });
+        if (queued === false) entry.pending = false;
+        // Legacy adapters can't confirm acceptance. Issue once, explicitly count as unconfirmed.
+        else if (queued === undefined && entry.pending && this.retirements.get(universe) === entry) this.retirements.delete(universe);
+      } catch (error) {
+        entry.pending = false;
+        failed(error); // one broken universe must not prevent clearing the rest
+      }
+    }
+    this.monitorCoalesced({ type: 'output', direction: 'out', source: 'server',
+      destination: outputDestination(settings), label: 'Blackout requested',
+      detail: `packets=${ready.length}; universes=${universeRangeLabel(ready.map(([universe]) => universe))}; UDP receipt unacknowledged`,
+    });
+  }
+
+  status(): OutputManagerStatus {
     return {
       state: this.settings?.state ?? 'disabled',
       protocol: this.settings?.protocol ?? 'artnet',
       host: this.settings?.host ?? '',
       packetsSent: this.packetsSent,
-      lastError: this.lastError,
+      lastError: this.retiredError ?? this.lastError,
       universeCount: this.universeCount,
+      readiness: this.readiness,
+      packetsAttempted: this.packetsAttempted,
+      packetsAccepted: this.packetsSent,
+      packetsSkipped: this.packetsSkipped,
+      packetsUnconfirmed: this.packetsUnconfirmed,
+      packetsSimulated: this.packetsSimulated,
     };
   }
 
-  close(): void {
-    if (this.output) {
-      this.output.close();
-      this.output = null;
-    }
+  close(): Promise<void> {
+    if (this.closeCompletion) return this.closeCompletion;
+    this.teardown();
+    this.identify = null;
+    // Includes adapters retired by earlier destination changes, not only the current one.
+    this.closeCompletion = Promise.all([...this.drains]).then(() => {});
+    return this.closeCompletion;
   }
 
-  private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
-    const event = this.outputDiag.record(sample);
-    if (event) this.onMonitor?.(event);
+  private resetSummary(): void {
+    this.summaryStart = null;
+    this.summary = { frames: 0, attempts: 0, accepted: 0, skipped: 0, unconfirmed: 0, simulated: 0, bytes: 0 };
+    this.summaryUniverses.clear();
+  }
+
+  private monitorPacketSummary(settings: OutputSettings): void {
+    const now = this.now();
+    this.summaryStart ??= now;
+    if (now - this.summaryStart < this.monitorWindowMs) return;
+    const c = this.summary;
+    this.onMonitor?.({ type: 'output', direction: 'out', source: 'server',
+      destination: outputDestination(settings),
+      label: `${settings.protocol} ${settings.state === 'dry-run' ? 'dry-run' : 'output'} summary`,
+      detail: `frames=${c.frames}; attempts=${c.attempts}; locallyAccepted=${c.accepted}; skipped=${c.skipped}; unconfirmed=${c.unconfirmed}; simulated=${c.simulated}; universes=${universeRangeLabel(this.summaryUniverses)}; bytes=${c.bytes}; UDP is not a controller acknowledgement`,
+    });
+    this.resetSummary();
   }
 
   private monitorSettings(settings: OutputSettings, dmxMap: DmxMap): void {
@@ -297,8 +484,21 @@ export class OutputManager {
     });
   }
 
+  private monitorCoalesced(event: Omit<MonitorEvent, 'id' | 'time'>): void {
+    const key = `${event.destination}|${event.label}|${event.detail}`;
+    const now = this.now();
+    const previous = this.diagnosticWindows.get(key);
+    if (previous && now - previous.at < this.monitorWindowMs) {
+      previous.repeats++;
+      return;
+    }
+    if (this.diagnosticWindows.size >= 32) this.diagnosticWindows.delete(this.diagnosticWindows.keys().next().value!);
+    this.diagnosticWindows.set(key, { at: now, repeats: 0 });
+    this.onMonitor?.(previous?.repeats ? { ...event, detail: `${event.detail}; repeated=${previous.repeats}` } : event);
+  }
+
   private monitorError(label: string, settings: OutputSettings, detail: string): void {
-    this.onMonitor?.({
+    this.monitorCoalesced({
       type: 'error',
       direction: 'out',
       source: 'server/output',

@@ -1,5 +1,6 @@
 import { blockingRoutingIssues, introducedBlockingIssues, projectPatchSchema, validateRouting } from '@ledrums/core';
 import type { Autosaver } from '../autosave';
+import { createProjectReplacement } from '../project-replacement';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
@@ -123,10 +124,11 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
    * `true` when the safety snapshot was taken and `false` when the WRITE failed, so a seam can refuse
    * the mutation fail-closed rather than overwrite live state with no recovery point. Absent when the
    * wiring runs without backups (snapshotting disabled): the reads reply empty + no-op. */
+  replacement?: ReturnType<typeof createProjectReplacement>;
   backups?: {
-    list(): BackupSnapshotMeta[];
-    restore(id: string): boolean;
-    snapshotPreRisk(): boolean;
+    list(): BackupSnapshotMeta[] | Promise<BackupSnapshotMeta[]>;
+    restore(id: string): boolean | Promise<boolean>;
+    snapshotPreRisk(): boolean | Promise<boolean>;
   };
   /** PixLite controller monitor (S47), or absent when the wiring runs without one (the controller
    * messages are then no-ops). `watch`/`dropWatcher` are keyed by the socket so a disconnect clears
@@ -157,7 +159,7 @@ export interface ClientMessageDeps<S extends HandlerSocket> {
  */
 export function createClientMessageHandler<S extends HandlerSocket>(
   deps: ClientMessageDeps<S>,
-): (msg: ClientMessage, ws: S) => void {
+): (msg: ClientMessage, ws: S) => void | Promise<void> {
   const {
     clients,
     host,
@@ -175,8 +177,17 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     monitor,
   } = deps;
   const voiceDeps = { voiceHost, broadcastJson };
+  const replacement = deps.replacement ?? createProjectReplacement({
+    host, voiceHost,
+    readCurrent: () => ({ project: host.engine.getProject(), showLibrary: null, songLibrary: null }),
+    safetySnapshot: async () => await deps.backups?.snapshotPreRisk() ?? true,
+    flushAutosaves: () => autosaver.flush(),
+    persist: async () => {},
+    commitLibraries: () => autosaver.markDirty(),
+    broadcastState,
+  });
 
-  return function handleClientMessage(msg: ClientMessage, ws: S): void {
+  return function handleClientMessage(msg: ClientMessage, ws: S): void | Promise<void> {
     // (1) Explicit editor hand-off (S2). Any client may take over; broadcast the new presence so
     // every client's role + indicator updates. A no-op (`takeover` on the current editor) still
     // re-broadcasts — harmless and keeps headcount fresh.
@@ -231,17 +242,15 @@ export function createClientMessageHandler<S extends HandlerSocket>(
 
     // PixLite controller monitor (S47, group L). discover/adopt/identify are editor-gated (they
     // sweep the network, re-rig the device, or flash hardware); `watchController` is ungated above
-    // so a viewer's open panel keeps live status flowing. Each is fire-and-forget: the service
-    // broadcasts its own `controllerDiscovery`/`controllerStatus`; a failed adopt replies `error`.
+    // so a viewer's open panel keeps live status flowing. Async authoring is awaitable so a
+    // pending adoption cannot persist its result into a later replacement project.
     if (msg.t === 'discoverControllers') {
-      void deps.controller?.discover();
-      return;
+      return deps.controller?.discover().then(() => {});
     }
     if (msg.t === 'adoptController') {
-      void deps.controller?.adopt(msg.host).then((r) => {
+      return deps.controller?.adopt(msg.host).then((r) => {
         if (!r.ok && r.error) ws.send(encodeServer({ t: 'error', message: r.error }));
       });
-      return;
     }
     if (msg.t === 'setControllerAuth') {
       // Editor-gated above (deny-by-default). The server hashes + persists ONLY the hash (R29).
@@ -249,16 +258,13 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
     if (msg.t === 'identifyController') {
-      void deps.controller?.identify(msg.durationS);
-      return;
+      return deps.controller?.identify(msg.durationS);
     }
     if (msg.t === 'controllerTestData') {
-      void deps.controller?.setTestData(msg.pattern);
-      return;
+      return deps.controller?.setTestData(msg.pattern);
     }
     if (msg.t === 'controllerBackToLive') {
-      void deps.controller?.backToLive();
-      return;
+      return deps.controller?.backToLive();
     }
     if (msg.t === 'watchController') {
       if (msg.watching) deps.controller?.watch(ws);
@@ -291,55 +297,59 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // engine + every client like a cold load (all inside `backups.restore`). An unknown id is a
     // user-visible `error` reply with nothing touched.
     if (msg.t === 'listBackups') {
-      ws.send(encodeServer({ t: 'backups', items: deps.backups?.list() ?? [] }));
-      return;
+      return Promise.resolve(deps.backups?.list() ?? []).then((items) => {
+        ws.send(encodeServer({ t: 'backups', items }));
+      });
     }
     if (msg.t === 'restoreBackup') {
       // Fail-closed: the store THROWS when its pre-risk safety snapshot cannot be written — surface
       // that as a clear user-visible error with the socket kept alive and live state untouched (the
       // store never reached applyRestored). A `false`/`null` return is the distinct "unknown id" path.
-      let ok: boolean;
-      try {
-        ok = deps.backups?.restore(msg.id) ?? false;
-      } catch (err) {
-        ws.send(encodeServer({ t: 'error', message: `Restore aborted — backup failed, live state untouched (${err instanceof Error ? err.message : String(err)})` }));
+      return (async () => {
+        let ok: boolean;
+        try {
+          ok = await deps.backups?.restore(msg.id) ?? false;
+        } catch (err) {
+          ws.send(encodeServer({ t: 'error', message: `Restore failed (${err instanceof Error ? err.message : String(err)})` }));
+          monitor?.({
+            type: 'error',
+            direction: 'in',
+            source: 'client',
+            destination: 'backups',
+            label: 'Restore aborted (pre-risk snapshot failed)',
+            detail: msg.id,
+          });
+          return;
+        }
+        if (!ok) {
+          ws.send(encodeServer({ t: 'error', message: `Unknown backup: ${msg.id}` }));
+          monitor?.({
+            type: 'error',
+            direction: 'in',
+            source: 'client',
+            destination: 'backups',
+            label: 'Restore rejected (unknown backup)',
+            detail: msg.id,
+          });
+          return;
+        }
         monitor?.({
-          type: 'error',
-          direction: 'in',
-          source: 'client',
+          type: 'persistence',
+          direction: 'local',
+          source: 'server',
           destination: 'backups',
-          label: 'Restore aborted (pre-risk snapshot failed)',
+          label: 'Backup restored',
           detail: msg.id,
         });
-        return;
-      }
-      if (!ok) {
-        ws.send(encodeServer({ t: 'error', message: `Unknown backup: ${msg.id}` }));
-        monitor?.({
-          type: 'error',
-          direction: 'in',
-          source: 'client',
-          destination: 'backups',
-          label: 'Restore rejected (unknown backup)',
-          detail: msg.id,
-        });
-        return;
-      }
-      monitor?.({
-        type: 'persistence',
-        direction: 'local',
-        source: 'server',
-        destination: 'backups',
-        label: 'Backup restored',
-        detail: msg.id,
-      });
-      return;
+      })();
     }
 
     // Project IO (load/save/list) is handled here, not by the reducer.
     // `?? true`: with backups absent (snapshotting disabled) there is no safety net to fail, so the
     // load proceeds; when backups is present, its `false` (write failed) makes the load refuse.
-    if (handleProjectMessage(msg, ws, { host, autosaver, broadcastState, snapshotPreRisk: () => deps.backups?.snapshotPreRisk() ?? true })) return;
+    if (msg.t === 'loadProject' || msg.t === 'saveProject' || msg.t === 'listProjects') {
+      return handleProjectMessage(msg, ws, { host, replacement }).then(() => {});
+    }
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.
@@ -438,38 +448,12 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       // paste still has a clean state behind it. Fail-closed: if the safety snapshot's WRITE fails,
       // REFUSE the re-rig (a bulk apply with no recovery point behind it is the data-loss path) —
       // the socket stays alive and live state is untouched. Backups absent = no net to fail → proceed.
-      if (deps.backups && !deps.backups.snapshotPreRisk()) {
-        ws.send(encodeServer({ t: 'error', message: 'Backup failed — patch not applied (no recovery snapshot)' }));
-        monitor?.({
-          type: 'error',
-          direction: 'in',
-          source: 'client',
-          destination: 'project',
-          label: 'Patch refused (pre-risk snapshot failed)',
-        });
-        return;
-      }
-      const cur = host.engine.getProject();
-      host.engine.setProject({
-        ...cur,
-        name: patch.name ?? cur.name,
-        kit: patch.kit,
-        inputMap: patch.inputMap,
-        output: patch.output,
+      return replacement.patch(patch).then(() => {
+        monitor?.({ type: 'system', direction: 'in', source: 'client', destination: 'project',
+          label: 'Patch applied', detail: `${patch.kit.drums.length} drums` });
+      }).catch((error) => {
+        ws.send(encodeServer({ t: 'error', message: String(error) }));
       });
-      host.reloadOutputSettings();
-      if (voiceHost) voiceHost.adoptPatch(patch);
-      monitor?.({
-        type: 'system',
-        direction: 'in',
-        source: 'client',
-        destination: 'project',
-        label: 'Patch applied',
-        detail: `${patch.kit.drums.length} drums${patch.name ? ` · ${patch.name}` : ''}`,
-      });
-      broadcastJson(stateMessage());
-      autosaver.markDirty();
-      return;
     }
 
     // S01+S07: gate `setKitOutputs` through the core routing validator BEFORE any state is
@@ -531,7 +515,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       msg.t === 'setKitGlobal' ||
       msg.t === 'setHoopConfig'
     ) {
-      host.reloadOutputSettings();
+      if (!voiceHost) host.reloadOutputSettings();
       broadcastJson(stateMessage());
       autosaver.markDirty();
       return;

@@ -1,10 +1,25 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": [
-    "apps/web/src/design-system.ts",
-    "apps/web/src/lib/app/shot-seam.ts",
-    "apps/desktop/shell/main.js",
-    "scripts/pixlite-probe.mjs",
-    "apps/web/scripts/contrast-check.mjs"
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/pixlite-probe.mjs", "scripts/health-webgl.mjs", "scripts/health-startup.mjs"]
+    },
+    "apps/web": {
+      "entry": ["src/main.ts", "src/design-system.ts", "src/lib/app/shot-seam.ts", "src/lib/trigger-lab/runtime-retention.probe.ts", "scripts/contrast-check.mjs"],
+      "vite": { "config": ["vite.config.ts", "vite.design-system.config.ts"] }
+    },
+    "apps/desktop": {
+      "entry": ["shell/main.js"]
+    }
+  },
+  "ignore": [
+    "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
+    "apps/web/src/lib/app/views/PatchDiffDialog.svelte",
+    "apps/web/src/lib/app/views/PatchGraphView.svelte",
+    "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
+    "apps/web/src/lib/app/views/PatchNode.svelte",
+    "apps/web/src/lib/app/views/PatchZoneNode.svelte",
+    "apps/web/src/lib/app/views/RefEdge.svelte",
+    "apps/web/src/lib/app/views/patch-context.ts"
   ]
 }

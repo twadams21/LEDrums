@@ -20,8 +20,10 @@ import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
+import { ensureGeometryState } from './geometry-state';
+import { createRenderCheckpoint } from './render-checkpoint';
 import { createGeneratorBridge } from './generator-bridge';
-import { applyModifierChain } from '../modifiers/chain';
+import { applyScopedModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
 import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
@@ -62,7 +64,7 @@ function parseHoopTarget(targetId: string | undefined, sourceDrumId: string | nu
  * `Sim.voicePhase`: one-shots run across their full A+S+R; sustained voices loop a
  * fixed 1.5s window.
  */
-export function voicePhase(v: Voice, timeMs: number): number {
+export function voicePhase(v: Pick<Voice, 'bornAtMs' | 'mode' | 'attackMs' | 'sustainMs' | 'releaseMs'>, timeMs: number): number {
   const age = timeMs - v.bornAtMs;
   if (v.mode === 'oneshot') {
     const life = Math.max(1, v.attackMs + v.sustainMs + v.releaseMs);
@@ -124,6 +126,8 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     seed: input.seed,
     generatorId: input.generatorId,
     genState: input.genState,
+    renderModel: input.renderModel,
+    renderGenerator: input.renderGenerator,
     mixInputs: undefined,
     modifiers: input.modifiers,
     modState: input.modState,
@@ -137,6 +141,8 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     releaseMs: host.releaseMs,
     phase: host.phase,
     level: 1,
+    // Metadata only: the host applies its envelope gain once, after composition.
+    lifeEnvelope: host.lifeEnvelope,
     bornAtMs: host.bornAtMs,
     releaseAtMs: host.releaseAtMs,
     releaseFromLevel: host.releaseFromLevel,
@@ -147,6 +153,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
 
 function syncMixInputState(input: MixInput, rendered: Voice): void {
   input.genState = rendered.genState;
+  input.renderGenerator = rendered.renderGenerator;
   input.modState = rendered.modState;
 }
 
@@ -195,6 +202,17 @@ function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly
 }
 
 function pixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
+  const ranges = rawPixelRangesFor(v, model).sort((a, b) => a.start - b.start);
+  const out: PixelRange[] = [];
+  for (const range of ranges) {
+    const last = out[out.length - 1];
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else out.push(range);
+  }
+  return out;
+}
+
+function rawPixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
   if (v.scope === 'drum') {
     const drumId = v.targetId ?? v.sourceDrumId;
     const d = drumId ? model.drumById.get(drumId) : undefined;
@@ -239,6 +257,15 @@ export interface Compositor {
   ): void;
 }
 
+/** Offline presentation wrapper. Ordinary render callers pay no checkpoint cost. */
+export interface PresentationCompositor extends Compositor {
+  /** Non-rendering lifetime boundary. Drop retired generations/checkpoints and old model
+   * references even while local painting is suspended; null detaches the model entirely.
+   * Unchanged live baselines are preserved. Call after reaping/spawn and on model changes. */
+  prunePresentation(voices: readonly Voice[], model: PixelModel | null): void;
+  renderPresentation(voices: readonly Voice[], model: PixelModel, frame: CompositorFrame, dst: Framebuffer, tick: number): void;
+}
+
 /**
  * The default compositor: additive accumulation of every live voice into `dst`.
  * Drum-scoped voices touch only their drum's pixel range. Assumes each voice's
@@ -248,8 +275,9 @@ export interface Compositor {
  * per-voice allocation is the bridge's merged params object (see `generator-bridge.ts`).
  * Generators run few voices (mono buses, level gating), so this stays well within budget.
  */
-export function createDefaultCompositor(): Compositor {
+export function createDefaultCompositor(): PresentationCompositor {
   const generators = createGeneratorBridge();
+  const checkpoint = createRenderCheckpoint();
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
   /** One buffer per splice member, grown on demand and reused across voices + frames. */
@@ -260,14 +288,31 @@ export function createDefaultCompositor(): Compositor {
   let spliceLayoutModel: PixelModel | null = null;
   const SPLICE_LAYOUT_CACHE_CAP = 64;
 
+  const bindModel = (model: PixelModel | null): void => {
+    if (spliceLayoutModel === model) return;
+    spliceLayouts.clear();
+    spliceLayoutModel = model;
+    generators.reset();
+    mixScratch = mixInputScratch = null;
+    spliceBuffers = [];
+  };
+
   return {
+    prunePresentation(voices, model): void {
+      // Prune BEFORE binding voice geometry: a reset slab's undefined renderModel is
+      // an ownership fence even if its public id/seed/birth have been reused.
+      checkpoint.prune(voices, model);
+      bindModel(model);
+      for (const v of voices) if (v.active) ensureGeometryState(v, model);
+    },
+    renderPresentation(voices, model, frame, dst, tick): void {
+      checkpoint(voices, model, tick);
+      this.render(voices, model, frame, dst);
+    },
     render(voices, model, frame, dst): void {
       dst.clear();
       // Equal pixel totals/ranges can hide changed hoop or drum boundaries.
-      if (spliceLayoutModel !== model) {
-        spliceLayouts.clear();
-        spliceLayoutModel = model;
-      }
+      bindModel(model);
       const timeMs = frame.timeMs;
       const frameCtx: FrameModCtx = {
         timeMs,
@@ -294,6 +339,7 @@ export function createDefaultCompositor(): Compositor {
 
       for (const v of voices) {
         if (!v.active) continue;
+        ensureGeometryState(v, model);
         const level = v.level * v.deckGain;
         if (level <= 0.003) continue;
 
@@ -320,9 +366,7 @@ export function createDefaultCompositor(): Compositor {
             }
             const memberVoice = mixInputVoice(member, v);
             const memberCtx = modCtxFor(memberVoice, frameCtx);
-            for (const range of ranges) {
-              generators.renderVoice(memberVoice, model, timeMs, 1, range.start, range.end, buffers[i]!, memberCtx);
-            }
+            generators.renderVoice(memberVoice, model, timeMs, 1, ranges, buf, memberCtx);
             syncMixInputState(member, memberVoice);
           }
 
@@ -436,7 +480,7 @@ export function createDefaultCompositor(): Compositor {
           if (spliceMods && spliceMods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(spliceMods, v.modState, mix, range, model, age, frame.dt, modCtx);
+            applyScopedModifierChain(spliceMods, v.modState, mix, ranges, model, age, frame.dt, modCtx);
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {
@@ -464,9 +508,7 @@ export function createDefaultCompositor(): Compositor {
             }
             const branchVoice = mixInputVoice(branch, v);
             const branchCtx = modCtxFor(branchVoice, frameCtx);
-            for (const range of pixelRangesFor(branchVoice, model)) {
-              generators.renderVoice(branchVoice, model, timeMs, 1, range.start, range.end, input, branchCtx);
-            }
+            generators.renderVoice(branchVoice, model, timeMs, 1, pixelRangesFor(branchVoice, model), input, branchCtx);
             syncMixInputState(branch, branchVoice);
             const src = input.rgba;
             for (let i = 0; i < src.length; i += 4) {
@@ -479,7 +521,7 @@ export function createDefaultCompositor(): Compositor {
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx);
+            applyScopedModifierChain(mods, v.modState, mix, ranges, model, timeMs - v.bornAtMs, frame.dt, modCtx);
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {
@@ -497,32 +539,9 @@ export function createDefaultCompositor(): Compositor {
 
         if (!v.generatorId) continue; // every selectable effect is generator-backed (U3)
 
-        let start = 0;
-        let end = model.pixelCount;
-        if (v.scope === 'drum') {
-          // Resolve target drum: from targetId if set, else sourceDrumId (auto).
-          const drumId = v.targetId ?? v.sourceDrumId;
-          if (drumId == null) continue;
-          const d = model.drumById.get(drumId);
-          if (!d) continue; // dangling targetId → render nothing
-          start = d.pixelStart;
-          end = d.pixelStart + d.pixelCount;
-        } else if (v.scope === 'hoop') {
-          // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]" (1-based); absent → source drum hoop 1.
-          const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
-          if (drumId == null) continue;
-          const modCtx = modCtxFor(v, frameCtx);
-          for (const hoopIndex of hoopIndices) {
-            const range = getHoopPixelRange(model, drumId, hoopIndex);
-            if (range) generators.renderVoice(v, model, timeMs, level, range.start, range.end, dst, modCtx);
-          }
-          continue;
-        }
-        // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
-
-        // Hosted generator voice — the bridge applies the modifier chain internally.
+        // One generation/temporal advance, followed by the canonical multi-range mask.
         const modCtx = modCtxFor(v, frameCtx);
-        generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
+        generators.renderVoice(v, model, timeMs, level, pixelRangesFor(v, model), dst, modCtx);
       }
     },
   };

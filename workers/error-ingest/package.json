@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Cloudflare Worker: batch error-report ingest → D1, token-authed read API, Discord webhook (#122).",
   "scripts": {
-    "test": "vitest run",
+    "test": "node --experimental-sqlite ./node_modules/vitest/vitest.mjs run",
+    "test:sql": "node --experimental-sqlite ./node_modules/vitest/vitest.mjs run test/store-sqlite.test.ts test/ingest-atomicity.test.ts test/ingest-route.test.ts",
     "typecheck": "tsc --noEmit",
     "deploy": "npx wrangler@4 deploy",
     "db:init:remote": "npx wrangler@4 d1 execute ledrums-errors --remote --file=./schema.sql",

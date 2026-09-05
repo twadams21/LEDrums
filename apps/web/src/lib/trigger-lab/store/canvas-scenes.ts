@@ -9,17 +9,15 @@
  * surfaces, plus the graph-retarget + JSON (de)serialization used by scene CRUD.
  */
 import {
-  CANVAS_PARAM_SPEC,
-  canvasEffectId,
+  canvasVoiceEffectDef,
+  canvasVoiceDefaultPreset,
   canvasSceneIdOf,
   type CanvasScene,
   type PlayType,
 } from '@ledrums/core';
-import { mapParamSpec } from '../fixtures';
-import { defaultParams, type EffectDef, type GraphNode, type Preset, type TriggerGraph } from '../sim';
+import type { EffectDef, GraphNode, Preset, TriggerGraph } from '../sim';
 
-/** The bus canvas nodes default onto (the always-on base layer). */
-export const CANVAS_BUS_ID = 'base';
+export { CANVAS_BUS_ID } from '@ledrums/core';
 
 /** A fresh authored scene — one drifting stripe field, ready to tweak in the JSON editor. */
 export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasScene {
@@ -38,28 +36,18 @@ export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasSc
 
 /** The virtual `EffectDef` a scene is hosted under — `id`/`generatorId` = `canvas:<sceneId>`. */
 export function canvasEffectDef(scene: CanvasScene): EffectDef {
-  const id = canvasEffectId(scene.id);
   return {
-    id,
-    name: scene.name,
-    generatorId: id,
+    ...canvasVoiceEffectDef(scene),
     category: 'texture',
     description: scene.description,
     tags: ['canvas', ...(scene.tags ?? []).filter((tag) => tag !== 'canvas')] as EffectDef['tags'],
     playType: 'canvas',
-    busId: CANVAS_BUS_ID,
-    scope: 'kit',
-    params: CANVAS_PARAM_SPEC.map(mapParamSpec),
-    attackMs: 800,
-    sustainMs: 0,
-    releaseMs: 900,
   };
 }
 
 /** The default preset for a scene's virtual effect (all params at their spec defaults). */
 export function canvasDefaultPreset(scene: CanvasScene): Preset {
-  const eff = canvasEffectDef(scene);
-  return { id: `${eff.id}:default`, name: 'Default', effectId: eff.id, params: defaultParams(eff) };
+  return canvasVoiceDefaultPreset(scene);
 }
 
 /** Scene ids referenced by any canvas play node in a graph. */

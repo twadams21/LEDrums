@@ -27,6 +27,7 @@ export const bloom: ModifierDef<BloomState> = {
   id: 'bloom',
   name: 'Bloom',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'radius', label: 'Radius', type: 'number', default: 3, min: 0, max: 32, step: 1, unit: 'px' },
     { key: 'intensity', label: 'Intensity', type: 'number', default: 0.6, min: 0, max: 1, step: 0.05 },

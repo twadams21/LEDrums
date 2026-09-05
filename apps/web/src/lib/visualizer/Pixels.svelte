@@ -1,9 +1,10 @@
 <script lang="ts">
   import { T, useTask } from '@threlte/core';
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import * as THREE from 'three';
   import type { SerializedModel } from '../ws/protocol-types';
   import { DARK_PIXEL_RGB } from './dark-pixel';
+  import { createPixelResources } from './pixel-resources';
 
   interface Props {
     model: SerializedModel;
@@ -55,14 +56,9 @@
   // the geometry's attributes in place, the hot path only rewrites colours.
   // vertexColors carries the live RGB frame; DoubleSide keeps every tube wall
   // visible (segments share coincident end faces, so no caps are needed).
-  const geometry = new THREE.BufferGeometry();
-  const material = new THREE.MeshBasicMaterial({
-    vertexColors: true,
-    toneMapped: false,
-    transparent: true,
-    opacity: 0.95,
-    side: THREE.DoubleSide,
-  });
+  const resources = createPixelResources();
+  const { geometry, material } = resources;
+  onDestroy(resources.dispose);
 
   // mm-space (x,y,z) → Three's Y-up scene (x, z, y), scaled to scene units.
   function readPos(m: SerializedModel, idx: number, s: number, out: number[]): void {
@@ -171,9 +167,7 @@
   function buildGeometry(m: SerializedModel, s: number): number {
     const count = m.count;
     if (!count) {
-      geometry.setIndex(null);
-      geometry.deleteAttribute('position');
-      geometry.deleteAttribute('color');
+      resources.replace(new Float32Array(), new Float32Array(), new Uint32Array());
       return 0;
     }
     const positions = new Float32Array(count * VPP * 3);
@@ -261,10 +255,7 @@
       }
     }
 
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.setIndex(new THREE.BufferAttribute(index, 1));
-    geometry.computeBoundingSphere();
+    resources.replace(positions, colors, index);
     return count;
   }
 
@@ -273,11 +264,14 @@
   // so guard on identity to keep the geometry build off the hot path.
   let builtCount = 0;
   let builtRef: SerializedModel | null = null;
+  let builtScale: number | null = null;
   $effect(() => {
     const m = model;
-    if (m === builtRef) return;
+    const s = scale;
+    if (m === builtRef && s === builtScale) return;
     builtRef = m;
-    builtCount = untrack(() => buildGeometry(m, scale));
+    builtScale = s;
+    builtCount = untrack(() => buildGeometry(m, s));
   });
 
   // Hot path: push the latest frame's RGB triples onto the per-vertex colours.

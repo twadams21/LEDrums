@@ -18,6 +18,7 @@ export const strobe: ModifierDef = {
   id: 'strobe',
   name: 'Strobe',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'rate', label: 'Rate', type: 'number', default: 8, min: 0.1, max: 40, step: 0.1, unit: 'Hz' },
     { key: 'duty', label: 'Duty', type: 'number', default: 0.5, min: 0, max: 1, step: 0.05 },

@@ -41,6 +41,7 @@ export const echo: ModifierDef<EchoState> = {
   id: 'echo',
   name: 'Echo',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'delayMs', label: 'Delay', type: 'number', default: 120, min: 0, max: 1000, step: 10, unit: 'ms' },
     { key: 'feedback', label: 'Feedback', type: 'number', default: 0.5, min: 0, max: 0.95, step: 0.05 },
@@ -49,6 +50,27 @@ export const echo: ModifierDef<EchoState> = {
   createState(_model: PixelModel, range: PixelRange): EchoState {
     const rangeLen = Math.max(0, range.end - range.start);
     return { buf: new Float32Array(ECHO_SLOTS * rangeLen * 4), rangeLen, pos: 0 };
+  },
+
+  // apply writes exactly ONE slot and the cursor; the other 63 frames are read-only.
+  // Keep one slot of undo, not a second full delay line. Repeated restores reuse both
+  // payloads and never alias the undo slot with the live ring. Scope/bypass changes can
+  // skip a write but cannot write another slot. Geometry replacement discards this owner.
+  createCheckpoint(state) {
+    const stride = state.rangeLen * 4;
+    const overwritten = new Float32Array(stride);
+    let pos = state.pos;
+    return {
+      capture() {
+        pos = state.pos;
+        overwritten.set(state.buf.subarray(pos * stride, (pos + 1) * stride));
+      },
+      restore() {
+        state.buf.set(overwritten, pos * stride);
+        state.pos = pos;
+        return state;
+      },
+    };
   },
 
   apply(ctx, params, fb, range: PixelRange, state): void {

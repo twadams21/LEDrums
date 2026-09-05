@@ -81,7 +81,6 @@ import {
   serializeSongLibrary,
   type AuthoredState,
   type Show,
-  type ShowLibrary,
   type SongLibrary,
 } from './persistence';
 import { SaveStatusController, type SaveStatus } from './save-status';
@@ -150,6 +149,8 @@ import { readClipboardText, writeClipboardText } from './clipboard-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
 import { EngineLinkSync } from './store/transport';
+import { trackDocument } from './store/track-document';
+import { DocumentHistory } from './store/document-history';
 import {
   DEFAULT_MONITOR_FILTERS,
   appendMonitorEvent,
@@ -443,6 +444,8 @@ export class TriggerLab {
   /** Open when the Songs paste flow is active — the dialog picks a destination (this show vs the
       Song Library) and offers a manual-paste textarea when the browser blocks clipboard reads. */
   songPasteOpen = $state(false);
+  /** Document revision, not show id: same-id server replacements invalidate pending clipboard IO. */
+  private documentGeneration = 0;
   /** Non-null when a graph/section paste hit a blocked clipboard read: drives the manual paste-text
       fallback dialog, remembering which context the pasted text should materialize into. */
   pasteFallback = $state<{ context: 'graph' | 'section' } | null>(null);
@@ -552,9 +555,11 @@ export class TriggerLab {
       if (patch.presets) this.presets = [...this.presets, ...patch.presets];
     },
     toAuthored: () => this.toAuthored(),
-    applyShow: (show) => this.applyShow(show),
-    resetAuthoredToSeed: () => this.resetAuthoredToSeed(),
-    normalizeGraphs: () => this.normalizeGraphs(),
+    replaceDocument: (show, source) => this.replaceDocument(show, source),
+    saveNow: () => {
+      this.saveStatusCtl.saving();
+      this.flushSave();
+    },
     setActiveSectionId: (id) => (this.activeSectionId = id),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
@@ -906,14 +911,11 @@ export class TriggerLab {
   /** Timing controller behind {@link saveStatus} — enforces the min-visible 'saving'
       window + 'saved' hold so the indicator reads even when a flush is instant. */
   private saveStatusCtl = new SaveStatusController((s) => (this.saveStatus = s));
-  /** Skips the indicator for the autosave $effect's initial (mount) run, so the app
-      doesn't flash "Saving…/Saved" on load; armed by the first scheduleSave. */
-  private autosaveArmed = false;
 
   /** Engine-link change-detection (per-frame transport push + authored-Show resend). */
   private readonly engineSync = new EngineLinkSync();
-  private readonly undoLimit = 10000;
-  private undoStack: UndoEntry[] = [];
+  /** 32 MiB estimated retained bytes, at most 10,000 checkpoints; unchanged branches are shared. */
+  private readonly history = new DocumentHistory<UndoEntry>();
   private restoringUndo = false;
   /** When true, {@link pushUndoSnapshot} is a no-op so a follow-on mutation folds into the
       caller's already-open checkpoint instead of opening its own — the R04 add+auto-wire is one
@@ -1203,21 +1205,56 @@ export class TriggerLab {
     this.applyAuthored(seedAuthored());
   }
 
-  /** Load a show's authored content into the live runes: reset to the blank seed, apply the
-      show's (partial-tolerant, detached) authored over it, then re-run the graph normalizers.
-      A FULL swap — no field of the previously-active show bleeds through. Clears the sim's
-      pending-fire queue so stale delay fires from the outgoing show cannot materialise
-      (mirrors core `engine.ts` `setShow()` clearing `pendingFires`). */
-  private applyShow(show: Show): void {
-    this.resetAuthoredToSeed();
-    this.applyAuthored($state.snapshot(show.authored));
-    this.normalizeGraphs();
-    this.sim.clearPendingFires();
+  /** The sole document replacement boundary, including same-id server adoption. History is
+      session-local to this document revision; an in-flight gesture cannot suppress its first edit. */
+  private replaceDocument(show: Show, source: 'loaded' | 'live'): void {
+    ++this.documentGeneration;
+    this.pasteFallback = null;
+    this.songPasteOpen = false;
+    this.history.replace(show.id);
+    this.gestureDepth = 0;
+    this.gesturePending = false;
+    this.gestureSuppressPrev = false;
+    this.suppressUndoSnapshot = false;
+    // Save As snapshots the runes already live here. It changes document identity/lifetime, not
+    // authored content: boot backfill would resurrect deleted presets (and migration could edit
+    // graphs). Only genuinely loaded documents need seed defaults, registry union and migration.
+    if (source === 'loaded') {
+      this.resetAuthoredToSeed();
+      this.applyAuthored($state.snapshot(show.authored));
+      this.normalizeGraphs();
+    }
+    this.galleryBlock = null;
+    this.settingsBlock = null;
+    this.envTarget = null;
+    this.liveNodePositions = {};
+    this.sectionClipboard = null;
+    this.midi.cancelLearn();
+    this.osc.cancel();
+    this.replaceRuntime();
+    // Equal-content Save As is still a new runtime lifetime on the connected engine.
+    this.engineSync.reset();
+    this.syncShowToServer();
+    this.syncTransport();
   }
 
-  /** Read the authored runes into a plain, JSON-safe slice (proxies stripped). */
-  private toAuthored(): AuthoredState {
-    return $state.snapshot({
+  /** Re-instantiation, not stopAll: the existing Sim owns private sequence/PRNG/latch/delay
+      state and registry references. No new Sim contract is needed to release all of them. */
+  private replaceRuntime(): void {
+    this.sim = new Sim(this.buses, this.resolvedView.effects, this.resolvedView.presets);
+    this.sim.pixelModel = this.labModel.pm;
+    this.sim.bpm = this.bpm;
+    this.sim.beatsPerBar = this.beatsPerBar;
+    this.serverVoices = [];
+    this.busLevels = {};
+    this.frameBuf.fill(0);
+    this.snapshot();
+  }
+
+  /** One field list for dependency tracking, history and persistence. References here stay LIVE;
+      only toAuthored/History materialize detached data, at their respective commit boundaries. */
+  private get authoredSource(): AuthoredState {
+    return {
       graphs: this.graphs,
       graphNames: this.graphNames,
       songs: this.songs,
@@ -1234,7 +1271,12 @@ export class TriggerLab {
       beatsPerBar: this.beatsPerBar,
       paneSizes: this.paneSizes,
       patchLabels: this.patchLabels,
-    }) as AuthoredState;
+    };
+  }
+
+  /** Materialize only at a save/flush/document-switch boundary. */
+  private toAuthored(): AuthoredState {
+    return $state.snapshot(this.authoredSource);
   }
 
   /** Merge a (partial) restored slice into the runes — only present fields, so a
@@ -1244,7 +1286,7 @@ export class TriggerLab {
     if (a.graphNames) this.graphNames = a.graphNames;
     if (a.songs) this.songs = a.songs;
     // Always assigned (even when absent) so a show that references nothing CLEARS the outgoing
-    // show's refs on a swap — no cross-show bleed of references (seed/applyShow reset to []).
+    // show's refs on a swap — no cross-show bleed of references (seed/replaceDocument reset to []).
     this.songRefs = a.songRefs ?? [];
     if (a.buses) this.buses = a.buses;
     // Union, never replace (mirrors effects below): a stale localStorage slice must
@@ -1275,14 +1317,12 @@ export class TriggerLab {
       this.gesturePending = false;
       this.suppressUndoSnapshot = true;
     }
-    this.undoStack.push({
-      authored: structuredClone(this.toAuthored()),
-      // The project is server-owned and lives outside AuthoredState, so it snapshots separately
-      // ($state.snapshot strips the rune proxy before the clone, same as toAuthored).
-      project: this.project ? (structuredClone($state.snapshot(this.project)) as Project) : null,
+    const result = this.history.push(this.activeShowId, {
+      authored: this.authoredSource,
+      project: this.project,
     });
-    if (this.undoStack.length > this.undoLimit) {
-      this.undoStack.splice(0, this.undoStack.length - this.undoLimit);
+    if (result === 'oversized') {
+      pushToast('Undo cleared: this document exceeds the 32 MiB history budget. Your edit is kept.');
     }
   }
 
@@ -1337,21 +1377,19 @@ export class TriggerLab {
 
   undo(): boolean {
     if (this.isViewer) return false;
-    const prev = this.undoStack.pop();
+    const prev = this.history.pop(this.activeShowId);
     if (!prev) return false;
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
-    this.applyAuthored(prev.authored);
+    this.applyAuthored(structuredClone(prev.authored));
     this.normalizeGraphs();
-    this.sim = new Sim(this.buses, this.effects, this.presets);
-    this.sim.pixelModel = this.labModel.pm;
-    this.sim.clearPendingFires();
+    this.replaceRuntime();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
     // project untouched and sends nothing.
     const resync = projectResyncMessages(this.project, prev.project);
     if (resync.length > 0) {
-      this.project = prev.project;
+      this.project = structuredClone(prev.project);
       for (const msg of resync) this.client.send(msg);
     }
     this.snapshot();
@@ -1359,19 +1397,39 @@ export class TriggerLab {
     return true;
   }
 
-  /** Begin reactively autosaving the show library (debounced). Idempotent; a no-op without
-      localStorage (SSR / node tests). The $effect deep-reads the active show's authored runes
-      AND the showLibrary + activeShowId (via currentLibrary), so any authored edit, show
-      add/rename/delete, or switch re-schedules a save. */
+  /** Subscribe without cloning/serializing. Active document and canonical pool have independent
+      subscriptions; a drag never traverses inactive shows or the pool. Snapshots are deferred. */
   private startAutosave(): void {
     if (this.persistDispose || typeof localStorage === 'undefined') return;
     this.persistDispose = $effect.root(() => {
+      let authoredMounted = false;
+      let graphsMounted = false;
+      let poolMounted = false;
       $effect(() => {
-        const lib = this.showsCtl.currentLibrary();
-        // Deep-read the song library too, so a song-library edit (export / rename / delete)
-        // re-schedules a save on the SAME debounce as any authored edit.
-        const songLib = this.showsCtl.currentSongLibrary();
-        this.scheduleSave(lib, songLib);
+        this.showsCtl.trackLibraryChanges();
+        const { graphs: _graphs, ...fields } = this.authoredSource;
+        trackDocument(fields);
+        this.scheduleSave(authoredMounted);
+        authoredMounted = true;
+      });
+      // Per-graph subscriptions: a node drag reads only that graph, not every other graph in
+      // a large active show. Svelte disposes the child effects when the graph map is replaced.
+      $effect(() => {
+        for (const graph of Object.values(this.graphs)) {
+          let mounted = false;
+          $effect(() => {
+            trackDocument(graph);
+            this.scheduleSave(mounted);
+            mounted = true;
+          });
+        }
+        this.scheduleSave(graphsMounted);
+        graphsMounted = true;
+      });
+      $effect(() => {
+        this.showsCtl.trackSongLibraryChanges();
+        this.scheduleSave(poolMounted);
+        poolMounted = true;
       });
       // Keep the offline sim's effect/preset registries in step with the RESOLVED view (S42), so a
       // referenced section fires its own effects/presets in the in-browser preview — not just over
@@ -1382,13 +1440,8 @@ export class TriggerLab {
       });
     });
     if (typeof window !== 'undefined') {
-      this.flushOnUnload = () => {
-        if (!this.saveTimer) return;
-        clearTimeout(this.saveTimer);
-        this.saveTimer = null;
-        writeStoredLibrary(serializeShowLibrary(this.showsCtl.currentLibrary()));
-        writeStoredSongLibrary(serializeSongLibrary(this.showsCtl.currentSongLibrary()));
-      };
+      // Always read NOW: beforeunload can precede the effect that marks the last edit dirty.
+      this.flushOnUnload = () => this.flushSave(false);
       window.addEventListener('beforeunload', this.flushOnUnload);
     }
   }
@@ -1397,12 +1450,7 @@ export class TriggerLab {
       so edits in the last debounce window are not lost. */
   private stopAutosave(): void {
     if (!this.persistDispose) return;
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
-    writeStoredLibrary(serializeShowLibrary(this.showsCtl.currentLibrary()));
-    writeStoredSongLibrary(serializeSongLibrary(this.showsCtl.currentSongLibrary()));
+    this.flushSave(false);
     this.persistDispose();
     this.persistDispose = null;
     if (this.flushOnUnload && typeof window !== 'undefined') {
@@ -1411,37 +1459,40 @@ export class TriggerLab {
     }
     // Cancel any pending indicator transition and re-arm the mount guard for a future start().
     this.saveStatusCtl.dispose();
-    this.autosaveArmed = false;
   }
 
-  private scheduleSave(lib: ShowLibrary, songLib: SongLibrary): void {
-    // Show "Saving…" the moment an edit schedules a write — but skip the autosave $effect's
-    // first (mount) run, which fires with no user edit and shouldn't blip the indicator.
-    if (this.autosaveArmed) this.saveStatusCtl.saving();
-    else this.autosaveArmed = true;
+  private scheduleSave(edited = true): void {
+    if (edited) this.saveStatusCtl.saving();
     if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = null;
-      writeStoredLibrary(serializeShowLibrary(lib)); // localStorage cache (write-through)
-      writeStoredSongLibrary(serializeSongLibrary(songLib)); // the song pool's own cache
-      // Same debounced tick re-syncs the active show's authored Show to the engine (guarded so
-      // it only sends on a real change) — so live edits AND show switches reach the server.
+    this.saveTimer = setTimeout(() => this.flushSave(), SAVE_DEBOUNCE_MS);
+  }
+
+  /** One materialization per library per burst, shared by local cache and server push. A timer
+      holds no document references, so a replacement during the debounce cannot save the old show.
+      Unload/stop remain synchronous local-only durability boundaries (WS delivery isn't awaitable). */
+  private flushSave(syncServer = true): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    const shows = serializeShowLibrary(this.showsCtl.currentLibrary());
+    const songs = serializeSongLibrary(this.showsCtl.currentSongLibrary());
+    const showSaved = writeStoredLibrary(shows);
+    const songsSaved = writeStoredSongLibrary(songs);
+    if (syncServer) {
       this.syncShowToServer();
-      // …and pushes the authored show library to the server (the source of truth), so a
-      // browser-storage clear no longer loses shows. Sig-guarded; no-op until the first state.
-      this.showsCtl.syncLibraryToServer();
-      // …and the canonical song library (the sibling pool), same gated write-through.
-      this.showsCtl.syncSongLibraryToServer();
-      // The write (local cache + server push) has flushed → settle to "Saved" (held at
-      // "Saving…" for the min-visible window first). A no-op for the skipped mount save.
-      this.saveStatusCtl.saved();
-    }, SAVE_DEBOUNCE_MS);
+      this.showsCtl.syncLibraryToServer(shows);
+      this.showsCtl.syncSongLibraryToServer(songs);
+    }
+    if (showSaved && songsSaved) this.saveStatusCtl.saved();
+    else {
+      this.saveStatusCtl.failed();
+      pushToast('Could not save locally. Free storage and try Save again.');
+    }
   }
 
   // Show CRUD (new/open/save/save-as/rename/delete/close) + song-library refs (export/import/
   // detach/rename/delete/usedBy) live on {@link showsCtl} (R23); the store exposes them as thin
-  // forwarders alongside its field. The authored-state swap they drive (resetAuthoredToSeed /
-  // applyShow / normalizeGraphs / toAuthored) stays here and is reached through the injected host.
+  // forwarders alongside its field. Document replacement and persistence commits stay here,
+  // reached through the injected replaceDocument / saveNow host boundary.
 
   // --- engine link plumbing ------------------------------------------------
 
@@ -2470,7 +2521,9 @@ export class TriggerLab {
 
   /** Serialize a ClipDoc to the system clipboard and toast the outcome. */
   private async writeClip(doc: ClipDoc, okMessage: string): Promise<void> {
+    const generation = this.documentGeneration;
     const wrote = await writeClipboardText(serialize(doc));
+    if (generation !== this.documentGeneration) return;
     pushToast(wrote ? okMessage : 'Couldn’t reach the clipboard — copy blocked by the browser.', {
       tone: wrote ? 'success' : 'error',
     });
@@ -2586,7 +2639,9 @@ export class TriggerLab {
   /** Paste a graph from the system clipboard into the show. Opens the manual paste-text fallback
       when the browser blocks clipboard reads. */
   async pasteGraphFromClipboard(): Promise<void> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration) return;
     if (text === null) {
       this.pasteFallback = { context: 'graph' };
       return;
@@ -2597,7 +2652,9 @@ export class TriggerLab {
   /** Paste a section from the system clipboard into the active song. When clipboard reads are
       blocked, fall back to the in-app section clipboard if present, else the paste-text dialog. */
   async pasteSectionFromClipboard(): Promise<void> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration) return;
     if (text === null) {
       if (this.sectionClipboard) {
         this.pasteSection();
@@ -2631,9 +2688,13 @@ export class TriggerLab {
   }
 
   /** Paste a song from the system clipboard into the chosen destination. Returns `'blocked'` when
-      clipboard reads are unavailable so the dialog can reveal its manual paste-text field. */
-  async pasteSong(dest: SongPasteDest): Promise<'ok' | 'blocked'> {
+      clipboard reads are unavailable so the dialog can reveal its manual paste-text field.
+      A stale read returns `'cancelled'`, never `'blocked'`: the caller must not reveal an old
+      manual fallback in the replacement document's dialog. */
+  async pasteSong(dest: SongPasteDest): Promise<'ok' | 'blocked' | 'cancelled'> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration || !this.songPasteOpen) return 'cancelled';
     if (text === null) return 'blocked';
     this.pasteSongText(dest, text);
     return 'ok';
@@ -2642,6 +2703,7 @@ export class TriggerLab {
   /** Materialize a song from explicit text (manual fallback) into the chosen destination, then
       close the dialog. */
   pasteSongText(dest: SongPasteDest, text: string): void {
+    if (!this.songPasteOpen) return; // a replaced/dismissed dialog has no pending manual submission
     this.finishPaste(this.materializePaste(text, { context: 'song', songDest: dest }));
     this.songPasteOpen = false;
   }

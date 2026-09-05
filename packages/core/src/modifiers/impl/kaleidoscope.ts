@@ -12,6 +12,7 @@ export const kaleidoscope: ModifierDef<ScratchState> = {
   id: 'kaleidoscope',
   name: 'Kaleidoscope',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [{ key: 'segments', label: 'Segments', type: 'number', default: 2, min: 1, max: 16, step: 1 }],
   createState: makeScratch,
 

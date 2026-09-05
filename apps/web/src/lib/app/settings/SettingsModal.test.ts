@@ -1,10 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import { ShellStore } from '../shell-store.svelte';
 import { SETTINGS_PANES } from '../shell-nav';
 import SettingsModal from './SettingsModal.svelte';
+import { settingsPanes } from './lazy-panes';
+
+afterEach(async () => {
+  cleanup();
+  // Bits UI releases its body scroll lock 24ms after the last dialog unmounts.
+  // Let it finish before Vitest removes document from this environment.
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  vi.restoreAllMocks();
+});
 
 /* Locks the modal's close path: EVERY dismissal must disarm any pending MIDI/OSC
    learn. An arm that survives the modal close is invisible, and the next stray
@@ -43,6 +52,28 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
 }
 
 describe('SettingsModal', () => {
+  it('loads no pane while closed', async () => {
+    const loads = Object.values(settingsPanes).map((pane) => vi.spyOn(pane, 'load'));
+    render(SettingsModal, { props: { store: mockStore(), shell: new ShellStore() } });
+    await Promise.resolve();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    for (const load of loads) expect(load).not.toHaveBeenCalled();
+  });
+
+  it('keeps the dialog and Escape usable while a pane import is still pending', async () => {
+    vi.spyOn(settingsPanes.system, 'state', 'get').mockReturnValue({ status: 'loading' });
+    vi.spyOn(settingsPanes.system, 'load').mockResolvedValue();
+    const store = mockStore();
+    const shell = new ShellStore({ settings: 'system' });
+    render(SettingsModal, { props: { store, shell } });
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.contains(await screen.findByLabelText('Close settings'))).toBe(true);
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+    expect(shell.settingsPane).toBeNull();
+    expect(store.cancelMidiLearn).toHaveBeenCalledOnce();
+    expect(store.cancelOscLearn).toHaveBeenCalledOnce();
+  });
+
   it('closing via the X disarms any pending MIDI/OSC learn and closes the shell route', async () => {
     const store = mockStore();
     const shell = new ShellStore({ settings: 'system' });
@@ -91,7 +122,7 @@ describe('SettingsModal', () => {
     await fireEvent.click(await screen.findByRole('button', { name: 'Global controls' }));
 
     expect(shell.settingsPane).toBe('controls');
-    expect(screen.getByLabelText('Global controls')).toBeTruthy();
+    expect(await screen.findByLabelText('Global controls')).toBeTruthy();
     // System's content is gone, not merely hidden — inactive panes must unmount.
     expect(screen.queryByRole('button', { name: /Browse backups/ })).toBeNull();
   });

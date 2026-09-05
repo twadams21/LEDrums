@@ -1,20 +1,16 @@
 import type { D1Database } from './cf';
 import type { ReportRow, WireBreadcrumb } from './types';
 
-/**
- * The persistence seam the handlers depend on — abstracted so handler logic is unit-testable with a
- * fake in-memory store (no live Cloudflare). The real {@link d1Store} maps it onto D1 SQL and is the
- * only part exercised by manual integration (per the spec's testing decisions).
- */
+/** Persistence owns admission, not the request: callers cannot split the budget check from its
+ * write or the notification claim from report persistence. SQL is tested against local SQLite. */
 export interface ReportStore {
-  /** Rows CREATED for `machine` at/after `sinceMs` — the per-machine rate-limit signal (upserts of
-   * an existing row do NOT count, so a same-key storm is deduped, not rate-limited). */
-  countCreatedSince(machine: string, sinceMs: number): Promise<number>;
-  /** Whether ANY row already exists for (machine, version, dedupKey) — the webhook newness gate. */
-  dedupKeySeen(machine: string, version: string, dedupKey: string): Promise<boolean>;
-  /** Insert a new row, or bump count/last-seen on the existing (machine,version,session,dedupKey).
-   * Webhook newness is decided by {@link ReportStore.dedupKeySeen} BEFORE the upsert, not from here. */
-  upsert(row: ReportRow): Promise<void>;
+  /** Atomically admit + upsert a report and claim its first notification. Existing identities
+   * (machine, version, dedupKey) bypass the budget, including reports from a new session.
+   * `claimed` means this call owns one best-effort attempt, NOT that delivery happened. */
+  admit(row: ReportRow, budget: { sinceMs: number; maxNewKeys: number }): Promise<{
+    accepted: boolean;
+    claimed: boolean;
+  }>;
   /** Read rows filtered by machine/version/since (newest first), capped at `limit`. */
   list(filter: { machine?: string; version?: string; since?: number; limit: number }): Promise<ReportRow[]>;
 }
@@ -65,34 +61,30 @@ function toRow(r: D1RowShape): ReportRow {
   };
 }
 
-/** D1-backed {@link ReportStore}. The unique key is (machine, version, session, dedup_key); a repeat
- * upserts count/last_seen without changing received_at, so rate-limiting counts only fresh rows. */
+/** D1 batch is the transaction boundary: no request can observe a claim without its report or
+ * race between counting recent claims and inserting one. The claims ledger is permanent (no TTL):
+ * expiry frees budget, never makes an old identity new again. Apply the backfill before deployment. */
 export function d1Store(db: D1Database): ReportStore {
   return {
-    async countCreatedSince(machine, sinceMs) {
-      const row = await db
-        .prepare('SELECT COUNT(*) AS c FROM reports WHERE machine = ? AND received_at >= ?')
-        .bind(machine, sinceMs)
-        .first<{ c: number }>();
-      return row?.c ?? 0;
-    },
-    async dedupKeySeen(machine, version, dedupKey) {
-      const row = await db
-        .prepare('SELECT 1 AS x FROM reports WHERE machine = ? AND version = ? AND dedup_key = ? LIMIT 1')
-        .bind(machine, version, dedupKey)
-        .first<{ x: number }>();
-      return row != null;
-    },
-    async upsert(r) {
-      await db
+    async admit(r, budget) {
+      const claim = db.prepare(
+        `INSERT INTO notification_claims (machine, version, dedup_key, claimed_at)
+         SELECT ?, ?, ?, ?
+         WHERE (SELECT COUNT(*) FROM notification_claims WHERE machine = ? AND claimed_at >= ?) < ?
+         ON CONFLICT(machine, version, dedup_key) DO NOTHING
+         RETURNING 1 AS claimed`,
+      ).bind(r.machine, r.version, r.dedupKey, r.receivedAt, r.machine, budget.sinceMs, budget.maxNewKeys);
+      const report = db
         .prepare(
           `INSERT INTO reports
              (machine, version, engine_mode, platform, os_release, session, origin, dedup_key,
               message, stack, breadcrumbs, count, first_seen, last_seen, received_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM notification_claims WHERE machine = ? AND version = ? AND dedup_key = ?)
            ON CONFLICT(machine, version, session, dedup_key) DO UPDATE SET
              count = MAX(count, excluded.count),
-             last_seen = excluded.last_seen`,
+             last_seen = excluded.last_seen
+           RETURNING 1 AS accepted`,
         )
         .bind(
           r.machine,
@@ -110,8 +102,16 @@ export function d1Store(db: D1Database): ReportStore {
           r.firstSeenMs,
           r.lastSeenMs,
           r.receivedAt,
-        )
-        .run();
+          r.machine,
+          r.version,
+          r.dedupKey,
+        );
+      const [claimResult, reportResult] = await db.batch([claim, report]);
+      if (!claimResult?.success || !reportResult?.success) throw new Error('Report admission failed');
+      return {
+        accepted: (reportResult.results?.length ?? 0) > 0,
+        claimed: (claimResult.results?.length ?? 0) > 0,
+      };
     },
     async list(filter) {
       const clauses: string[] = [];

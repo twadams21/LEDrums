@@ -12,6 +12,7 @@ export const blur: ModifierDef<ScratchState> = {
   id: 'blur',
   name: 'Blur',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [{ key: 'radius', label: 'Radius', type: 'number', default: 2, min: 0, max: 32, step: 1, unit: 'px' }],
   createState: makeScratch,
 

@@ -8,6 +8,9 @@
     "start": "tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "health:snapshot": "node --expose-gc --import tsx src/backups/snapshot-latency.probe.ts",
+    "health:snapshot-worker": "node --expose-gc --import tsx src/backups/snapshot-worker.probe.ts",
+    "health:retention": "node --expose-gc --import tsx ../web/src/lib/trigger-lab/runtime-retention.probe.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },

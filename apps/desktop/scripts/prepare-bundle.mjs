@@ -16,6 +16,13 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { substituteShellTokens } from './shell-tokens.mjs';
+import { assertSeaBuildEnvironment } from './sea-node.mjs';
+
+// Also covers direct `tauri build --target universal-apple-darwin`, before staging any artifacts.
+assertSeaBuildEnvironment({
+  universal: process.env.LEDRUMS_SIDECAR_UNIVERSAL === '1' ||
+    process.env.TAURI_ENV_TARGET_TRIPLE === 'universal-apple-darwin',
+});
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopDir = resolve(here, '..');
