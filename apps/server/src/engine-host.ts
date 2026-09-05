@@ -1,5 +1,6 @@
 import { Engine, getHoopPixelRange, type InputEvent, type Project } from '@ledrums/core';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
+import { TickRate } from './tick-rate';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 
 /** Stats reported to clients (the ServerMessage `stats` shape, sans `t`). */
@@ -50,10 +51,8 @@ export class EngineHost {
   private pendingInputWall: number | null = null;
   lastLatencyMs = 0;
 
-  /** Measured loop rate (frames ticked per second), updated ~1/s. */
-  private measuredFps = 0;
-  private fpsTicks = 0;
-  private fpsWindowStart = 0;
+  /** Completed ticks per real second, including pauses dropped by the accumulator. */
+  private readonly tickRate = new TickRate();
 
   /** Preview frame sink (wired by `main` to broadcast over WS). */
   onFrame?: (rgb: Uint8Array) => void;
@@ -95,10 +94,7 @@ export class EngineHost {
     if (this.timer) return;
     this.reloadOutputSettings();
     this.lastWall = performance.now();
-    // step() measures this window in engine time, not process uptime.
-    this.fpsWindowStart = this.engineTimeMs;
-    this.fpsTicks = 0;
-    this.measuredFps = 0;
+    this.tickRate.reset(this.lastWall);
     this.accumulator = 0;
     this.scheduleNext();
   }
@@ -146,14 +142,7 @@ export class EngineHost {
     this.engine.tick(dt);
     this.engineTimeMs += dt;
 
-    // Loop-rate measurement (rolling 1s window).
-    this.fpsTicks++;
-    const sinceWindow = this.engineTimeMs - this.fpsWindowStart;
-    if (sinceWindow >= 1000) {
-      this.measuredFps = (this.fpsTicks * 1000) / sinceWindow;
-      this.fpsTicks = 0;
-      this.fpsWindowStart = this.engineTimeMs;
-    }
+    this.tickRate.tick(performance.now());
 
     let emittedFrame = false;
 
@@ -211,7 +200,7 @@ export class EngineHost {
     return {
       engine: this.engine.getStats(),
       latencyMs: this.lastLatencyMs,
-      fps: this.measuredFps,
+      fps: this.tickRate.rate,
       output: this.output.status(),
     };
   }
