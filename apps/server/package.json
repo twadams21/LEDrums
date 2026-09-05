@@ -8,6 +8,7 @@
     "start": "tsx src/main.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "health:snapshot": "node --expose-gc --import tsx src/backups/snapshot-latency.probe.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },
