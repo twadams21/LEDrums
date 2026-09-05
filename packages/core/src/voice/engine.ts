@@ -35,6 +35,7 @@ import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
+import { ensureGeometryState } from './geometry-state';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { ccKey, ccValue01, noteKey, noteValue01, oscValue01, type NoteState } from './modulation';
 import {
@@ -300,6 +301,7 @@ class VoiceBusEngine implements RenderEngine {
   // --- lifecycle ---------------------------------------------------------
 
   setModel(model: PixelModel): void {
+    for (const v of this.voices.pool) if (v.active) ensureGeometryState(v, model);
     this.model = model;
     this.finalFb = new Fb(model.pixelCount);
     this.outFb = new Float32Array(model.pixelCount * 4);

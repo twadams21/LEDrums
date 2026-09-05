@@ -13,6 +13,7 @@ export * from './types';
 export * from './diagnostics';
 export * from './easing';
 export * from './envelope';
+export { ensureGeometryState, type GeometryState } from './geometry-state';
 export * from './modulation';
 export * from './scope';
 export * from './graph-integrity';

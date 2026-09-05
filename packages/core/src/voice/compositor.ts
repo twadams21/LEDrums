@@ -20,6 +20,7 @@ import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
+import { ensureGeometryState } from './geometry-state';
 import { createGeneratorBridge } from './generator-bridge';
 import { applyModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
@@ -124,6 +125,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     seed: input.seed,
     generatorId: input.generatorId,
     genState: input.genState,
+    renderModel: input.renderModel,
     mixInputs: undefined,
     modifiers: input.modifiers,
     modState: input.modState,
@@ -294,6 +296,7 @@ export function createDefaultCompositor(): Compositor {
 
       for (const v of voices) {
         if (!v.active) continue;
+        ensureGeometryState(v, model);
         const level = v.level * v.deckGain;
         if (level <= 0.003) continue;
 

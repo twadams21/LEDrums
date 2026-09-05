@@ -85,6 +85,7 @@ function mixInputVoice(input: voice.MixInput, host: Voice): Voice {
     seed: input.seed,
     generatorId: input.generatorId,
     genState: input.genState,
+    renderModel: input.renderModel,
     mixInputs: undefined,
     modifiers: input.modifiers,
     modState: input.modState,
@@ -209,6 +210,7 @@ export function renderFrame(buf: Uint8Array, sim: Sim, lab: LabModel): void {
   const { model } = lab;
 
   for (const v of sim.voices) {
+    voice.ensureGeometryState(v, lab.pm);
     const level = sim.voiceLevel(v);
     if (level <= 0.003) continue;
 

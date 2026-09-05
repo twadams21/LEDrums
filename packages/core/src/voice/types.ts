@@ -1,3 +1,4 @@
+import type { GeometryState } from './geometry-state';
 /**
  * Pure data model for the trigger-graph / voice-bus lighting brain (ported from the
  * throwaway `apps/web/src/lib/trigger-lab/sim.ts`). No Node/DOM/IO — platform-agnostic
@@ -753,7 +754,7 @@ export type VoicePhase = 'attack' | 'sustain' | 'release';
  * bus. Object-pooled inside the engine; `active` marks pool occupancy. Identity for
  * cross-frame references (toggle latching, voice-stealing) is the string `id`.
  */
-export interface Voice {
+export interface Voice extends GeometryState {
   /** Pool occupancy flag — inactive voices are reuse candidates. */
   active: boolean;
   /** Stable identity for latch/stop references (`v${seq}`). */
@@ -884,7 +885,7 @@ export interface Voice {
   originNodeId?: string;
 }
 
-export interface MixInput {
+export interface MixInput extends GeometryState {
   generatorId: string;
   scope: Scope;
   targetId?: string;

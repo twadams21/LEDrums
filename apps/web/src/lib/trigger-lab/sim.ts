@@ -194,7 +194,7 @@ export interface Bus {
 
 export type VoicePhase = 'attack' | 'sustain' | 'release';
 
-export interface Voice {
+export interface Voice extends voice.GeometryState {
   id: string;
   effectId: string;
   busId: string;

@@ -48,6 +48,7 @@ export function releaseVoice(v: Voice, timeMs: number): void {
  * composite sub-voices. Spawn creates fresh state anyway; keeping it cannot aid reuse. */
 export function deactivateVoice(v: Voice): void {
   v.active = false;
+  v.renderModel = undefined;
   v.genState = null;
   v.modState = undefined;
   v.mixInputs = undefined;
@@ -173,6 +174,7 @@ export class VoicePool {
       ? (effect.generatorId ?? null)
       : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
+    slot.renderModel = undefined;
     /** Realise a composite member (Mix branch or splice) into a sub-voice. A member whose
         effect or generator can't be resolved is dropped rather than rendered blank. */
     const toMember = (input: MixInputDraft, index: number): MixInput | null => {
