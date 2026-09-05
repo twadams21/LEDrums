@@ -444,6 +444,8 @@ export class TriggerLab {
   /** Open when the Songs paste flow is active — the dialog picks a destination (this show vs the
       Song Library) and offers a manual-paste textarea when the browser blocks clipboard reads. */
   songPasteOpen = $state(false);
+  /** Document revision, not show id: same-id server replacements invalidate pending clipboard IO. */
+  private documentGeneration = 0;
   /** Non-null when a graph/section paste hit a blocked clipboard read: drives the manual paste-text
       fallback dialog, remembering which context the pasted text should materialize into. */
   pasteFallback = $state<{ context: 'graph' | 'section' } | null>(null);
@@ -553,7 +555,7 @@ export class TriggerLab {
       if (patch.presets) this.presets = [...this.presets, ...patch.presets];
     },
     toAuthored: () => this.toAuthored(),
-    replaceDocument: (show) => this.replaceDocument(show),
+    replaceDocument: (show, source) => this.replaceDocument(show, source),
     saveNow: () => {
       this.saveStatusCtl.saving();
       this.flushSave();
@@ -1205,15 +1207,23 @@ export class TriggerLab {
 
   /** The sole document replacement boundary, including same-id server adoption. History is
       session-local to this document revision; an in-flight gesture cannot suppress its first edit. */
-  private replaceDocument(show: Show): void {
+  private replaceDocument(show: Show, source: 'loaded' | 'live'): void {
+    ++this.documentGeneration;
+    this.pasteFallback = null;
+    this.songPasteOpen = false;
     this.history.replace(show.id);
     this.gestureDepth = 0;
     this.gesturePending = false;
     this.gestureSuppressPrev = false;
     this.suppressUndoSnapshot = false;
-    this.resetAuthoredToSeed();
-    this.applyAuthored($state.snapshot(show.authored));
-    this.normalizeGraphs();
+    // Save As snapshots the runes already live here. It changes document identity/lifetime, not
+    // authored content: boot backfill would resurrect deleted presets (and migration could edit
+    // graphs). Only genuinely loaded documents need seed defaults, registry union and migration.
+    if (source === 'loaded') {
+      this.resetAuthoredToSeed();
+      this.applyAuthored($state.snapshot(show.authored));
+      this.normalizeGraphs();
+    }
     this.galleryBlock = null;
     this.settingsBlock = null;
     this.envTarget = null;
@@ -2511,7 +2521,9 @@ export class TriggerLab {
 
   /** Serialize a ClipDoc to the system clipboard and toast the outcome. */
   private async writeClip(doc: ClipDoc, okMessage: string): Promise<void> {
+    const generation = this.documentGeneration;
     const wrote = await writeClipboardText(serialize(doc));
+    if (generation !== this.documentGeneration) return;
     pushToast(wrote ? okMessage : 'Couldn’t reach the clipboard — copy blocked by the browser.', {
       tone: wrote ? 'success' : 'error',
     });
@@ -2627,7 +2639,9 @@ export class TriggerLab {
   /** Paste a graph from the system clipboard into the show. Opens the manual paste-text fallback
       when the browser blocks clipboard reads. */
   async pasteGraphFromClipboard(): Promise<void> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration) return;
     if (text === null) {
       this.pasteFallback = { context: 'graph' };
       return;
@@ -2638,7 +2652,9 @@ export class TriggerLab {
   /** Paste a section from the system clipboard into the active song. When clipboard reads are
       blocked, fall back to the in-app section clipboard if present, else the paste-text dialog. */
   async pasteSectionFromClipboard(): Promise<void> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration) return;
     if (text === null) {
       if (this.sectionClipboard) {
         this.pasteSection();
@@ -2672,9 +2688,13 @@ export class TriggerLab {
   }
 
   /** Paste a song from the system clipboard into the chosen destination. Returns `'blocked'` when
-      clipboard reads are unavailable so the dialog can reveal its manual paste-text field. */
-  async pasteSong(dest: SongPasteDest): Promise<'ok' | 'blocked'> {
+      clipboard reads are unavailable so the dialog can reveal its manual paste-text field.
+      A stale read returns `'cancelled'`, never `'blocked'`: the caller must not reveal an old
+      manual fallback in the replacement document's dialog. */
+  async pasteSong(dest: SongPasteDest): Promise<'ok' | 'blocked' | 'cancelled'> {
+    const generation = this.documentGeneration;
     const text = await readClipboardText();
+    if (generation !== this.documentGeneration || !this.songPasteOpen) return 'cancelled';
     if (text === null) return 'blocked';
     this.pasteSongText(dest, text);
     return 'ok';
@@ -2683,6 +2703,7 @@ export class TriggerLab {
   /** Materialize a song from explicit text (manual fallback) into the chosen destination, then
       close the dialog. */
   pasteSongText(dest: SongPasteDest, text: string): void {
+    if (!this.songPasteOpen) return; // a replaced/dismissed dialog has no pending manual submission
     this.finishPaste(this.materializePaste(text, { context: 'song', songDest: dest }));
     this.songPasteOpen = false;
   }

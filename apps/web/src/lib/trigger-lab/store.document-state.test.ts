@@ -6,6 +6,7 @@ import { TriggerLab } from './store.svelte';
 import { makeNode, type TriggerGraph } from './sim';
 import { EFFECTS } from './fixtures';
 import { serializeShowLibrary, serializeSongLibrary } from './persistence';
+import type { ShowsController } from './shows-controller.svelte';
 import type { WSClient, WSCallbacks } from '../ws/client';
 
 const ctx = { velocity: 1, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: 'kick', bpm: 120 };
@@ -156,6 +157,52 @@ it('resets the connected engine for equal-content Save As, but not a position-on
     vi.advanceTimersByTime(500);
     expect(send.mock.calls.some(([m]) => m.t === 'setShow')).toBe(false);
   } finally { store.stop(); vi.useRealTimers(); }
+});
+
+it('Save As preserves the exact live authored content, including a deleted built-in preset', () => {
+  const { store } = setup();
+  try {
+    const sourceId = store.activeShowId;
+    const presetId = 'gen:radial-wash:pop';
+    expect(store.presets.some((p) => p.id === presetId)).toBe(true);
+    expect(store.deletePreset(presetId)).toBe(true);
+    store.runUndoable(() => { store.bpm = 177; });
+    store.saveShow();
+    const library = () => (store as unknown as { showsCtl: ShowsController }).showsCtl.currentLibrary();
+    const authored = () => library().shows[store.activeShowId]!.authored;
+    const before = JSON.stringify(authored());
+    const oldSim = store.sim;
+    store.sim.triggerGraph('loop', graph('all'), ctx, 'loop');
+    const cloneId = store.saveShowAs('Clone');
+    expect(cloneId).not.toBe(sourceId);
+    expect(store.sim).not.toBe(oldSim);
+    expect(store.voices).toHaveLength(0);
+    expect(store.undo()).toBe(false);
+    store.saveShow(); // prove the live clone and its persisted slot agree
+    expect(JSON.stringify(authored())).toBe(before);
+    expect(JSON.stringify(store.activeShow!.authored)).toBe(before);
+    expect(JSON.stringify(library().shows[sourceId]!.authored)).toBe(before);
+    expect(store.presets.some((p) => p.id === presetId)).toBe(false);
+    store.runUndoable(() => { store.bpm = 200; });
+    expect(store.undo()).toBe(true);
+    expect(store.bpm).toBe(177);
+  } finally { store.stop(); }
+});
+
+it('still backfills and migrates genuinely loaded documents', () => {
+  const { store } = setup();
+  try {
+    const sourceId = store.activeShowId;
+    expect(store.deletePreset('gen:radial-wash:pop')).toBe(true);
+    const key = store.selectedPadKey!;
+    const loadedGraph = store.graphs[key]!;
+    // A legacy graph in a saved slot still needs the normal load-time migration.
+    delete loadedGraph.version;
+    store.newShow('Other');
+    store.openShow(sourceId);
+    expect(store.presets.some((p) => p.id === 'gen:radial-wash:pop')).toBe(true);
+    expect(store.graphs[key]!.version).toBe(3);
+  } finally { store.stop(); }
 });
 
 it('rejects a checkpoint when the active document identity is changed outside the lifecycle', () => {

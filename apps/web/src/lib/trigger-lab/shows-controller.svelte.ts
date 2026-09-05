@@ -130,8 +130,9 @@ export interface ShowsControllerHost {
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped) — spans every authored
       cluster, so it is owned by the store. */
   toAuthored(): AuthoredState;
-  /** Replace the document's authored state, history and runtime as one lifetime boundary. */
-  replaceDocument(show: Show): void;
+  /** Replace the document lifetime. Save As retains the already-live authored runes; loaded
+      documents additionally adopt/migrate their saved content. Both reset history and runtime. */
+  replaceDocument(show: Show, source: 'loaded' | 'live'): void;
   /** Flush local caches and server pushes through the same pipeline as autosave. */
   saveNow(): void;
   /** Re-point the active section (R24 owns the rune) — song switch selects the song's first section. */
@@ -353,7 +354,7 @@ export class ShowsController {
     const label = name.trim() || showsLib.nextShowName(this.showLibrary);
     const show = { id, name: label, authored: this.host.toAuthored() };
     this.showLibrary = showsLib.withShow(this.showLibrary, show);
-    this.activateDocument(show);
+    this.activateDocument(show, 'live');
     return id;
   }
 
@@ -392,9 +393,9 @@ export class ShowsController {
 
   /** All replacements, including same-id server revisions and same-content Save As, cross this
       boundary. Ordinary saves, renames and deleting an inactive show do not. */
-  private activateDocument(show: Show): void {
+  private activateDocument(show: Show, source: 'loaded' | 'live' = 'loaded'): void {
     this.activeShowId = show.id;
-    this.host.replaceDocument(show);
+    this.host.replaceDocument(show, source);
   }
 
   /** Smallest unused show id (survives reload — the global nid counter + the live library). */
