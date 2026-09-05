@@ -123,6 +123,46 @@ function expectRgb(actual: [number, number, number], expected: [number, number, 
 }
 
 describe('splice — colour splices', () => {
+  it('invalidates warm layouts after equal-total hoop topology replacement and reuses unchanged models', () => {
+    const makeModel = (counts: number[]): PixelModel => buildPixelModel(parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
+      drums: [{
+        id: 'kick', diameterIn: 12, hoopSpacingMm: 50,
+        hoops: counts.map((pixelCount) => ({ pixelCount })),
+        origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 },
+      }],
+    }));
+    const original = makeModel([4, 4]);
+    const replacement = makeModel([2, 6]);
+    expect(replacement.pixelCount).toBe(original.pixelCount);
+    const graph = spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]);
+    const start = (model: PixelModel) => {
+      const engine = createVoiceBusEngine();
+      engine.setModel(model);
+      engine.setShow(show(graph));
+      engine.applyInput(hit());
+      runTo(engine, 40);
+      return engine;
+    };
+    const warm = start(original);
+    const oldFrame = warm.frame().slice();
+    runTo(warm, 45, 40);
+    expect(warm.frame()).toEqual(oldFrame);
+
+    warm.setModel(replacement);
+    runTo(warm, 50, 45);
+    const fresh = start(replacement);
+    const expected = fresh.frame().slice();
+    expect(expected).not.toEqual(oldFrame);
+    const rgb = (i: number): [number, number, number] => [expected[i * 4]!, expected[i * 4 + 1]!, expected[i * 4 + 2]!];
+    // Two equal bands on each hoop: R B | R R R B B B.
+    [RED, BLUE, RED, RED, RED, BLUE, BLUE, BLUE].forEach((color, i) => expectRgb(rgb(i), color, `pixel ${i}`));
+    expect(warm.frame()).toEqual(expected);
+
+    runTo(warm, 55, 50);
+    expect(warm.frame()).toEqual(expected);
+  });
+
   it('renders a colour splice with no authored effect at all (the engine hosts the fill)', () => {
     const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
     // 2 splices over each 4-pixel hoop → pixels 0-1 red, 2-3 blue, repeating on every hoop.

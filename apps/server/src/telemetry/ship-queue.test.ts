@@ -49,6 +49,57 @@ describe('createShipQueue (#122 generic outbox)', () => {
     q.dispose();
   });
 
+  it.each(['replacement', 'same object'] as const)('retains a same-key newer enqueue during shipping (%s)', async (update) => {
+    vi.useFakeTimers();
+    const transport = vi.fn<ShipTransport<Item & { timestamp: number }>>().mockResolvedValue(undefined);
+    let finish = (): void => {};
+    transport.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const q = createShipQueue<Item & { timestamp: number }>({ path: path(), transport, keyOf: (i) => i.key });
+    const item = { key: 'a', count: 1, timestamp: 100 };
+    q.enqueue(item);
+    q.enqueue({ key: 'b', count: 1, timestamp: 100 });
+    const shipping = q.flush();
+    expect(transport.mock.calls[0]![0]).toEqual([item, { key: 'b', count: 1, timestamp: 100 }]);
+    const newer = update === 'replacement' ? { ...item, count: 2, timestamp: 200 } : Object.assign(item, { count: 2, timestamp: 200 });
+    q.enqueue(newer);
+    q.enqueue({ key: 'c', count: 1, timestamp: 200 });
+    finish();
+    await shipping;
+    expect(q.items()).toEqual([{ key: 'a', count: 2, timestamp: 200 }, { key: 'c', count: 1, timestamp: 200 }]);
+    await q.flush();
+    expect(transport.mock.calls[1]![0]).toEqual([{ key: 'a', count: 2, timestamp: 200 }, { key: 'c', count: 1, timestamp: 200 }]);
+    expect(q.size()).toBe(0);
+    q.dispose();
+  });
+
+  it.each([{ maxItems: 2 }, { maxBytes: 44 }])('retains evicted-and-reinserted keys during shipping with cap %j', async (cap) => {
+    vi.useFakeTimers();
+    const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
+    let finish = (): void => {};
+    transport.mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    // Each serialized item occupies 22 bytes, including its newline.
+    const q = createShipQueue<Item>({ path: path(), transport, keyOf: (i) => i.key, ...cap });
+    const a = { key: 'a', count: 1 };
+    q.enqueue(a);
+    q.enqueue({ key: 'b', count: 1 });
+    const shipping = q.flush();
+    q.enqueue({ key: 'c', count: 1 }); // evicts a
+    q.enqueue(a); // same payload object, but a new entry at the tail; evicts b
+    expect(q.dropped()).toBe(2);
+    finish();
+    await shipping;
+    expect(q.items()).toEqual([{ key: 'c', count: 1 }, { key: 'a', count: 1 }]);
+    expect(q.dropped()).toBe(2); // these drops were not in the acknowledged batch
+    q.enqueue({ key: 'd', count: 1 }); // caps still account for both retained entries
+    expect(q.items()).toEqual([{ key: 'a', count: 1 }, { key: 'd', count: 1 }]);
+    expect(q.dropped()).toBe(3);
+    await q.flush();
+    expect(transport.mock.calls[1]).toEqual([[{ key: 'a', count: 1 }, { key: 'd', count: 1 }], { dropped: 3 }]);
+    expect(q.size()).toBe(0);
+    expect(q.dropped()).toBe(0);
+    q.dispose();
+  });
+
   it('drops oldest at the item cap and ships the dropped count as batch meta', async () => {
     const transport = vi.fn<ShipTransport<Item>>().mockResolvedValue(undefined);
     const q = createShipQueue<Item>({ path: path(), transport, maxItems: 3, persistDebounceMs: 60_000 }); // append-only (no keyOf)

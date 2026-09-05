@@ -79,7 +79,8 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
   const log = opts.log ?? ((m: string): void => console.error(m));
 
   // Insertion-ordered store (Map preserves order; re-setting an existing key keeps its position).
-  const store = new Map<string, T>();
+  // A fresh entry per enqueue identifies the revision even when the caller reuses a payload object.
+  const store = new Map<string, { item: T }>();
   const lengths = new Map<string, number>(); // cached serialized byte length per key
   let bytes = 0;
   let seq = 0;
@@ -97,7 +98,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
 
   function serialize(): string {
     let out = '';
-    for (const item of store.values()) out += `${JSON.stringify(item)}\n`;
+    for (const { item } of store.values()) out += `${JSON.stringify(item)}\n`;
     return out;
   }
 
@@ -147,8 +148,8 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
   function doShip(): Promise<void> {
     if (shipInFlight) return shipInFlight;
     if (store.size === 0) return Promise.resolve();
-    const keys = [...store.keys()];
-    const batch = keys.map((k) => store.get(k)!);
+    const entries = [...store.entries()];
+    const batch = entries.map(([, entry]) => entry.item);
     const droppedSnapshot = droppedCount;
     // Wrap in an async IIFE so a SYNCHRONOUS throw from the transport is normalized to a rejection
     // and handled by the same failure path — the queue must never let a transport fault escape.
@@ -156,7 +157,9 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       try {
         await opts.transport(batch, { dropped: droppedSnapshot });
         // Success: remove exactly what shipped (items enqueued during the await are retained).
-        for (const k of keys) {
+        for (const [k, entry] of entries) {
+          // Replaced or evicted-and-reinserted keys belong to a later batch.
+          if (store.get(k) !== entry) continue;
           bytes -= lengths.get(k) ?? 0;
           store.delete(k);
           lengths.delete(k);
@@ -184,7 +187,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       const len = Buffer.byteLength(line) + 1;
       if (!store.has(k)) bytes += len;
       else bytes += len - (lengths.get(k) ?? 0);
-      store.set(k, item);
+      store.set(k, { item });
       lengths.set(k, len);
     }
     enforceCaps();
@@ -199,7 +202,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
       const len = Buffer.byteLength(JSON.stringify(item)) + 1;
       if (store.has(k)) bytes += len - (lengths.get(k) ?? 0);
       else bytes += len;
-      store.set(k, item);
+      store.set(k, { item });
       lengths.set(k, len);
       enforceCaps();
       schedulePersist();
@@ -225,7 +228,7 @@ export function createShipQueue<T>(opts: ShipQueueOptions<T>): ShipQueue<T> {
     },
     size: () => store.size,
     dropped: () => droppedCount,
-    items: () => [...store.values()],
+    items: () => [...store.values()].map(({ item }) => item),
     dispose(): void {
       if (flushTimer) clearTimeout(flushTimer);
       if (persistTimer) clearTimeout(persistTimer);

@@ -45,6 +45,7 @@ import { createHostEventHandler } from './http/host-event';
 import { createUpdateStatusHandler } from './http/update-status';
 import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
+import { broadcastPreview } from './preview-broadcast';
 import { createMonitorBus } from './monitor';
 import { installProcessErrorCapture } from './process-errors';
 import { createShipQueue, type ShipQueue } from './telemetry/ship-queue';
@@ -427,9 +428,7 @@ function broadcastPresence(): void {
 }
 
 function broadcastBinary(rgb: Uint8Array): void {
-  for (const ws of clients) {
-    if (ws.readyState === ws.OPEN) ws.send(rgb, { binary: true });
-  }
+  broadcastPreview(clients, rgb);
 }
 
 /** The remote-access surface for the host UI: tunnel lifecycle status + resolved URL + room

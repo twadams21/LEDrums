@@ -30,10 +30,17 @@ export function r2Store(bucket: R2Bucket): BackupStore {
       await bucket.put(backupKey(machine, key), body);
     },
     async list(machine) {
-      const res = await bucket.list({ prefix: `${BACKUP_PREFIX}${machine}/` });
-      return res.objects
-        .map((o) => ({ key: o.key, size: o.size, uploaded: o.uploaded.getTime() }))
-        .sort((a, b) => b.uploaded - a.uploaded);
+      const prefix = `${BACKUP_PREFIX}${machine}/`;
+      const objects: BackupObject[] = [];
+      let res = await bucket.list({ prefix });
+      while (true) {
+        for (const o of res.objects) {
+          objects.push({ key: o.key, size: o.size, uploaded: o.uploaded.getTime() });
+        }
+        if (!res.truncated) break;
+        res = await bucket.list({ prefix, cursor: res.cursor });
+      }
+      return objects.sort((a, b) => b.uploaded - a.uploaded);
     },
     async get(key) {
       const obj = await bucket.get(key);

@@ -12,13 +12,32 @@ edges:
     condition: when specific technology details are needed
   - target: context/decisions.md
     condition: when understanding why the architecture is structured this way
-last_updated: 2026-06-20
+last_updated: 2026-09-05
 note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI source) are external runtime endpoints, not npm packages — `mex check` flags them as missing-from-manifest; that is expected.
 ---
 
 # Architecture
 
-## System Overview
+## Current runtime correction (code-verified 2026-09-05)
+
+The sections below were written for the original Composition engine and are **historical**, not
+an accurate complete map of current `main`. Current authoring uses show-global trigger graphs,
+setlist sections, voice buses and graph-based effects/modulation. `packages/core/src/voice/`
+owns the voice engine/compositor; `apps/server/src/voice-engine-host.ts` hosts it, while the
+legacy `EngineHost` still exists. The web's `trigger-lab` store/sim is production authoring and
+offline playback code despite its historical directory name, not a disposable prototype.
+
+Browser WebMIDI is not the only MIDI source: `apps/desktop/src-tauri` has a native MIDI bridge
+feeding the trusted-host server HTTP input path. `workers/error-ingest` is a deployed-surface
+Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older “no cloud
+backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
+
+Ownership audit and planned shared modules: `docs/plans/2026-09-05-codebase-health-audit.md`
+(P01 document/history/sim lifetime, P02 authoritative project replacement, P08 offline adapter).
+Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
+host/sim until its live responsibilities have been transferred and tested.
+
+## Historical System Overview
 Authored content + live input → render loop → pixels → wire & screen.
 
 ```
