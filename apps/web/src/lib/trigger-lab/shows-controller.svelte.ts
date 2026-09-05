@@ -263,10 +263,17 @@ export class ShowsController {
   shows = $derived(Object.values(this.showLibrary).map((s) => ({ id: s.id, name: s.name })));
   /** The active show (id + name + its cached authored). null only before construction completes. */
   activeShow = $derived(this.showLibrary[this.activeShowId] ?? null);
+  /** The exact active song in the resolved setlist. Unlike {@link activeSong}, this does not fall
+      back to the first song, so mutation and activation boundaries can reject a stale id safely. */
+  activeSongById = $derived(this.resolvedSongs.find((s) => s.id === this.activeSongId) ?? null);
+  /** The exact active song in the authored local setlist. A referenced song is intentionally absent:
+      section arrangement currently writes only through the local `songs` rune. */
+  activeLocalSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? null);
   /** The active song over the RESOLVED song list (local + referenced), so a referenced library song
       is selectable/navigable/playable just like a local one (S42). Falls back to the first resolved
-      song. `sections`, firing, and the engine push all read through this (in the store). */
-  activeSong = $derived(this.resolvedSongs.find((s) => s.id === this.activeSongId) ?? this.resolvedSongs[0] ?? null);
+      song for the existing read/play surface. Mutation paths must use {@link activeSongById} or
+      {@link activeLocalSong} instead. */
+  activeSong = $derived(this.activeSongById ?? this.resolvedSongs[0] ?? null);
 
   // --- library snapshots (persist / sync sources) --------------------------
 

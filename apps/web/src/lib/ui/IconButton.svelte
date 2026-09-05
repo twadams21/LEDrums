@@ -68,7 +68,14 @@
      the button directly. A supplied reason always gets a Tooltip, even when callers
      disabled ordinary label tooltips, because the reason is an accessibility contract. -->
 {#if (tooltip || hasDisabledReason) && (!disabled || hasDisabledReason)}
-  <Tooltip text={hasDisabledReason ? disabledReason! : label} side={tooltipSide}>{@render btn()}</Tooltip>
+  <Tooltip
+    text={hasDisabledReason ? disabledReason! : label}
+    side={tooltipSide}
+    triggerRole={hasDisabledReason ? 'group' : undefined}
+    triggerLabel={hasDisabledReason ? label : undefined}
+    triggerDescribedBy={hasDisabledReason ? disabledReasonId : undefined}
+    triggerDisabled={hasDisabledReason}
+  >{@render btn()}</Tooltip>
 {:else}
   {@render btn()}
 {/if}

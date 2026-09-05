@@ -61,7 +61,7 @@ describe('SongsBar', () => {
 
     const viewerStore = mockStore({ canEdit: false });
     const viewer = render(SongsBar, { props: { store: viewerStore } });
-    const add = within(viewer.container).getByLabelText('Add song') as HTMLButtonElement;
+    const add = within(viewer.container).getByRole('button', { name: 'Add song' }) as HTMLButtonElement;
     expect(add.disabled).toBe(true);
     expect(viewer.container.textContent).toContain(VIEWING_REASON);
     await fireEvent.click(add);

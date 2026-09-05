@@ -80,6 +80,62 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
     expect(store.activeSectionId).toBe(id);
     expect(store.selectedPadKey).not.toBe('no-such-graph');
   });
+
+  it('ignores an invalid section activation and keeps the current section', () => {
+    const store = new TriggerLab(fakeClient);
+    const current = store.activeSectionId;
+    store.setActiveSection('missing-section');
+    expect(store.activeSectionId).toBe(current);
+  });
+
+  it('clears stale song and section selection before any section mutation can use the fallback song', () => {
+    const store = new TriggerLab(fakeClient);
+    const original = store.songs;
+    store.activeSongId = 'missing-song';
+
+    expect(store.activeSongById).toBeNull();
+    expect(store.activeSectionId).toBeNull();
+    store.addSongSection('Should not exist');
+
+    expect(store.songs).toBe(original);
+    expect(store.activeSong).not.toBeNull(); // legacy read/play fallback remains, but is not a mutation target
+  });
+
+  it('keeps a canonical reference playable but refuses local section mutation', () => {
+    const store = new TriggerLab(fakeClient);
+    const libraryId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const reference = store.activeSongById!;
+    const firstSection = store.activeSectionId;
+
+    store.addSongSection('Should be detached first');
+
+    expect(store.activeLocalSong).toBeNull();
+    expect(store.activeSongById?.id).toBe(libraryId);
+    expect(store.activeSongById?.sections).toEqual(reference.sections);
+    expect(store.activeSectionId).toBe(firstSection);
+  });
+
+  it('reconciles the active section after replacing the active song list', () => {
+    const store = new TriggerLab(fakeClient);
+    const replacement = store.createSong('Replacement');
+    const replacementSection = store.activeSongById!.sections[0]!.id;
+    store.songs = [store.songs.find((song) => song.id === replacement)!];
+
+    expect(store.activeSongById?.id).toBe(replacement);
+    expect(store.activeSectionId).toBe(replacementSection);
+  });
+
+  it('reconciles to the next song when the active local song is removed', () => {
+    const store = new TriggerLab(fakeClient);
+    const removed = store.createSong('Removed');
+    const next = store.songs[0]!.id;
+    store.removeSong(removed);
+
+    expect(store.activeSongById?.id).toBe(next);
+    expect(store.activeSectionId).toBe(store.activeSongById!.sections[0]!.id);
+  });
 });
 
 describe('section creation boundary', () => {

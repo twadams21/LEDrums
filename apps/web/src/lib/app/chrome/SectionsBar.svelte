@@ -7,13 +7,21 @@
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Plus from '@lucide/svelte/icons/plus';
-  import { NO_ACTIVE_SONG_REASON, VIEWING_REASON } from './edit-gate';
+  import { NO_ACTIVE_SONG_REASON, REFERENCE_SONG_REASON, VIEWING_REASON } from './edit-gate';
 
   let { store }: { store: TriggerLab } = $props();
 
-  const sections = $derived(store.activeSong?.sections ?? []);
+  const sections = $derived(store.activeSongById?.sections ?? []);
+  // Explain the specific unavailable target before the generic viewer gate: it tells the user
+  // whether they need to detach a reference or take over an editable local song.
   const addBlockedReason = $derived(
-    !store.canEdit ? VIEWING_REASON : !store.activeSong ? NO_ACTIVE_SONG_REASON : undefined,
+    !store.activeLocalSong
+      ? store.activeSongById
+        ? REFERENCE_SONG_REASON
+        : NO_ACTIVE_SONG_REASON
+      : !store.canEdit
+        ? VIEWING_REASON
+        : undefined,
   );
 </script>
 

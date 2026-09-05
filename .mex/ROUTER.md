@@ -36,6 +36,21 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
+Sections `+` gate now derives from exact resolved/local song targets: canonical library references
+remain playable but show a disabled `Library song — detach a copy to edit` reason, stale or empty
+selection shows `No active song — add a song first`, and viewer state remains the generic reason only
+when a local target exists. The focusable tooltip wrapper now carries its own accessible group name,
+description and disabled state while the inner native button remains disabled. Section mutations
+require an exact local target, activate only after successful insertion, and reconcile the active
+section after song-id/list replacement or removal. Tests cover accessibility tree behavior, reason
+precedence, stale/empty/reference targets, invalid activation, insertion, replacement and removal.
+Verified with focused web tests (49 passed), full web tests (2,517 passed, 1 skipped), full monorepo
+tests (green), full typecheck, regenerated `docs/design-system.html`, and strict `songs-bar`/
+`sections-bar` shots with no console errors. The current shot seam cannot select viewer/reference/
+no-song fixtures, so those extra visual states were verified at component/store seams instead.
+
 **Chrome section-add gate replacement (2026-09-06, local `feat/chrome-section-add-gate`, current-main reimplementation of PR #199):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. Not merged or shipped; the new PR must supersede #199.
 

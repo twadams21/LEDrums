@@ -410,7 +410,7 @@ export class TriggerLab {
   // look-recall (the play surface stays here) through the injected host.
   private readonly sectionsCtl = new SectionsController({
     isViewer: () => this.isViewer,
-    activeSong: () => this.activeSong,
+    activeSongById: () => this.activeSongById,
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
     setSongs: (songs) => (this.songs = songs),
@@ -429,7 +429,7 @@ export class TriggerLab {
     return this.sectionsCtl.activeSectionId;
   }
   set activeSectionId(id: string | null) {
-    const activeSong = this.activeSong;
+    const activeSong = this.activeSongById;
     this.sectionsCtl.activeSectionId =
       id !== null && !activeSong?.sections.some((section) => section.id === id) ? null : id;
   }
@@ -582,6 +582,7 @@ export class TriggerLab {
   }
   set songs(v: Song[]) {
     this.showsCtl.songs = v;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** Library-song references (S41): ids into {@link songLibrary} the active show resolves in. */
   get songRefs(): string[] {
@@ -596,6 +597,7 @@ export class TriggerLab {
   }
   set activeSongId(id: string) {
     this.showsCtl.activeSongId = id;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
   get songLibrary(): SongLibrary {
@@ -615,6 +617,14 @@ export class TriggerLab {
   /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
   get activeSong(): Song | null {
     return this.showsCtl.activeSong;
+  }
+  /** The exact active song in the resolved setlist; unlike `activeSong`, never falls back. */
+  get activeSongById(): Song | null {
+    return this.showsCtl.activeSongById;
+  }
+  /** The exact active song in the local authored setlist, or null for a library reference/stale id. */
+  get activeLocalSong(): Song | null {
+    return this.showsCtl.activeLocalSong;
   }
   /** The active show with its library references materialized in (S42). */
   get resolvedView() {
