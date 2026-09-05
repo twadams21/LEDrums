@@ -8,7 +8,10 @@ import Slider from '../ui/Slider.svelte';
 import Splitter from '../ui/Splitter.svelte';
 import { performanceKeyTarget } from './performance-key-target';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  document.body.replaceChildren();
+});
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class {
@@ -69,6 +72,22 @@ describe('performanceKeyTarget — DOM ownership adapter', () => {
 
     expect(performanceKeyTarget(new KeyboardEvent('keydown', { bubbles: true, composed: true })).inModal).toBe(true);
     expect(performanceKeyTarget(child).inModal).toBe(true);
+  });
+
+  it('recognises alertdialogs, open native dialogs, and menu roles as ownership boundaries', () => {
+    const alert = document.body.appendChild(document.createElement('div'));
+    alert.setAttribute('role', 'alertdialog');
+    alert.setAttribute('aria-modal', 'true');
+    const native = document.body.appendChild(document.createElement('dialog'));
+    native.setAttribute('open', '');
+    const menu = document.body.appendChild(document.createElement('div'));
+    menu.setAttribute('role', 'menu');
+    const item = menu.appendChild(document.createElement('div'));
+    item.setAttribute('role', 'menuitem');
+
+    expect(performanceKeyTarget(alert).inModal).toBe(true);
+    expect(performanceKeyTarget(native).inModal).toBe(true);
+    expect(performanceKeyTarget(item).inOpenPopup).toBe(true);
   });
 
   it('recognises an xyflow canvas without relying on focus blur', () => {

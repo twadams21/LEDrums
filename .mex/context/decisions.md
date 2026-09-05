@@ -36,8 +36,10 @@ keyboard can play the show; the existing voice host validates graph selection an
 intent. This requirement came from Trent’s current-main replacement request; no separate product
 source specified viewer restriction.
 **Consequences:** The DOM adapter detects stable accessibility/component semantics rather than
-focus history, with explicit `data-keyboard-owner` markers for reusable controls. New shortcut
-ownership changes must extend the pure decision and mounted capture integration tests.
+focus history, with explicit `data-keyboard-owner` markers for reusable controls and interactive
+portals. The App uses one capture dispatcher for registry, deletion, and Perform ownership, so a
+modal or popup cannot let one App handler suppress a key while another mutates the hidden surface.
+New shortcut ownership changes must extend the pure decision and mounted capture integration tests.
 
 ### Setlist → Song → Section arrangement with per-section (drum, slot) trigger routing
 **Date:** 2026-06-20

@@ -40,13 +40,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 Requested by Trent in-session on Trent’s MacBook Pro; source is the PR #206 review findings.
 The authoritative core graph lookup now uses own-property checks, and the viewer decode, server
 host, and engine regressions cover hostile and missing keys. Perform ownership is decided in a
-pure helper and installed through a mounted window-capture component: modified chords and repeat
+pure helper and installed through one App-level capture dispatcher: modified chords and repeat
 digits yield, arrows repeat deliberately, authoring controls keep native/ARIA ownership, and any
-open dialog or portal suppresses background shortcuts. Explicit keyboard-owner markers cover
-Select, sliders, separators, and modal content. Mounted integration tests prove action,
-`defaultPrevented`, and propagation behavior; focused tests, full typecheck, full test, build, and
-strict Perform/Trigger/Settings ui-shot captures are green. The change is on this branch and is
-not merged or shipped. No new reusable visual component or design-system artifact was needed.
+open alertdialog, native dialog, shared dialog/drawer, or portal suppresses background shortcuts.
+Explicit keyboard-owner markers cover Select, sliders, separators, modal content, ShareInfo's
+popover, Add-node's popover, and ContextMenu menu/menuitem content; role fallback covers the
+portalled Bits surfaces. A mounted harness exercises the real BootOverlay, ShareInfo, ContextMenu,
+shared Dialog, native `<dialog open>`, and ordinary Perform canvas against the App dispatcher.
+Focused tests, full typecheck, full test (4,798 passed / 4 skipped), build, dead-code verification,
+and a strict Perform ui-shot against the project's live `5174` dev port are green. The change is
+on this branch and is not merged or shipped. No new reusable visual component or design-system
+artifact was needed.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

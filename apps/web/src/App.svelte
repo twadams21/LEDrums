@@ -8,10 +8,8 @@
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
-  import { decideDeleteKey, isDeleteKey } from './lib/app/delete-key';
-  import { dispatchShortcut, type ShortcutEntry } from './lib/app/shortcuts';
-  import { performanceKeyTarget } from './lib/app/performance-key-target';
-  import PerformanceKeyCapture from './lib/app/PerformanceKeyCapture.svelte';
+  import type { ShortcutEntry } from './lib/app/shortcuts';
+  import AppKeyboardCapture from './lib/app/AppKeyboardCapture.svelte';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
@@ -64,54 +62,13 @@
     { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
   ];
 
-  // Performance keys belong to the focused Perform surface. The decision helper yields to
-  // editable text, open popups, roving controls, and the graph canvas so each physical key has
-  // exactly one owner. The capture-phase claim is what prevents a focused control from acting
-  // after the performance action.
-  function onKey(e: KeyboardEvent): void {
-    // With any modal open, the workspace shortcuts must not act on the surface BEHIND it
-    // (Backspace deleted the selected node through the modal) — including the
-    // registry combos: mod+d would duplicate the hidden node, and mod+z must stay native
-    // text-undo inside the modal's inputs. The Backspace preventDefault claim below still
-    // applies — the WKWebView history-back hazard is the same whichever surface has focus.
-    const target = performanceKeyTarget(e);
-    const modalOpen = target.inModal || shell.settingsPane !== null;
-    if (!modalOpen && dispatchShortcut(e, shortcuts, shortcutPlatform)) return;
-    const editable = target.isEditableTarget;
-    if (isDeleteKey(e.key)) {
-      const selection = shell.selection;
-      const node =
-        selection?.kind === 'node'
-          ? (store.selectedGraph?.nodes.find((n) => n.id === selection.nodeId) ?? null)
-          : null;
-      const { prevent, removeNode } = decideDeleteKey({
-        key: e.key,
-        isEditableTarget: editable,
-        selection,
-        resolvedNode: node,
-      });
-      // Claim the key FIRST, whether or not anything gets deleted: an unclaimed Backspace in
-      // the packaged desktop shell's bare WKWebView runs WebKit's history-back and strands the
-      // drummer on the dead boot page (deleting a WIRE selects nothing, so the old node-only
-      // guard fell straight through). Deliberately no stopPropagation — xyflow's key handler
-      // is bubble-phase on window and still needs the event to drop the selected wire.
-      if (prevent) e.preventDefault();
-      if (removeNode && node && !modalOpen) {
-        store.removeNode(node);
-        shell.clearSelection();
-      }
-      return;
-    }
-  }
 </script>
-
-<svelte:window onkeydowncapture={onKey} />
 
 <div class="shell-root">
   <Shell {store} {shell} />
 </div>
 
-<PerformanceKeyCapture {store} {shell} />
+<AppKeyboardCapture {store} {shell} {shortcuts} {shortcutPlatform} />
 
 <Overlays {store} />
 

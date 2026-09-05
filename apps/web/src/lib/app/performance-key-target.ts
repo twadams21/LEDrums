@@ -35,7 +35,11 @@ function matches(elements: readonly Element[], selector: string): boolean {
   return elements.some((entry) => entry.matches(selector));
 }
 
-const MODAL_SELECTOR = '[role="dialog"][aria-modal="true"], [data-keyboard-owner="modal"]';
+const MODAL_SELECTOR =
+  '[role="dialog"][aria-modal="true"], [role="alertdialog"], dialog[open], [data-keyboard-owner="modal"]';
+const OPEN_POPUP_SELECTOR =
+  '[data-keyboard-owner="popover"], [data-keyboard-owner="menu"], [data-keyboard-owner="menuitem"], ' +
+  '[role="listbox"], [role="option"], [role="menu"], [role="menuitem"]';
 
 /** Read the keyboard surface that owns an event, without inspecting focus history or blurring it.
     Bits UI portals its popup content to body, so listbox/option roles cover events in the portal;
@@ -46,12 +50,15 @@ export function performanceKeyTarget(input: TargetOrEvent): PerformanceKeyTarget
   const elements = [...new Set([...eventPath, ...focusPath])];
   const element = eventPath[0] ?? focusPath[0] ?? null;
   const globallyModal = typeof document !== 'undefined' && document.querySelector(MODAL_SELECTOR) !== null;
+  const globallyOpenPopup = typeof document !== 'undefined' && document.querySelector(OPEN_POPUP_SELECTOR) !== null;
 
   return {
     isEditableTarget: isEditableShortcutTarget(element),
-    inOpenPopup: matches(elements,
-      '[role="listbox"], [role="option"], [role="combobox"][aria-expanded="true"], ' +
-        '[data-keyboard-owner="select"][aria-expanded="true"], [data-keyboard-owner="select"][data-state="open"]',
+    inOpenPopup: globallyOpenPopup || matches(elements,
+      '[role="combobox"][aria-expanded="true"], ' +
+        '[data-keyboard-owner="select"][aria-expanded="true"], [data-keyboard-owner="select"][data-state="open"], ' +
+        '[data-keyboard-owner="popover"], [data-keyboard-owner="menu"], [data-keyboard-owner="menuitem"], ' +
+        '[role="listbox"], [role="option"], [role="menu"], [role="menuitem"]',
     ),
     inKeyboardControl: matches(elements,
       '[data-keyboard-owner="select"], [data-keyboard-owner="roving"], ' +
