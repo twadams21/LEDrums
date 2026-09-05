@@ -326,6 +326,20 @@ defaulting to **true**: everything except the R2 uploads and the Discord post ru
 including the build, the signature-key check, and the guard decisions against the live manifest.
 (The `release:` trigger went live after the successful dry run on 2026-08-10.)
 
+**Release source identity.** The gate fetches only `refs/tags/<requested tag>` and peels it to
+one immutable commit SHA **before checking out or executing any repository scripts**. Plan,
+build, and publish check out that same SHA and assert `HEAD` matches it. The manual dispatch's
+branch/ref selects the workflow definition, **not** the app, version files, build scripts or
+publish helpers; another commit with the same version cannot substitute its code. Lightweight
+and annotated tags work; a missing tag (even with a same-named branch) fails closed. A tag moved
+after planning does not change that run's source. Keep release tags immutable: a fresh full run
+resolves the tag again, so this is per-run source binding, not repository tag protection.
+
+Local, upload-free contract checks:
+`node --test apps/desktop/scripts/release-workflow.test.mjs apps/desktop/scripts/ota-version.test.mjs`.
+A later Actions rehearsal must explicitly select `dry_run=true`; publication still needs separate
+approval. Local tests exercise git fixtures, not the hosted Actions/signing infrastructure.
+
 Secrets live in GitHub Actions secrets (`LEDRUMS_TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`,
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `OTA_PUBLIC_BASE`,
 `LEDRUMS_OTA_UPDATES_DISCORD_WEBHOOK`); the workflow is reachable only from the release and manual
