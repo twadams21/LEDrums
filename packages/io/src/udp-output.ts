@@ -3,8 +3,10 @@ import type { PixelOutputStatus, PixelSendCallback } from './interfaces';
 
 /** Narrow OS boundary, also usable by deterministic fake sockets. */
 export interface OutputSocket {
-  on(event: string, listener: (...args: any[]) => void): this;
-  removeListener(event: string, listener: (...args: any[]) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  on(event: 'listening' | 'close', listener: () => void): this;
+  removeListener(event: 'error', listener: (error: Error) => void): this;
+  removeListener(event: 'listening' | 'close', listener: () => void): this;
   bind(options: { address?: string }): void;
   send(packet: Uint8Array, port: number, host: string, done: PixelSendCallback): void;
   setBroadcast(value: boolean): void;
@@ -57,6 +59,11 @@ export class UdpOutput {
 
   send(packet: Uint8Array, port: number, host: string, done?: PixelSendCallback): boolean {
     if (!this.bound || this.closed) return false;
+    // Never let a stalled socket/DNS callback accumulate unbounded render-frame closures.
+    if (this.pending.size >= 1024) {
+      this.fail('send', Object.assign(new Error('UDP pending packet limit (1024) reached'), { code: 'EOUTPUTBACKPRESSURE' }));
+      return false;
+    }
     const revision = this.failureRevision;
     const pending = { done };
     this.pending.add(pending);
@@ -115,6 +122,17 @@ export class UdpOutput {
   }
 
   private readonly onClosed = (): void => {
+    if (!this.closed) {
+      this.closed = true;
+      this.disposed = true;
+      this.publish({ state: 'closed' });
+      this.listeners.clear();
+    }
+    clearTimeout(this.closeTimer);
+    if (this.pending.size > 0) this.closeError ??= new Error('UDP socket closed before pending sends completed; acceptance unknown');
+    for (const pending of this.pending) pending.done = undefined;
+    this.pending.clear();
+    this.socket.removeListener('listening', this.onBound);
     this.socket.removeListener('error', this.onError);
     this.socket.removeListener('close', this.onClosed);
     const done = this.closeDone;
