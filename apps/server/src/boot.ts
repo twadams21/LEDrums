@@ -148,6 +148,9 @@ export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void 
       // Disk failure must not skip the UDP/controller barrier and force-exit over pending zeros.
       const results = await Promise.allSettled([
         outputStopped,
+        // Accepted authoring drains after the first stop. A queued setOutput can open a
+        // new adapter lifetime; close it too rather than exiting over its pending datagrams.
+        (deps.voiceHost ?? deps.host).stop(),
         Promise.resolve(controllerStopped).catch(() => {}),
         deps.autosaver.flush().catch(() => {}),
         deps.showLibraryAutosaver.flush().catch(() => {}),

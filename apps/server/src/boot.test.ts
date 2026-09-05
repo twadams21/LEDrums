@@ -8,6 +8,27 @@ function deferred() {
 }
 
 describe('shutdown durability barrier', () => {
+  it('drains an adapter reopened by an already-queued authored edit before exit', async () => {
+    const operations = deferred(), finalUdp = deferred();
+    const stop = vi.fn().mockResolvedValueOnce(undefined).mockImplementation(() => finalUdp.promise);
+    const autosaver = { markDirty() {}, dispose() {}, flush: async () => {} };
+    const exit = vi.fn();
+    const shutdown = createShutdown({
+      host: { stop }, voiceHost: null, clients: [],
+      oscInput: { close() {} }, wss: { close() {} }, server: { close() {} },
+      statsTimer: setInterval(() => {}, 1000), tunnelControl: { start() {}, stop() {} },
+      drainOperations: () => operations.promise,
+      autosaver, showLibraryAutosaver: autosaver, songLibraryAutosaver: autosaver,
+    }, exit);
+    const completion = shutdown();
+    expect(stop).toHaveBeenCalledOnce();
+    // A queued setOutput is allowed to persist; its newly opened adapter still needs a final close.
+    operations.resolve();
+    await vi.waitFor(() => expect(stop).toHaveBeenCalledTimes(2));
+    expect(exit).not.toHaveBeenCalled();
+    finalUdp.resolve(); await completion;
+    expect(exit).toHaveBeenCalledWith(0);
+  });
   it.each([false, true])('stops frames immediately and always awaits UDP before exit (disk failure=%s)', async (diskFailure) => {
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     const disk = deferred(), udp = deferred(), controller = deferred();
