@@ -52,15 +52,17 @@ remediation request on this machine; machine identity from `scutil --get Compute
 
 **PR #208 remediation (2026-09-06, branch `fix/section-copy-link-contract`, not merged):**
 ordered-set sanitization now agrees across setlist constructors, persistence, library references,
-ClipDoc remapping, and graph closure copies. Local placement commands validate before minting and
-copy the complete in-app clipboard; canonical references stay read-only with explicit reason text.
-Atomic store commands cover create/copy-and-place and delete undo. Link counts cover every local
-section placement once, including cross-song groups and legacy cross-section reuse. Sections UI
-disables viewer/canonical authoring affordances and exposes Copy as the default with explicit Link;
-strict shots captured picker, linked status/dialog, canonical read-only, and viewer-disabled states.
-Evidence: focused 162 tests, full 2,518 web + 1,402 core + 601 server + 98 IO + 13 protocol +
-57 worker + 83 desktop tests green; full typecheck/build green; strict shots on the dedicated
-LEDrums Vite port were console-clean. Pushed as `1ff8043c`; PR CI is pending.
+ClipDoc remapping, and graph closure copies. Local placement commands validate the exact
+`(songId, sectionId, graphKey)` tuple before selection or minting; duplicate global section ids,
+dangling local graph refs, and orphan graph names are dropped deterministically, while valid
+`lib:*` refs survive. ClipDoc section/song materialization fails closed on missing graph closure.
+The store exposes one graph ownership capability used by every graph mutator and the Trigger graph
+canvas/Inspector: canonical graphs remain playable/selectable but are disabled until detach, with
+an explicit read-only explanation. Canonical mutation tests cover node add/delete/param/edge no-ops,
+undo, and autosave byte stability. Evidence: full 2,525 web + 1,402 core + 601 server + 98 IO +
+13 protocol + 57 worker + 83 desktop tests green; full typecheck/build and design-system regeneration
+green; strict canonical section and Inspector shots are console-clean. Pushed as `4287cc13`; PR CI
+run `33999085790` is green (`checks` and `desktop`).
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
