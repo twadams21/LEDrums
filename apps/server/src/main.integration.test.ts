@@ -22,7 +22,10 @@ async function freePorts() {
 async function start(dir: string, mode: string) {
   const { port, oscPort } = await freePorts();
   // Deliberate allowlist: never inherit the operator's tunnel, credentials, hardware or telemetry config.
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], {
+  // Optional isolated, actually injected SEA (not a CJS-only approximation) runs the SAME
+  // load/restore/shutdown/cold-recovery assertions. Never inherit app credentials/output config.
+  const child = spawn(process.env.P11_SEA_BINARY ?? process.execPath,
+    process.env.P11_SEA_BINARY ? [] : ['--import', 'tsx', 'src/main.ts'], {
     cwd: process.cwd(), env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
       PORT: String(port), OSC_PORT: String(oscPort), LEDRUMS_PROJECTS_DIR: dir,
       LEDRUMS_ENGINE: mode, LEDRUMS_TELEMETRY: 'off' }, stdio: ['ignore', 'pipe', 'pipe'],
@@ -80,7 +83,7 @@ async function start(dir: string, mode: string) {
   };
 }
 
-for (const mode of ['voice', 'legacy']) describe(`real main ${mode} / loopback control only`, () => {
+for (const mode of ['voice', 'legacy']) describe(`real ${process.env.P11_SEA_BINARY ? 'SEA' : 'source'} main ${mode} / loopback control only`, () => {
   it.skipIf(process.platform === 'win32').each([false, true])('SIGTERM drains the accepted FIFO edit and rejects new actions (peer disconnect=%s)', async (disconnect) => {
     const dir = await mkdtemp(join(tmpdir(), 'ledrums-shutdown-'));
     const project = defaultProject(); project.name = 'queued-load';

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  createSnapshotStore,
+  createSnapshotStore as createStore,
+  type SnapshotStoreDeps,
   SNAPSHOT_VERSION,
   type SnapshotFiles,
   type SnapshotStore,
@@ -13,11 +14,14 @@ import {
 // set exists / this restore produces this state." Never asserts directory internals beyond file
 // count, which is the observable retention outcome.
 
+const stores: SnapshotStore[] = [];
+function createSnapshotStore(deps: SnapshotStoreDeps) { const store = createStore(deps); stores.push(store); return store; }
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ledrums-snap-'));
 });
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(stores.splice(0).map(s => s.close()));
   rmSync(dir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });

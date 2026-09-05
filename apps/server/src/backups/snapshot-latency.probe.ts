@@ -60,7 +60,9 @@ async function main() {
         writeFileSync(join(dir, `sync-${i}.gz`), gzipSync(JSON.stringify({ version: 1, files })));
       }
     });
-    const store = createSnapshotStore({ dir: join(dir, 'async'), now: () => 1000, readCurrent: () => files, applyRestored() {} });
+    // Diagnostic eight-accepted comparison; production admits two. The new matched baseline,
+    // default-refusal and read/storage probes live in snapshot-worker.probe.ts.
+    const store = createSnapshotStore({ dir: join(dir, 'async'), now: () => 1000, readCurrent: () => files, applyRestored() {}, admission: { maxPendingSnapshots: count } });
     const submissionMs: number[] = [];
     const queued = await measure(async (captured) => {
       const pending = Array.from({ length: count }, (_, i) => {
@@ -78,10 +80,10 @@ async function main() {
       }
     });
     console.log(JSON.stringify({ node: process.version, bytes, count, explicitGc: !!globalThis.gc,
-      capturedQueuePayloadUtf8Bytes: bytes * count, synchronousBaseline: sync,
+      diagnosticAcceptedPayloadUtf8Bytes: bytes * count, synchronousBaseline: sync,
       queuedCompressionAndAtomicWrite: queued, synchronousSubmission: summary(submissionMs),
       serializationOnly: { ...serializationOnly, perCall: summary(serializationMs) },
-      limitations: 'Synthetic 1ms timer with memory sampling, not MIDI-to-light. Memory is sampled process usage, not total allocations; peaks during blocking work can be missed. Queue payload bytes are UTF-8 equivalents, not V8 string storage. stringify/parse and optional offsite enqueue remain main-thread. No fsync/power-loss guarantee.' }, null, 2));
+      limitations: 'Synthetic 1ms timer with memory sampling, not MIDI-to-light. Memory is sampled process usage, not total allocations; peaks during blocking work can be missed. Eight-accepted configuration is diagnostic, production caps two. Payload bytes are UTF-8 equivalents, not V8 heap size. Structured clone remains synchronous; stringify/parse/gzip run in worker. Separate project storage and optional offsite enqueue still serialize on main. No fsync/power-loss guarantee.' }, null, 2));
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 void main();

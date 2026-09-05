@@ -12,7 +12,8 @@ import { createProjectStorage } from './project-storage';
 import { createSnapshotStore, type SnapshotFiles } from './backups/snapshot-store';
 
 const dirs: string[] = [];
-afterEach(async () => { await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
+const stores: ReturnType<typeof createSnapshotStore>[] = [];
+afterEach(async () => { await Promise.all(stores.splice(0).map(s => s.close())); await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))); });
 
 function project(name: string, pixels: number, host = '127.0.0.1'): Project {
   const p = defaultProject();
@@ -39,7 +40,7 @@ function library(note = 38) {
     activeSongId: 'song', activeSectionId: 'section',
   } } } } };
 }
-async function harness(mode: 'voice' | 'legacy') {
+async function harness(mode: 'voice' | 'legacy', maxPendingSnapshots = 2) {
   const dir = await mkdtemp(join(tmpdir(), 'ledrums-replace-')); dirs.push(dir);
   const events: Array<{ host: string; universe: number; bytes: number[] } | string> = [];
   let factories = 0;
@@ -56,7 +57,9 @@ async function harness(mode: 'voice' | 'legacy') {
   const readCurrent = (): SnapshotFiles => ({ project: host.engine.getProject(), ...libs });
   const storage = createProjectStorage(dir);
   const snapshots = createSnapshotStore({ dir: join(dir, 'backups'), now: () => 1000,
-    readCurrent, applyRestored: (files) => replacement.restore(files), restoreOwnsSafety: true });
+    readCurrent, applyRestored: (files) => replacement.restore(files), restoreOwnsSafety: true,
+    admission: { maxPendingSnapshots }, serializer: { limits: { maxPendingRequests: maxPendingSnapshots + 4 } } });
+  stores.push(snapshots);
   const persist = vi.fn((files: SnapshotFiles) => { events.push(`persist:${(files.project as Project).name}`); return storage.save(files); });
   const safety = vi.fn(async () => { events.push('safety'); return await snapshots.snapshot('pre-risk') !== null; });
   const broadcast = vi.fn(() => {
@@ -226,7 +229,9 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
   });
 
   it('serializes rapid replacements and queued backups; a failure does not poison later work', async () => {
-    const h = await harness(mode);
+    // Explicit diagnostic capacity for this FIFO stress test, not production admission. Default
+    // saturation and actual coordinator fail-closed behavior are pinned in snapshot-store.worker.test.
+    const h = await harness(mode, 10);
     const calls = [h.replacement.load(project('one', 1)), h.replacement.load({}), h.replacement.load(project('three', 3))];
     const backups = Array.from({ length: 8 }, () => h.snapshots.snapshot('pre-risk'));
     const results = await Promise.allSettled(calls);

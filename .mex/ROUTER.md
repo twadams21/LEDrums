@@ -67,6 +67,21 @@ unexecuted and require separate authorization**. Held Patch files and the unrela
 checkout remain untouched. The prior audit's undecided questions below are historical: its later
 implementation authorization and the agent-selected defaults above supersede the request to stop.
 
+**P11 bounded backup worker (2026-09-05, local integration follow-up):**
+Requested by Trent in-session (machine identity verified); evidence and explicit limits:
+`docs/reports/2026-09-05-health-backup-worker.md`. Snapshot JSON/hash/gzip and backup read/parse now
+run in one persistent literal-eval Node worker, verified in an actual pinned v22.23.1 SEA. Default
+admission is two snapshots before structured clone, with post-clone 32 MiB/files and 64 MiB retained
+JSON budgets; busy/oversize safety refusal aborts replacement. These budgets are agent-selected.
+Matched 6.4 MB × 8 source burst gap improved 367.28→152.05 ms **by accepting two and refusing six**;
+SEA 381.50→142.63 ms. Eight successful paced copies still take longer overall; accepted clone
+calls and returned-object read cloning are slower than the old stringify/parse on this fixture.
+No retained main-thread full-JSON signature, no silently coalesced pre-risk checkpoints. Storage
+JSON and off-site enqueue remain main-thread boundaries; no frame-budget or lower-RSS claim.
+Worker errors/timeouts/close/retry and source/SEA load/restore/cold recovery are verified locally;
+not pushed/shipped. The following P02/P11 entry is historical and its backup-JSON residual is
+superseded by this scoped report, not its atomic-storage/durability limitations.
+
 **P02/P11 project replacement + async backups (2026-09-05, local `fix/health-project-backups`):**
 Trent's resumed sa-19 request (machine identity verified); report and exact evidence:
 `docs/reports/2026-09-05-health-projects.md`. Shared load/restore/bulk coordinator stages both

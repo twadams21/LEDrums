@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSnapshotStore } from './snapshot-store';
+import { createSnapshotStore as createStore, type SnapshotStore, type SnapshotStoreDeps } from './snapshot-store';
+const stores: SnapshotStore[] = [];
+function createSnapshotStore(deps: SnapshotStoreDeps) { const store = createStore(deps); stores.push(store); return store; }
 import { writeFileAtomic } from '../atomic-file';
 const dirs: string[] = [];
-afterEach(async () => { await Promise.all(dirs.splice(0).map((p) => rm(p, { recursive: true, force: true }))); });
+afterEach(async () => { await Promise.all(stores.splice(0).map(s => s.close())); await Promise.all(dirs.splice(0).map((p) => rm(p, { recursive: true, force: true }))); });
 async function directory() { const dir = await mkdtemp(join(tmpdir(), 'ledrums-async-')); dirs.push(dir); return dir; }
 
 describe('async snapshots', () => {
@@ -30,12 +32,16 @@ describe('async snapshots', () => {
     await new Promise((r) => setTimeout(r, 80));
     clearInterval(timer);
     expect(ticks).toBeGreaterThan(5);
-    expect(started).toBe(1);
+    // Worker startup is real (especially under pinned Node/Rosetta); don't assume a cold worker
+    // has compressed 4MB within 80ms. Assert writer admission once it actually starts.
+    await vi.waitFor(() => expect(started).toBe(1));
     expect(settled).not.toHaveBeenCalled();
     release(); await closed;
     expect(peak).toBe(1);
-    expect((await store.read((await first)!.id))!.files.project).toEqual({ revision: 1 });
-    expect((await store.read((await second)!.id))!.files.project).toEqual({ revision: 2 });
+    const reopened = createSnapshotStore({ dir, now: () => 1000, readCurrent: () => current, applyRestored() {} });
+    expect((await reopened.read((await first)!.id))!.files.project).toEqual({ revision: 1 });
+    expect((await reopened.read((await second)!.id))!.files.project).toEqual({ revision: 2 });
+    await expect(store.read((await first)!.id)).rejects.toThrow('closed');
     await expect(store.snapshot('boot')).rejects.toThrow('closed');
   });
   it('fails closed on injected ENOSPC and recovers for the next request', async () => {

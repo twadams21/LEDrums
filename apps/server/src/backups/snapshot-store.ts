@@ -1,12 +1,11 @@
-import { readdir, readFile, rm } from 'node:fs/promises';
-import { promisify } from 'node:util';
-import { gunzip, gzip } from 'node:zlib';
+import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SerialQueue } from '../serial-queue';
 import { writeFileAtomic } from '../atomic-file';
+import { createSnapshotSerializer, SnapshotRefusal, type SerializerOptions } from './serializer-worker';
 
-const compress = promisify(gzip);
-const decompress = promisify(gunzip);
+/** Count admission precedes readCurrent/postMessage, NOT an exact pre-clone byte budget. */
+export const DEFAULT_SNAPSHOT_ADMISSION = { maxPendingSnapshots: 2, maxPendingRestores: 2, maxPendingReads: 2 };
 
 /**
  * The SnapshotStore (#123): point-in-time backups of the drummer's entire authored work — the
@@ -62,13 +61,15 @@ export interface SnapshotStore {
   /** Take a snapshot of the CURRENT blobs, stamped with `reason`, rotate, and (fire-and-forget) hand
    * it off-site. Returns the created snapshot's meta, or null when skipped: `cadence` self-gates on a
    * serialized-content signature (unchanged since the last snapshot → no snapshot), so an idle session never churns
-   * retention. `boot` and `pre-risk` always take. */
+   * retention. `boot` and `pre-risk` never deduplicate. Busy/oversize/worker/closed refusals
+   * reject; disk-write failure returns null. Required safety callers must abort on either. */
   snapshot(reason: SnapshotReason): Promise<SnapshotMeta | null>;
   drain(): Promise<void>;
   close(): Promise<void>;
   /** All local snapshots, newest first (the Backups dialog list + the local read path). */
   list(): Promise<SnapshotMeta[]>;
-  /** Read + decode a bundle by id, or null when it is absent or unreadable. */
+  /** Read + decode a bundle by id, or null when absent/unreadable. New reads reject when the
+   * store is closed or its read admission is full; close never resurrects a worker. */
   read(id: string): Promise<SnapshotBundle | null>;
   /**
    * Restore a local snapshot: take a `pre-risk` snapshot of the CURRENT state first (so an unwanted
@@ -99,6 +100,8 @@ export interface SnapshotStoreDeps {
   restoreOwnsSafety?: boolean;
   /** Local retention knobs (defaults per the spec). */
   retention?: Partial<RetentionPolicy>;
+  admission?: Partial<typeof DEFAULT_SNAPSHOT_ADMISSION>;
+  serializer?: SerializerOptions;
   /** Testable disk boundary; production uses the atomic async writer. */
   write?: typeof writeFileAtomic;
   /** Fire-and-forget off-site hand-off for each new snapshot (the disk-backed backups queue). */
@@ -148,7 +151,16 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
   const queue = new SerialQueue();
   const restores = new SerialQueue();
   let lastStamp = 0;
+  // SHA-256 of JSON files, not retained full JSON. Key order remains significant. A hash
+  // collision can skip cadence only; boot/pre-risk NEVER deduplicate.
   let lastContent: string | undefined;
+  const serializer = createSnapshotSerializer(deps.serializer);
+  const admission = { ...DEFAULT_SNAPSHOT_ADMISSION, ...deps.admission };
+  for (const [key, value] of Object.entries(admission)) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`Invalid snapshot admission: ${key}`);
+  }
+  let pendingSnapshots = 0, pendingRestores = 0, pendingReads = 0;
+  const reads = new Set<Promise<SnapshotBundle | null>>();
   let accepting = true;
   let closeCompletion: Promise<void> | null = null;
 
@@ -172,11 +184,7 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
     if (!/^\d+-(boot|cadence|pre-risk)$/.test(id)) return null;
     const file = pathFor(id);
     try {
-      const bundle = JSON.parse((await decompress(await readFile(file))).toString('utf8')) as SnapshotBundle;
-      if (bundle.version !== SNAPSHOT_VERSION || !bundle.files || !('project' in bundle.files)
-        || !('showLibrary' in bundle.files) || !('songLibrary' in bundle.files)
-        || stemFor(bundle.createdAt, bundle.reason) !== id) return null;
-      return bundle;
+      return await serializer.read(file, id);
     } catch (err) {
       log(`[snapshot-store] read ${id} failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
@@ -228,36 +236,53 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
     }
   }
 
-  /** JSON materialization is synchronous, before the first await: later in-place edits cannot
-   * leak into queued compression/write. zlib + all filesystem work run asynchronously. */
+  /** postMessage synchronously clones call-time data (including later in-place edits' targets).
+   * JSON stringify/hash/gzip live entirely in the persistent worker. Never queue live references. */
   function snapshot(reason: SnapshotReason): Promise<SnapshotMeta | null> {
-    const content = JSON.stringify(deps.readCurrent());
+    if (pendingSnapshots >= admission.maxPendingSnapshots) {
+      return Promise.reject(new SnapshotRefusal('busy', 'Snapshot store is busy; safety checkpoint refused, retry the operation'));
+    }
+    pendingSnapshots++;
+    let capture: ReturnType<typeof serializer.capture>;
+    try { capture = serializer.capture(deps.readCurrent()); }
+    catch (error) { pendingSnapshots--; return Promise.reject(error); }
+    // Observe capture rejection NOW, even while an earlier disk write holds the FIFO. No lost or
+    // unhandled promises on worker crash/oversize. Report refusal before the risk operation commits.
+    const ready = capture.ready.then(value => ({ value }), error => ({ error }));
     return queue.run(async () => {
-      const newest = (await list())[0];
-      if (lastContent === undefined && newest) {
-        const previous = await read(newest.id);
-        if (previous) lastContent = JSON.stringify(previous.files);
-      }
-      if (reason === 'cadence' && content === lastContent) return null;
-      // Same-ms requests and a backwards wall clock must never overwrite a recovery point.
-      const createdAt = Math.max(deps.now(), lastStamp + 1, (newest?.createdAt ?? 0) + 1);
-      lastStamp = createdAt;
-      const meta = { id: stemFor(createdAt, reason), createdAt, reason };
-      const text = `{"version":${SNAPSHOT_VERSION},"createdAt":${createdAt},"reason":${JSON.stringify(reason)},"files":${content}}`;
       try {
-        await (deps.write ?? writeFileAtomic)(pathFor(meta.id), await compress(text));
-      } catch (err) {
-        log(`[snapshot-store] write ${meta.id} failed: ${String(err)}`);
-        return null;
+        const result = await ready;
+        if ('error' in result) throw result.error;
+        const newest = (await list())[0];
+        if (lastContent === undefined && newest && reason === 'cadence') {
+          try { lastContent = await serializer.digest(pathFor(newest.id), newest.id); }
+          catch { /* unreadable previous backup cannot suppress a new checkpoint */ }
+        }
+        if (reason === 'cadence' && result.value.digest === lastContent) return null;
+        const createdAt = Math.max(deps.now(), lastStamp + 1, (newest?.createdAt ?? 0) + 1);
+        lastStamp = createdAt;
+        const meta = { id: stemFor(createdAt, reason), createdAt, reason };
+        const packed = await serializer.pack(capture.key, meta, !!deps.onSnapshot);
+        try {
+          await (deps.write ?? writeFileAtomic)(pathFor(meta.id), packed.compressed);
+        } catch (err) {
+          log(`[snapshot-store] write ${meta.id} failed: ${String(err)}`);
+          return null;
+        }
+        lastContent = result.value.digest;
+        await rotate();
+        try {
+          if (packed.bundle) deps.onSnapshot?.(meta, packed.bundle);
+        } catch (err) {
+          log(`[snapshot-store] off-site hand-off ${meta.id} failed: ${String(err)}`);
+        }
+        return meta;
+      } finally {
+        // Also releases skipped cadence and list/write failures. Worker loss already dropped its
+        // captures; failure to release must not hide the original operation result.
+        await serializer.release(capture.key).catch(() => {});
+        pendingSnapshots--;
       }
-      lastContent = content;
-      await rotate();
-      try {
-        if (deps.onSnapshot) deps.onSnapshot(meta, JSON.parse(text) as SnapshotBundle);
-      } catch (err) {
-        log(`[snapshot-store] off-site hand-off ${meta.id} failed: ${String(err)}`);
-      }
-      return meta;
     });
   }
 
@@ -281,14 +306,32 @@ export function createSnapshotStore(deps: SnapshotStoreDeps): SnapshotStore {
     return meta;
   }
 
+  async function drain() {
+    await restores.drain(); await queue.drain(); await Promise.allSettled([...reads]);
+  }
   return {
-    list, read,
-    snapshot: (reason) => accepting ? snapshot(reason) : Promise.reject(new Error('Snapshot store is closed')),
-    restore: (id) => accepting ? restores.run(() => applyRestore(id)) : Promise.reject(new Error('Snapshot store is closed')),
-    drain: async () => { await restores.drain(); await queue.drain(); },
+    list,
+    read: (id) => {
+      if (!accepting) return Promise.reject(new SnapshotRefusal('closed', 'Snapshot store is closed'));
+      if (pendingReads >= admission.maxPendingReads) return Promise.reject(new SnapshotRefusal('busy', 'Snapshot reads are busy; retry the operation'));
+      pendingReads++;
+      const work = read(id).finally(() => { pendingReads--; reads.delete(work); });
+      reads.add(work); return work;
+    },
+    snapshot: (reason) => accepting ? snapshot(reason) : Promise.reject(new SnapshotRefusal('closed', 'Snapshot store is closed')),
+    restore: (id) => {
+      if (!accepting) return Promise.reject(new SnapshotRefusal('closed', 'Snapshot store is closed'));
+      if (pendingRestores >= admission.maxPendingRestores) return Promise.reject(new SnapshotRefusal('busy', 'Snapshot restores are busy; retry the operation'));
+      pendingRestores++;
+      return restores.run(() => applyRestore(id)).finally(() => { pendingRestores--; });
+    },
+    drain,
     close: () => {
       accepting = false;
-      return closeCompletion ??= (async () => { await restores.close(); await queue.close(); })();
+      return closeCompletion ??= (async () => {
+        try { await restores.close(); await queue.close(); await Promise.allSettled([...reads]); }
+        finally { await serializer.dispose(); }
+      })();
     },
   };
 }

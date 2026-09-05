@@ -56,10 +56,17 @@ Local P02/P11 branch `fix/health-project-backups` (2026-09-05): server
 `project-replacement.ts` owns full load/restore/bulk transitions across both hosts and libraries;
 `project-storage.ts` writes one atomic `default.state.local.json` envelope. Once present, that
 file—not a mix of the older three files—is the cold-start authority. The active OutputManager
-survives runtime replacement. Snapshot gzip/fs are async behind FIFO queues, but JSON
-materialization remains synchronous and queued captures have no byte budget. See
-`docs/reports/2026-09-05-health-projects.md` for migration, shutdown, measurement and integration
-limits; this local branch is not a statement that these changes have shipped.
+survives runtime replacement. The integration P11 follow-up now puts snapshot JSON/hash/gzip and
+backup read/parse in a persistent literal-eval Node worker (source and actual pinned SEA verified).
+Two accepted snapshots are count-admitted before synchronous structured clone; 32 MiB/files and
+64 MiB retained-JSON limits apply AFTER clone/stringify, not to pre-clone heap. Safety refusal
+aborts replacement. Main retains a SHA-256 cadence digest, not full JSON. Close joins the worker;
+crash/timeout rejects outstanding work and retry creates a new worker. Measured default burst
+stalls improve by refusing excess attempts; accepted clone and large read-result delivery are
+slower on the 6.4 MB fixture, and atomic live-state/off-site JSON remain synchronous boundaries.
+See `docs/reports/2026-09-05-health-backup-worker.md` for exact measurements/defaults and
+`docs/reports/2026-09-05-health-projects.md` for migration/durability. Neither local result says
+these changes have shipped or meet a render budget.
 
 P02 review corrections on the integration branch (2026-09-05; source:
 `docs/reports/2026-09-05-health-project-review-fixes.md`): shutdown stops ingress first and retains
