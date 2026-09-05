@@ -22,7 +22,7 @@ import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
 import { ensureGeometryState } from './geometry-state';
 import { createGeneratorBridge } from './generator-bridge';
-import { applyModifierChain } from '../modifiers/chain';
+import { applyScopedModifierChain } from '../modifiers/chain';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
 import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
@@ -197,6 +197,17 @@ function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly
 }
 
 function pixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
+  const ranges = rawPixelRangesFor(v, model).sort((a, b) => a.start - b.start);
+  const out: PixelRange[] = [];
+  for (const range of ranges) {
+    const last = out[out.length - 1];
+    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
+    else out.push(range);
+  }
+  return out;
+}
+
+function rawPixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
   if (v.scope === 'drum') {
     const drumId = v.targetId ?? v.sourceDrumId;
     const d = drumId ? model.drumById.get(drumId) : undefined;
@@ -323,9 +334,7 @@ export function createDefaultCompositor(): Compositor {
             }
             const memberVoice = mixInputVoice(member, v);
             const memberCtx = modCtxFor(memberVoice, frameCtx);
-            for (const range of ranges) {
-              generators.renderVoice(memberVoice, model, timeMs, 1, range.start, range.end, buffers[i]!, memberCtx);
-            }
+            generators.renderVoice(memberVoice, model, timeMs, 1, ranges, buf, memberCtx);
             syncMixInputState(member, memberVoice);
           }
 
@@ -439,7 +448,7 @@ export function createDefaultCompositor(): Compositor {
           if (spliceMods && spliceMods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(spliceMods, v.modState, mix, range, model, age, frame.dt, modCtx);
+            applyScopedModifierChain(spliceMods, v.modState, mix, ranges, model, age, frame.dt, modCtx);
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {
@@ -467,9 +476,7 @@ export function createDefaultCompositor(): Compositor {
             }
             const branchVoice = mixInputVoice(branch, v);
             const branchCtx = modCtxFor(branchVoice, frameCtx);
-            for (const range of pixelRangesFor(branchVoice, model)) {
-              generators.renderVoice(branchVoice, model, timeMs, 1, range.start, range.end, input, branchCtx);
-            }
+            generators.renderVoice(branchVoice, model, timeMs, 1, pixelRangesFor(branchVoice, model), input, branchCtx);
             syncMixInputState(branch, branchVoice);
             const src = input.rgba;
             for (let i = 0; i < src.length; i += 4) {
@@ -482,7 +489,7 @@ export function createDefaultCompositor(): Compositor {
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
             const modCtx = modCtxFor(v, frameCtx);
-            for (const range of ranges) applyModifierChain(mods, v.modState, mix, range, model, timeMs - v.bornAtMs, frame.dt, modCtx);
+            applyScopedModifierChain(mods, v.modState, mix, ranges, model, timeMs - v.bornAtMs, frame.dt, modCtx);
           }
           for (const range of ranges) {
             for (let i = range.start; i < range.end; i++) {
@@ -500,32 +507,9 @@ export function createDefaultCompositor(): Compositor {
 
         if (!v.generatorId) continue; // every selectable effect is generator-backed (U3)
 
-        let start = 0;
-        let end = model.pixelCount;
-        if (v.scope === 'drum') {
-          // Resolve target drum: from targetId if set, else sourceDrumId (auto).
-          const drumId = v.targetId ?? v.sourceDrumId;
-          if (drumId == null) continue;
-          const d = model.drumById.get(drumId);
-          if (!d) continue; // dangling targetId → render nothing
-          start = d.pixelStart;
-          end = d.pixelStart + d.pixelCount;
-        } else if (v.scope === 'hoop') {
-          // Parse targetId as "<drumId>#<hoopIndex>[,<hoopIndex>]" (1-based); absent → source drum hoop 1.
-          const { drumId, hoopIndices } = parseHoopTarget(v.targetId, v.sourceDrumId);
-          if (drumId == null) continue;
-          const modCtx = modCtxFor(v, frameCtx);
-          for (const hoopIndex of hoopIndices) {
-            const range = getHoopPixelRange(model, drumId, hoopIndex);
-            if (range) generators.renderVoice(v, model, timeMs, level, range.start, range.end, dst, modCtx);
-          }
-          continue;
-        }
-        // scope === 'kit': start=0, end=model.pixelCount (whole kit, targetId ignored)
-
-        // Hosted generator voice — the bridge applies the modifier chain internally.
+        // One generation/temporal advance, followed by the canonical multi-range mask.
         const modCtx = modCtxFor(v, frameCtx);
-        generators.renderVoice(v, model, timeMs, level, start, end, dst, modCtx);
+        generators.renderVoice(v, model, timeMs, level, pixelRangesFor(v, model), dst, modCtx);
       }
     },
   };

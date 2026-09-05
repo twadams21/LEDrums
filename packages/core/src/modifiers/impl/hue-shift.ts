@@ -18,6 +18,7 @@ export const hueShift: ModifierDef = {
   id: 'hue-shift',
   name: 'Hue Shift',
   category: 'color',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'hue', label: 'Hue', type: 'number', default: 60, min: 0, max: 360, step: 1, unit: '°' },
     { key: 'mode', label: 'Mode', type: 'enum', default: 'shift', options: ['shift', 'colorize'] },

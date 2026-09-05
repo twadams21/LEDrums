@@ -16,6 +16,16 @@ export function runtimeModel(counts = [4, 4], reverse = false) {
   }));
 }
 
+export function runtimeHoopModel(hoops: number, pixels = 1024) {
+  return buildPixelModel(parseKit({
+    global: { ledDensityPxPerM: 30, hoopCount: hoops, defaultHoopSpacingMm: 50 },
+    drums: [{ id: 'd0', diameterIn: 12, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
+      hoops: Array.from({ length: hoops }, () => ({ pixelCount: pixels / hoops, reverse: false })),
+    }],
+  }));
+}
+
 export const runtimeBus: Bus = { id: 'b', name: 'B', polyphony: 'poly', crossfadeMs: 100 };
 export function runtimeEffect(generatorId = 'pixel-accum'): EffectDef {
   return { id: 'fx', name: 'FX', generatorId, busId: 'b', scope: 'kit', params: [], attackMs: 0, sustainMs: 5000, releaseMs: 100 };

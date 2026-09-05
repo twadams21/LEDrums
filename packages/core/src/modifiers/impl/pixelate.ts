@@ -18,6 +18,7 @@ export const pixelate: ModifierDef = {
   id: 'pixelate',
   name: 'Pixelate',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'size', label: 'Block', type: 'number', default: 4, min: 1, max: 64, step: 1, unit: 'px' },
   ],

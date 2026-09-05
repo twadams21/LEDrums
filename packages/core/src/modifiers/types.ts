@@ -57,6 +57,10 @@ export interface ModifierDef<State = unknown> {
   id: string;
   name: string;
   category: ModifierCategory;
+  /** Execution domain in the scoped voice runtime (not a gallery category). Stateful
+   * time/noise fields advance once over full output; strip transforms are range-local.
+   * Required so a new modifier must choose its clock/state ownership explicitly. */
+  scopePolicy: 'full-output' | 'range-local';
   paramSpec: ParamSpec[];
   /** Build per-voice mutable state (accumulation buffers, RNG cursor). Sized to the model /
       the voice's pixel range; the range is stable for the voice's life. */

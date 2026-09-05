@@ -12,6 +12,7 @@ export const chromatic: ModifierDef<ScratchState> = {
   id: 'chromatic',
   name: 'Chromatic',
   category: 'color',
+  scopePolicy: 'range-local',
   paramSpec: [{ key: 'amount', label: 'Offset', type: 'number', default: 2, min: -32, max: 32, step: 1, unit: 'px' }],
   createState: makeScratch,
 

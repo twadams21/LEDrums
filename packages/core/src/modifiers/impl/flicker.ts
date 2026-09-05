@@ -16,6 +16,7 @@ export const flicker: ModifierDef = {
   id: 'flicker',
   name: 'Flicker',
   category: 'texture',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'intensity', label: 'Intensity', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01 },
     { key: 'dropProb', label: 'Dropout', type: 'number', default: 0.05, min: 0, max: 1, step: 0.01 },

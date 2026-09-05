@@ -81,6 +81,7 @@ export const slice: ModifierDef<SliceState> = {
   id: 'slice',
   name: 'Slice',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'width', label: 'Band', type: 'number', default: 8, min: 1, max: 256, step: 1, unit: 'px' },
     { key: 'jitter', label: 'Jitter', type: 'number', default: 0, min: 0, max: 1, step: 0.01 },

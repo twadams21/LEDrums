@@ -11,6 +11,7 @@ export const posterize: ModifierDef = {
   id: 'posterize',
   name: 'Posterize',
   category: 'color',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'mode', label: 'Mode', type: 'enum', default: 'posterize', options: ['posterize', 'threshold'] },
     { key: 'levels', label: 'Levels', type: 'number', default: 4, min: 2, max: 32, step: 1 },

@@ -41,6 +41,7 @@ export const echo: ModifierDef<EchoState> = {
   id: 'echo',
   name: 'Echo',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'delayMs', label: 'Delay', type: 'number', default: 120, min: 0, max: 1000, step: 10, unit: 'ms' },
     { key: 'feedback', label: 'Feedback', type: 'number', default: 0.5, min: 0, max: 0.95, step: 0.05 },

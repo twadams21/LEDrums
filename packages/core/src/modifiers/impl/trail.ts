@@ -33,6 +33,7 @@ export const trail: ModifierDef<TrailState> = {
   id: 'trail',
   name: 'Trail',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'decayMs', label: 'Decay', type: 'number', default: 250, min: 0, max: 4000, step: 10, unit: 'ms' },
     { key: 'mode', label: 'Mode', type: 'enum', default: 'add', options: ['add', 'max'] },

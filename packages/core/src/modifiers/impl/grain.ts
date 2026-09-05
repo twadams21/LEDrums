@@ -27,6 +27,7 @@ export const grain: ModifierDef<GrainState> = {
   id: 'grain',
   name: 'Grain',
   category: 'texture',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'amount', label: 'Amount', type: 'number', default: 0.3, min: 0, max: 1, step: 0.05 },
   ],

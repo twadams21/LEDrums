@@ -41,6 +41,7 @@ export const mirror: ModifierDef = {
   id: 'mirror',
   name: 'Mirror',
   category: 'spatial',
+  scopePolicy: 'range-local',
   paramSpec: [
     { key: 'axis', label: 'Axis', type: 'enum', default: 'low', options: ['low', 'high', 'flip'] },
   ],

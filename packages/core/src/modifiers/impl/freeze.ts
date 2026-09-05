@@ -19,6 +19,7 @@ export const freeze: ModifierDef<FreezeState> = {
   id: 'freeze',
   name: 'Freeze',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [{ key: 'intervalMs', label: 'Hold', type: 'number', default: 500, min: 0, max: 5000, step: 10, unit: 'ms' }],
 
   createState(model: PixelModel): FreezeState {

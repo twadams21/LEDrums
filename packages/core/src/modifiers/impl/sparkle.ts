@@ -29,6 +29,7 @@ export const sparkle: ModifierDef<SparkleState> = {
   id: 'sparkle',
   name: 'Sparkle',
   category: 'texture',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'density', label: 'Density', type: 'number', default: 6, min: 0, max: 60, step: 1, unit: '/s' },
     { key: 'decayMs', label: 'Decay', type: 'number', default: 300, min: 0, max: 4000, step: 10, unit: 'ms' },

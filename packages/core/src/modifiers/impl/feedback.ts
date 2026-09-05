@@ -22,6 +22,7 @@ export const feedback: ModifierDef<FeedbackState> = {
   id: 'feedback',
   name: 'Feedback',
   category: 'temporal',
+  scopePolicy: 'full-output',
   paramSpec: [
     { key: 'amount', label: 'Feedback', type: 'number', default: 0.5, min: 0, max: 0.98, step: 0.01 },
     { key: 'shift', label: 'Shift', type: 'number', default: 1, min: -16, max: 16, step: 1, unit: 'px' },
