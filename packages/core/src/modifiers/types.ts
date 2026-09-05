@@ -47,6 +47,17 @@ export interface ModifierContext {
   dt: number;
 }
 
+/** Single-render undo journal, owned by one live modifier state. capture replaces the
+ * baseline; restore may be repeated and must return that exact pre-apply state without
+ * consuming RNG or time. The modifier must cover EVERY mutation of one apply, including
+ * bypass/no-op calls, and may retain untouched history only while owning it exclusively.
+ * Used only for full-output modifiers (one apply per presentation). No journal means a
+ * reusable full-state copy. Model/voice/state replacement drops the journal outright. */
+export interface ModifierCheckpoint<State = unknown> {
+  capture(): void;
+  restore(): State;
+}
+
 /**
  * A pure per-instance framebuffer transform. `apply` reads the (already scaled) voice
  * output in `fb` over `range` and rewrites it in place. Stateful modifiers declare a
@@ -65,6 +76,8 @@ export interface ModifierDef<State = unknown> {
   /** Build per-voice mutable state (accumulation buffers, RNG cursor). Sized to the model /
       the voice's pixel range; the range is stable for the voice's life. */
   createState?(model: PixelModel, range: PixelRange): State;
+  /** Optional sparse undo contract; see ModifierCheckpoint. Not a serializable snapshot. */
+  createCheckpoint?(state: State): ModifierCheckpoint<State>;
   apply(ctx: ModifierContext, params: ResolvedParams, fb: Framebuffer, range: PixelRange, state: State): void;
 }
 
