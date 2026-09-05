@@ -137,6 +137,8 @@ export interface ShowsControllerHost {
   saveNow(): void;
   /** Re-point the active section (R24 owns the rune) — song switch selects the song's first section. */
   setActiveSectionId(id: string | null): void;
+  /** Reconcile the active section after the resolved song list changes. */
+  reconcileActiveSection(): void;
   /** Whether this client is a read-only viewer (S2) — authoring no-ops then. */
   isViewer(): boolean;
   /** Whether the engine WS link is open — gates the server-library write-through + recalls. */
@@ -263,10 +265,17 @@ export class ShowsController {
   shows = $derived(Object.values(this.showLibrary).map((s) => ({ id: s.id, name: s.name })));
   /** The active show (id + name + its cached authored). null only before construction completes. */
   activeShow = $derived(this.showLibrary[this.activeShowId] ?? null);
+  /** The exact active song in the resolved setlist. Unlike {@link activeSong}, this does not fall
+      back to the first song, so mutation and activation boundaries can reject a stale id safely. */
+  activeSongById = $derived(this.resolvedSongs.find((s) => s.id === this.activeSongId) ?? null);
+  /** The exact active song in the authored local setlist. A referenced song is intentionally absent:
+      section arrangement currently writes only through the local `songs` rune. */
+  activeLocalSong = $derived(this.songs.find((s) => s.id === this.activeSongId) ?? null);
   /** The active song over the RESOLVED song list (local + referenced), so a referenced library song
       is selectable/navigable/playable just like a local one (S42). Falls back to the first resolved
-      song. `sections`, firing, and the engine push all read through this (in the store). */
-  activeSong = $derived(this.resolvedSongs.find((s) => s.id === this.activeSongId) ?? this.resolvedSongs[0] ?? null);
+      song for the existing read/play surface. Mutation paths must use {@link activeSongById} or
+      {@link activeLocalSong} instead. */
+  activeSong = $derived(this.activeSongById ?? this.resolvedSongs[0] ?? null);
 
   // --- library snapshots (persist / sync sources) --------------------------
 
@@ -420,6 +429,15 @@ export class ShowsController {
     }));
   }
 
+  /** Replace the active show's references and keep the active song/section inside the resolved list.
+      A removed active reference falls back to the first remaining song; if none remain, the active
+      song id is empty and the section pointer is cleared by the section controller. */
+  setSongRefs(refs: string[]): void {
+    this.songRefs = refs;
+    if (this.activeSongId !== '' && !this.activeSongById) this.activeSongId = this.resolvedSongs[0]?.id ?? '';
+    this.host.reconcileActiveSection();
+  }
+
   /** Export a LOCAL song into the canonical library: extract its dependency closure (namespaced,
       self-contained) under a fresh pool id and add it. Returns the new library-song id, or null on an
       unknown song id / a viewer. Does NOT alter the show's own songs or refs — importing a reference
@@ -446,7 +464,7 @@ export class ShowsController {
   importSongReference(librarySongId: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
     if (!this.songLibrary.songs[librarySongId]) return; // nothing to reference
-    this.songRefs = songRefsLib.addSongRef(this.songRefs, librarySongId);
+    this.setSongRefs(songRefsLib.addSongRef(this.songRefs, librarySongId));
   }
 
   /** Drop a library-song reference from the active show WITHOUT cloning — the exact inverse of
@@ -455,7 +473,7 @@ export class ShowsController {
       Distinct from {@link detachSongReference}, which keeps the content as a local copy. */
   removeSongReference(librarySongId: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
-    this.songRefs = songRefsLib.removeSongRef(this.songRefs, librarySongId);
+    this.setSongRefs(songRefsLib.removeSongRef(this.songRefs, librarySongId));
   }
 
   /** Detach a referenced library song into a LOCAL copy of the active show — clones the closure under
@@ -474,7 +492,7 @@ export class ShowsController {
       presets: detached.presets,
     });
     this.songs = [...this.songs, detached.song];
-    this.songRefs = songRefsLib.removeSongRef(this.songRefs, librarySongId);
+    this.setSongRefs(songRefsLib.removeSongRef(this.songRefs, librarySongId));
     return newId;
   }
 

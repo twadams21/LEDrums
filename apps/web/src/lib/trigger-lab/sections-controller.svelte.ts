@@ -9,8 +9,8 @@
     - the ONE active/selected section pointer ({@link activeSectionId}) — U4 merged the old
       look-recall + arrange focus, so the section you play IS the one you edit — plus the
       transient section {@link sectionClipboard};
-    - the {@link activeSection} / {@link sections} deriveds (read the active song through the host,
-      so a referenced-library song's sections resolve just like a local one, S42);
+    - the {@link activeSection} / {@link sections} deriveds (read the exact active song through the
+      host, so a referenced-library song's sections resolve just like a local one, S42);
     - section CRUD (add / rename / remove / reorder sections + per-section graph-slot edits +
       looks, S16) — every edit funnels through {@link updateActiveSong}, mutating the `songs` rune
       that {@link ShowsController} owns (R23), reached through the host's songs get/set.
@@ -35,9 +35,9 @@ import { nid } from './store/ids';
 export interface SectionsControllerHost {
   /** Whether this client is a read-only viewer (S2) — authoring no-ops then. */
   isViewer(): boolean;
-  /** The active song over the RESOLVED song list (local + referenced) — the deriveds + section
-      reads read its `sections`. null before construction completes / with no song. */
-  activeSong(): Song | null;
+  /** The exact active song over the RESOLVED song list (local + referenced). No fallback: stale
+      active ids must not make a different song look like the mutation target. */
+  activeSongById(): Song | null;
   /** The id of the active song — the {@link updateActiveSong} chokepoint targets it. */
   activeSongId(): string;
   /** The live setlist songs rune (owned by ShowsController, R23) — read for the immutable map. */
@@ -64,12 +64,24 @@ export class SectionsController {
 
   constructor(private readonly host: SectionsControllerHost) {}
 
+  /** Keep the active section aligned with the exact active song after an id or document swap.
+      A stale song clears the pointer; a valid song with a stale section selects its first section. */
+  reconcileActiveSection(): void {
+    const song = this.host.activeSongById();
+    if (!song) {
+      this.activeSectionId = null;
+      return;
+    }
+    if (this.activeSectionId !== null && song.sections.some((section) => section.id === this.activeSectionId)) return;
+    this.activeSectionId = song.sections[0]?.id ?? null;
+  }
+
   /** The active section (SetlistSection) in the active song — the section you play + edit. Its flat
       `graphs` list drives hit-resolution + the Sections/Trigger views (in the store). `$derived.by`
       so the host reads live inside a closure — a field initializer that referenced `this.host`
       directly trips strict "used before init" (host is a constructor param). */
   activeSection = $derived.by(
-    () => this.host.activeSong()?.sections.find((s) => s.id === this.activeSectionId) ?? null,
+    () => this.host.activeSongById()?.sections.find((s) => s.id === this.activeSectionId) ?? null,
   );
   /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the offline
       sim recalls, and the Perform view lists — DERIVED from the active song's authored sections so
@@ -77,7 +89,7 @@ export class SectionsController {
       `buildShow` reads this for `Show.sections` (in the store); the offline `setActiveSection` recall
       resolves the look here. Empty when there is no active song. */
   sections = $derived.by((): Section[] =>
-    (this.host.activeSong()?.sections ?? []).map((s) => ({ id: s.id, name: s.name, looks: s.looks })),
+    (this.host.activeSongById()?.sections ?? []).map((s) => ({ id: s.id, name: s.name, looks: s.looks })),
   );
 
   // --- setlist arranging (sections → per-drum graph slots) ------------------
@@ -87,10 +99,22 @@ export class SectionsController {
   /** Mutate the active song immutably via the pure setlist ops, then store it back. The single
       chokepoint for every section + graph-slot edit, so the viewer read-only guard here covers
       addSection/renameSection/removeSection + add/remove/reorder graphs (S2). */
-  private updateActiveSong(fn: (song: Song) => Song): void {
-    if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
+  private updateActiveSong(fn: (song: Song) => Song): boolean {
+    const activeSong = this.host.activeSongById();
+    if (!activeSong) {
+      this.activeSectionId = null;
+      return false; // no target: never retain or create an orphan active section
+    }
+    if (this.host.isViewer()) return false; // read-only viewer (S2): authoring no-op
     const id = this.host.activeSongId();
-    this.host.setSongs(this.host.songs().map((s) => (s.id === id ? fn(s) : s)));
+    const songs = this.host.songs();
+    const localIndex = songs.findIndex((song) => song.id === id);
+    if (localIndex < 0) return false; // resolved reference: section arrangement cannot write it yet
+    const current = songs[localIndex]!;
+    const next = fn(current);
+    if (next === current) return false;
+    this.host.setSongs(songs.map((song, index) => (index === localIndex ? next : song)));
+    return true;
   }
 
   /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
@@ -125,17 +149,23 @@ export class SectionsController {
       visible/audible in the preview; connected we defer to the resync's re-recall (an immediate
       recall would race the not-yet-sent Show, spawning the stale look). */
   setLook(sectionId: string, busId: string, effectId: string | null): void {
-    this.updateActiveSong((song) => setlist.setLook(song, sectionId, busId, effectId));
-    if (!this.host.linkOpen() && sectionId === this.activeSectionId) {
+    const updated = this.updateActiveSong((song) => setlist.setLook(song, sectionId, busId, effectId));
+    if (updated && !this.host.linkOpen() && sectionId === this.activeSectionId) {
       const look = this.sections.find((s) => s.id === sectionId);
       if (look) this.host.recallSectionLook(look);
     }
   }
   addSongSection(name: string): void {
+    if (!this.host.activeSongById()) {
+      this.activeSectionId = null;
+      return; // no active song: no section and no active id
+    }
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
     const id = nid('section');
-    this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)));
-    this.activeSectionId = id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, setlist.makeSection(id, name)))) return;
+    // The active song can change through a resolved/library boundary while the edit is
+    // being applied. Only activate an id that exists in the post-edit song.
+    if (this.host.activeSongById()?.sections.some((section) => section.id === id)) this.activeSectionId = id;
   }
 
   /** Rename a section of the active song (no-op-safe on an unknown id). Persists via the
@@ -150,11 +180,12 @@ export class SectionsController {
       authored autosave. */
   removeSection(sectionId: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
-    const idx = (this.host.activeSong()?.sections ?? []).findIndex((s) => s.id === sectionId);
+    const idx = (this.host.activeSongById()?.sections ?? []).findIndex((s) => s.id === sectionId);
     if (idx < 0) return; // not a section of the active song
-    this.updateActiveSong((song) => setlist.removeSection(song, sectionId));
-    if (this.activeSectionId === sectionId) {
-      const remaining = this.host.activeSong()?.sections ?? [];
+    const wasActive = this.activeSectionId === sectionId;
+    if (!this.updateActiveSong((song) => setlist.removeSection(song, sectionId))) return;
+    if (wasActive) {
+      const remaining = this.host.activeSongById()?.sections ?? [];
       this.activeSectionId = (remaining[idx - 1] ?? remaining[0])?.id ?? null;
     }
   }
@@ -163,7 +194,7 @@ export class SectionsController {
       {@link setlist.cloneSection}, so later edits to the source never bleed into it). No-op
       if the id isn't a section of the active song. */
   copySection(sectionId: string): void {
-    const sec = this.host.activeSong()?.sections.find((s) => s.id === sectionId);
+    const sec = this.host.activeSongById()?.sections.find((s) => s.id === sectionId);
     if (!sec) return;
     // clone under its own id/name → a plain snapshot; pasteSection re-clones with a fresh id.
     this.sectionClipboard = setlist.cloneSection(sec, sec.id, sec.name);
@@ -179,8 +210,8 @@ export class SectionsController {
     if (!clip) return;
     const id = nid('section');
     const clone = setlist.cloneSection(clip, id);
-    this.updateActiveSong((song) => setlist.addSection(song, clone));
-    this.activeSectionId = id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, clone))) return;
+    if (this.host.activeSongById()?.sections.some((section) => section.id === id)) this.activeSectionId = id;
   }
 
   /** Duplicate a section in one step (copy + paste): appends an independent "<name> copy"
@@ -195,7 +226,9 @@ export class SectionsController {
       Mirrors {@link pasteSection}'s tail without the in-app clipboard clone (the caller supplies the
       remapped section). */
   insertSection(section: SetlistSection): void {
-    this.updateActiveSong((song) => setlist.addSection(song, section));
-    this.activeSectionId = section.id;
+    if (!this.updateActiveSong((song) => setlist.addSection(song, section))) return;
+    if (this.host.activeSongById()?.sections.some((candidate) => candidate.id === section.id)) {
+      this.activeSectionId = section.id;
+    }
   }
 }

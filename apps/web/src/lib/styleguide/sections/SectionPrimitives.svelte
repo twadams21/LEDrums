@@ -214,12 +214,18 @@
       </div>
     </DemoCard>
 
-    <DemoCard title="Icon buttons · Tooltip" src={['lib/ui/IconButton', 'lib/ui/Tooltip']}>
+    <DemoCard
+      title="Icon buttons · Tooltip"
+      src={['lib/ui/IconButton', 'lib/ui/Tooltip']}
+      note="Gated actions stay visible and use native disabled semantics. `disabledReason` exposes the terse remedy to assistive technology and on keyboard focus, while the pointer tooltip remains available around the disabled button."
+    >
       <div class="comp-row">
         <IconButton icon={Play} label="Play" variant="solid" />
         <IconButton icon={Plus} label="Add" variant="soft" />
         <IconButton icon={Pencil} label="Rename" />
         <IconButton icon={Trash2} label="Delete" />
+        <Separator orientation="vertical" />
+        <IconButton icon={Plus} label="Add song" disabled disabledReason="Viewing — take over to edit" />
         <Separator orientation="vertical" />
         <Tooltip text="A custom tooltip">
           <button class="ghost">Hover me</button>
