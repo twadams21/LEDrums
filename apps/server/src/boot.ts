@@ -17,7 +17,7 @@ export interface BootDeps {
   voiceHost: VoiceEngineHost | null;
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
-  controllerMonitor?: { stop(): void };
+  controllerMonitor?: { stop(): void | Promise<void> };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -104,7 +104,7 @@ export function boot(deps: BootDeps): void {
     shuttingDown = true;
     clearInterval(deps.statsTimer);
     if (deps.snapshotTimer) clearInterval(deps.snapshotTimer);
-    deps.controllerMonitor?.stop();
+    const controllerStopped = deps.controllerMonitor?.stop();
     deps.tunnelControl.stop();
     if (deps.voiceHost) deps.voiceHost.stop();
     else deps.host.stop();
@@ -122,6 +122,7 @@ export function boot(deps: BootDeps): void {
     // never rejects (write errors are logged), but guard exit-on-error just in case. The project
     // and both libraries are flushed (independent slots).
     await Promise.all([
+      Promise.resolve(controllerStopped).catch(() => {}),
       deps.autosaver.flush().catch(() => {}),
       deps.showLibraryAutosaver.flush().catch(() => {}),
       deps.songLibraryAutosaver.flush().catch(() => {}),

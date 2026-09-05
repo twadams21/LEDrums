@@ -34,6 +34,7 @@ import type {
   ServerMessage,
 } from './ws-protocol';
 import type { MonitorDraft } from './monitor';
+import { createControllerTestMode } from './controller-test-mode';
 
 /** Minimal interval abstraction so tests drive polls deterministically (no real timers). */
 export interface IntervalScheduler {
@@ -183,7 +184,8 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
   let statsEverSucceeded = false;
   // Active built-in test pattern (S49), or null in normal LIVE mode. Server-authoritative so every
   // watcher's takeover banner + output pill agree. While non-null the box ignores the Art-Net stream.
-  let testPattern: ControllerTestPattern | null = null;
+  const testMode = createControllerTestMode(emitStatus, deps.monitor);
+  let clientGeneration = 0;
 
   // Interest tracking — the ONLY gate on the poll loop. Keyed by an opaque token (the ws socket).
   const watchers = new Set<object>();
@@ -192,7 +194,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
 
   function currentStatus(): ControllerStatus | null {
     if (!host) return null;
-    return { host, reachable, identity, universes, rates, health, lastSeen, testPattern };
+    return { host, reachable, identity, universes, rates, health, lastSeen, testPattern: testMode.pattern };
   }
 
   function emitStatus(): void {
@@ -221,47 +223,21 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
     return timer !== null;
   }
 
-  /** Return the controller to LIVE mode and clear the takeover state. No-op unless a client is held
-   * AND a test pattern is active — so the auto-revert on the last watcher leaving is free when no
-   * pattern runs, and an explicit back-to-live is idempotent. `reason` tags the Monitor event so
-   * an auto-revert (nobody watching) reads differently from an operator's click. */
-  async function revertToLive(reason: 'client' | 'auto'): Promise<void> {
-    if (!client || !testPattern) return;
-    testPattern = null;
-    emitStatus();
-    try {
-      await client.modeLive();
-      deps.monitor?.({
-        type: 'output',
-        direction: 'out',
-        source: 'server/controller',
-        destination: host ?? 'controller',
-        label: reason === 'auto' ? 'Controller back to live (auto)' : 'Controller back to live',
-        detail: reason === 'auto' ? 'no watchers' : undefined,
-      });
-    } catch (err) {
-      deps.monitor?.({
-        type: 'error',
-        direction: 'out',
-        source: 'server/controller',
-        destination: host ?? 'controller',
-        label: 'Controller back-to-live failed',
-        detail: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
   async function pollOnce(): Promise<void> {
     if (!client || pollInFlight) return;
     pollInFlight = true;
+    const pollingClient = client;
+    const generation = clientGeneration;
     try {
       // Identity comes from `/ver`, not statisticRead — fetch it lazily on the first poll after a
       // hydrate (adopt already has it). A null probe here means unreachable → handled by the catch.
       if (!identity) {
-        const id = await client.probe();
+        const id = await pollingClient.probe();
+        if (generation !== clientGeneration) return;
         if (id) identity = id;
       }
-      const stats = await client.statisticRead(['']);
+      const stats = await pollingClient.statisticRead(['']);
+      if (generation !== clientGeneration) return;
       universes = mapUniverses(stats);
       rates = { ...stats.rates };
       health = { ...stats.health };
@@ -272,6 +248,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
     } catch (err) {
       // Any error/timeout ⇒ the controller is unreachable/lost. Freeze `lastSeen` (it ages) and
       // report the lost state so the panel can make it unmissable.
+      if (generation !== clientGeneration) return;
       reachable = !statsEverSucceeded && identity !== null && lastSeen !== null;
       emitStatus();
       deps.monitor?.({
@@ -294,6 +271,8 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       const c = deps.getController();
       if (!c) return;
       client = deps.createClient({ host: c.host, auth: c.auth });
+      clientGeneration++;
+      testMode.bind(client, c.host);
       host = c.host;
       nickname = c.nickname;
       auth = c.auth;
@@ -304,7 +283,6 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       lastSeen = null;
       reachable = false;
       statsEverSucceeded = false;
-      testPattern = null;
       startPolling();
     },
 
@@ -371,8 +349,9 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       lastSeen = now();
       reachable = true;
       statsEverSucceeded = false;
-      testPattern = null;
       client = deps.createClient({ host, auth });
+      clientGeneration++;
+      testMode.bind(client, host);
       deps.persistController({ host, nickname, ...(auth ? { auth } : {}) });
       deps.monitor?.({
         type: 'system',
@@ -400,6 +379,8 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       identity = null; // re-probe `/ver` so `authReqd` refreshes
       statsEverSucceeded = false; // a stale success must not mask a wrong-password failure
       client = deps.createClient({ host, auth });
+      clientGeneration++;
+      testMode.bind(client, host);
       deps.persistController({ host, nickname, ...(auth ? { auth } : {}) });
       deps.monitor?.({
         type: 'system',
@@ -440,39 +421,15 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
 
     /** Drive the controller's built-in test-data mode (S49). Sends `modeTestData`, records the
      * active pattern (server-authoritative takeover state), and re-emits status so every watcher's
-     * banner + pill light up. No-op when unadopted. On failure the takeover state is NOT set (the
-     * box never entered test mode), so the UI can't lie about a takeover that didn't happen. */
-    async setTestData(pattern: ControllerTestPattern): Promise<void> {
-      if (!client) return;
-      try {
-        await client.modeTestData(pattern);
-        testPattern = pattern;
-        emitStatus();
-        deps.monitor?.({
-          type: 'output',
-          direction: 'out',
-          source: 'server/controller',
-          destination: host ?? 'controller',
-          label: 'Controller test pattern',
-          detail: pattern.op,
-        });
-      } catch (err) {
-        deps.monitor?.({
-          type: 'error',
-          direction: 'out',
-          source: 'server/controller',
-          destination: host ?? 'controller',
-          label: 'Controller test pattern failed',
-          detail: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
+     * banner + pill light up. No-op when unadopted. Failed responses do not claim a new active
+     * pattern, but remain eligible for an explicit return-to-live because device state is uncertain. */
+    setTestData: testMode.set,
 
     /** Return the controller to LIVE mode — the "back to live data" exit. Sends `modeLive`, clears
      * the takeover state, and re-emits status. No-op when unadopted or not in a test pattern (so a
      * stray call never spams the device). Also invoked automatically on the last watcher leaving. */
     backToLive(): Promise<void> {
-      return revertToLive('client');
+      return testMode.backToLive('client');
     },
 
     /** A client opened the Monitor/Patch controller panel — register interest (keyed by socket) and
@@ -492,7 +449,7 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
       if (!watchers.delete(key)) return;
       if (watchers.size === 0) {
         stopPolling();
-        void revertToLive('auto');
+        void testMode.backToLive('auto');
       }
     },
 
@@ -501,8 +458,11 @@ export function createControllerMonitor(deps: ControllerMonitorDeps) {
     /** Run a discovery sweep's subnet derivation (test/introspection helper). */
     currentStatus,
     isPolling,
-    /** Stop the loop on shutdown. */
-    stop: stopPolling,
+    /** Stop polling and await return-to-live on shutdown. */
+    stop(): Promise<void> {
+      stopPolling();
+      return testMode.backToLive('auto');
+    },
     /** Live watcher count (introspection/tests). */
     get watcherCount(): number {
       return watchers.size;
