@@ -2,7 +2,7 @@ import type { D1Database, R2Bucket } from './cf';
 
 /** Worker bindings + secrets (set via `wrangler secret put` and the D1/R2 bindings in wrangler.toml). */
 export interface Env {
-  /** D1 database binding (the `reports` table). */
+  /** D1 database binding (`reports` and `notification_claims`; backfill required on upgrade). */
   DB: D1Database;
   /** R2 bucket for project backups (#123): objects under `backups/<machine>/<key>`. Remote retention
    * is a bucket lifecycle rule (90-day expiry), configured on the bucket — not code. */
@@ -13,6 +13,7 @@ export interface Env {
   DISCORD_WEBHOOK_URL?: string;
 }
 
-/** Per-machine rate limit: max NEW rows accepted per window (repeats upsert, so they don't count). */
+/** Per-machine rate limit: max NEW (machine, version, dedupKey) identities per window.
+ * Repeat sessions/count updates bypass it and consume no additional budget. Constant name retained. */
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 export const RATE_LIMIT_MAX_NEW_ROWS = 240;

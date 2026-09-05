@@ -21,9 +21,21 @@ CREATE TABLE IF NOT EXISTS reports (
   UNIQUE (machine, version, session, dedup_key)
 );
 
--- Per-machine rate-limit window scan (rows created since T).
+-- Historical arrival lookup (retained for existing installations/read tooling).
 CREATE INDEX IF NOT EXISTS idx_reports_machine_received ON reports (machine, received_at);
 -- Webhook newness check + read-API (machine, version, dedup_key).
 CREATE INDEX IF NOT EXISTS idx_reports_lookup ON reports (machine, version, dedup_key);
 -- Read-API ordering + `since` filter.
 CREATE INDEX IF NOT EXISTS idx_reports_last_seen ON reports (last_seen);
+
+-- Fresh installs only. Existing installs MUST run migrations/0001-notification-claims.sql with
+-- writers quiesced to backfill past identities before the new Worker can ingest.
+CREATE TABLE IF NOT EXISTS notification_claims (
+  machine     TEXT    NOT NULL,
+  version     TEXT    NOT NULL,
+  dedup_key   TEXT    NOT NULL,
+  claimed_at  INTEGER NOT NULL,
+  PRIMARY KEY (machine, version, dedup_key)
+);
+CREATE INDEX IF NOT EXISTS idx_notification_claims_machine_time
+  ON notification_claims (machine, claimed_at);

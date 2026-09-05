@@ -17,6 +17,8 @@ export interface D1PreparedStatement {
 
 export interface D1Database {
   prepare(query: string): D1PreparedStatement;
+  /** Statements execute sequentially in one transaction; failure rolls the entire batch back. */
+  batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 
 // R2 subset used by the backups routes (#123). Wrangler injects the full runtime types at deploy.
