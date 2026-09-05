@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Session Bootstrap
@@ -35,6 +35,16 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Rhythmic 32nd divisions (2026-09-06, local `feat/rhythmic-32nd-divisions`):** Trent's request in
+this session, extracted from PR #200 commits `de060eb6` and `eae715c1`. The shared core
+`DELAY_DIVISIONS` vocabulary now contains straight, dotted, and triplet 1/32 values, ordered as
+straight → dotted → triplet with each group longest → shortest; web option data derives from the
+core list, and Delay, Splice chase/offsets, and LFO sync all resolve it. Persisted node fields
+remain strings so unknown divisions retain the intentional quarter-note fallback. Targeted core
+(89) and web (29) tests plus the full sweep (4,708 passed / 4 skipped) and full typecheck are
+green. No design-system output changed, so no generated artifact or UI shot was needed. New PR
+and merge are still pending; this slice is not shipped.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

@@ -29,6 +29,7 @@ import {
   wrapIndex,
 } from './splice';
 import type { GraphNode, SpliceDef } from './types';
+import { DELAY_DIVISIONS } from './delay';
 
 function spliceNode(over: Partial<GraphNode> = {}): GraphNode {
   return {
@@ -490,6 +491,16 @@ describe('resolveSplices', () => {
     expect(beats('1/8', 60)).toBe(500);
     expect(beats('dotted-1/8', 120)).toBe(375);
     expect(beats('triplet-1/8', 120)).toBeCloseTo(166.67, 1);
+  });
+
+  it('resolves every canonical division for a beats chase', () => {
+    for (const division of DELAY_DIVISIONS) {
+      const result = resolveSplices(
+        spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', spliceRateMode: 'beats', spliceDivision: division }),
+        120,
+      );
+      expect(result!.config.chaseMs, division).toBeGreaterThan(0);
+    }
   });
 
   it('takes a free-time rate verbatim, and reports 0 when the chase is off', () => {
