@@ -52,6 +52,15 @@ Project replacement/async backup ownership and review corrections remain in prog
 Pure-core and IO-separation rules below remain mandatory. Do not delete an apparently duplicate
 host/sim until its live responsibilities have been transferred and tested.
 
+Local P02/P11 branch `fix/health-project-backups` (2026-09-05): server
+`project-replacement.ts` owns full load/restore/bulk transitions across both hosts and libraries;
+`project-storage.ts` writes one atomic `default.state.local.json` envelope. Once present, that
+file—not a mix of the older three files—is the cold-start authority. The active OutputManager
+survives runtime replacement. Snapshot gzip/fs are async behind FIFO queues, but JSON
+materialization remains synchronous and queued captures have no byte budget. See
+`docs/reports/2026-09-05-health-projects.md` for migration, shutdown, measurement and integration
+limits; this local branch is not a statement that these changes have shipped.
+
 ## Historical System Overview
 Authored content + live input → render loop → pixels → wire & screen.
 

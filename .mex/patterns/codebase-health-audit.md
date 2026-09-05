@@ -29,6 +29,10 @@ Read AGENTS, architecture and conventions. Source evidence from current code, no
 - Document replacement also invalidates outstanding clipboard promises and manual paste dialogs. Use a generation token, not just show identity (same-ID server replacement is still a new lifetime). Save As must not replay boot-only preset backfill over an already-live snapshot.
 - Controller cleanup belongs to its destination, not its disposable HTTP client. Test failed cleanup → leave → re-adopt, credential refresh while pending, and rapid A/B/A. Never clear uncertainty before acknowledgement.
 - Async UDP errors do not reach synchronous send catches. Packet attempts are not proof of controller receipt.
+- Full project replacement must preserve the active OutputManager's old coverage, stage both runtimes before mutation, and await safety backup. Test actual input/model/transport convergence and cold recovery without a browser resync in both modes.
+- One atomic envelope avoids torn three-file restores; a corrupt new authority must not silently fall back to stale imports. Document downgrade/export implications and the lack of fsync separately from rename atomicity.
+- Async gzip/fs does not make JSON capture asynchronous. Measure submission time separately from post-capture queue progress, and report queued-string memory rather than claiming an allocation reduction.
+- Accepted authoring can reopen output after shutdown's first stop. Drain accepted operations, then close/await the final output lifetime too; test with deferred callbacks, not an immediate fake alone.
 - Dropping congested preview frames must not silently drop authoritative JSON messages.
 - Frame buffers owned by async transports cannot be blindly reused while outstanding sends may reference them.
 - Reaping a pooled object does not release its retained arrays unless references are cleared.

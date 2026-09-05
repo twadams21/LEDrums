@@ -55,6 +55,19 @@ unexecuted and require separate authorization**. Held Patch files and the unrela
 checkout remain untouched. The prior audit's undecided questions below are historical: its later
 implementation authorization and the agent-selected defaults above supersede the request to stop.
 
+**P02/P11 project replacement + async backups (2026-09-05, local `fix/health-project-backups`):**
+Trent's resumed sa-19 request (machine identity verified); report and exact evidence:
+`docs/reports/2026-09-05-health-projects.md`. Shared load/restore/bulk coordinator stages both
+hosts, awaits safety backup + atomic persistence, preserves the active OutputManager's old
+coverage and emits one replacement state. New disk authority is `default.state.local.json`
+(project + both libraries in one rename); the old three files become import-only. Backup gzip/fs
+are async and queued; **JSON capture/parse are still synchronous, so P11 is only partially met**.
+Shutdown awaits output + disk queues, including an adapter reopened by accepted queued edits.
+Recovered 232-test scoped pass plus resumed 33-test narrow pass cover 237 distinct tests; server
+and IO scoped typechecks passed. Real-source server load/restore/shutdown/cold recovery checked
+in both modes with disabled output and temp storage. No full sweep, hardware, push or shipping;
+orchestrator must integrate later core/parity/state repairs. Original prototype checkout untouched.
+
 **Codebase health audit (2026-09-05, branch `fix/codebase-health-audit`, base `763c422`):**
 requested by **Trent** in-session (machine identity verified). Work is isolated in
 `../ledrums-health-audit`; the original prototype checkout and its dirty F7 brief are untouched.
