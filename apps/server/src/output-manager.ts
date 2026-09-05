@@ -6,8 +6,8 @@ import {
   type RgbOrder,
   type UniversePatch,
 } from '@ledrums/core';
-import { ArtNetOutput, SacnOutput, type PixelOutput } from '@ledrums/io';
-import { createOutputMonitorCoalescer, outputDestination, universeRangeLabel } from './output-monitor';
+import { ArtNetOutput, SacnOutput, type PixelOutput, type PixelOutputStatus } from '@ledrums/io';
+import { outputDestination, universeRangeLabel } from './output-monitor';
 import type { MonitorEvent } from './ws-protocol';
 import type { OutputStatus } from './ws-protocol';
 
@@ -45,6 +45,17 @@ export function frameToUniverseBytes(rgba: Float32Array, patch: UniversePatch, f
 export type OutputFactory = (settings: OutputSettings) => PixelOutput;
 export type OutputMonitorSink = (event: Omit<MonitorEvent, 'id' | 'time'>) => void;
 
+/** Additive local diagnostics. The existing wire packetsSent field now means local acceptance
+ * only; it never includes dry-run or unobservable legacy sends, and is NOT a controller ACK. */
+export interface OutputManagerStatus extends OutputStatus {
+  readiness: PixelOutputStatus['state'] | 'unobservable';
+  packetsAttempted: number;
+  packetsAccepted: number;
+  packetsSkipped: number;
+  packetsUnconfirmed: number;
+  packetsSimulated: number;
+}
+
 export interface OutputManagerOptions {
   now?: () => number;
   monitorWindowMs?: number;
@@ -77,11 +88,23 @@ export class OutputManager {
   private settings: OutputSettings | null = null;
   private signature = '';
   private packetsSent = 0;
+  private packetsAttempted = 0;
+  private packetsSkipped = 0;
+  private packetsUnconfirmed = 0;
+  private packetsSimulated = 0;
+  private readiness: OutputManagerStatus['readiness'] = 'closed';
+  private generation = 0;
+  private unsubscribe?: () => void;
   private lastError: string | null = null;
+  private retiredError: string | null = null;
   private universeCount = 0;
   private settingsMonitorSignature = '';
   private readonly now: () => number;
-  private readonly outputDiag: ReturnType<typeof createOutputMonitorCoalescer>;
+  private readonly monitorWindowMs: number;
+  private summaryStart: number | null = null;
+  private summary = { frames: 0, attempts: 0, accepted: 0, skipped: 0, unconfirmed: 0, simulated: 0, bytes: 0 };
+  private readonly summaryUniverses = new Set<number>();
+  private readonly errors = new Map<string, { at: number; repeats: number }>();
   /** Active hoop-identify override (E1): pixels [start,end) are forced full-on until `expiresAt`
    * (ms on this manager's clock). Composited over the live frame in {@link sendFrame} — a bounded,
    * fire-and-forget override that NEVER blocks or mutates the engine's frame buffer. */
@@ -93,7 +116,7 @@ export class OutputManager {
     opts: OutputManagerOptions = {},
   ) {
     this.now = opts.now ?? (() => performance.now());
-    this.outputDiag = createOutputMonitorCoalescer({ windowMs: opts.monitorWindowMs });
+    this.monitorWindowMs = opts.monitorWindowMs ?? 1000;
   }
 
   applySettings(settings: OutputSettings, dmxMap: DmxMap): void {
@@ -108,6 +131,21 @@ export class OutputManager {
           this.output = this.factory(settings);
           this.signature = sig;
           this.lastError = null;
+          this.readiness = 'unobservable';
+          const generation = ++this.generation;
+          this.unsubscribe = this.output.onStatus?.((status) => {
+            if (generation !== this.generation) return;
+            this.readiness = status.state;
+            if (status.state === 'error') {
+              this.lastError = `${status.phase}: ${status.code ?? ''} ${status.message}`;
+              this.monitorError('Output transport failed', settings, this.lastError);
+            } else {
+              this.lastError = status.state === 'binding' ? 'Output binding; local UDP readiness pending' : null;
+              this.onMonitor?.({ type: 'output', direction: 'out', source: 'server',
+                destination: outputDestination(settings), label: `Output ${status.state}`,
+                detail: 'Local UDP readiness only; controller receipt is not acknowledged' });
+            }
+          });
         } catch (err) {
           this.lastError = String(err);
           this.output = null;
@@ -122,13 +160,30 @@ export class OutputManager {
     this.monitorSettings(settings, dmxMap);
   }
 
-  private teardown(dmxMap: DmxMap, settings: OutputSettings): void {
+  private teardown(dmxMap: DmxMap, _settings: OutputSettings): void {
     if (this.output) {
       this.blackout(dmxMap);
-      this.output.close();
-      this.output = null;
-      this.signature = '';
+      this.closeTransport();
     }
+  }
+
+  private closeTransport(): void {
+    const output = this.output;
+    const settings = this.settings;
+    this.output = null;
+    this.signature = '';
+    this.generation++;
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    this.readiness = 'closed';
+    this.resetSummary();
+    if (!output) return;
+    const failed = (error: unknown): void => {
+      this.retiredError = `Retired output ${settings ? outputDestination(settings) : ''}: ${String(error)}`;
+      if (settings) this.monitorError('Output close failed', settings, this.retiredError);
+    };
+    try { output.close((error) => { if (error) failed(error); }); }
+    catch (error) { failed(error); }
   }
 
   /**
@@ -183,15 +238,13 @@ export class OutputManager {
   sendFrame(rgba: Float32Array, dmxMap: DmxMap): void {
     const s = this.settings;
     if (!s || s.state === 'disabled') return;
+    this.summaryStart ??= this.now();
+    this.summary.frames++;
     if (s.state === 'dry-run') {
-      this.packetsSent += dmxMap.universes.length; // formed, not transmitted
-      this.monitorPacketSummary({
-        settings: s,
-        kind: 'dry-run',
-        universes: dmxMap.universes.map((patch) => patch.universe),
-        packets: dmxMap.universes.length,
-        nowMs: this.now(),
-      });
+      this.packetsSimulated += dmxMap.universes.length;
+      this.summary.simulated += dmxMap.universes.length;
+      for (const patch of dmxMap.universes) this.summaryUniverses.add(patch.universe);
+      this.monitorPacketSummary(s);
       return;
     }
     if (!this.output) return;
@@ -200,28 +253,14 @@ export class OutputManager {
     const frame = this.withIdentify(rgba);
     try {
       this.output.nextFrame();
-      let packets = 0;
-      let byteCount = 0;
-      const universes: number[] = [];
       for (const patch of dmxMap.universes) {
         // Per-pixel RGB order (B5) comes from each pixel's owning output; the controller-level
         // `s.rgbOrder` is only the fallback for pixels whose output declared none (parity with
         // pre-B5 single-order behaviour).
         const bytes = frameToUniverseBytes(frame, patch, s.rgbOrder);
-        this.output.send(patch.universe, bytes);
-        this.packetsSent++;
-        packets++;
-        byteCount += bytes.length;
-        universes.push(patch.universe);
+        this.sendPacket(patch.universe, bytes, s);
       }
-      this.monitorPacketSummary({
-        settings: s,
-        kind: 'packet',
-        universes,
-        byteCount,
-        packets,
-        nowMs: this.now(),
-      });
+      this.monitorPacketSummary(s);
     } catch (err) {
       this.lastError = String(err);
       this.monitorError('Output send failed', s, this.lastError);
@@ -229,7 +268,38 @@ export class OutputManager {
     }
   }
 
-  /** Transmit an all-zero frame across every universe (failsafe). */
+  private sendPacket(universe: number, bytes: Uint8Array, settings: OutputSettings): void {
+    const output = this.output;
+    if (!output) return;
+    const generation = this.generation;
+    this.packetsAttempted++;
+    this.summary.attempts++;
+    this.summaryUniverses.add(universe);
+    let completed = false;
+    const queued = output.send(universe, bytes, (error) => {
+      if (generation !== this.generation || completed) return;
+      completed = true;
+      if (error) {
+        this.lastError = String(error);
+        this.monitorError('Output send failed', settings, this.lastError);
+        return;
+      }
+      this.packetsSent++;
+      this.summary.accepted++;
+      this.summary.bytes += bytes.length;
+      this.monitorPacketSummary(settings);
+    });
+    if (queued === false) {
+      this.packetsSkipped++;
+      this.summary.skipped++;
+    } else if (queued === undefined && !completed) {
+      // Deliberate compatibility: legacy fakes still send, but cannot establish acceptance.
+      this.packetsUnconfirmed++;
+      this.summary.unconfirmed++;
+    }
+  }
+
+  /** Request an all-zero frame across every universe (failsafe, NOT controller acknowledgement). */
   blackout(dmxMap: DmxMap): void {
     if (!this.output) return;
     try {
@@ -238,7 +308,7 @@ export class OutputManager {
       const universes: number[] = [];
       for (const patch of dmxMap.universes) {
         const zero = new Uint8Array(patch.channelCount);
-        this.output.send(patch.universe, zero);
+        this.sendPacket(patch.universe, zero, this.settings!);
         packets++;
         universes.push(patch.universe);
       }
@@ -248,7 +318,7 @@ export class OutputManager {
           direction: 'out',
           source: 'server',
           destination: outputDestination(this.settings),
-          label: 'Blackout sent',
+          label: 'Blackout requested',
           detail: `packets=${packets}; universes=${universeRangeLabel(universes)}`,
         });
       }
@@ -258,27 +328,44 @@ export class OutputManager {
     }
   }
 
-  status(): OutputStatus {
+  status(): OutputManagerStatus {
     return {
       state: this.settings?.state ?? 'disabled',
       protocol: this.settings?.protocol ?? 'artnet',
       host: this.settings?.host ?? '',
       packetsSent: this.packetsSent,
-      lastError: this.lastError,
+      lastError: this.retiredError ?? this.lastError,
       universeCount: this.universeCount,
+      readiness: this.readiness,
+      packetsAttempted: this.packetsAttempted,
+      packetsAccepted: this.packetsSent,
+      packetsSkipped: this.packetsSkipped,
+      packetsUnconfirmed: this.packetsUnconfirmed,
+      packetsSimulated: this.packetsSimulated,
     };
   }
 
   close(): void {
-    if (this.output) {
-      this.output.close();
-      this.output = null;
-    }
+    this.closeTransport();
   }
 
-  private monitorPacketSummary(sample: Parameters<typeof this.outputDiag.record>[0]): void {
-    const event = this.outputDiag.record(sample);
-    if (event) this.onMonitor?.(event);
+  private resetSummary(): void {
+    this.summaryStart = null;
+    this.summary = { frames: 0, attempts: 0, accepted: 0, skipped: 0, unconfirmed: 0, simulated: 0, bytes: 0 };
+    this.summaryUniverses.clear();
+  }
+
+  private monitorPacketSummary(settings: OutputSettings): void {
+    const now = this.now();
+    this.summaryStart ??= now;
+    if (now - this.summaryStart < this.monitorWindowMs) return;
+    const c = this.summary;
+    this.onMonitor?.({ type: 'output', direction: 'out', source: 'server',
+      destination: outputDestination(settings),
+      label: `${settings.protocol} ${settings.state === 'dry-run' ? 'dry-run' : 'output'} summary`,
+      detail: `frames=${c.frames}; attempts=${c.attempts}; locallyAccepted=${c.accepted}; skipped=${c.skipped}; unconfirmed=${c.unconfirmed}; simulated=${c.simulated}; universes=${universeRangeLabel(this.summaryUniverses)}; bytes=${c.bytes}; UDP is not a controller acknowledgement`,
+    });
+    this.resetSummary();
   }
 
   private monitorSettings(settings: OutputSettings, dmxMap: DmxMap): void {
@@ -298,6 +385,16 @@ export class OutputManager {
   }
 
   private monitorError(label: string, settings: OutputSettings, detail: string): void {
+    const key = `${outputDestination(settings)}|${label}|${detail}`;
+    const now = this.now();
+    const previous = this.errors.get(key);
+    if (previous && now - previous.at < this.monitorWindowMs) {
+      previous.repeats++;
+      return;
+    }
+    if (this.errors.size >= 32) this.errors.delete(this.errors.keys().next().value!);
+    this.errors.set(key, { at: now, repeats: 0 });
+    if (previous?.repeats) detail += `; repeated=${previous.repeats}`;
     this.onMonitor?.({
       type: 'error',
       direction: 'out',
