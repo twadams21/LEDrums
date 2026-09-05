@@ -36,6 +36,18 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
+Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
+checks: `docs/reports/2026-09-05-health-project-review-fixes.md`. Four blockers from frozen
+`96909f7f` review: preserve editor identity while accepted shutdown work drains (new ingress
+stops immediately; ordinary takeover still revokes), case-insensitive internal envelope name
+reservation, shared pure canvas voice specs/defaults, and fail-closed current library versions
+(show v2/song v1) before replacement or production library persistence. Browser migrations remain
+canonical; old data must be migrated on a copy, never merely version-relabeled. Actual-main FIFO
+shutdown/peer-disconnect/takeover regressions cover both modes with disabled output/temp storage.
+No UI surface, sa33 SnapshotStore/worker or sa29 checkpoint/modifier implementation overlap;
+later core repairs preserved. Local commit awaits independent re-review; no full sweep or shipping.
+
 **Health remediation implementation (2026-09-05, `fix/health-integration`, IN PROGRESS):**
 Trent approved implementing all audit follow-ups without further questions, in-session;
 verified machine identity remains Trent’s MacBook Pro. The integrating agent selected conservative

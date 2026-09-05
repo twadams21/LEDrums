@@ -3,7 +3,7 @@ import type { SnapshotFiles } from './backups/snapshot-store';
 import type { EngineHost } from './engine-host';
 import type { VoiceEngineHost } from './voice-engine-host';
 import { SerialQueue } from './serial-queue';
-import { selectionFromLibrary, showFromLibraries } from './project-show';
+import { selectionFromLibrary, showFromLibraries, validateLibraryVersions } from './project-show';
 
 export interface ProjectReplacementDeps {
   host: EngineHost;
@@ -23,12 +23,7 @@ export function validateSnapshotFiles(files: SnapshotFiles): SnapshotFiles & { p
   assertProjectIntegrity(project);
   const issues = blockingRoutingIssues(validateRouting(project.kit, project.kit.outputs));
   if (issues.length) throw new Error(`Invalid project routing: ${issues[0]!.message}`);
-  for (const blob of [files.showLibrary, files.songLibrary]) {
-    if (blob !== null && (typeof blob !== 'object' || !blob || !('version' in blob)
-      || typeof blob.version !== 'number' || !Number.isFinite(blob.version))) {
-      throw new Error('Invalid snapshot library envelope');
-    }
-  }
+  validateLibraryVersions(files.showLibrary, files.songLibrary);
   return { ...files, project };
 }
 

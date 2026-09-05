@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -14,7 +14,10 @@ import {
 } from '@ledrums/core';
 import {
   listProjects,
+  listProjectsAsync,
   loadProject,
+  loadProjectAsync,
+  projectFilePath,
   projectExists,
   resolveProjectsDir,
   saveProject,
@@ -30,6 +33,24 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 const healed = (p: Project): Project => ({ ...p, kit: reconcileOutputs(p.kit) });
 
 describe('projects', () => {
+  it.each(['default.state.local', 'Default.State.Local', 'DEFAULT.STATE.LOCAL',
+    'Default.Shows.Local', 'DEFAULT.SONGS.LOCAL'])('reserves internal slot %s regardless of filesystem case rules', async (name) => {
+    const dir = mkdtempSync(join(tmp, 'reserved-'));
+    const file = join(dir, `${name}.json`);
+    const authority = JSON.stringify({ version: 1, files: { project: defaultProject(),
+      showLibrary: { version: 2, data: { sentinel: 'shows' } }, songLibrary: { version: 1, data: { sentinel: 'songs' } } } });
+    writeFileSync(file, authority);
+    // Explicit mixed-case files exercise listing on Linux too; path rejection must precede IO.
+    expect(() => projectFilePath(name, dir)).toThrow(/Reserved/);
+    expect(() => saveProject(name, defaultProject(), dir)).toThrow(/Reserved/);
+    await expect(saveProjectAsync(name, defaultProject(), dir)).rejects.toThrow(/Reserved/);
+    expect(() => loadProject(name, dir)).toThrow(/Reserved/);
+    await expect(loadProjectAsync(name, dir)).rejects.toThrow(/Reserved/);
+    expect(listProjects(dir)).toEqual([]);
+    expect(await listProjectsAsync(dir)).toEqual([]);
+    expect(readFileSync(file, 'utf8')).toBe(authority);
+  });
+
   it('round-trips save -> load (outputs self-heal to the canonical count)', () => {
     const p = defaultProject();
     saveProject('show', p, tmp);

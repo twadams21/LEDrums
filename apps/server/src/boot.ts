@@ -129,13 +129,8 @@ export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void 
     deps.tunnelControl.stop();
     const outputStopped = (deps.voiceHost ?? deps.host).stop();
     deps.oscInput.close();
-    for (const ws of deps.clients) {
-      try {
-        ws.close();
-      } catch {
-        /* ignore */
-      }
-    }
+    // Stop new connections now, but keep accepted clients (and their editor identity)
+    // alive until the authoring queue drains. WebSocketServer.close does not close clients.
     deps.wss.close();
     deps.server.close();
     // Flush any pending autosave so a clean shutdown never loses the last edit. flush()
@@ -145,6 +140,9 @@ export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void 
       let failed = false;
       try { await deps.drainOperations?.(); }
       catch (error) { failed = true; console.error('[shutdown] operation drain failed:', error); }
+      for (const ws of deps.clients) {
+        try { ws.close(); } catch { /* already disconnected */ }
+      }
       // Disk failure must not skip the UDP/controller barrier and force-exit over pending zeros.
       const results = await Promise.allSettled([
         outputStopped,

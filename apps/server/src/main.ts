@@ -42,7 +42,7 @@ import { createClientMessageHandler, requiresEditor } from './handlers/client-me
 import { createProjectReplacement, validateSnapshotFiles } from './project-replacement';
 import { createProjectStorage } from './project-storage';
 import { SerialQueue } from './serial-queue';
-import { selectionFromLibrary, showFromLibraries } from './project-show';
+import { selectionFromLibrary, showFromLibraries, validateLibraryVersions } from './project-show';
 import { createNativeMidiHandler } from './http/native-midi';
 import { createHostEventHandler } from './http/host-event';
 import { createUpdateStatusHandler } from './http/update-status';
@@ -74,6 +74,7 @@ async function main(): Promise<void> {
   const recoveredState = recovered ? validateSnapshotFiles(recovered) : null;
   const authoring = new SerialQueue();
   let shuttingDown = false;
+  let authoringDrained = false;
   const port = Number(process.env.PORT) || WS_PORT;
   const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
 
@@ -195,6 +196,7 @@ async function main(): Promise<void> {
    * flushed on shutdown). `null` until the first client pushes one. */
   const songLibraryLoad = inspectSongLibraryFile();
   let liveSongLibrary: SongLibraryBlob | null = recoveredState ? recoveredState.songLibrary as SongLibraryBlob | null : loadSongLibrary();
+  validateLibraryVersions(liveShowLibrary, liveSongLibrary);
   if (voiceHost) voiceHost.prepareProject(project0, showFromLibraries(liveShowLibrary, liveSongLibrary), selectionFromLibrary(liveShowLibrary)).commit();
 
   /** Show edits schedule the same envelope writer; null is persisted, not silently skipped. */
@@ -480,6 +482,7 @@ async function main(): Promise<void> {
   voiceHost?.setMonitor(monitor);
 
   wss.on('connection', (ws, req) => {
+    if (shuttingDown) { ws.close(1001, 'Server shutting down'); return; }
     // PIN gate (S3): refuse a connection with a wrong/absent room PIN BEFORE it is admitted to the
     // registry or sent any presence/state/frames — so an un-authed client can neither view nor
     // mutate. The PIN rides the connect URL query (`?pin=…`). An open gate (no PIN configured)
@@ -512,7 +515,7 @@ async function main(): Promise<void> {
     monitorBus.replay((msg) => ws.send(encodeServer(msg)));
 
     ws.on('message', async (raw, isBinary) => {
-      if (isBinary) return; // clients send JSON only
+      if (shuttingDown || isBinary) return; // refuse new input/actions before decode or monitoring
       let handled = false;
       try {
         const msg = decodeClient(raw.toString());
@@ -530,18 +533,16 @@ async function main(): Promise<void> {
       }
     });
 
-    // On disconnect, drop the socket and re-broadcast presence (headcount changed, and the editor
-    // slot may have moved per the registry's election rule).
-    ws.on('close', () => {
-      clients.remove(ws);
+    // Ordinary disconnect/takeover still revokes queued authoring at execution. During shutdown,
+    // freeze that identity until accepted work drains: tunnel stop or a peer close must not undo
+    // admission. All new actions (including takeover) are already refused at ingress.
+    const disconnected = () => {
+      if (!shuttingDown || authoringDrained) clients.remove(ws);
       controllerMonitor.dropWatcher(ws);
       broadcastPresence();
-    });
-    ws.on('error', () => {
-      clients.remove(ws);
-      controllerMonitor.dropWatcher(ws);
-      broadcastPresence();
-    });
+    };
+    ws.on('close', disconnected);
+    ws.on('error', disconnected);
   });
 
   // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
@@ -635,9 +636,11 @@ async function main(): Promise<void> {
     // The live show-library slot is owned here (boot-recovered + autosaved); the handler adopts a
     // pushed library through this setter so stateMessage/the autosaver read the latest.
     setShowLibrary: (lib) => {
+      validateLibraryVersions(lib, null);
       liveShowLibrary = lib;
     },
     setSongLibrary: (lib) => {
+      validateLibraryVersions(null, lib);
       liveSongLibrary = lib;
     },
     relayToOthers,
@@ -811,7 +814,8 @@ async function main(): Promise<void> {
     snapshotTimer,
     beginShutdown: () => { shuttingDown = true; },
     drainOperations: async () => {
-      await authoring.close();
+      try { await authoring.close(); }
+      finally { authoringDrained = true; }
       await replacement.close();
       await snapshotStore.close();
       await storage.drain();

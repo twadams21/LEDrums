@@ -1,4 +1,5 @@
-import { BUILTIN_CANVAS_SCENES, CANVAS_PARAM_SPEC, canvasEffectId, resolveEffectAlias, type CanvasScene, type voice } from '@ledrums/core';
+import { BUILTIN_CANVAS_SCENES, canvasVoiceEffectDef, canvasVoiceDefaultPreset, canvasEffectId,
+  SHOWS_VERSION, SONGS_VERSION, resolveEffectAlias, type CanvasScene, type voice } from '@ledrums/core';
 import { showSchema } from '@ledrums/protocol';
 
 function object(value: unknown): Record<string, unknown> {
@@ -10,10 +11,24 @@ function array(value: unknown): unknown[] {
   return value;
 }
 
+/** Fail closed rather than rendering pre-migration hoop ids on a different physical hoop.
+ * Browser persistence owns migration. Recovery: migrate a COPY with that pipeline and re-save
+ * at the current versions; never repair old data by changing only its version number. */
+export function validateLibraryVersions(showLibrary: unknown, songLibrary: unknown): void {
+  for (const [kind, blob, expected] of [['show', showLibrary, SHOWS_VERSION], ['song', songLibrary, SONGS_VERSION]] as const) {
+    if (blob === null) continue;
+    const version = typeof blob === 'object' && blob && 'version' in blob ? blob.version : undefined;
+    if (version !== expected) {
+      throw new Error(`Unsupported ${kind} library version ${String(version)}; expected ${expected}. Migrate a copy with browser persistence before restoring.`);
+    }
+  }
+}
+
 /** Restore boundary for the existing web-owned library envelope, not a second authoring model.
  * Keep unknown fields in the stored blob; project only the runtime Show through the SAME protocol
  * gate used by setShow. Older unsupported/corrupt shapes fail before any live mutation. */
 export function showFromLibraries(showLibrary: unknown, songLibrary: unknown): voice.Show | null {
+  validateLibraryVersions(showLibrary, songLibrary);
   if (showLibrary === null) return null;
   const data = object(object(showLibrary).data);
   const shows = object(data.shows);
@@ -72,15 +87,14 @@ export function showFromLibraries(showLibrary: unknown, songLibrary: unknown): v
   for (const scene of [...scenes, ...BUILTIN_CANVAS_SCENES]) {
     const id = canvasEffectId(scene.id);
     if (runtime.effects.some((e) => e.id === id)) continue;
-    runtime.effects.push({ id, name: scene.name, generatorId: id,
-      busId: 'base', scope: 'kit', params: [], attackMs: 800, sustainMs: 0, releaseMs: 900 });
-    runtime.presets.push({ id: `${id}:default`, name: 'Default', effectId: id,
-      params: Object.fromEntries(CANVAS_PARAM_SPEC.map((p) => [p.key, p.default])) });
+    runtime.effects.push(canvasVoiceEffectDef(scene));
+    runtime.presets.push(canvasVoiceDefaultPreset(scene));
   }
   return runtime;
 }
 
 export function selectionFromLibrary(library: unknown): { songId?: string; sectionId: string } | undefined {
+  validateLibraryVersions(library, null);
   if (library === null) return undefined;
   const data = object(object(library).data);
   const selected = object(data.shows)[String(data.activeShowId)];

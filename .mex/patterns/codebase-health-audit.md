@@ -33,6 +33,9 @@ Read AGENTS, architecture and conventions. Source evidence from current code, no
 - One atomic envelope avoids torn three-file restores; a corrupt new authority must not silently fall back to stale imports. Document downgrade/export implications and the lack of fsync separately from rename atomicity.
 - Async gzip/fs does not make JSON capture asynchronous. Measure submission time separately from post-capture queue progress, and report queued-string memory rather than claiming an allocation reduction.
 - Accepted authoring can reopen output after shutdown's first stop. Drain accepted operations, then close/await the final output lifetime too; test with deferred callbacks, not an immediate fake alone.
+- Shutdown must close admission before closing clients: execution-time editor checks otherwise discard already-queued work when socket teardown revokes authorization. Preserve identity during the drain (including peer/tunnel disconnect), not during ordinary takeover. Prove it through real main: FIFO named load → queued edit → ping barrier → SIGTERM → release FIFO → inspect cold storage in both modes.
+- Reserve internal envelope names case-insensitively before named Project IO, and test explicit case-variant filenames even on Linux. Protocol-shape validity is not library-version compatibility: reject unsupported versions before safety/persistence or run the canonical migration, never silently reinterpret old hoop ids.
+- Restored canvas effects need canonical parameter SPECS as well as preset values. Missing specs silently disable modulation; assert real rendered RGB at CC endpoints, not only projected object shape.
 - Dropping congested preview frames must not silently drop authoritative JSON messages.
 - Frame buffers owned by async transports cannot be blindly reused while outstanding sends may reference them.
 - Reaping a pooled object does not release its retained arrays unless references are cleared.

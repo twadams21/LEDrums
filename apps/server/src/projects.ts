@@ -26,9 +26,17 @@ function serializeProject(project: Project): string {
   return JSON.stringify(parseProject(project), null, 2);
 }
 
+// These envelopes are NOT bare Projects. Compare names before IO, independent of the host
+// filesystem's case rules (macOS commonly aliases Default.State.Local to the live authority).
+const INTERNAL_BLOB_NAMES = new Set(['default.state.local', 'default.shows.local', 'default.songs.local']);
+function isInternalBlobName(name: string): boolean { return INTERNAL_BLOB_NAMES.has(name.toLowerCase()); }
+function isNamedProjectFile(file: string): boolean {
+  return file.endsWith('.json') && !isInternalBlobName(file.slice(0, -5));
+}
+
 /** Resolve the final path for a persisted `<name>.json` project. */
 export function projectFilePath(name: string, dir: string = PROJECTS_DIR): string {
-  if (name === 'default.state.local') throw new Error('Reserved live-state filename');
+  if (isInternalBlobName(name)) throw new Error('Reserved internal library/live-state filename');
   if (!name || name === '.' || name === '..' || /[\\/\\\\\x00]/.test(name)) throw new Error('Invalid project name');
   return join(dir, `${name}.json`);
 }
@@ -37,7 +45,7 @@ export function projectFilePath(name: string, dir: string = PROJECTS_DIR): strin
 export function listProjects(dir: string = PROJECTS_DIR): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith('.json') && f !== 'default.state.local.json')
+    .filter(isNamedProjectFile)
     .map((f) => f.replace(/\.json$/, ''))
     .sort();
 }
@@ -48,7 +56,7 @@ export async function listProjectsAsync(dir: string = PROJECTS_DIR): Promise<str
     if (error.code === 'ENOENT') return [];
     throw error;
   });
-  return files.filter((f) => f.endsWith('.json') && f !== 'default.state.local.json').map((f) => f.slice(0, -5)).sort();
+  return files.filter(isNamedProjectFile).map((f) => f.slice(0, -5)).sort();
 }
 
 export async function loadProjectAsync(name: string, dir: string = PROJECTS_DIR): Promise<Project> {

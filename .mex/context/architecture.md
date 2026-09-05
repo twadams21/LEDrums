@@ -61,6 +61,15 @@ materialization remains synchronous and queued captures have no byte budget. See
 `docs/reports/2026-09-05-health-projects.md` for migration, shutdown, measurement and integration
 limits; this local branch is not a statement that these changes have shipped.
 
+P02 review corrections on the integration branch (2026-09-05; source:
+`docs/reports/2026-09-05-health-project-review-fixes.md`): shutdown stops ingress first and retains
+client authorization until accepted authoring drains; ordinary takeover remains execution-checked.
+Internal library/live-state filenames are case-insensitively excluded from named Project IO.
+Server and browser share pure canvas voice-definition/parameter builders and library-version
+constants. Server preflight and production library setters accept exactly show v2/song v1; the
+browser remains the canonical migration owner. Recover older libraries on copies, never by
+changing the version tag or falling back to stale import files. No library schema was copied.
+
 ## Historical System Overview
 Authored content + live input → render loop → pixels → wire & screen.
 

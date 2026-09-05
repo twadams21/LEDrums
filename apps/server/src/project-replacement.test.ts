@@ -27,7 +27,7 @@ function project(name: string, pixels: number, host = '127.0.0.1'): Project {
   return p;
 }
 function library(note = 38) {
-  return { version: 1, data: { activeShowId: 'show', shows: { show: { id: 'show', name: 'Show', authored: {
+  return { version: 2, data: { activeShowId: 'show', shows: { show: { id: 'show', name: 'Show', authored: {
     buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 0 }],
     graphs: { 'graph:hit': { version: 3, nodes: [
       { id: 'trigger', kind: 'trigger', source: { kind: 'midi', note } },
@@ -148,7 +148,7 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
     const frame = h.voiceHost ? h.voiceHost.engine.frame() : h.host.engine.getFrame();
     await expect(h.replacement.load({})).rejects.toThrow();
     await expect(h.replacement.restore({ project: project('bad-library', 2),
-      showLibrary: { version: 1, data: 'malformed' }, songLibrary: null })).rejects.toThrow('Invalid authored');
+      showLibrary: { version: 2, data: 'malformed' }, songLibrary: null })).rejects.toThrow('Invalid authored');
     expect(h.safety).not.toHaveBeenCalled();
     h.safety.mockResolvedValueOnce(false);
     await expect(h.replacement.load(project('bad', 2))).rejects.toThrow('Backup failed');
@@ -158,6 +158,22 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
     expect(h.voiceHost ? h.voiceHost.engine.frame() : h.host.engine.getFrame()).toBe(frame);
     expect(h.broadcast).not.toHaveBeenCalled();
     await h.active.stop();
+  });
+
+  it.each(['showLibrary', 'songLibrary'] as const)('rejects unsupported %s before safety, persistence or host mutation', async (slot) => {
+    const h = await harness(mode);
+    const engine = h.active.engine;
+    const files = { project: project('unsupported', 2), showLibrary: library(), songLibrary: { version: 1, data: { songs: {} } } };
+    // v1 shows used 0-based hoop ids; v2 songs are unknown. Never reinterpret either as current.
+    Object.assign(files[slot], { version: slot === 'showLibrary' ? 1 : 2 });
+    try {
+      await expect(h.replacement.restore(files)).rejects.toThrow(/Unsupported .* library version/);
+      expect(h.safety).not.toHaveBeenCalled();
+      expect(h.persist).not.toHaveBeenCalled();
+      expect(h.broadcast).not.toHaveBeenCalled();
+      expect(h.active.engine).toBe(engine);
+      expect(await h.storage.read()).toBeNull();
+    } finally { await h.active.stop(); }
   });
 
   it('orders concurrent restore reads and captures a safety revision for each intervening state', async () => {

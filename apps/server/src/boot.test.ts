@@ -37,8 +37,9 @@ describe('shutdown durability barrier', () => {
     const autosaver = { markDirty() {}, dispose() {}, flush: vi.fn(async () => { events.push('flush'); }) };
     const exit = vi.fn();
     const shutdown = createShutdown({
-      host: { stop }, voiceHost: null, clients: [],
-      oscInput: { close() {} }, wss: { close() {} }, server: { close() {} },
+      host: { stop }, voiceHost: null, clients: [{ close: () => events.push('close-client') }],
+      oscInput: { close() { events.push('close-input'); } },
+      wss: { close() {} }, server: { close() { events.push('stop-listening'); } },
       statsTimer: setInterval(() => {}, 1000),
       controllerMonitor: { stop: () => controller.promise },
       tunnelControl: { start() {}, stop() {} },
@@ -50,9 +51,11 @@ describe('shutdown durability barrier', () => {
     const completion = shutdown();
     expect(shutdown()).toBe(completion);
     expect(stop).toHaveBeenCalledOnce();
-    expect(events).toEqual(['reject-new-work', 'stop-frames']);
+    expect(events).toEqual(['reject-new-work', 'stop-frames', 'close-input', 'stop-listening']);
     disk.resolve();
     await vi.waitFor(() => expect(autosaver.flush).toHaveBeenCalledTimes(3));
+    expect(events.indexOf('close-client')).toBeGreaterThan(events.indexOf('stop-listening'));
+    expect(events.filter((event) => event === 'close-client')).toHaveLength(1);
     expect(exit).not.toHaveBeenCalled();
     controller.resolve(); await Promise.resolve(); expect(exit).not.toHaveBeenCalled();
     udp.resolve(); await completion;

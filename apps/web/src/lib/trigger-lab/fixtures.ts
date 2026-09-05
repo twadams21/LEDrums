@@ -6,7 +6,7 @@ import {
   collectionOf,
   listEffects,
   type EffectCategory,
-  type ParamSpec as CoreParamSpec,
+  mapVoiceParamSpec as mapParamSpec,
 } from '@ledrums/core';
 import {
   defaultParams,
@@ -81,35 +81,8 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
   trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
 };
 
-/** Map a core ParamSpec → the lab's ParamSpec — TOTAL over all four `ParamType`s so
-    no spec is ever silently dropped (S18). number/bool map 1:1 (numbers become
-    envelope-able); `enum` maps to a Select (string value, its `options` carried through);
-    `color` maps to a colour spec (a `'#rrggbb'` string) — its inspector control (the
-    write-through swatch) is S19's, and no effect declares a color param yet. enum/color are
-    not envelope-able. */
-export function mapParamSpec(spec: CoreParamSpec): ParamSpec {
-  if (spec.type === 'number') {
-    return {
-      key: spec.key,
-      label: spec.label,
-      kind: 'number',
-      min: spec.min,
-      max: spec.max,
-      step: spec.step,
-      unit: spec.unit,
-      default: typeof spec.default === 'number' ? spec.default : 0,
-      envable: true,
-    };
-  }
-  if (spec.type === 'bool') {
-    return { key: spec.key, label: spec.label, kind: 'bool', default: typeof spec.default === 'boolean' ? spec.default : false };
-  }
-  if (spec.type === 'enum') {
-    const options = spec.options ?? [];
-    return { key: spec.key, label: spec.label, kind: 'enum', options, default: typeof spec.default === 'string' ? spec.default : options[0] ?? '' };
-  }
-  return { key: spec.key, label: spec.label, kind: 'color', default: typeof spec.default === 'string' ? spec.default : '#ffffff' };
-}
+/** Compatibility export; server and browser use the same pure parameter adapter. */
+export { mapParamSpec };
 
 /** All core generators as selectable, generator-backed EffectDefs. Scope is `kit`
     for every one: generators own their spatial layout (drum-locality is intrinsic — e.g.
