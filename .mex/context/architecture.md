@@ -33,7 +33,7 @@ Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older
 backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
 
 Setlist recall ownership (code-verified 2026-09-06, local `feat/setlist-navigation-recall`, after
-integration of origin/main #211): the
+integration of origin/main #211 and merged PR #206): the
 ordered show and active song/section live in the pure voice engine at processing time. UI, keyboard,
 MIDI, and OSC navigation share the pure clamped resolver; host inputs queue relative/index intents
 instead of mutating an ahead-of-engine mirror. The typed protocol carries authoritative active

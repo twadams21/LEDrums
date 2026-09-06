@@ -72,7 +72,7 @@
 {:else}
 <span class={['sel', klass]}>
   <Select.Root type="single" bind:value items={options} onValueChange={onChange} {disabled}>
-    <Select.Trigger class="sel-trigger" aria-label={ariaLabel}>
+    <Select.Trigger class="sel-trigger" aria-label={ariaLabel} data-keyboard-owner="select">
       <span class="sel-lead">
         {#if selected?.icon}{@const I = selected.icon}<I size={14} style={selected.iconColor ? `color:${selected.iconColor}` : undefined} aria-hidden="true" />{/if}
         <Select.Value {placeholder} />

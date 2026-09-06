@@ -252,7 +252,7 @@ function midiVoiceShow(note: number): voice.Show {
     sections: [],
     effects: [voiceEffect('fx-flash')],
     presets: [],
-    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] } }] }],
+    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] }, performanceGraphKeys: ['graph:midi'] }] }],
   };
 }
 
@@ -262,7 +262,7 @@ const SONG_LIB: SongLibraryBlob = { version: 1, data: { songs: { 'lib-1': { id: 
 describe('requiresEditor — read-only gating policy (S2)', () => {
   it('exempts engine inputs and pure reads, gates everything authoring (deny-by-default)', () => {
     // Engine inputs (the drummer's hardware) + the role/read messages are never gated.
-    for (const t of ['midi', 'osc', 'cc', 'programChange', 'key', 'recallSection', 'listProjects', 'takeover'] as const) {
+    for (const t of ['midi', 'osc', 'cc', 'programChange', 'key', 'recallSection', 'fireGraph', 'listProjects', 'takeover'] as const) {
       expect(requiresEditor(t)).toBe(false);
     }
     // Authoring mutations are editor-only.
@@ -481,6 +481,21 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
         }),
       ]);
     }
+  });
+
+  it('voice mode accepts a viewer fireGraph from the Perform keyboard', () => {
+    const { handle, join, voiceHost, monitor } = voiceHarness();
+    join(); // editor
+    const viewer = join();
+    voiceHost.setShow(midiVoiceShow(38));
+
+    handle({ t: 'fireGraph', graphKey: 'graph:midi', velocity: 1 }, viewer);
+    for (let i = 0; i < 4; i++) voiceHost.step(1000 / 120);
+
+    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'graph',
+      label: 'Graph fired graph:midi',
+    }));
   });
 
   it('voice mode drops out-of-channel MIDI before graph diagnostics', () => {

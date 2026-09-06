@@ -21,6 +21,11 @@ create/copy/delete commands in the store/controller layer. Do not infer ownershi
 graph or add copy-on-write hooks. Canonical sections are playback references, not local mutation
 targets; detach is the narrow existing escape hatch.
 
+The authored flat graph list must cross into the core runtime through
+`voice.runtimeSectionFromGraphKeys()`. It preserves `performanceGraphKeys` and derives the
+backward-compatible drum slot grid in one place; both web `buildShow()` and server cold restore
+must use this helper so direct MIDI/OSC graphs remain selectable without changing pad routing.
+
 ## Verification
 
 Cover fresh seed keys, ordered-set sanitization, repeated-key copy closure, explicit linking across

@@ -565,4 +565,17 @@ describe('VoiceEngineHost', () => {
       }),
     );
   });
+
+  it.each(['__proto__', 'constructor', 'toString'])('does not render an inherited graph value for %s', (graphKey) => {
+    const { host } = makeHost();
+    const events: unknown[] = [];
+    host.setMonitor((event) => events.push(event));
+    host.setShow(makeShow('kick', '0'));
+
+    expect(() => {
+      host.applyInput({ kind: 'fireGraph', graphKey, velocity: 1 });
+      for (let i = 0; i < 4; i++) host.step(STEP);
+    }).not.toThrow();
+    expect(events).toContainEqual(expect.objectContaining({ label: 'No graph resolved' }));
+  });
 });

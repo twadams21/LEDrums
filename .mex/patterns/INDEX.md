@@ -15,3 +15,4 @@ Lookup table for all pattern files in this directory. Check here before starting
 | [ui-shot-sweep.md](ui-shot-sweep.md) | Running or repairing the ui-shot screenshot sweep for gallery, shell, or visual close-out tasks |
 | [section-graph-ownership.md](section-graph-ownership.md) | Changing section graph placement, copy, link, unlink, or legacy repeated-key behavior |
 | [authoritative-recall-sync.md](authoritative-recall-sync.md) | Changing server-owned recall ordering, reconnect adoption, or canonical reference replay |
+| [keyboard-ownership.md](keyboard-ownership.md) | Adding global keyboard shortcuts without stealing native or component keyboard accessibility |

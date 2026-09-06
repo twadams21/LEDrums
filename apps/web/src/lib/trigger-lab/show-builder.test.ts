@@ -120,6 +120,7 @@ describe('buildShow bridges a section’s flat graphs → the engine slot grid',
     const slots = buildShow(src).songs![0]!.sections[0]!.slots;
     expect(slots[drumKey]).toEqual([drumKey]); // drum-source graph → its padKey slot
     expect(Object.keys(slots)).toEqual([drumKey]); // MIDI-source graph omitted (fires via direct routing)
+    expect(buildShow(src).songs![0]!.sections[0]!.performanceGraphKeys).toEqual([drumKey, midiKey]);
   });
 });
 

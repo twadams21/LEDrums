@@ -87,6 +87,7 @@
   class:dragging
   {style}
   role="separator"
+  data-keyboard-owner="separator"
   tabindex="0"
   aria-orientation={vertical ? 'vertical' : 'horizontal'}
   aria-label={label}

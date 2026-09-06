@@ -54,7 +54,7 @@ export type VoicePartialInput =
   | { kind: 'noteOff'; note: number; channel?: number }
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
-  | { kind: 'fireGraph'; graphKey: string; velocity?: number }
+  | { kind: 'fireGraph'; graphKey: string; velocity?: number; viewerOnly?: boolean }
   | { kind: 'recallSection'; songId?: string | null; sectionId: string | null }
   | { kind: 'recallSongIndex'; songIndex: number }
   | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
@@ -555,6 +555,7 @@ export class VoiceEngineHost {
           kind: 'fireGraph',
           graphKey: partial.graphKey,
           velocity: partial.velocity ?? 1,
+          ...(partial.viewerOnly ? { fireGraphPolicy: 'active-section' as const } : {}),
           timeMs,
         };
       case 'releaseBus':

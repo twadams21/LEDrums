@@ -59,10 +59,66 @@ describe('persisted library → runtime Show restore boundary', () => {
       graphs, effects: [], presets: [], sections: [{ id: 'section', name: 'Section', graphs: ['lib:g'], looks: {} }] } } } };
     const before = structuredClone({ showLibrary, songLibrary });
     const runtime = showFromLibraries(showLibrary, songLibrary)!;
-    expect(runtime.songs).toEqual([{ id: 'song', name: 'Library song', sections: [{ id: 'section', name: 'Section', slots: { 'snare:2': ['lib:g'] } }] }]);
+    expect(runtime.songs).toEqual([{ id: 'song', name: 'Library song', sections: [{ id: 'section', name: 'Section',
+      performanceGraphKeys: ['lib:g'], slots: { 'snare:2': ['lib:g'] } }] }]);
     expect(selectionFromLibrary(showLibrary)).toEqual({ songId: 'song', sectionId: 'section' });
     expect(runtime.graphs['lib:g']).not.toBe(graphs['lib:g']);
     expect({ showLibrary, songLibrary }).toEqual(before);
+  });
+
+  it('cold-restored sections authorize direct MIDI/OSC graphs while retaining drum slots', async () => {
+    const graph = (source: { kind: 'drum'; drumId: string; zone: string } | { kind: 'midi'; note: number } | { kind: 'osc'; address: string }) => ({
+      version: 3,
+      nodes: [
+        { id: 'trigger', kind: 'trigger', source },
+        { id: 'play', kind: 'play', mode: 'oneshot', scope: 'kit', effectId: 'fx-flash', presetId: '', busId: 'main', params: { brightness: 1 } },
+      ],
+      edges: [{ id: 'e1', from: 'trigger', to: 'play' }],
+    });
+    const showLibrary = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
+      buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 0 }],
+      graphs: {
+        'graph:midi': graph({ kind: 'midi', note: 60 }),
+        'graph:osc': graph({ kind: 'osc', address: '/lights' }),
+        'graph:drum': graph({ kind: 'drum', drumId: 'kick', zone: '0' }),
+        'graph:other': graph({ kind: 'midi', note: 61 }),
+        'graph:unassigned': graph({ kind: 'midi', note: 62 }),
+      },
+      effects: [{ id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: 'main', scope: 'kit', params: [
+        { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
+      ], attackMs: 0, sustainMs: 200, releaseMs: 200 }],
+      presets: [], songs: [{ id: 'song', name: 'Song', sections: [
+        { id: 'active', name: 'Active', graphs: ['graph:midi', 'graph:osc', 'graph:drum'], looks: {} },
+        { id: 'other', name: 'Other', graphs: ['graph:other'], looks: {} },
+      ] }], activeSongId: 'song', activeSectionId: 'active',
+    } } } } };
+
+    const runtime = showFromLibraries(showLibrary, null)!;
+    expect(runtime.songs).toEqual([{ id: 'song', name: 'Song', sections: [
+      { id: 'active', name: 'Active', performanceGraphKeys: ['graph:midi', 'graph:osc', 'graph:drum'], slots: { 'kick:0': ['graph:drum'] } },
+      { id: 'other', name: 'Other', performanceGraphKeys: ['graph:other'], slots: {} },
+    ] }]);
+
+    const project = defaultProject();
+    project.output.state = 'disabled';
+    const host = new VoiceEngineHost(project);
+    const events: Array<{ label?: string }> = [];
+    host.setMonitor((event) => events.push(event as { label?: string }));
+    host.prepareProject(project, runtime, selectionFromLibrary(showLibrary)).commit();
+    try {
+      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:midi', viewerOnly: true });
+      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:osc', viewerOnly: true });
+      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:other', viewerOnly: true });
+      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:unassigned', viewerOnly: true });
+      host.step(1000 / 120);
+
+      expect(events.filter((event) => event.label === 'Graph fired graph:midi')).toHaveLength(1);
+      expect(events.filter((event) => event.label === 'Graph fired graph:osc')).toHaveLength(1);
+      expect(events.filter((event) => event.label === 'Graph fired graph:other')).toHaveLength(0);
+      expect(events.filter((event) => event.label === 'Graph fired graph:unassigned')).toHaveLength(0);
+    } finally {
+      await host.stop();
+    }
   });
 
   it('preserves a persisted zero-section active selection through restore', async () => {

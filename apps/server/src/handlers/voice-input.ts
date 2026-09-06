@@ -14,6 +14,9 @@ export interface VoiceInputDeps {
   voiceHost: VoiceEngineHost | null;
   /** Broadcast a JSON message to all clients (`broadcastJson`). */
   broadcastJson(msg: ServerMessage): void;
+  /** Whether this message came from a read-only client. Viewer keyboard intents are limited to
+      the active performance section; editor/server paths retain their existing authority. */
+  viewer?: boolean;
 }
 
 /**
@@ -94,7 +97,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       // and emits the normal input-resolved / graph-fired diagnostics for a valid one. No
       // `input` broadcast: the fire is surfaced by those diagnostics + the server ingress line
       // (`monitorInput` in main.ts), so there is no note/address to echo for MIDI-learn.
-      voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity });
+      voiceHost.applyInput({ kind: 'fireGraph', graphKey: msg.graphKey, velocity: msg.velocity, viewerOnly: deps.viewer });
       return true;
     }
     if (msg.t === 'recallSection') {
