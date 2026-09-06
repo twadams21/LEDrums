@@ -3,6 +3,7 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { Framebuffer } from '../engine/framebuffer';
+import { compositeInto } from '../color/blend';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { createDefaultCompositor, type CompositorFrame } from './compositor';
 import {
@@ -16,6 +17,7 @@ import {
   type Voice,
 } from './types';
 import { getEffect } from '../effects/registry';
+import { sparkler } from '../effects/impl/sparkler';
 
 // ---- fixtures (mirror engine.test.ts so the bridge is exercised end-to-end) ----
 
@@ -520,7 +522,7 @@ describe('Compositor — voice timebase / restart-on-trigger (S25)', () => {
 /** The nine effects converted in this slice. All restart on retrigger. */
 const S26_VOICE_EFFECTS = [
   'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs',
-  'gravity-wells', 'orbit-rings', 'comet-trails', 'temp-sweep',
+  'gravity-wells', 'orbit-rings', 'comet-trails', 'temp-sweep', 'sparkler', 'flame-flicker',
 ] as const;
 
 /** The subset that reads a phase clock (ctx.timeMs / ctx.transport) — for these the bridge's
@@ -653,7 +655,7 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
     const VOICE = new Set([
       // Tier 1 — runtime conversions (this slice)
       'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs', 'gravity-wells',
-      'orbit-rings', 'comet-trails', 'temp-sweep',
+      'orbit-rings', 'comet-trails', 'temp-sweep', 'sparkler', 'flame-flicker',
       // Tier 2 — intrinsic age-readers declared voice (byte-parity); chase landed in S25
       'chase', 'radial-wash', 'wave-collapse', 'whole-drum', 'whole-kit', 'follow-hoop',
       'burst', 'lightning',
@@ -669,7 +671,7 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
       'helix', 'wipe-3d', 'velocity-flames',
       'confetti-burst', 'pixel-accum', 'colour-melody', 'swing', 'sidechain', 'meter-eq',
     ]);
-    expect(VOICE.size + ABSOLUTE.size).toBe(41);
+    expect(VOICE.size + ABSOLUTE.size).toBe(43);
     for (const id of VOICE) expect(getEffect(id).timebase).toBe('voice');
     for (const id of ABSOLUTE) expect(getEffect(id).timebase ?? 'absolute').toBe('absolute');
   });
@@ -885,6 +887,28 @@ function rgbAt(f: Readonly<Float32Array>, pixel = 0): [number, number, number] {
 }
 
 describe('Gen3 Mix node — buffer composition', () => {
+  it('uses fire intensity as Mix coverage so dim pixels stay translucent over a background', () => {
+    const model = testModel();
+    const source = new Framebuffer(model.pixelCount);
+    sparkler.render({
+      model,
+      timeMs: 40,
+      dt: 16,
+      transport: transport(40),
+      triggers: [{ seq: 1, drumId: 'kick', note: 38, velocity: 1, timeMs: 0, ageMs: 40 }],
+    }, {
+      decayMs: 5000, density: 1, sparkMs: 45, crackle: 0, random: 0, core: 0,
+      hue: 0, saturation: 1, brightness: 0.25,
+    }, source, sparkler.createState!(model, 123));
+
+    const destination = new Float32Array([0, 0, 1, 1]);
+    compositeInto(destination, 0, source.rgba[0]!, source.rgba[1]!, source.rgba[2]!, source.rgba[3]!, 'normal', 1);
+    expect(source.rgba[3]).toBeGreaterThan(0);
+    expect(source.rgba[3]).toBeLessThan(1);
+    expect(destination[0]).toBeGreaterThan(0);
+    expect(destination[2]).toBeGreaterThan(0.7);
+  });
+
   it('composes multiple upstream effect routes into one output voice', () => {
     const { frame, voices } = renderMix(mixGraph([
       { id: 'a', effectId: 'red', y: 0 },

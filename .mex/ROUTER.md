@@ -36,6 +36,23 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #212 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Merged the current `origin/main` PR #212 effects work into this PR #210 branch. The merge
+preserves both the recall/navigation implementation and the Sparkler/Flame Flicker remediation;
+the generated design system was regenerated from the merged sources. Source: Trent's PR #212
+findings on Trent's MacBook Pro.
+
+**PR #210 keyboard section stepping blocker (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the PR #210 code blocker.
+Perform section arrows now call the existing `store.stepSetlist('section', delta)` seam, which
+delegates to core `relativeNavTarget`; the App dispatcher owns no section list, active-index math,
+or modulo wrap. Regression coverage proves middle movement, first/last resolver no-ops, and parity
+with the Sections/global arrow callback. Focused core/web tests, typecheck, production build,
+design-system generation, and a strict, visually inspected Perform capture pass. The second local
+full sweep reached all core (1,478 + 5 skipped), protocol, IO, worker, desktop, and most web/server
+tests, but the host volume exhausted space during concurrent temp/cache writes; CI remains the
+clean-volume full-sweep authority. No merge or release is authorized.
+
 **PR #210 remaining blockers + #211 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request. Integrated the current
 `origin/main` (#211) in merge commit `a448bd2c`, preserving the splice-material transport changes.

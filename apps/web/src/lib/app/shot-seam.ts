@@ -50,7 +50,7 @@ export interface ShotSeam {
       trigger. A source node added here gets a collision-free id, so `add:<kind>,select:<kind>`
       reliably reaches that kind's inspector even when the authored pad graphs carry ids that a
       fresh session's id counter would otherwise duplicate. */
-  newGraph(): void;
+  newGraph(): Promise<void>;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
   /** Author a one-effect graph, set the named params on it, place it in the active section
@@ -237,11 +237,24 @@ class ShotSeamImpl implements ShotSeam {
     else this.store.selectGraph(key);
   }
 
-  newGraph(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.store.createGraph();
-    this.added.clear();
-    this.lastAdded = null;
+  async newGraph(): Promise<void> {
+    await this.claimEdit(() => {
+      // Shot presets must author against a local editable song. A fresh dev session can boot on
+      // the canonical library reference, where createGraph is correctly a no-op; detach that
+      // reference through the real store seam before creating the graph the shot will inspect.
+      if (!this.store.activeSongIsLocal) {
+        const librarySongId = this.store.songRefs.includes(this.store.activeSongId)
+          ? this.store.activeSongId
+          : this.store.songRefs[0];
+        if (librarySongId) {
+          const detached = this.store.detachSongReference(librarySongId);
+          if (detached) this.store.setActiveSong(detached);
+        }
+      }
+      this.store.createGraph();
+      this.added.clear();
+      this.lastAdded = null;
+    });
   }
 
   addNode(kind: NodeKind): GraphNode | null {
@@ -256,30 +269,31 @@ class ShotSeamImpl implements ShotSeam {
     return node;
   }
 
-  fireEffect(generatorId: string, params: Record<string, number>): void {
-    if (this.store.canTakeover) this.store.takeover();
-    const section = this.store.activeSection;
-    if (!section) return;
-    const key = this.store.createGraph(`Shot ${generatorId}`);
-    const created = this.store.addNode('effect', 360, 200);
-    if (!created) return;
-    // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
-    // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
-    // re-resolve through the graph or the edit lands on a detached object.
-    const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
-    const target = live();
-    if (target) this.store.pickEffect(target, `gen:${generatorId}`);
-    for (const [paramKey, value] of Object.entries(params)) {
-      const node = live();
-      if (node) this.store.setParam(node, paramKey, value);
-    }
-    // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
-    // Output, but nothing drives it.
-    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
-    if (trigger) this.store.connect(trigger.id, created.id);
-    this.store.addGraphToSection(section.id, key);
-    this.firedGraphKey = key;
-    this.refire();
+  fireEffect(generatorId: string, params: Record<string, number>): Promise<void> {
+    return this.claimEdit(() => {
+      const section = this.store.activeSection;
+      if (!section) return;
+      const key = this.store.createGraph(`Shot ${generatorId}`);
+      const created = this.store.addNode('effect', 360, 200);
+      if (!created) return;
+      // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
+      // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
+      // re-resolve through the graph or the edit lands on a detached object.
+      const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
+      const target = live();
+      if (target) this.store.pickEffect(target, `gen:${generatorId}`);
+      for (const [paramKey, value] of Object.entries(params)) {
+        const node = live();
+        if (node) this.store.setParam(node, paramKey, value);
+      }
+      // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
+      // Output, but nothing drives it.
+      const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+      if (trigger) this.store.connect(trigger.id, created.id);
+      this.store.addGraphToSection(section.id, key);
+      this.firedGraphKey = key;
+      this.refire();
+    });
   }
 
   wait(ms: number): Promise<void> {
@@ -463,8 +477,8 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
-  openAddPopover(): void {
-    if (this.store.canTakeover) this.store.takeover();
+  async openAddPopover(): Promise<void> {
+    if (!this.store.canMutateSelectedGraph) await this.newGraph();
     this.shell.setView('trigger');
     document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
   }
@@ -725,21 +739,29 @@ class ShotSeamImpl implements ShotSeam {
    * and the capture shows stale state. Retry across a few frames until it lands (the same
    * shape `previewBackups` / `mockController` use to outlast a server echo). Dev-only.
    */
-  private claimEdit(mutate: () => void): void {
-    if (this.store.canTakeover) this.store.takeover();
-    if (!this.store.isViewer && this.store.project) {
-      mutate();
-      return;
-    }
-    let frames = 0;
-    const attempt = (): void => {
+  private claimEdit(mutate: () => void): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.store.canTakeover) this.store.takeover();
       if (!this.store.isViewer && this.store.project) {
         mutate();
+        resolve();
         return;
       }
-      if (frames++ < 60) requestAnimationFrame(attempt);
-    };
-    requestAnimationFrame(attempt);
+      let frames = 0;
+      const attempt = (): void => {
+        if (!this.store.isViewer && this.store.project) {
+          mutate();
+          resolve();
+          return;
+        }
+        if (frames++ >= 60) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(attempt);
+      };
+      requestAnimationFrame(attempt);
+    });
   }
 
   previewToasts(tone?: ToastTone): void {
@@ -783,7 +805,7 @@ class ShotSeamImpl implements ShotSeam {
         this.openGraph(arg);
         break;
       case 'new-graph':
-        this.newGraph();
+        return this.newGraph();
         break;
       case 'add':
         if (arg) this.addNode(arg as NodeKind);
@@ -815,8 +837,7 @@ class ShotSeamImpl implements ShotSeam {
           const [k, v] = splitOnce(pair.trim(), '=');
           if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
         }
-        this.fireEffect(head, params);
-        break;
+        return this.fireEffect(head, params);
       }
       case 'refire':
         this.refire();
@@ -838,8 +859,7 @@ class ShotSeamImpl implements ShotSeam {
         this.previewBackups();
         break;
       case 'add-popover':
-        this.openAddPopover();
-        break;
+        return this.openAddPopover();
       case 'search':
         this.setSearch(arg ?? '');
         break;
