@@ -753,6 +753,17 @@ export function padKey(drumId: string, zone: string): string {
 
 export type VoicePhase = 'attack' | 'sustain' | 'release';
 
+/** Reusable per-voice scratch for sparse splice-member transport. Coverage is derived from the
+ * current member buffers each frame and is intentionally not part of render checkpoints. */
+export interface SpliceMaterialCoverage {
+  memberCount: number;
+  unitCount: number;
+  /** Row-major member × partition-unit material flags. */
+  materialUnits: Uint8Array;
+  /** First material-bearing partition unit for each member, or -1 when empty. */
+  sourceUnitByMember: Int32Array;
+}
+
 /**
  * A live light instance: a hosted generator + resolved params + envelope playing on a
  * bus. Object-pooled inside the engine; `active` marks pool occupancy. Identity for
@@ -821,6 +832,8 @@ export interface Voice extends GeometryState {
    * other two motion modes ignore it.
    */
   spliceMotionMs?: number;
+  /** Reused coverage scratch for sparse splice fallback; rebuilt when member/unit capacity grows. */
+  spliceCoverage?: SpliceMaterialCoverage;
   /**
    * Resolved modifier chain (S28+): pure framebuffer transforms applied in order between
    * this voice's render and the compositor blend (see `modifiers/chain.ts`). Resolved from

@@ -35,6 +35,7 @@ const laterWindowListeners: Array<(event: KeyboardEvent) => void> = [];
 
 afterEach(() => {
   cleanup();
+  document.body.replaceChildren();
   for (const listener of laterWindowListeners) window.removeEventListener('keydown', listener);
   laterWindowListeners.length = 0;
 });
@@ -200,6 +201,52 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(duplicate).not.toHaveBeenCalled();
     expect(nativeDelete.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
+  });
+
+  it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {
+    const { store } = fixture();
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'slider');
+    const received = vi.fn();
+    control.addEventListener('keydown', received);
+
+    const arrow = key(control, 'ArrowRight');
+    const digit = key(control, '1');
+
+    expect(received).toHaveBeenCalledTimes(2);
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(digit.defaultPrevented).toBe(false);
+    expect(store.setActiveSection).not.toHaveBeenCalled();
+    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+  });
+
+  it('lets marked keyboard controls receive Perform arrows and digits inside a modal and popup', () => {
+    const { store } = fixture();
+    const modal = document.body.appendChild(document.createElement('div'));
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const modalControl = modal.appendChild(document.createElement('button'));
+    modalControl.setAttribute('data-keyboard-owner', 'roving');
+    const popup = document.body.appendChild(document.createElement('div'));
+    popup.setAttribute('data-keyboard-owner', 'popover');
+    const popupControl = popup.appendChild(document.createElement('button'));
+    popupControl.setAttribute('data-keyboard-owner', 'select');
+    const received = vi.fn();
+    modalControl.addEventListener('keydown', received);
+    popupControl.addEventListener('keydown', received);
+
+    const modalArrow = key(modalControl, 'ArrowLeft');
+    const modalDigit = key(modalControl, '2');
+    const popupArrow = key(popupControl, 'ArrowRight');
+    const popupDigit = key(popupControl, '3');
+
+    expect(received).toHaveBeenCalledTimes(4);
+    expect(modalArrow.defaultPrevented).toBe(false);
+    expect(modalDigit.defaultPrevented).toBe(false);
+    expect(popupArrow.defaultPrevented).toBe(false);
+    expect(popupDigit.defaultPrevented).toBe(false);
+    expect(store.setActiveSection).not.toHaveBeenCalled();
+    expect(store.fireSectionGraph).not.toHaveBeenCalled();
   });
 
   it('keeps ordinary Perform canvas arrows with the canvas and still fires a digit', () => {

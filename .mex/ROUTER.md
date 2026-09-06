@@ -36,6 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #206 keyboard-ownership gate + #211 integration (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. The
+App capture dispatcher now checks editable targets, then marked keyboard controls' relevant
+Perform arrows/digits, before modal/popup background suppression. Sliders, Selects, segmented,
+radio/toggle, and other marked controls inside or outside overlays receive those keys normally;
+non-editable modal chrome and menus still suppress background Backspace/Delete and Cmd/Ctrl
+shortcuts. Target-handler integration tests cover marked controls outside a modal and inside both
+modal and popup surfaces, while the prior Backspace/Cmd+D cases remain green. Current
+`origin/main` (#211) was merged with both Router histories and decision-log records preserved.
+Full tests, typecheck, and production build are green locally; CI is the remaining delivery gate.
+
 **PR #206 runtime follow-up + PR #209 integration (2026-09-06, local `fix/performance-key-ownership`):**
 The App capture dispatcher now yields first to editable text inside modal and popup surfaces, then
 consumes non-editable background shortcuts before later window/SectionsView/xyflow listeners.
@@ -50,6 +61,19 @@ unchanged. Focused tests/typechecks pass. This branch now also integrates curren
 (PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full tests,
 typecheck, and build pass locally. Pushed at `c681ee2c`; CI run `34006731850` is green for checks
 and desktop. PR #206 remains open and unmerged here.
+**Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
+commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's
+material from the selected source partition unit: destination/source bands use endpoint-to-endpoint
+proportional stretch with edge clamping, and empty units borrow the first material-bearing unit in
+partition order while an empty member stays empty. Coverage is reusable voice-owned scratch and is
+recomputed from current member buffers each frame. The web preview remains delegated to core; no
+independent renderer or UI controls were restored. Focused core (137 passed), full core (1,416
+passed / 4 skipped), web delegated parity (83 passed), typecheck/build evidence and the 2,300-pixel
+benchmark are recorded in the pending PR. Full repo typecheck/build remain blocked by existing
+server contract errors; full repo web tests also have existing WS-fixture and external workspace
+dependency failures. This PR must not merge until reviewed; it is a dependency for the later
+regeneration slice.
 
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.

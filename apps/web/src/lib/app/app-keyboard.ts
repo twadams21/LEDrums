@@ -50,15 +50,33 @@ export function dispatchAppKeyboard({
 }: AppKeyboardDispatcherOptions): void {
   const target = performanceKeyTarget(event);
   const modalOpen = target.inModal || shell.settingsPane !== null;
-  const popupOwnsKeys = target.inOpenPopup || target.inKeyboardControl;
-  const backgroundSurface = modalOpen || popupOwnsKeys;
 
   // Native text editing wins before any modal/popup suppression. This keeps Backspace/Delete and
-  // platform editing chords inside a dialog or popover in the browser's native path. A
-  // non-editable modal/popup target still needs to consume the app's own shortcut families at the
-  // capture boundary, before SectionsView/xyflow/window listeners can act on the hidden surface.
+  // platform editing chords inside a dialog or popover in the browser's native path.
   if (target.isEditableTarget) return;
 
+  // A marked control gets first refusal for the Perform keys that would otherwise be claimed by
+  // the app. This check must precede modal/popup suppression: a slider/select/segmented/radio/
+  // toggle may be portalled inside one of those surfaces and still needs its own arrow or digit.
+  if (target.inKeyboardControl) {
+    const performance = decidePerformanceKey({
+      key: event.key,
+      view: shell.view,
+      settingsOpen: false,
+      repeat: event.repeat,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      isEditableTarget: false,
+      inOpenPopup: false,
+      inKeyboardControl: false,
+      inFlowCanvas: target.inFlowCanvas,
+    });
+    if (performance.claim) return;
+  }
+
+  const backgroundSurface = modalOpen || target.inOpenPopup || target.inKeyboardControl;
   if (backgroundSurface) {
     const performance = decidePerformanceKey({
       key: event.key,
@@ -74,6 +92,10 @@ export function dispatchAppKeyboard({
       inKeyboardControl: false,
       inFlowCanvas: false,
     });
+    // Non-editable modal/popup chrome still owns the app shortcut boundary, before later
+    // SectionsView/xyflow/window listeners can act on the hidden surface. A marked control only
+    // bypasses this guard for its relevant Perform key; Backspace/Delete and registered chords
+    // remain suppressed there.
     if (isDeleteKey(event.key) || performance.claim || matchesShortcut(event, shortcuts, shortcutPlatform)) {
       event.preventDefault();
       event.stopPropagation();
@@ -81,8 +103,8 @@ export function dispatchAppKeyboard({
     return;
   }
 
-  // A modal or keyboard-active popup owns every key in its surface. In particular, do not let a
-  // portalled menu/popover duplicate or delete the graph hidden behind it.
+  // A modal or keyboard-active popup owns every app shortcut in its surface. In particular, do
+  // not let a portalled menu/popover duplicate or delete the graph hidden behind it.
   if (dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
 
   if (isDeleteKey(event.key)) {

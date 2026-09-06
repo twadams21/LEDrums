@@ -17,11 +17,13 @@ import {
   forEachPartitionUnit,
   forEachSpliceBand,
   forEachSpliceSegment,
+  firstUnitWithMaterial,
   isBlankSplice,
   resolveSplices,
   spliceDefAt,
   spliceFeatherPx,
   spliceOrderIndex,
+  spliceSourceOffset,
   tintPixel,
   unitEnvelopeLevel,
   unitFadeInLevel,
@@ -142,6 +144,26 @@ describe('slot helpers', () => {
     expect(isBlankSplice({ effectId: 'comet-trails', muted: true })).toBe(true);
     expect(isBlankSplice({ color: '#ff0000' })).toBe(false);
     expect(isBlankSplice({ effectId: 'comet-trails' })).toBe(false);
+  });
+
+  it('maps proportional source material to the selected band and clamps outside offsets', () => {
+    const source = { start: 10, width: 4 };
+    expect([0, 1, 2, 3].map((offset) => spliceSourceOffset(offset, 4, source))).toEqual([10, 11, 12, 13]);
+    // A wider destination stretches the whole source band. It never reads source pixels 9 or 14.
+    expect([0, 1, 2, 3, 4, 5, 6, 7].map((offset) => spliceSourceOffset(offset, 8, source))).toEqual([10, 10, 11, 11, 12, 12, 13, 13]);
+    expect(spliceSourceOffset(-99, 8, source)).toBe(10);
+    expect(spliceSourceOffset(99, 8, source)).toBe(13);
+    expect(spliceSourceOffset(0, 4, { start: 0, width: 0 })).toBe(-1);
+  });
+
+  it('maps a narrower destination across the full source band', () => {
+    const source = { start: 20, width: 8 };
+    expect([0, 1, 2, 3].map((offset) => spliceSourceOffset(offset, 4, source))).toEqual([20, 22, 25, 27]);
+  });
+
+  it('chooses the first material-bearing unit and leaves an empty member empty', () => {
+    expect(firstUnitWithMaterial(Uint8Array.from([0, 1, 1, 0]), 0, 4)).toBe(1);
+    expect(firstUnitWithMaterial(Uint8Array.from([0, 0, 0, 0]), 0, 4)).toBe(-1);
   });
 });
 
