@@ -24,7 +24,7 @@
   }: Props = $props();
 </script>
 
-<span class={['tgl', klass]}>
+<span class={['tgl', klass]} data-keyboard-owner="roving">
   <Toggle.Root bind:pressed onPressedChange={onChange} {disabled} aria-label={ariaLabel} class="tgl-btn">
     {pressed ? onLabel : offLabel}
   </Toggle.Root>

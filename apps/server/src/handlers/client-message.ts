@@ -15,9 +15,10 @@ import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
 // ---------------------------------------------------------------------------
 
 /**
- * Engine inputs come from the drummer's LOCAL hardware (MIDI notes, OSC, transport recalls) and
- * always drive the engine regardless of who holds the editor slot — they are NOT authoring. The
- * editor lock never gates them, so the drummer can keep playing while someone else edits.
+ * Engine inputs come from the drummer's local hardware (MIDI notes, OSC, transport recalls) or
+ * the Perform computer keyboard (`fireGraph`) and always drive the engine regardless of who holds
+ * the editor slot — they are NOT authoring. The editor lock never gates them, so a performer can
+ * play while someone else edits.
  */
 const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
   'midi',
@@ -26,6 +27,7 @@ const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
   'programChange',
   'key',
   'recallSection',
+  'fireGraph',
 ]);
 
 function isMidiChannelMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
@@ -176,7 +178,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     relayToOthers,
     monitor,
   } = deps;
-  const voiceDeps = { voiceHost, broadcastJson };
+    const voiceDeps = { voiceHost, broadcastJson, viewer: false };
   const replacement = deps.replacement ?? createProjectReplacement({
     host, voiceHost,
     readCurrent: () => ({ project: host.engine.getProject(), showLibrary: null, songLibrary: null }),
@@ -492,6 +494,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
 
     // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the voice-only
     // types are consumed as no-ops; midi/osc fall through to the reducer below.
+    voiceDeps.viewer = !clients.canMutate(ws);
     if (handleVoiceInput(msg, voiceDeps)) return;
 
     // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.

@@ -36,6 +36,41 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
+popup ownership now counts only open surfaces: Bits `data-state="open"`, native popover/open state,
+or the explicit `data-keyboard-open` marker. Closed mounted/force-mounted listboxes, menus, and
+items—including exit-animation state—no longer swallow Perform keys; items inherit ownership only
+from an open owning surface. Focused tests cover closed roots/items, exit/forceMount, open portals,
+nested items, native popovers, and the shared marker. Typecheck and full tests are green; commit,
+push, and CI verification are pending.
+
+**PR #206 keyboard-ownership gate + #211 integration (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. The
+App capture dispatcher now checks editable targets, then marked keyboard controls' relevant
+Perform arrows/digits, before modal/popup background suppression. Sliders, Selects, segmented,
+radio/toggle, and other marked controls inside or outside overlays receive those keys normally;
+non-editable modal chrome and menus still suppress background Backspace/Delete and Cmd/Ctrl
+shortcuts. Target-handler integration tests cover marked controls outside a modal and inside both
+modal and popup surfaces, while the prior Backspace/Cmd+D cases remain green. Current
+`origin/main` (#211) was merged with both Router histories and decision-log records preserved.
+Full tests, typecheck, and production build are green locally. CI run `34009619438` is green for
+checks and desktop. PR #206 remains open and unmerged.
+
+**PR #206 runtime follow-up + PR #209 integration (2026-09-06, local `fix/performance-key-ownership`):**
+The App capture dispatcher now yields first to editable text inside modal and popup surfaces, then
+consumes non-editable background shortcuts before later window/SectionsView/xyflow listeners.
+Viewer `fireGraph` intents are checked in core against the active runtime section's exact
+performance list or legacy slot grid; editor and pre-setlist runtime paths retain unrestricted
+behavior. The remaining cold-restore defect is fixed by the pure core
+`voice.runtimeSectionFromGraphKeys()` conversion, shared by server `showFromLibraries()` and web
+`buildShow()`: every section preserves its exact flat `performanceGraphKeys` list while retaining
+drum-derived slot routing. A server regression proves cold-restored MIDI/OSC graphs fire for the
+active viewer, while other-section and unassigned graphs remain rejected and the drum slot remains
+unchanged. Focused tests/typechecks pass. This branch now also integrates current `origin/main`
+(PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full tests,
+typecheck, and build pass locally. Pushed at `c681ee2c`; CI run `34006731850` is green for checks
+and desktop. PR #206 remains open and unmerged here.
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
 commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's
