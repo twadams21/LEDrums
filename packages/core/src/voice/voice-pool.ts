@@ -52,6 +52,7 @@ export function deactivateVoice(v: Voice): void {
   v.renderModel = undefined;
   v.renderGenerator = undefined;
   v.genState = null;
+  v.materialCycle = undefined;
   v.modState = undefined;
   v.mixInputs = undefined;
   v.spliceInputs = undefined;
@@ -179,6 +180,7 @@ export class VoicePool {
       ? (effect.generatorId ?? null)
       : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
+    slot.materialCycle = undefined;
     slot.renderModel = undefined;
     slot.renderGenerator = undefined;
     /** Realise a composite member (Mix branch or splice) into a sub-voice. A member whose
@@ -288,6 +290,7 @@ function makeVoiceSlot(): Voice {
     seed: 0,
     generatorId: null,
     genState: null,
+    materialCycle: undefined,
     modifiers: undefined,
     modState: undefined,
     modulations: undefined,

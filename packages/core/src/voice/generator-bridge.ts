@@ -12,19 +12,22 @@
  * is fed ONE synthetic trigger representing its own originating hit (age grows with the
  * voice; seq is stable so accumulators fire once).
  *
- * Per-frame scratch — one {@link Framebuffer}, one {@link RenderContext}, one
- * {@link Trigger}, and the per-generator default-param cache — is owned by the bridge
- * instance and reused across every voice in the frame; the only per-generator-voice
- * allocation is the merged params object (generator defaults overlaid with live params).
+ * Per-frame scratch — two bounded {@link Framebuffer}s for the optional material crossfade,
+ * one {@link RenderContext}, one {@link Trigger}, and the per-generator default-param cache —
+ * is owned by the bridge instance and reused across every voice in the frame. Ordinary voices
+ * and ordinary splice frames still use one generator render; only a life boundary uses the
+ * second scratch buffer.
  */
 import { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
-import { defaultParams, type ResolvedParams } from '../effects/types';
+import { defaultParams, type EffectGenerator, type ResolvedParams } from '../effects/types';
 import { tryGetEffect } from '../effects/registry';
 import { applyScopedModifierChain } from '../modifiers/chain';
 import type { PixelRange } from '../modifiers/types';
 import type { ModSampleCtx } from './modulation';
+import { deriveSeed } from './prng';
+import type { MaterialCycleState } from './geometry-state';
 import type { Voice } from './types';
 
 /** Renders hosted-generator voices into a destination framebuffer. Call {@link
@@ -42,11 +45,97 @@ export interface GeneratorBridge {
    * the voice's life phase + transport) lets a modified generator's chain modulate its
    * modifier params (doc 10); it is inert for an unmodified / unmodulated voice.
    */
-  renderVoice(v: Voice, model: PixelModel, timeMs: number, level: number, ranges: readonly PixelRange[], dst: Framebuffer, modCtx: ModSampleCtx): void;
+  renderVoice(
+    v: Voice,
+    model: PixelModel,
+    timeMs: number,
+    level: number,
+    ranges: readonly PixelRange[],
+    dst: Framebuffer,
+    modCtx: ModSampleCtx,
+    /** Declared life of splice material. Zero keeps the ordinary one-state path. */
+    materialCycleMs?: number,
+  ): void;
 }
 
-export function createGeneratorBridge(): GeneratorBridge {
+/** A material cycle is intentionally short-lived: only the outgoing generation survives
+ * long enough to crossfade into its fresh successor. Two generator renders is the maximum
+ * cost at a boundary; ordinary frames stay at one. */
+const MATERIAL_CROSSFADE_MS = 100;
+const MATERIAL_SEED_SALT = 0x51ce1e;
+const MATERIAL_SEQ_SALT = 0x6c9e3779;
+
+function positiveAge(timeMs: number, bornAtMs: number): number {
+  const age = timeMs - bornAtMs;
+  return age > 0 ? age : 0;
+}
+
+function cycleSeed(base: number, cycleIndex: number): number {
+  return cycleIndex === 0 ? base : deriveSeed(base, (cycleIndex + MATERIAL_SEED_SALT) | 0);
+}
+
+function cycleSeq(base: number, cycleIndex: number): number {
+  if (cycleIndex === 0) {
+    const seq = Number(base);
+    return Number.isFinite(seq) && seq > 0 ? seq : 1;
+  }
+  return deriveSeed(base, (cycleIndex + MATERIAL_SEQ_SALT) | 0) || 1;
+}
+
+function voiceSeq(id: string): number {
+  const seq = Number(id.slice(1));
+  return Number.isFinite(seq) && seq > 0 ? seq : 1;
+}
+
+function materialCycleFor(
+  v: Voice,
+  model: PixelModel,
+  generator: EffectGenerator,
+  timeMs: number,
+  cycleMs: number,
+): { cycle: MaterialCycleState; ageMs: number; cycleAgeMs: number; fadeMs: number } {
+  const ageMs = positiveAge(timeMs, v.bornAtMs);
+  const cycleIndex = Math.floor(ageMs / cycleMs);
+  const cycleAgeMs = ageMs - cycleIndex * cycleMs;
+  const fadeMs = Math.min(MATERIAL_CROSSFADE_MS, cycleMs * 0.25);
+  const baseSeq = voiceSeq(v.id);
+  let cycle = v.materialCycle;
+
+  if (!cycle || cycle.cycleIndex !== cycleIndex) {
+    const prior = cycle;
+    const oldState = prior && prior.cycleIndex < cycleIndex ? v.genState : null;
+    const oldCycleIndex = cycle?.cycleIndex ?? cycleIndex - 1;
+    const currentSeed = cycleSeed(v.seed, cycleIndex);
+    const currentState = generator.createState?.(model, currentSeed);
+    cycle = {
+      cycleIndex,
+      currentSeed,
+      currentSeq: cycleSeq(baseSeq, cycleIndex),
+      currentRendered: false,
+      previous: {
+        cycleIndex: oldCycleIndex,
+        seed: prior?.currentSeed ?? cycleSeed(v.seed, oldCycleIndex),
+        seq: prior?.currentSeq ?? cycleSeq(baseSeq, oldCycleIndex),
+        state: oldState,
+      },
+    };
+    // No previous generation exists on a voice's first material render. A long first tick
+    // still starts directly at its deterministic cycle rather than crossfading from null.
+    if (!prior || cycleIndex < oldCycleIndex || oldCycleIndex < 0) cycle.previous = null;
+    v.materialCycle = cycle;
+    v.genState = currentState ?? null;
+  }
+
+  // The outgoing state is useful only during its boundary window. Release it before the
+  // next cycle so a particle/emitter state cannot accumulate one retained generation per
+  // cycle. The checkpoint captures this ownership transition like any other render state.
+  if (cycle.previous && cycleAgeMs >= fadeMs) cycle.previous = null;
+  return { cycle, ageMs, cycleAgeMs, fadeMs };
+}
+
+export function createGeneratorBridge(resolveEffect: (id: string) => EffectGenerator | undefined = tryGetEffect): GeneratorBridge {
   let genScratch: Framebuffer | null = null;
+  let genScratchAlt: Framebuffer | null = null;
   /** Defaults belong to the registry adapter, not its id (live upserts can replace it). */
   const genDefaults = new WeakMap<object, ResolvedParams>();
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
@@ -67,6 +156,7 @@ export function createGeneratorBridge(): GeneratorBridge {
       genCtx = null;
       frameTransport = null;
       genScratch = null;
+      genScratchAlt = null;
     },
     beginFrame(model, timeMs, dt, transport): void {
       frameTransport = transport;
@@ -80,9 +170,9 @@ export function createGeneratorBridge(): GeneratorBridge {
       }
     },
 
-    renderVoice(v, model, timeMs, level, ranges, dst, modCtx): void {
+    renderVoice(v, model, timeMs, level, ranges, dst, modCtx, cycleMs = 0): void {
       if (!ranges.length) return;
-      const gen = tryGetEffect(v.generatorId!);
+      const gen = resolveEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
       if (!genCtx || !frameTransport) return; // beginFrame not called this frame (never happens in practice)
       if (!genScratch || genScratch.pixelCount !== model.pixelCount) {
@@ -90,11 +180,9 @@ export function createGeneratorBridge(): GeneratorBridge {
       }
       if (v.renderGenerator !== gen) {
         v.genState = null;
+        v.materialCycle = undefined;
         v.renderGenerator = gen;
       }
-      // Build per-voice state lazily and persist it for the voice's life. The voice's
-      // per-trigger seed (item C) decorrelates RNG-backed effects across fires.
-      if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
 
       // Resolved params: generator defaults (incl. enum/colour) overlaid with the
       // voice's live numeric/bool params (envelopes already applied by the engine).
@@ -110,59 +198,74 @@ export function createGeneratorBridge(): GeneratorBridge {
         if (val !== undefined) params[k] = val;
       }
 
-      // Synthetic single trigger = this voice's originating hit. The voice model
-      // has no live trigger stream: age grows with the voice (so age-driven
-      // generators — washes, decays, cascades — animate), and seq is stable across
-      // frames (so accumulators / particle spawns fire exactly once per voice).
-      const seq = Number(v.id.slice(1));
-      genTrigger.seq = Number.isFinite(seq) && seq > 0 ? seq : 1;
-      genTrigger.drumId = v.sourceDrumId ?? '';
-      genTrigger.velocity = v.velocity;
-      genTrigger.note = Math.round(v.velocity * 127);
-      genTrigger.timeMs = v.bornAtMs;
-      const age = timeMs - v.bornAtMs;
-      genTrigger.ageMs = age > 0 ? age : 0;
+      const normalAge = positiveAge(timeMs, v.bornAtMs);
+      const material = cycleMs > 0 ? materialCycleFor(v, model, gen, timeMs, cycleMs) : null;
+      const frameDt = genCtx.dt;
 
-      // An authored envelope OWNS this voice's decay (F5). The generator is told so it can
-      // suppress its own age fade (`lifeFade`) rather than multiplying a second one under the
-      // curve — the composite below already scales by the level the envelope produced.
-      genCtx.authoredDecay = v.lifeEnvelope != null;
-
-      // Timebase: swap the clock the generator reads, without changing its signature.
-      // 'absolute' (default) — the engine's wall-clock + transport, exactly as before, so
-      //   free-running base/ambient effects are byte-for-byte unchanged.
-      // 'voice' — a hit-relative clock: ctx.timeMs = trig.ageMs and a voice-local transport
-      //   whose beat is derived from age×bpm (so beat-indexed effects like chase start at
-      //   their start position on the hit and restart on retrigger, since a retrigger is a
-      //   new voice whose age is 0).
-      if ((gen.timebase ?? 'absolute') === 'voice') {
-        const ft = frameTransport;
-        const beats = (genTrigger.ageMs / 60000) * ft.bpm; // age×bpm; matches transport.beat's accumulation
-        voiceTransport.timeMs = genTrigger.ageMs;
+      const renderGeneration = (
+        state: unknown,
+        clockAgeMs: number,
+        seq: number,
+        cycleIndex: number,
+        out: Framebuffer,
+        dt: number,
+      ): void => {
+        // Synthetic trigger = this voice's originating hit, or this cycle's deterministic
+        // retrigger. The clock and transport are derived from the same cycle age, so a
+        // generator cannot observe a wrapped time with an unwrapped beat/age companion.
+        genTrigger.seq = seq;
+        genTrigger.drumId = v.sourceDrumId ?? '';
+        genTrigger.velocity = v.velocity;
+        genTrigger.note = Math.round(v.velocity * 127);
+        genTrigger.timeMs = v.bornAtMs + (material ? cycleIndex * cycleMs : 0);
+        genTrigger.ageMs = clockAgeMs;
+        genCtx!.dt = dt;
+        genCtx!.authoredDecay = v.lifeEnvelope != null;
+        const ft = frameTransport!;
+        const beats = (clockAgeMs / 60000) * ft.bpm;
+        voiceTransport.timeMs = clockAgeMs;
         voiceTransport.beat = beats;
         voiceTransport.bar = Math.floor(beats / ft.beatsPerBar);
         voiceTransport.beatInBar = beats - voiceTransport.bar * ft.beatsPerBar;
         voiceTransport.bpm = ft.bpm;
         voiceTransport.beatsPerBar = ft.beatsPerBar;
         voiceTransport.playing = ft.playing;
-        genCtx.timeMs = genTrigger.ageMs;
-        genCtx.transport = voiceTransport;
+        // A splice material cycle is a deliberate fresh clock for both hosting styles. The
+        // ordinary path below preserves absolute effects' free-running transport exactly.
+        const cycleClock = material !== null;
+        const voiceClock = cycleClock || (gen.timebase ?? 'absolute') === 'voice';
+        genCtx!.timeMs = voiceClock ? clockAgeMs : timeMs;
+        genCtx!.transport = voiceClock ? voiceTransport : ft;
+        out.clear();
+        gen.render(genCtx!, params, out, state as never);
+      };
+
+      if (!material) {
+        if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
+        renderGeneration(v.genState, normalAge, voiceSeq(v.id), 0, genScratch, frameDt);
       } else {
-        genCtx.timeMs = timeMs;
-        genCtx.transport = frameTransport;
+        renderGeneration(v.genState, material.cycleAgeMs, material.cycle.currentSeq, material.cycle.cycleIndex, genScratch, material.cycle.currentRendered ? frameDt : material.cycleAgeMs);
+        material.cycle.currentRendered = true;
+        const previous = material.cycle.previous;
+        const weight = previous && material.cycleAgeMs < material.fadeMs
+          ? 1 - material.cycleAgeMs / material.fadeMs
+          : 0;
+        if (previous && weight > 0) {
+          if (!genScratchAlt || genScratchAlt.pixelCount !== model.pixelCount) genScratchAlt = new Framebuffer(model.pixelCount);
+          renderGeneration(previous.state, cycleMs + material.cycleAgeMs, previous.seq, previous.cycleIndex, genScratchAlt, frameDt);
+          const current = genScratch.rgba;
+          const old = genScratchAlt.rgba;
+          for (let i = 0; i < current.length; i++) current[i] = current[i]! * (1 - weight) + old[i]! * weight;
+        }
       }
 
-      genScratch.clear();
-      gen.render(genCtx, params, genScratch, v.genState);
-
-      // Modifier chain (media effects) — pure framebuffer transforms applied between render
-      // and blend, over the voice's pixel range. Only modified voices pay this; unmodified
-      // voices fall straight through to the composite loop (zero-alloc path preserved).
-      // Modifiers inherit the host voice's local clock (age) — never re-derived downstream.
+      // Modifier chain (media effects) runs once over the assembled material. A crossfade
+      // must not advance a stateful modifier twice or make its output depend on the frame's
+      // position inside the regeneration window.
       const mods = v.modifiers;
       if (mods && mods.length) {
         if (!v.modState) v.modState = [];
-        applyScopedModifierChain(mods, v.modState, genScratch, ranges, model, genTrigger.ageMs, genCtx.dt, modCtx);
+        applyScopedModifierChain(mods, v.modState, genScratch, ranges, model, normalAge, genCtx.dt, modCtx);
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is

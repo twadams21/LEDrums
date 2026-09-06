@@ -24,6 +24,7 @@ import { ensureGeometryState } from './geometry-state';
 import { createRenderCheckpoint } from './render-checkpoint';
 import { createGeneratorBridge } from './generator-bridge';
 import { applyScopedModifierChain } from '../modifiers/chain';
+import { materialCycleMs } from '../effects/voice-life';
 import { compositeInto } from '../color/blend';
 import type { PixelRange } from '../modifiers/types';
 import { parseHoopTarget as parseScopeTarget, type HoopTarget } from './scope';
@@ -128,6 +129,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
     seed: input.seed,
     generatorId: input.generatorId,
     genState: input.genState,
+    materialCycle: input.materialCycle,
     renderModel: input.renderModel,
     renderGenerator: input.renderGenerator,
     mixInputs: undefined,
@@ -155,6 +157,7 @@ function mixInputVoice(input: MixInput, host: Voice): Voice {
 
 function syncMixInputState(input: MixInput, rendered: Voice): void {
   input.genState = rendered.genState;
+  input.materialCycle = rendered.materialCycle;
   input.renderGenerator = rendered.renderGenerator;
   input.modState = rendered.modState;
 }
@@ -411,7 +414,17 @@ export function createDefaultCompositor(): PresentationCompositor {
             }
             const memberVoice = mixInputVoice(member, v);
             const memberCtx = modCtxFor(memberVoice, frameCtx);
-            generators.renderVoice(memberVoice, model, timeMs, 1, ranges, buf, memberCtx);
+            // A splice may carry a hit-driven effect farther than that effect's own visible
+            // life. The bridge owns the bounded fresh-state cycle and renders at most one extra
+            // generation during its short boundary crossfade; the splice still receives one
+            // reusable material buffer per member and #211 remains the only transport seam.
+            // Life is an authored material property, so modulation of a live numeric value must
+            // not resize or reset the member's lifecycle mid-voice. This mirrors the spawn-time
+            // voice-life resolution and keeps cycle boundaries deterministic.
+            const cycleMs = maxCascadeDelayMs(model, cfg) > 0
+              ? materialCycleMs(memberVoice.generatorId, member.params, frame.transport.bpm)
+              : 0;
+            generators.renderVoice(memberVoice, model, timeMs, 1, ranges, buf, memberCtx, cycleMs);
             syncMixInputState(member, memberVoice);
           }
 

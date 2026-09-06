@@ -1079,6 +1079,32 @@ describe('splice — effects inside a splice', () => {
     expect(Array.from(later)).not.toEqual(Array.from(early));
   });
 
+  it('regenerates a short-lived stateful member before a long cascade reaches the far drum', () => {
+    const graph = spliceGraph([{ effectId: 'fx', params: { lifeMs: 100, echoes: 1 } }], {
+      spliceCount: 1,
+      splicePartition: 'hoop',
+      spliceDrumOffsetMode: 'time',
+      spliceDrumOffsetMs: 500,
+      spliceWaitMode: 'pulse',
+      spliceAttackMs: 0,
+      spliceHoldMs: 200,
+      spliceReleaseMs: 100,
+      mode: 'loop',
+    });
+    const engine = createVoiceBusEngine();
+    const model = testModel();
+    engine.setModel(model);
+    engine.setShow(show(graph, [sparseEffect('fx', 'drum-sonar')]));
+    engine.applyInput(hit(0));
+    runTo(engine, 520);
+    const frame = engine.frame();
+    let farPeak = 0;
+    for (let i = 8; i < 16; i++) {
+      farPeak = Math.max(farPeak, frame[i * 4]!, frame[i * 4 + 1]!, frame[i * 4 + 2]!);
+    }
+    expect(farPeak, 'the far drum receives fresh material during its turn').toBeGreaterThan(0.05);
+  });
+
   it('moves every registry effect over sampled times without vacuous empty-frame passes', () => {
     const times = [40, 160, 360, 640, 960];
     const unobserved: string[] = [];

@@ -49,6 +49,27 @@ export function resolveVoiceSustainMs(
 }
 
 /**
+ * Resolve the regeneration period for material carried by a splice.
+ *
+ * This intentionally reads the declared effect life, not the voice sustain. `factor` belongs
+ * to the voice-tail contract above (for example, an exponential time constant multiplied by
+ * its visibility tail); using it here would regenerate only after the material had become an
+ * ember. A missing declaration or zero/non-positive resolved value returns 0 and leaves the
+ * existing one-render path unchanged. Invalid values use the effect spec default, matching the
+ * tolerant parameter-reader contract used by the generator itself.
+ */
+export function materialCycleMs(generatorId: string | null | undefined, params: ResolvedParams, bpm: number): number {
+  if (!generatorId) return 0;
+  const generator = tryGetEffect(generatorId);
+  const life = generator?.voiceLife;
+  if (!life) return 0;
+  const spec = generator.paramSpec.find((s) => s.key === life.key);
+  const declared = Math.max(0, pnum(params, life.key, typeof spec?.default === 'number' ? spec.default : 0));
+  if (!(declared > 0)) return 0;
+  return life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
+}
+
+/**
  * What a spawning voice needs in order to live out its authored life.
  *
  * `spanMs` is the real-time width of the envelope's x axis — the SAME number

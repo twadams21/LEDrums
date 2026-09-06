@@ -36,6 +36,25 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR pending):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the stateful-effect review
+of PR #200 commit `703fa7f5`, and dependent on merged PR #211 material transport. A splice member
+with a declared effect life now gets deterministic, engine-owned material cycles: each boundary
+creates fresh generator state with cycle-specific seed/sequence and a coherent local clock,
+age, dt, and transport. At most one previous cycle is retained for a 100ms bounded crossfade;
+ordinary frames render once and modifiers run once after the assembled material. Cycle state is
+owned by each voice/member, included in render checkpoints, and cleared on generator, model,
+show, and voice lifecycle changes. No-life effects and non-cascading splices retain the ordinary
+path. `materialCycleMs` reads declared effect life and beats conversion, deliberately ignores the
+voice-tail factor. Focused core coverage proves 3+ cycles for stateless, voice-timebase, emitter,
+and particle effects, far-drum intensity, determinism, modifiers/Mix, reset/checkpoint lifetime,
+and failure of time-only wrapping. The opt-in 2,300-pixel/8-member benchmark measured Plasma
+p50 12.45ms/p95 13.17ms and Confetti Burst p50 0.73ms/p95 4.63ms against a 16.7ms frame budget.
+Core tests/typecheck and the core-backed web parity tests pass. Full repo typecheck/build remain
+blocked by existing server contract errors; full repo tests also retain the existing WS fixture
+failure and external `ledrums-setlist-nav` Testing Library path failures. This PR is pushed/opened
+for review only and must not merge until reviewed.
+
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
 commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's
