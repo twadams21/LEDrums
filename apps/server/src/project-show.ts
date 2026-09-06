@@ -72,14 +72,12 @@ export function showFromLibraries(showLibrary: unknown, songLibrary: unknown): v
     return { id: song.id, name: song.name, sections: array(song.sections).map((v) => {
       const section = object(v);
       if (typeof section.id !== 'string' || typeof section.name !== 'string') throw new Error('Invalid authored section');
-      const slots: Record<string, string[]> = {};
-      for (const key of array(section.graphs ?? [])) {
-        const graph = voice.graphAt(runtime.graphs, String(key));
-        if (!graph) throw new Error(`Missing section graph: ${String(key)}`);
-        const source = graph.nodes.find((n) => n.kind === 'trigger')?.source;
-        if (source?.kind === 'drum') (slots[`${source.drumId}:${source.zone}`] ??= []).push(String(key));
-      }
-      return { id: section.id, name: section.name, slots };
+      return voice.runtimeSectionFromGraphKeys({
+        id: section.id,
+        name: section.name,
+        graphKeys: array(section.graphs ?? []).map(String),
+        graphs: runtime.graphs,
+      });
     }) };
   });
   const scenes = array(authored.canvasScenes ?? []) as CanvasScene[];

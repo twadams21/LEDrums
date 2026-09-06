@@ -50,7 +50,6 @@ import {
   type Preset,
   type Show,
   type TriggerGraph,
-  type TriggerSource,
   type Voice,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
@@ -60,6 +59,7 @@ import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
 import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
 import { graphAt } from './graph-lookup';
+import { triggerSourceOf } from './runtime-setlist';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -1109,12 +1109,6 @@ export function createNullEngine(): RenderEngine {
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-/** A trigger graph's declared input source — the `trigger` node's `source`, or undefined
-    for a graph authored before the source model / with none bound. Mirrors the web sim. */
-function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
-  return graph.nodes.find((n) => n.kind === 'trigger')?.source;
-}
 
 function describeInputEvent(e: InputEvent): VoiceInputDescriptor {
   return {

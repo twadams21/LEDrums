@@ -11,7 +11,7 @@
 
 import { assertShowIntegrity, resolveEffectAlias, voice, type CanvasScene } from '@ledrums/core';
 import { referencedGraphs, type Song } from '../app/setlist';
-import { triggerSourceOf, type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
+import { type Bus, type EffectDef, type Preset, type Section, type TriggerGraph } from './sim';
 
 /** The slice of the store this adapter reads (kept narrow + read-only). */
 export interface ShowSource {
@@ -67,14 +67,11 @@ export function buildShow(source: ShowSource): voice.Show {
     songs: (source.songs ?? []).map((song) => ({
       id: song.id,
       name: song.name,
-      sections: song.sections.map((sec) => ({
+      sections: song.sections.map((sec) => voice.runtimeSectionFromGraphKeys({
         id: sec.id,
         name: sec.name,
-        performanceGraphKeys: [...sec.graphs],
-        // A section is a FLAT ordered graph list, but the engine still resolves a pad
-        // hit by a padKey-keyed slot grid — so bridge graphs → slots here (the explicit map
-        // this adapter's header promises). See sectionSlotsFromGraphs.
-        slots: sectionSlotsFromGraphs(sec.graphs, source.graphs),
+        graphKeys: sec.graphs,
+        graphs: source.graphs,
       })),
     })),
   };
@@ -104,27 +101,4 @@ function normalizeRuntimeGraphs(graphs: Record<string, TriggerGraph>): Record<st
   const out: Record<string, TriggerGraph> = {};
   for (const [key, graph] of Object.entries(graphs)) out[key] = voice.normalizeTriggerGraphToGen3(graph).graph as TriggerGraph;
   return out;
-}
-
-/**
- * Reconstruct the engine's per-pad slot grid (`SlotRefs`) from a section's flat graph
- * list: group each graph under its `drum` source's padKey `"drumId:zone"`, preserving list
- * order so layered same-source graphs keep their order. AUTHORED graphs with a `midi`/`osc`
- * source (or no source / an unknown key) are NOT pad-bound, so they're omitted — the server
- * fires those via direct trigger-source routing, not the section slot path.
- */
-function sectionSlotsFromGraphs(
-  graphs: readonly string[],
-  allGraphs: Record<string, TriggerGraph>,
-): Record<string, string[]> {
-  const slots: Record<string, string[]> = {};
-  for (const key of graphs) {
-    const g = allGraphs[key];
-    const src = g ? triggerSourceOf(g) : undefined;
-    if (src?.kind === 'drum') {
-      const pad = `${src.drumId}:${src.zone}`;
-      (slots[pad] ??= []).push(key);
-    }
-  }
-  return slots;
 }
