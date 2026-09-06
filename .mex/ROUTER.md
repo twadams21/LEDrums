@@ -36,6 +36,20 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
+commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's
+material from the selected source partition unit: destination/source bands use endpoint-to-endpoint
+proportional stretch with edge clamping, and empty units borrow the first material-bearing unit in
+partition order while an empty member stays empty. Coverage is reusable voice-owned scratch and is
+recomputed from current member buffers each frame. The web preview remains delegated to core; no
+independent renderer or UI controls were restored. Focused core (137 passed), full core (1,416
+passed / 4 skipped), web delegated parity (83 passed), typecheck/build evidence and the 2,300-pixel
+benchmark are recorded in the pending PR. Full repo typecheck/build remain blocked by existing
+server contract errors; full repo web tests also have existing WS-fixture and external workspace
+dependency failures. This PR must not merge until reviewed; it is a dependency for the later
+regeneration slice.
+
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
 The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
