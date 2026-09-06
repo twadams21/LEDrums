@@ -26,8 +26,9 @@ server state and `recalled` messages are observations, not commands.
    state handshake. Put `sessionId` on every accepted `recalled` message.
 3. Generate `sessionId` at the server boot/host boundary. Never put ordering state in deterministic
    core render context.
-4. On the client, reset recall ordering whenever `sessionId` changes. Hold the newest authoritative
-   recall pending until its canonical song and section resolve; retry after both library updates.
+4. On the client, reset recall ordering whenever `sessionId` changes. Stage state-handshake recalls
+   while the show/song libraries reconcile; hold the newest authoritative recall pending until its
+   canonical song and section resolve, then retry after both library updates.
 5. Treat a valid zero-section song as `(songId, null)`. A legacy top-level section must use
    `songId: null`; arbitrary song ids must fail closed.
 6. Keep accepted diagnostics and queue order at the engine-processing boundary. Do not broadcast
@@ -37,6 +38,8 @@ server state and `recalled` messages are observations, not commands.
 
 - Numeric revisions and sequences are not comparable across server sessions.
 - Do not advance the client ordering gate before canonical reference resolution.
+- Do not apply a staged handshake before `adoptLibrary()` / `activateDocument()` finishes; document
+  activation may restore the authored pointer over the temporarily visible server pointer.
 - A missing section must not be allowed to replace a valid current selection.
 - Reconnect and autosave `setShow` must not be followed by a cached `recallSection`.
 - Null section is a state value, not an instruction to retain the previous section look.

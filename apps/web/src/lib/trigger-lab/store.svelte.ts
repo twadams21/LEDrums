@@ -1872,7 +1872,11 @@ export class TriggerLab {
     const newestKnown = this.pendingRecall ?? this.appliedRecall;
     if (newestKnown && compareRecallIdentity(recall, newestKnown) <= 0) return;
     this.pendingRecall = recall;
-    this.tryApplyPendingRecall();
+    // A state handshake is only staged here. Its library may replace the active document below;
+    // applying it now would be immediately overwritten by adoptLibrary()/activateDocument().
+    // Accepted recall messages can apply immediately because they arrive after the document is
+    // already live. The state handler retries after both libraries have reconciled.
+    if (source === 'recalled') this.tryApplyPendingRecall();
   }
 
   private tryApplyPendingRecall(): void {
@@ -1880,6 +1884,7 @@ export class TriggerLab {
     if (!recall || recall.sessionId !== this.recallSessionId) return;
     const song = recall.songId === null ? null : this.resolvedSongs.find((candidate) => candidate.id === recall.songId);
     if (recall.songId !== null && !song) return;
+    if (song && recall.sectionId === null && song.sections.length > 0) return;
     if (song && recall.sectionId !== null && !song.sections.some((section) => section.id === recall.sectionId)) return;
 
     // A null section is valid for a real zero-section song. A null song is the legacy top-level

@@ -64,6 +64,25 @@ describe('persisted library → runtime Show restore boundary', () => {
     expect(runtime.graphs['lib:g']).not.toBe(graphs['lib:g']);
     expect({ showLibrary, songLibrary }).toEqual(before);
   });
+
+  it('preserves a persisted zero-section active selection through restore', async () => {
+    const showLibrary = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
+      graphs: {}, buses: [], effects: [], presets: [], songs: [{ id: 'empty-song', name: 'Empty', sections: [] }],
+      activeSongId: 'empty-song', activeSectionId: null,
+    } } } } };
+    const selection = selectionFromLibrary(showLibrary);
+    expect(selection).toEqual({ songId: 'empty-song', sectionId: null });
+
+    const project = defaultProject();
+    project.output.state = 'disabled';
+    const host = new VoiceEngineHost(project);
+    const stage = host.prepareProject(project, showFromLibraries(showLibrary, null), selection);
+    stage.commit();
+    try {
+      host.step(1000 / 120);
+      expect(host.getActiveSelection()).toEqual({ activeSongId: 'empty-song', activeSectionId: null });
+    } finally { await host.stop(); }
+  });
   it('null means no show, but malformed opaque envelopes are rejected rather than reusing an old show', () => {
     expect(showFromLibraries(null, null)).toBeNull();
     expect(() => showFromLibraries({ version: 2, data: 'invalid' }, null)).toThrow('Invalid authored');

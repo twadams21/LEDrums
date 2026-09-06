@@ -1561,6 +1561,18 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
     expect(e.getActiveSelection()).toEqual({ activeSongId: 'empty-song', activeSectionId: null });
   });
 
+  it('rejects a null section recall for a non-empty song', () => {
+    const e = createVoiceBusEngine();
+    e.setShow({
+      ...looksShow({}),
+      songs: [{ id: 'song1', name: 'Song 1', sections: [{ id: 'sec1', name: 'Sec 1', slots: {} }] }],
+    });
+    e.applyInput(recallSection('song1', null, 0));
+    e.tick(5, 5, transport(5));
+
+    expect(e.getActiveSelection()).toEqual({ activeSongId: 'song1', activeSectionId: 'sec1' });
+  });
+
   it('rejects an arbitrary song id on a legacy top-level section recall', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({}));

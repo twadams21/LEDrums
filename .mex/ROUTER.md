@@ -36,6 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #210 remaining blockers + #211 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request. Integrated the current
+`origin/main` (#211) in merge commit `a448bd2c`, preserving the splice-material transport changes.
+Recall validation now accepts `(songId, null)` only for a resolved zero-section song in core and
+web. Server library restore preserves that explicit selection. State handshakes stage the
+authoritative pointer until both libraries adopt, then apply the newest pending recall so a
+server pointer B cannot be overwritten by authored pointer A during `adoptLibrary()`.
+Regressions cover invalid nulls, zero-section restore, already-resolved canonical refs, delayed
+canonical adoption, and supersession. Full tests, typecheck, build, design-system generation,
+and strict Songs/Sections UI shots are green. Commit, push, and PR CI remain; do not merge.
+
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
 commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's

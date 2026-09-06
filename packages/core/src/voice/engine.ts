@@ -450,7 +450,15 @@ class VoiceBusEngine implements RenderEngine {
     const legacySection = !this.show.songs?.length && songId === null && sectionId !== null
       ? this.show.sections.find((candidate) => candidate.id === sectionId)
       : undefined;
-    if ((!song || (sectionId !== null && !section)) && !legacySection) return false;
+    // A null section identifies a real zero-section song. It must never silently turn a
+    // non-empty song into a song-only recall, because that would clear the active section look
+    // while leaving the engine on an arrangement that has a valid section to play.
+    const validSongRecall = song !== undefined && (
+      sectionId !== null
+        ? section !== undefined
+        : song.sections.length === 0
+    );
+    if (!validSongRecall && !legacySection) return false;
     this.activeSongId = song?.id ?? null;
     this.activeSectionId = sectionId;
     this.onDiagnostic?.({

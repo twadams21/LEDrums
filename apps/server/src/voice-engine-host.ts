@@ -169,7 +169,7 @@ export class VoiceEngineHost {
   }
 
   /** Stage a fresh runtime; never call setModel/setShow on the live engine mid-transaction. */
-  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId?: string; sectionId: string }): { applyOutput(): void; commit(): void } {
+  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId: string | null; sectionId: string | null }): { applyOutput(): void; commit(): void } {
     const model = buildPixelModel(project.kit);
     const dmxMap = buildDmxMap(project.kit, model);
     const engine = voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
