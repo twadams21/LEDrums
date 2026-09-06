@@ -36,6 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #213 sole cascade-maximum gate defect (2026-09-06, branch `fix/splice-material-regeneration`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #213 sole gate
+finding. Merged current `origin/main` at PR #210 merge `aa166610` via `d2872ad0`, preserving the
+recall/session protocol and Router history. `maxCascadeDelayMs` now walks actual drum/hoop pairs
+and reuses `spliceOrderIndex` plus `unitCascadeDelayMs`, including seeded random order without
+scratch allocation. The explicit heterogeneous `[4,2]` down-order regression is 500ms for
+`offset=100` and `drumOffset=200`; exhaustive parity covers all supported orders, signed/zero
+offsets, heterogeneous hoop counts, and hoop/drum/scope partitions. Core passed 1,500 tests and
+typecheck; CI run `34020270735` passed full checks and desktop. Commit `fa69e460` is pushed; PR
+#213 remains open and must not merge.
+
 **PR #212 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
 Merged the current `origin/main` PR #212 effects work into this PR #210 branch. The merge
 preserves both the recall/navigation implementation and the Sparkler/Flame Flicker remediation;
