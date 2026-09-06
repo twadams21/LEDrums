@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { listEffects } from '../effects/registry';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
@@ -19,6 +20,18 @@ function testModel(): PixelModel {
       drums: [
         { id: 'kick', diameterIn: 12, pixelsPerHoop: 4, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
         { id: 'snare', diameterIn: 10, pixelsPerHoop: 4, hoopSpacingMm: 50, origin: { x: 300, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+      ],
+    }),
+  );
+}
+
+function variableHoopModel(): PixelModel {
+  return buildPixelModel(
+    parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
+      drums: [
+        { id: 'kick', diameterIn: 12, pixelsPerHoop: 4, hoops: [{ pixelCount: 4 }, { pixelCount: 6 }], hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+        { id: 'snare', diameterIn: 10, pixelsPerHoop: 6, hoops: [{ pixelCount: 6 }, { pixelCount: 6 }], hoopSpacingMm: 50, origin: { x: 300, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
       ],
     }),
   );
@@ -93,7 +106,10 @@ function runTo(engine: ReturnType<typeof createVoiceBusEngine>, toMs: number, fr
 
 /** Fire the graph and sample the frame at `atMs` (past the 10ms attack, so level is 1). */
 function render(graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
-  const model = testModel();
+  return renderOnModel(testModel(), graph, effects, atMs);
+}
+
+function renderOnModel(model: PixelModel, graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
   const engine = createVoiceBusEngine();
   engine.setModel(model);
   engine.setShow(show(graph, effects));
@@ -942,6 +958,34 @@ describe('splice — effects inside a splice', () => {
     releaseMs: 100,
   });
 
+  const sparseEffect = (id: string, generatorId = 'whole-drum'): EffectDef => ({
+    id,
+    name: id,
+    generatorId,
+    busId: 'base',
+    scope: 'kit',
+    params: generatorId === 'meter-eq' ? [{ key: 'level', label: 'Level', kind: 'number', min: 0, max: 1, default: 0.5 }] : [],
+    attackMs: 10,
+    sustainMs: 60000,
+    releaseMs: 100,
+  });
+
+  const litBetween = (rgb: (i: number) => [number, number, number], start: number, end: number): boolean => {
+    for (let i = start; i < end; i++) {
+      const [r, g, b] = rgb(i);
+      if (r + g + b > 0) return true;
+    }
+    return false;
+  };
+
+  const expectLitRange = (rgb: (i: number) => [number, number, number], start: number, end: number, label: string): void => {
+    for (let i = start; i < end; i++) expect(rgb(i)[0] + rgb(i)[1] + rgb(i)[2], `${label} px${i}`).toBeGreaterThan(0);
+  };
+
+  const expectDarkRange = (rgb: (i: number) => [number, number, number], start: number, end: number, label: string): void => {
+    for (let i = start; i < end; i++) expect(rgb(i)[0] + rgb(i)[1] + rgb(i)[2], `${label} px${i}`).toBe(0);
+  };
+
   it('shows an effect only inside its own splice, leaving the others to their own content', () => {
     const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}]), [litEffect('fx')]);
     const [r, g, b] = rgb(0);
@@ -965,6 +1009,102 @@ describe('splice — effects inside a splice', () => {
     const [r, g, b] = rgb(2);
     expect(r + g + b, 'effect splice').toBeGreaterThan(0);
     expect(g + b, 'effect splice is not the flat red').toBeGreaterThan(0);
+  });
+
+  it('carries sparse material through rotation and step movement', () => {
+    const graph = (over: Partial<GraphNode>): TriggerGraph => spliceGraph([{ effectId: 'fx' }, {}], {
+      spliceCount: 2,
+      splicePartition: 'scope',
+      spliceHoldMs: 60000,
+      ...over,
+    });
+    const still = render(graph({ spliceRotationDeg: 0 }), [sparseEffect('fx')]);
+    expectLitRange(still.rgb, 0, 8, 'source band');
+    expectDarkRange(still.rgb, 8, 16, 'blank band');
+
+    const rotated = render(graph({ spliceRotationDeg: 180 }), [sparseEffect('fx')]);
+    expectDarkRange(rotated.rgb, 0, 8, 'vacated band');
+    expectLitRange(rotated.rgb, 8, 16, 'rotated material');
+
+    const stepped = render(graph({ spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100 }), [sparseEffect('fx')], 145);
+    expectDarkRange(stepped.rgb, 0, 8, 'vacated step band');
+    expectLitRange(stepped.rgb, 8, 16, 'stepped material');
+  });
+
+  it('uses the first material-bearing unit as a deterministic sparse fallback', () => {
+    const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [sparseEffect('fx')]);
+    // Whole Drum renders only kick (pixels 0-7). Every empty hoop copies the first kick hoop's
+    // selected source band, while the blank splice remains empty.
+    expectLitRange(rgb, 0, 2, 'kick hoop 1');
+    expectLitRange(rgb, 4, 6, 'kick hoop 2 borrowed');
+    expectLitRange(rgb, 8, 10, 'snare hoop 1 borrowed');
+    expectLitRange(rgb, 12, 14, 'snare hoop 2 borrowed');
+    expectDarkRange(rgb, 2, 4, 'blank band');
+    expectDarkRange(rgb, 10, 12, 'blank band');
+  });
+
+  it('stretches a source band into a wider destination without reading the neighbour', () => {
+    const { rgb } = renderOnModel(
+      variableHoopModel(),
+      spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }),
+      [sparseEffect('fx')],
+    );
+    // The first kick hoop is 4px and the first snare hoop is 6px. The source band is 2px and
+    // stretches across the destination's 3px band. The adjacent blank slot stays dark.
+    expectLitRange(rgb, 10, 13, 'stretched source band');
+    expectDarkRange(rgb, 13, 16, 'neighbouring source band is not sampled');
+  });
+
+  it('recomputes moving sparse footprints across frames instead of retaining stale coverage', () => {
+    const graph = spliceGraph([{ effectId: 'segments', params: {
+      segments: 2,
+      fire: 'all',
+      stagger: 0.2,
+      gap: 0,
+      feather: 0,
+      lifeBeats: 8,
+    } }], { spliceCount: 1, splicePartition: 'hoop', spliceHoldMs: 60000 });
+    const engine = createVoiceBusEngine();
+    const model = testModel();
+    engine.setModel(model);
+    engine.setShow(show(graph, [sparseEffect('segments', 'segments')]));
+    engine.applyInput(hit(0));
+    runTo(engine, 40);
+    const early = engine.frame().slice();
+    runTo(engine, 640, 40);
+    const later = engine.frame().slice();
+    const rgbAt = (frame: Float32Array) => (i: number): [number, number, number] => [frame[i * 4]!, frame[i * 4 + 1]!, frame[i * 4 + 2]!];
+    expect(litBetween(rgbAt(early), 0, 16)).toBe(true);
+    expect(litBetween(rgbAt(later), 0, 16)).toBe(true);
+    expect(Array.from(later)).not.toEqual(Array.from(early));
+  });
+
+  it('moves every registry effect over sampled times without vacuous empty-frame passes', () => {
+    const times = [40, 160, 360, 640, 960];
+    const unobserved: string[] = [];
+    const stranded: string[] = [];
+    for (const generator of listEffects()) {
+      if (generator.deprecated) continue;
+      let sawMaterial = false;
+      let sawTransportedMaterial = false;
+      for (const time of times) {
+        const memberParams: Record<string, number | string | boolean> = generator.id === 'segments'
+          ? { segments: 2, fire: 'all', gap: 0, feather: 0, lifeBeats: 8 }
+          : {};
+        const { rgb } = render(
+          spliceGraph([{ effectId: 'fx', params: memberParams }], { spliceCount: 1, splicePartition: 'hoop', spliceHoldMs: 60000 }),
+          [sparseEffect('fx', generator.id)],
+          time,
+        );
+        if (!litBetween(rgb, 0, 16)) continue;
+        sawMaterial = true;
+        if (litBetween(rgb, 8, 16)) sawTransportedMaterial = true;
+      }
+      if (!sawMaterial) unobserved.push(generator.id);
+      else if (!sawTransportedMaterial) stranded.push(generator.id);
+    }
+    expect(unobserved, 'effects must render at one sampled time').toEqual([]);
+    expect(stranded, 'effects with material must reach another drum').toEqual([]);
   });
 
   it('is deterministic: the same show and the same hits render the same frame twice', () => {

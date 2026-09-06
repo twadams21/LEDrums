@@ -110,6 +110,29 @@ export function spliceDefAt(splices: readonly SpliceDef[] | undefined, slot: num
   return splices[wrapIndex(slot, splices.length)];
 }
 
+/**
+ * Map a pixel offset inside a destination band to the corresponding pixel in its source band.
+ *
+ * Splice material uses proportional stretch: both band endpoints map to both source endpoints.
+ * The offset is clamped to the selected source band, so smudge ramps and a destination run that
+ * is wider than its source can never read a neighbouring source band. Negative and oversized
+ * offsets therefore stay at the selected band's edge rather than wrapping into another member.
+ */
+export function spliceSourceOffset(destinationOffset: number, destinationWidth: number, sourceBand: SpliceBand): number {
+  if (destinationWidth <= 0 || sourceBand.width <= 0) return -1;
+  const destination = Math.min(destinationWidth - 1, Math.max(0, Math.floor(destinationOffset)));
+  const sourceOffset = destinationWidth <= 1
+    ? 0
+    : Math.round((destination / (destinationWidth - 1)) * (sourceBand.width - 1));
+  return sourceBand.start + Math.min(sourceBand.width - 1, Math.max(0, sourceOffset));
+}
+
+/** Deterministic sparse fallback: partition order wins, and no material is represented by -1. */
+export function firstUnitWithMaterial(flags: Uint8Array, rowStart: number, unitCount: number): number {
+  for (let unit = 0; unit < unitCount; unit++) if (flags[rowStart + unit] === 1) return unit;
+  return -1;
+}
+
 /** A splice that renders nothing: muted, or carrying neither a colour nor an effect. */
 export function isBlankSplice(def: SpliceDef | undefined): boolean {
   if (!def || def.muted) return true;
@@ -408,7 +431,7 @@ export function forEachSpliceSegment(
   shiftPx: number,
   offsetSlots: number,
   featherPx: number,
-  visit: (slot: number, start: number, end: number, w0: number, w1: number) => void,
+  visit: (slot: number, start: number, end: number, w0: number, w1: number, bandIndex: number, bandOffset: number) => void,
 ): void {
   const count = bands.length;
   if (count === 0 || len <= 0) return;
@@ -419,7 +442,7 @@ export function forEachSpliceSegment(
   // half would leave a seam at every boundary between bands of different sizes.
   const half = Math.round(featherPx / 2);
 
-  const emit = (slot: number, from: number, to: number, w0: number, w1: number): void => {
+  const emit = (slot: number, bandIndex: number, bandOrigin: number, from: number, to: number, w0: number, w1: number): void => {
     if (to <= from) return;
     const span = to - from;
     let cursor = from;
@@ -428,7 +451,7 @@ export function forEachSpliceSegment(
       const chunk = Math.min(to - cursor, len - wrapped);
       const t0 = (cursor - from) / span;
       const t1 = (cursor + chunk - from) / span;
-      visit(slot, wrapped, wrapped + chunk, w0 + (w1 - w0) * t0, w0 + (w1 - w0) * t1);
+      visit(slot, wrapped, wrapped + chunk, w0 + (w1 - w0) * t0, w0 + (w1 - w0) * t1, bandIndex, cursor - bandOrigin);
       cursor += chunk;
     }
   };
@@ -442,12 +465,12 @@ export function forEachSpliceSegment(
     // empty and it is pure ramp — which is what a full-strength smudge IS, not a degenerate
     // case. `emit` drops empty segments on its own.
     if (half <= 0) {
-      emit(slot, start, start + band.width, 1, 1);
+      emit(slot, b, band.start + shift, start, start + band.width, 1, 1);
       continue;
     }
-    emit(slot, start - half, start + half, 0, 1);
-    emit(slot, start + half, start + band.width - half, 1, 1);
-    emit(slot, start + band.width - half, start + band.width + half, 1, 0);
+    emit(slot, b, band.start + shift, start - half, start + half, 0, 1);
+    emit(slot, b, band.start + shift, start + half, start + band.width - half, 1, 1);
+    emit(slot, b, band.start + shift, start + band.width - half, start + band.width + half, 1, 0);
   }
 }
 
