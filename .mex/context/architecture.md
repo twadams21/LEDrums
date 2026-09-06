@@ -49,6 +49,11 @@ Ownership audit: `docs/plans/2026-09-05-codebase-health-audit.md`. The follow-up
 is currently on `fix/health-integration` (not yet declared merged):
 - Core compositor/pool/envelope/member policies now also drive the offline Sim; geometry changes
   use immutable model identity, and modifier definitions explicitly declare scope execution policy.
+- Splice composition is also core-owned: members render once into reusable buffers, then the
+  compositor maps destination bands to the corresponding source material. The mapping is
+  endpoint-to-endpoint proportional stretch with edge clamping; sparse empty units borrow the
+  first current material-bearing unit in partition order, while an empty member remains empty.
+  Coverage is derived each frame into voice-owned scratch, so movement cannot reuse stale material.
 - The store owns document replacement and creates a fresh Sim; `document-history.ts` owns
   structurally shared, identity-guarded, byte-estimated checkpoints. Persistence materializes at
   debounce/explicit flush boundaries, not on each drag event.
