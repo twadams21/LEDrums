@@ -12,12 +12,34 @@ edges:
     condition: when a decision relates to system structure
   - target: context/stack.md
     condition: when a decision relates to technology choice
-last_updated: 2026-06-20
+last_updated: 2026-09-06
 ---
 
 # Decisions
 
 ## Decision Log
+
+### Perform computer-keyboard shortcuts have explicit surface ownership
+**Date:** 2026-09-06
+**Status:** Active on `fix/performance-key-ownership`; PR #206 remediation on branch
+**Decision:** Only the Perform view may claim the performance digit and left/right arrow
+shortcuts. It yields to native/editable text entry, open Select/combobox/listbox interactions,
+radio/toggle/segmented roving focus, and flow-canvas arrow movement. A claimed event is consumed
+in capture with both `preventDefault()` and `stopPropagation()`; focus is never blurred.
+**Reasoning:** PR #200’s global claim fixed accidental dual actions but stole keyboard behavior
+from accessible Bits UI controls. Surface-aware ownership preserves authoring controls while
+keeping the live Perform surface fast and predictable. Any open dialog disables performance
+ownership, while only unmodified, non-repeated Perform digit events fire graphs; section arrows
+are intentionally repeatable.
+**Authorization:** `fireGraph` is an engine input and is viewer-authorized so a viewer’s Perform
+keyboard can play the show; the existing voice host validates graph selection and executes the
+intent. This requirement came from Trent’s current-main replacement request; no separate product
+source specified viewer restriction.
+**Consequences:** The DOM adapter detects stable accessibility/component semantics rather than
+focus history, with explicit `data-keyboard-owner` markers for reusable controls and interactive
+portals. The App uses one capture dispatcher for registry, deletion, and Perform ownership, so a
+modal or popup cannot let one App handler suppress a key while another mutates the hidden surface.
+New shortcut ownership changes must extend the pure decision and mounted capture integration tests.
 
 ### Setlist → Song → Section arrangement with per-section (drum, slot) trigger routing
 **Date:** 2026-06-20

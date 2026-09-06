@@ -66,7 +66,12 @@
       {#if status !== 'off'}<span class="share-dot" data-status={status} aria-hidden="true"></span>{/if}
     </Popover.Trigger>
     <Popover.Portal>
-      <Popover.Content class="lab-share-content" sideOffset={8} align="end">
+      <Popover.Content
+        class="lab-share-content"
+        data-keyboard-owner="popover"
+        sideOffset={8}
+        align="end"
+      >
         <div class="share-head">Share room</div>
 
         {#if status === 'live'}

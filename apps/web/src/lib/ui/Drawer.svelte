@@ -28,6 +28,7 @@
     <Dialog.Content
       class={['lab-drawer', `dw-${side}`, klass]}
       style={side === 'bottom' ? undefined : `width:${width}`}
+      data-keyboard-owner="modal"
     >
       {#if title}
         <header class="dw-head">

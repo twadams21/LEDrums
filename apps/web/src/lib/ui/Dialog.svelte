@@ -37,7 +37,7 @@
 <Dialog.Root {open} {onOpenChange}>
   <Dialog.Portal>
     <Dialog.Overlay class="lab-dialog-overlay" style="z-index:{overlayZ}" />
-    <Dialog.Content class={['lab-dialog-content', klass]} style="z-index:{contentZ}">
+    <Dialog.Content class={['lab-dialog-content', klass]} style="z-index:{contentZ}" data-keyboard-owner="modal">
       {#if title}<Dialog.Title class="lab-dialog-srtitle">{title}</Dialog.Title>{/if}
       {@render children()}
     </Dialog.Content>

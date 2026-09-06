@@ -36,10 +36,14 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #206 integration (merged to `main`, 2026-09-06):** `origin/main` now includes PR #206's
+keyboard ownership and runtime-section authorization fixes, plus the preceding PR #211 splice
+transport merge. This branch is integrating that current main before the PR #213 blocker fixes.
+
 **Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR #213):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the stateful-effect review
-of PR #200 commit `703fa7f5`. `origin/main` was fetched and the semantic merge was already
-up-to-date. When a splice has a real cascade delay and its member declares `voiceLife`, the
+of PR #200 commit `703fa7f5`. `origin/main` was fetched and merged in this session. When a splice
+has a real cascade delay and its member declares `voiceLife`, the
 spawned member stores `materialCycleMs` resolved once from its authored params and spawn BPM;
 the voice-tail factor is excluded. Each cycle boundary creates fresh deterministic generator
 state and a coherent local clock, age, dt, and transport. The render bridge snapshots and

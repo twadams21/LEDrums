@@ -22,7 +22,9 @@ export type GraphMissReason =
   | 'no-pad-fallback'
   | 'no-direct-match'
   // `fireGraph` names a graph key the current show doesn't contain (stale keyboard binding).
-  | 'no-such-graph';
+  | 'no-such-graph'
+  // `fireGraph` names a graph that exists, but the viewer cannot select in the active section.
+  | 'not-active-section';
 
 export type VoiceDiagnostic =
   | {

@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class={['seg', klass]}>
+<div class={['seg', klass]} data-keyboard-owner="roving">
   <ToggleGroup.Root
     type="single"
     bind:value={current}

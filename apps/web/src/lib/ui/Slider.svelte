@@ -206,6 +206,7 @@
     {orientation}
     onValueChange={handleValueChange}
     aria-label={ariaLabel}
+    data-keyboard-owner="slider"
     class="track"
   >
     <span class="rail"></span>

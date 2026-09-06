@@ -50,7 +50,6 @@ import {
   type Preset,
   type Show,
   type TriggerGraph,
-  type TriggerSource,
   type Voice,
 } from './types';
 import { normalizeTriggerGraphToGen3 } from './graph-integrity';
@@ -59,6 +58,8 @@ import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
 import { createRenderPlanCache } from './render-plan';
 import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
+import { graphAt } from './graph-lookup';
+import { triggerSourceOf } from './runtime-setlist';
 import type {
   GraphMissReason,
   GraphResolutionPath,
@@ -95,6 +96,10 @@ export interface InputEvent {
       re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
       precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
   graphKey?: string;
+  /** Viewer fireGraph authorization. Unset keeps the legacy unrestricted server/editor path;
+      `active-section` checks the key against the engine's current performance list or runtime
+      slot grid before resolving the graph. */
+  fireGraphPolicy?: 'active-section';
   /** releaseBus: release every active voice on this bus (absent = all buses — panic). */
   busId?: string;
   timeMs: number;
@@ -639,10 +644,17 @@ class VoiceBusEngine implements RenderEngine {
   private processFireGraph(e: InputEvent): void {
     const input = describeInputEvent(e);
     const key = e.graphKey;
-    const graph = key ? this.show.graphs[key] : undefined;
+    const graph = graphAt(this.show.graphs, key);
     if (!key || !graph) {
       this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'no-such-graph' });
       return;
+    }
+    if (e.fireGraphPolicy === 'active-section') {
+      const allowed = this.activePerformanceGraphKeys();
+      if (allowed !== null && !allowed.has(key)) {
+        this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'not-active-section' });
+        return;
+      }
     }
     const src = triggerSourceOf(graph);
     const ctx: TriggerCtx = {
@@ -663,6 +675,21 @@ class VoiceBusEngine implements RenderEngine {
       statePrefix: resolved.statePrefix,
     });
     this.fireGraph(resolved, ctx, input);
+  }
+
+  /** Resolve the viewer's allowed performance graph keys from the engine's live arrangement.
+      A missing `songs` field is the pre-setlist runtime shape and keeps its legacy unrestricted
+      fireGraph behavior. Once runtime songs exist, no active or unknown section means an empty
+      authorization set. Newer bridges carry the exact flat performance list so direct MIDI/OSC
+      graphs remain keyboard-addressable; older slot-grid shows derive the set from every slot. */
+  private activePerformanceGraphKeys(): ReadonlySet<string> | null {
+    if (!this.show.songs) return null;
+    if (this.activeSongId === null || this.activeSectionId === null) return new Set();
+    const song = this.show.songs.find((candidate) => candidate.id === this.activeSongId);
+    const section = song?.sections.find((candidate) => candidate.id === this.activeSectionId);
+    if (!section) return new Set();
+    if (section.performanceGraphKeys) return new Set(section.performanceGraphKeys);
+    return new Set(Object.values(section.slots).flatMap((keys) => keys.filter((key): key is string => key !== null)));
   }
 
   private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {
@@ -726,7 +753,7 @@ class VoiceBusEngine implements RenderEngine {
           for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
             const key = slots[slotIndex];
             if (!key) continue;
-            const g = this.show.graphs[key];
+            const g = graphAt(this.show.graphs, key);
             // Prefix is per-slot POSITION, not the bare graph key: two slots holding
             // the SAME key in one section must run as INDEPENDENT layers (own
             // sequence/random/toggle/latch state), so fold in the slot index. Cross-
@@ -737,7 +764,7 @@ class VoiceBusEngine implements RenderEngine {
         }
       }
     }
-    const g = this.show.graphs[pad];
+    const g = graphAt(this.show.graphs, pad);
     return g ? [{ graphKey: pad, graph: g, statePrefix: pad, path: 'pad-fallback' }] : [];
   }
 
@@ -745,13 +772,13 @@ class VoiceBusEngine implements RenderEngine {
     if (!e.drumId) return 'no-direct-match';
     const pad = padKey(e.drumId, e.zone ?? '');
     if (this.activeSongId === null || this.activeSectionId === null || !this.show.songs) {
-      return this.show.graphs[pad] ? 'no-direct-match' : 'no-active-section';
+      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-active-section';
     }
     const song = this.show.songs.find((s) => s.id === this.activeSongId);
     const section = song?.sections.find((s) => s.id === this.activeSectionId);
     const slots = section?.slots[pad];
-    if (!slots || slots.every((key) => !key || !this.show.graphs[key])) {
-      return this.show.graphs[pad] ? 'no-direct-match' : 'no-slot-graphs';
+    if (!slots || slots.every((key) => !key || !graphAt(this.show.graphs, key))) {
+      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-slot-graphs';
     }
     return 'no-pad-fallback';
   }
@@ -1082,12 +1109,6 @@ export function createNullEngine(): RenderEngine {
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-/** A trigger graph's declared input source — the `trigger` node's `source`, or undefined
-    for a graph authored before the source model / with none bound. Mirrors the web sim. */
-function triggerSourceOf(graph: TriggerGraph): TriggerSource | undefined {
-  return graph.nodes.find((n) => n.kind === 'trigger')?.source;
-}
 
 function describeInputEvent(e: InputEvent): VoiceInputDescriptor {
   return {

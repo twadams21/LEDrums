@@ -89,6 +89,8 @@ export {
   type MixInputDraft,
   type TriggerCtx as EvalTriggerCtx,
 } from './eval-graph';
+export { graphAt } from './graph-lookup';
+export { runtimeSectionFromGraphKeys, triggerSourceOf } from './runtime-setlist';
 // S36 — LFO source node
 export {
   LFO_WAVEFORMS,
