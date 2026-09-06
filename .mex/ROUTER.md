@@ -61,7 +61,8 @@ opt-in 2,300-pixel/8-member benchmark uses non-zero offsets, 100 warmup + 500 sa
 nearest-rank p50/p95, and machine/runtime metadata. Plasma is a no-regeneration control because
 it declares no `voiceLife`; Radial Wash and Confetti Burst are the authored regeneration cases.
 Three warm runs on Trent's MacBook Pro (Darwin/x64, Node v25.8.2) are recorded in PR #213 notes
-as observations only, with no CI SLA. The committed implementation is `b0ac0710`; full core,
+as observations only, with no CI SLA. The implementation is `b0ac0710`, documented by
+`f9793eb2`; hosted PR CI run `34016810781` is green for checks and desktop. Full core,
 workspace typecheck, build, and dead-code verification are green. The second full-repo test pass
 reached 2,544 passing / 1 skipped before five web suites stopped on host `ENOSPC`; CI remains the
 authoritative clean-environment check. This PR is pushed/opened for review only and must not
