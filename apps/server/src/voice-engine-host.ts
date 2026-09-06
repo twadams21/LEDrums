@@ -55,7 +55,9 @@ export type VoicePartialInput =
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number; viewerOnly?: boolean }
-  | { kind: 'recallSection'; songId?: string; sectionId: string }
+  | { kind: 'recallSection'; songId?: string | null; sectionId: string | null }
+  | { kind: 'recallSongIndex'; songIndex: number }
+  | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
   | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
   | { kind: 'releaseBus'; busId?: string };
 
@@ -137,12 +139,14 @@ export class VoiceEngineHost {
       new state and the UI follows. Wired by `main.ts`. */
   onTransportChanged: (() => void) | null = null;
 
-  /** The live Show (retained so the global transport-recall handler can map a
-   * Program Change / CC#0 / OSC index → song & section ids). null until first setShow. */
+  /** Callbacks emitted only after the engine accepts and processes a state change. */
+  onSectionRecalled: ((songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number) => void) | null = null;
+  onShowChanged: (() => void) | null = null;
+
+  /** The live Show, retained for state inspection and compatibility. */
   private currentShow: voice.Show | null = null;
-  /** The active song id for index-relative recalls (CC#0). Seeded from the first song on
-   * setShow, updated whenever a recallSection names a song (web- or transport-driven). */
-  private activeSongId: string | null = null;
+  private showRevision = 0;
+  private recallSequence = 0;
   private monitorSink: ((event: MonitorDraft) => void) | null = null;
 
   /** The offending-reference detail from the most recent routing degradation, buffered until a
@@ -165,7 +169,7 @@ export class VoiceEngineHost {
   }
 
   /** Stage a fresh runtime; never call setModel/setShow on the live engine mid-transaction. */
-  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId?: string; sectionId: string }): { applyOutput(): void; commit(): void } {
+  prepareProject(project: Project, show: voice.Show | null = this.currentShow, selection?: { songId: string | null; sectionId: string | null }): { applyOutput(): void; commit(): void } {
     const model = buildPixelModel(project.kit);
     const dmxMap = buildDmxMap(project.kit, model);
     const engine = voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
@@ -187,7 +191,7 @@ export class VoiceEngineHost {
         this.model = model;
         this.dmxMap = dmxMap;
         this.currentShow = show;
-        this.activeSongId = selection?.songId ?? show?.songs?.[0]?.id ?? null;
+        this.showRevision++;
         this.engineTimeMs = this.beat = 0;
         this.accumulator = this.transmitAccum = this.previewAccum = 0;
         this.pendingInputWall = null;
@@ -196,6 +200,7 @@ export class VoiceEngineHost {
         this.tapTimes.length = 0;
         this.lastWall = nowWall();
         this.tickRate.reset(this.lastWall);
+        this.onShowChanged?.();
       },
     };
   }
@@ -375,8 +380,9 @@ export class VoiceEngineHost {
   setShow(show: voice.Show): void {
     this.syncCanvasScenes(show);
     this.currentShow = show;
-    this.activeSongId = show.songs?.[0]?.id ?? null;
+    this.showRevision++;
     this.engine.setShow({ ...show, canvasScenes: undefined });
+    this.onShowChanged?.();
   }
 
   /** The live Show, for the global transport-recall index→id mapping (null before setShow). */
@@ -384,9 +390,24 @@ export class VoiceEngineHost {
     return this.currentShow;
   }
 
-  /** The active song id CC#0 section recalls resolve against (null before setShow). */
+  /** The engine-owned active song id CC#0 section recalls resolve against (null before setShow). */
   getActiveSongId(): string | null {
-    return this.activeSongId;
+    return this.activeEngine.getActiveSelection().activeSongId;
+  }
+
+  /** The engine-owned pointer exposed at the server boundary for state handshakes. */
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return this.activeEngine.getActiveSelection();
+  }
+
+  /** Accepted recalls are numbered by this host instance. The server pairs the number with its
+   * boot session id before putting it on the wire. */
+  getRecallSequence(): number {
+    return this.recallSequence;
+  }
+
+  getShowRevision(): number {
+    return this.showRevision;
   }
 
   /** The live input map — the zone-map the input echo resolves a hit's drum against. */
@@ -407,9 +428,6 @@ export class VoiceEngineHost {
    */
   applyInput(partial: VoicePartialInput): void {
     this.pendingInputWall = nowWall();
-    // Track the active song so index-relative recalls (CC#0) resolve against whatever was
-    // last recalled — whether by the UI or by a global transport recall.
-    if (partial.kind === 'recallSection' && partial.songId) this.activeSongId = partial.songId;
     const ev = this.toInputEvent(partial);
     if (!ev) return;
     // Two global controls are the HOST's, not the engine's: bpm lives on this project's
@@ -506,6 +524,15 @@ export class VoiceEngineHost {
           kind: 'recallSection',
           songId: partial.songId,
           sectionId: partial.sectionId,
+          timeMs,
+        };
+      case 'recallSongIndex':
+        return { kind: 'recallSongIndex', songIndex: partial.songIndex, timeMs };
+      case 'recallSectionIndex':
+        return {
+          kind: 'recallSectionIndex',
+          ...(partial.songIndex !== undefined ? { songIndex: partial.songIndex } : {}),
+          sectionIndex: partial.sectionIndex,
           timeMs,
         };
       case 'key':
@@ -842,6 +869,10 @@ export class VoiceEngineHost {
       return;
     }
 
+    // This diagnostic is emitted only after the queued engine recall has been accepted.
+    // Keep the host mirror downstream of the engine; transport index recalls depend on it.
+    const recallSequence = ++this.recallSequence;
+    this.onSectionRecalled?.(d.songId, d.sectionId, this.showRevision, recallSequence);
     this.monitorSink?.({
       type: 'graph',
       direction: 'local',

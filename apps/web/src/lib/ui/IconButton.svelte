@@ -17,6 +17,8 @@
     disabled?: boolean;
     /** Show the custom tooltip on hover (default true). */
     tooltip?: boolean;
+    /** Override the default label tooltip while keeping the accessible name stable. */
+    tooltipText?: string;
     /** Explain why a disabled button is unavailable. The reason is exposed to
         assistive technology and remains available from the keyboard. */
     disabledReason?: string;
@@ -32,6 +34,7 @@
     variant = 'ghost',
     disabled = false,
     tooltip = true,
+    tooltipText,
     disabledReason,
     tooltipSide = 'top',
     class: klass,
@@ -69,7 +72,7 @@
      disabled ordinary label tooltips, because the reason is an accessibility contract. -->
 {#if (tooltip || hasDisabledReason) && (!disabled || hasDisabledReason)}
   <Tooltip
-    text={hasDisabledReason ? disabledReason! : label}
+    text={hasDisabledReason ? disabledReason! : (tooltipText ?? label)}
     side={tooltipSide}
     triggerRole={hasDisabledReason ? 'group' : undefined}
     triggerLabel={hasDisabledReason ? label : undefined}

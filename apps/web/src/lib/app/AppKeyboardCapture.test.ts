@@ -56,12 +56,11 @@ function installLaterWindowListener(): ReturnType<typeof vi.fn> {
 }
 
 function fixture() {
+  const stepSetlist = vi.fn(() => true);
   const store: AppKeyboardStore = {
-    activeSong: { sections: [{ id: 'a' }, { id: 'b' }] },
-    activeSectionId: 'a',
     selectedGraph: { nodes: [{ id: 'node', kind: 'effect' }] },
     fireSectionGraph: vi.fn(),
-    setActiveSection: vi.fn(),
+    stepSetlist,
     removeNode: vi.fn(),
   };
   const shell: AppKeyboardShell = {
@@ -90,12 +89,34 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     key(document.body, 'Backspace');
 
     expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
-    expect(store.setActiveSection).toHaveBeenCalledWith('b');
+    expect(store.stepSetlist).toHaveBeenCalledWith('section', 1);
     expect(duplicate).toHaveBeenCalledOnce();
     expect(store.removeNode).toHaveBeenCalledOnce();
     expect(digit.defaultPrevented).toBe(true);
     expect(arrow.defaultPrevented).toBe(true);
     expect(duplicateEvent.defaultPrevented).toBe(true);
+  });
+
+  it('delegates a middle section move through the same stepper as the section arrows', () => {
+    const { store } = fixture();
+
+    key(document.body, 'ArrowLeft');
+
+    expect(store.stepSetlist).toHaveBeenCalledWith('section', -1);
+  });
+
+  it.each([
+    ['first', 'ArrowLeft', -1],
+    ['last', 'ArrowRight', 1],
+  ] as const)('takes no action when the store reports the %s section is clamped', (_edge, keyName, delta) => {
+    const { store } = fixture();
+    vi.mocked(store.stepSetlist).mockReturnValue(false);
+
+    const event = key(document.body, keyName);
+
+    expect(store.stepSetlist).toHaveBeenCalledWith('section', delta);
+    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('suppresses every background action behind the real BootOverlay alertdialog', () => {
@@ -216,7 +237,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(received).toHaveBeenCalledTimes(2);
     expect(arrow.defaultPrevented).toBe(false);
     expect(digit.defaultPrevented).toBe(false);
-    expect(store.setActiveSection).not.toHaveBeenCalled();
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
   });
 
@@ -245,7 +265,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(modalDigit.defaultPrevented).toBe(false);
     expect(popupArrow.defaultPrevented).toBe(false);
     expect(popupDigit.defaultPrevented).toBe(false);
-    expect(store.setActiveSection).not.toHaveBeenCalled();
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
   });
 
@@ -259,7 +278,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const arrow = key(canvas, 'ArrowRight');
     const digit = key(canvas, '1');
 
-    expect(store.setActiveSection).not.toHaveBeenCalled();
     expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
     expect(arrow.defaultPrevented).toBe(false);
     expect(digit.defaultPrevented).toBe(true);

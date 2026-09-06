@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import type { ServerMessage } from '@ledrums/protocol';
@@ -100,6 +100,63 @@ describe('handleVoiceInput — one connected MIDI hit fires once (S12)', () => {
     // Note-on + note-off each echo once; only the note-on fires a graph.
     expect(broadcasts.filter((m) => m.t === 'input')).toHaveLength(2);
     expect(monitorEvents.filter((e) => e.label?.startsWith('Graph fired'))).toHaveLength(1);
+  });
+});
+
+describe('handleVoiceInput — transport recall stays engine-authoritative', () => {
+  it('resolves queued PC then CC#0 against the processed engine position', () => {
+    const host = makeHost();
+    const show: voice.Show = {
+      ...directNoteShow(60),
+      songs: [
+        { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }, { id: 'a1', name: 'A1', slots: {} }] },
+        { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', slots: {} }, { id: 'b1', name: 'B1', slots: {} }] },
+      ],
+    };
+    host.setShow(show);
+    const recalls: Array<{ songId: string | null; sectionId: string | null }> = [];
+    host.onSectionRecalled = (songId, sectionId) => recalls.push({ songId, sectionId });
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
+
+    handleVoiceInput({ t: 'programChange', value: 1 }, deps);
+    // This CC arrives before the PC has drained. It must still land on B1, not A1.
+    handleVoiceInput({ t: 'cc', controller: 0, value: 1 }, deps);
+    host.step(1000 / 120);
+
+    expect(recalls).toEqual([
+      { songId: 'song-b', sectionId: 'b0' },
+      { songId: 'song-b', sectionId: 'b1' },
+    ]);
+  });
+
+  it('does not acknowledge an out-of-range indexed recall', () => {
+    const host = makeHost();
+    host.setShow({ ...directNoteShow(60), songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }] }] });
+    const recalled = vi.fn();
+    host.onSectionRecalled = recalled;
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
+    handleVoiceInput({ t: 'cc', controller: 0, value: 99 }, deps);
+    host.step(1000 / 120);
+    expect(recalled).not.toHaveBeenCalled();
+  });
+
+  it('requires null song identity for a legacy top-level section recall', () => {
+    const host = makeHost();
+    host.setShow({
+      ...directNoteShow(60),
+      sections: [{ id: 'legacy-section', name: 'Legacy', looks: {} }],
+    });
+    const recalled = vi.fn();
+    host.onSectionRecalled = recalled;
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
+
+    handleVoiceInput({ t: 'recallSection', songId: 'arbitrary-song', sectionId: 'legacy-section' }, deps);
+    host.step(1000 / 120);
+    expect(recalled).not.toHaveBeenCalled();
+
+    handleVoiceInput({ t: 'recallSection', songId: null, sectionId: 'legacy-section' }, deps);
+    host.step(1000 / 120);
+    expect(recalled).toHaveBeenCalledWith(null, 'legacy-section', expect.any(Number), 1);
   });
 });
 

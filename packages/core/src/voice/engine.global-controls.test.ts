@@ -49,6 +49,28 @@ function setup(): { engine: RenderEngine; recalls: Array<{ songId: string | null
 }
 
 describe('globalControl input — navigation', () => {
+  it('keeps equal-time recalls in arrival order', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput(nav('nextSection', 0));
+    engine.applyInput(nav('nextSection', 0));
+    engine.tick(10, 10, transport(10));
+    expect(recalls.map((recall) => recall.sectionId)).toEqual(['a2', 'a3']);
+  });
+
+  it('rejects an absolute recall that is not in the adopted show', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput({ kind: 'recallSection', songId: 'gone', sectionId: 'gone', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+    expect(recalls).toEqual([]);
+  });
+
+  it('drops queued recalls when a newer show replaces the old one', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput(nav('nextSong', 0));
+    engine.setShow({ ...showFixture(), songs: [{ id: 'new', name: 'New', sections: [{ id: 'new-1', name: 'New 1', slots: {} }] }] });
+    engine.tick(10, 10, transport(10));
+    expect(recalls).toEqual([]);
+  });
   it('advances a section', () => {
     const { engine, recalls } = setup();
     engine.applyInput(nav('nextSection', 0));
@@ -160,5 +182,68 @@ describe('globalControl input — navigation', () => {
       return recalls;
     });
     expect(runs[0]).toEqual(runs[1]);
+  });
+});
+
+describe('setShow — preserve the authoritative selection', () => {
+  it('preserves a later section when the same show is set again', () => {
+    const { engine } = setup();
+    engine.applyInput({ kind: 'recallSection', songId: 'A', sectionId: 'a3', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+
+    engine.setShow(showFixture());
+
+    expect(engine.getActiveSelection()).toEqual({ activeSongId: 'A', activeSectionId: 'a3' });
+  });
+
+  it('preserves a zero-section song as an explicit null section', () => {
+    const show: Show = { ...emptyShow(), songs: [song('empty', []), song('later', ['later-1'])] };
+    const engine = createVoiceBusEngine();
+    engine.setModel(testModel());
+    engine.setShow(show);
+    engine.applyInput({ kind: 'recallSection', songId: 'empty', sectionId: null, timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+
+    engine.setShow({ ...show, songs: show.songs!.map((s) => ({ ...s, name: `${s.name} updated` })) });
+
+    expect(engine.getActiveSelection()).toEqual({ activeSongId: 'empty', activeSectionId: null });
+  });
+
+  it('preserves the pair when an updated show still contains it', () => {
+    const current = showFixture();
+    const engine = createVoiceBusEngine();
+    engine.setModel(testModel());
+    engine.setShow(current);
+    engine.applyInput({ kind: 'recallSection', songId: 'B', sectionId: 'b2', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+
+    const updated: Show = {
+      ...current,
+      buses: current.buses.map((bus) => ({ ...bus, name: `${bus.name} updated` })),
+      songs: current.songs!.map((s) => ({ ...s, name: `${s.name} updated` })),
+    };
+    engine.setShow(updated);
+
+    expect(engine.getActiveSelection()).toEqual({ activeSongId: 'B', activeSectionId: 'b2' });
+  });
+
+  it('falls back to the first valid selection when the active song is removed', () => {
+    const { engine } = setup();
+    engine.applyInput({ kind: 'recallSection', songId: 'B', sectionId: 'b2', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+
+    engine.setShow({ ...showFixture(), songs: [song('A', ['a1', 'a2', 'a3'])] });
+
+    expect(engine.getActiveSelection()).toEqual({ activeSongId: 'A', activeSectionId: 'a1' });
+  });
+
+  it('falls back to the first valid selection when the active section is removed', () => {
+    const { engine } = setup();
+    engine.applyInput({ kind: 'recallSection', songId: 'A', sectionId: 'a2', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+
+    engine.setShow({ ...showFixture(), songs: [song('A', ['a1', 'a3']), song('B', ['b1', 'b2'])] });
+
+    expect(engine.getActiveSelection()).toEqual({ activeSongId: 'A', activeSectionId: 'a1' });
   });
 });

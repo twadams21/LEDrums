@@ -15,7 +15,19 @@
    Ends CLAMP, they do not wrap (locked with Trent 2026-08-12): on a live set a stray
    extra tap must never teleport the rig back to song 1.
    ============================================================================= */
-import type { Show } from './types';
+/** The minimum show shape required to resolve setlist navigation. */
+export interface NavSection {
+  id: string;
+}
+
+export interface NavSong {
+  id: string;
+  sections: readonly NavSection[];
+}
+
+export interface NavSetlist {
+  songs?: readonly NavSong[];
+}
 
 /** Which dimension of the setlist a relative move walks. */
 export type NavAxis = 'song' | 'section';
@@ -58,7 +70,7 @@ function clampIndex(i: number, length: number): number | null {
  * fresh set moves 0 → 1 rather than doing nothing.
  */
 export function relativeNavTarget(
-  show: Show | null | undefined,
+  show: NavSetlist | null | undefined,
   position: NavPosition,
   axis: NavAxis,
   delta: number,

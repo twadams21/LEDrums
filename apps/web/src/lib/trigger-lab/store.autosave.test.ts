@@ -387,7 +387,7 @@ describe('TriggerLab autosave (save on edit)', () => {
     expect(store.saveStatus).toBe('saved');
   });
 
-  it('materializes once when connected, sends the cached revision, and signature-skips no-ops', () => {
+  it('materializes once when connected, omits cached recall, and signature-skips no-ops', () => {
     let cb: WSCallbacks = {};
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(() => ({ on(callbacks: WSCallbacks) { cb = callbacks; }, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient);
@@ -411,7 +411,7 @@ describe('TriggerLab autosave (save on edit)', () => {
       expect(songs).toHaveBeenCalledTimes(1);
       const pushed = sent.find((m) => m.t === 'setShowLibrary');
       expect(pushed?.t === 'setShowLibrary' && JSON.stringify(pushed.library)).toBe(localStorage.getItem(SHOWS_STORAGE_KEY));
-      expect(sent.map((m) => m.t)).toEqual(['setShow', 'recallSection', 'setShowLibrary']);
+      expect(sent.map((m) => m.t)).toEqual(['setShow', 'setShowLibrary']);
       sent.length = 0;
       store.saveShow();
       expect(sent).toEqual([]); // no-op signature guards still hold

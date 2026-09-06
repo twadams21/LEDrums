@@ -19,6 +19,9 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     // The bar renders the RESOLVED setlist (S42); with no references it mirrors `songs`.
     resolvedSongs: songs,
     activeSongId: 's1',
+    globalControls: {},
+    canStepSetlist: vi.fn(() => true),
+    stepSetlist: vi.fn(),
     canEdit: true,
     createSong: vi.fn(),
     setActiveSong: vi.fn(),
@@ -44,6 +47,14 @@ describe('SongsBar', () => {
     const chips = container.querySelectorAll('.chip');
     expect(chips[0]?.classList.contains('on')).toBe(true);
     expect(chips[1]?.classList.contains('on')).toBe(false);
+  });
+
+  it('flanks the scrolling chips with accessible navigation arrows', async () => {
+    const store = mockStore();
+    const { getByRole } = render(SongsBar, { props: { store } });
+    await fireEvent.click(getByRole('button', { name: 'Next song' }));
+    expect(store.stepSetlist).toHaveBeenCalledWith('song', 1);
+    expect(getByRole('button', { name: 'Previous song' }).getAttribute('aria-label')).toBe('Previous song');
   });
 
   it('selects a song when its chip is clicked', async () => {

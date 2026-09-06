@@ -6,23 +6,18 @@ import { decideDeleteKey, isDeleteKey, type DeleteKeyNode } from './delete-key';
 import { performanceKeyTarget } from './performance-key-target';
 import { claimPerformanceKey, decidePerformanceKey } from './performance-key';
 import { dispatchShortcut, matchesShortcut, type ShortcutEntry } from './shortcuts';
+import type { voice } from '@ledrums/core';
 import type { Selection, SettingsPane, View } from './shell-nav';
 import type { ShortcutPlatform } from './primary-shortcut';
-
-export interface AppKeyboardSection {
-  id: string;
-}
 
 export interface AppKeyboardNode extends DeleteKeyNode {
   id: string;
 }
 
 export interface AppKeyboardStore {
-  activeSong: { sections: readonly AppKeyboardSection[] } | null;
-  activeSectionId: string | null;
   selectedGraph: { nodes: readonly AppKeyboardNode[] } | null;
   fireSectionGraph(index: number): void;
-  setActiveSection(id: string): void;
+  stepSetlist(axis: voice.NavAxis, delta: number): boolean;
   removeNode(node: AppKeyboardNode): void;
 }
 
@@ -146,10 +141,5 @@ export function dispatchAppKeyboard({
     return;
   }
   if (decision.sectionStep === undefined) return;
-
-  const sections = store.activeSong?.sections ?? [];
-  if (sections.length === 0) return;
-  const current = sections.findIndex((section) => section.id === store.activeSectionId);
-  const next = sections[(current + decision.sectionStep + sections.length) % sections.length];
-  if (next) store.setActiveSection(next.id);
+  store.stepSetlist('section', decision.sectionStep);
 }

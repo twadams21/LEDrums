@@ -30,6 +30,9 @@ class RecordingEngine implements voice.RenderEngine {
   applyInput(ev: voice.InputEvent): void {
     this.events.push(ev);
   }
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return { activeSongId: null, activeSectionId: null };
+  }
   tick(): void {}
   frame(): Readonly<Float32Array> {
     return this.fb;

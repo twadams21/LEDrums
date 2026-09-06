@@ -74,6 +74,7 @@ import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildShow, type ShowSource } from './show-builder';
+import { compareRecallIdentity, type AuthoritativeRecall, type RecallIdentity } from './recall-order';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
 import { installErrorCapture } from '../app/error-capture';
@@ -705,6 +706,31 @@ export class TriggerLab {
   setActiveSong(songId: string): void {
     this.showsCtl.setActiveSong(songId);
   }
+
+  /** Whether a relative move has a destination in the resolved, ordered setlist. */
+  canStepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    return this.setlistNavTarget(axis, delta) !== null;
+  }
+
+  /** Resolve a relative move through the same pure core rule used by the engine. */
+  setlistNavTarget(axis: voice.NavAxis, delta: number): voice.NavTarget | null {
+    return voice.relativeNavTarget(
+      { songs: this.resolvedSongs },
+      { activeSongId: this.activeSongId || null, activeSectionId: this.activeSectionId },
+      axis,
+      delta,
+    );
+  }
+
+  /** Navigate without an edit-permission gate. The server/engine remains authoritative when
+      connected; the local setters provide the immediate view transition. */
+  stepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    const target = this.setlistNavTarget(axis, delta);
+    if (!target) return false;
+    if (axis === 'song') this.setActiveSong(target.songId);
+    else this.setActiveSection(target.sectionId);
+    return true;
+  }
   createSong(name?: string): string {
     return this.showsCtl.createSong(name);
   }
@@ -722,6 +748,11 @@ export class TriggerLab {
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
       unchanged. */
   presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
+  /** Server-authoritative recall ordering. A pending item is not acknowledged until its canonical
+      song/section can be resolved against the reconciled client library. */
+  private recallSessionId: string | null = null;
+  private appliedRecall: RecallIdentity | null = null;
+  private pendingRecall: AuthoritativeRecall | null = null;
   /** Local project backups (#123), newest-first — the server's reply to `listBackups`, rendered by
       the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. Public +
       settable like {@link presence}/{@link controllerStatus} so the dev shot-seam can seed it. */
@@ -1028,7 +1059,7 @@ export class TriggerLab {
       new WSClient({ pin: readStoredPin(), hostToken: readHostToken() }),
   ) {
     // Load the show library from storage BEFORE the sim is built and the engine link opens,
-    // so the sim's registries and the first setShow/recallSection reflect the ACTIVE show's
+    // so the sim's registries and the first setShow reflect the ACTIVE show's
     // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
     // single blob is migrated to one "Default Show"; else a fresh "Untitled Show" is seeded.
     // Hydrate the show + song libraries from storage into the controller (reserving their ids) and
@@ -1591,7 +1622,7 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc, showRevision = 0, activeSongId, activeSectionId, recallSequence = 0, sessionId = 'legacy') => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
@@ -1604,11 +1635,24 @@ export class TriggerLab {
         this.tunnel = tunnel;
         // where a third-party OSC sender should aim, and whether the socket is actually bound
         this.oscListen = osc;
+        if (activeSongId !== undefined && activeSectionId !== undefined) {
+          this.receiveAuthoritativeRecall({
+            sessionId,
+            showRevision,
+            recallSequence,
+            songId: activeSongId,
+            sectionId: activeSectionId,
+          }, 'state');
+        }
         // Cold-load reconcile of BOTH server-authoritative libraries (show library + canonical song
         // pool): adopt server on first state / seed it from our cache / viewer live-follows. Role-
         // aware (S1) — presence arrives before this state on a (re)connect, so `isViewer` is settled.
         // Owned by {@link ShowsController} (R23).
         this.showsCtl.reconcileOnState(showLibrary, songLibrary);
+        this.tryApplyPendingRecall();
+      },
+      onRecalled: (songId, sectionId, showRevision, recallSequence, sessionId = 'legacy') => {
+        this.receiveAuthoritativeRecall({ sessionId, showRevision, recallSequence, songId, sectionId }, 'recalled');
       },
       onPresence: (editorId, youAreEditor, clientCount) => {
         // Adopt the server's view of who edits + the headcount. Drives `role`/`isViewer`, which
@@ -1619,11 +1663,13 @@ export class TriggerLab {
         // Live authored-library push from the editor, relayed by the server. Only a viewer follows it
         // (the editor is the source and is never sent its own echo). Owned by {@link ShowsController}.
         this.showsCtl.followShowLibrary(library);
+        this.tryApplyPendingRecall();
       },
       onSongLibrary: (library) => {
         // Live SONG-library push from the editor, relayed by the server — the sibling of
         // onShowLibrary. Only a viewer follows it. Owned by {@link ShowsController}.
         this.showsCtl.followSongLibrary(library);
+        this.tryApplyPendingRecall();
       },
       onControllerStatus: (status) => {
         // Live truth of the adopted controller (S47/S48). null = nothing adopted (panel shows the
@@ -1662,10 +1708,6 @@ export class TriggerLab {
           const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
           this.engineSync.baselineTransport(cur);
           this.client.send({ t: 'setTransport', ...cur });
-          // align the engine's active section with the store's current active section
-          if (this.activeSectionId) {
-            this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
-          }
         } else {
           // a drop means our next open must re-send the transport + Show
           this.engineSync.reset();
@@ -1817,10 +1859,40 @@ export class TriggerLab {
     const show = buildShow(this.showSource);
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
-    // setShow reseeds the active section to the first song/section — restore focus.
-    if (this.activeSectionId) {
-      this.client.send({ t: 'recallSection', songId: this.activeSongId, sectionId: this.activeSectionId });
+  }
+
+  private receiveAuthoritativeRecall(recall: AuthoritativeRecall, source: 'state' | 'recalled'): void {
+    if (source === 'recalled' && this.recallSessionId !== null && this.recallSessionId !== recall.sessionId) return;
+    if (this.recallSessionId !== recall.sessionId) {
+      // A server restart invalidates every numeric revision and sequence from the old process.
+      this.recallSessionId = recall.sessionId;
+      this.appliedRecall = null;
+      this.pendingRecall = null;
     }
+    const newestKnown = this.pendingRecall ?? this.appliedRecall;
+    if (newestKnown && compareRecallIdentity(recall, newestKnown) <= 0) return;
+    this.pendingRecall = recall;
+    // A state handshake is only staged here. Its library may replace the active document below;
+    // applying it now would be immediately overwritten by adoptLibrary()/activateDocument().
+    // Accepted recall messages can apply immediately because they arrive after the document is
+    // already live. The state handler retries after both libraries have reconciled.
+    if (source === 'recalled') this.tryApplyPendingRecall();
+  }
+
+  private tryApplyPendingRecall(): void {
+    const recall = this.pendingRecall;
+    if (!recall || recall.sessionId !== this.recallSessionId) return;
+    const song = recall.songId === null ? null : this.resolvedSongs.find((candidate) => candidate.id === recall.songId);
+    if (recall.songId !== null && !song) return;
+    if (song && recall.sectionId === null && song.sections.length > 0) return;
+    if (song && recall.sectionId !== null && !song.sections.some((section) => section.id === recall.sectionId)) return;
+
+    // A null section is valid for a real zero-section song. A null song is the legacy top-level
+    // section/no-selection identity and is represented by the store's empty id.
+    this.activeSongId = song?.id ?? '';
+    this.activeSectionId = recall.sectionId;
+    this.appliedRecall = recall;
+    this.pendingRecall = null;
   }
 
   // The server-authoritative library adopt + write-through (cold-load reconcile / viewer follow /

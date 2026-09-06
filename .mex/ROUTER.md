@@ -36,17 +36,39 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**PR #212 final remediation locally complete (2026-09-06, branch `feat/sparkler-flame-effects`):**
-This branch integrates `origin/main` at the PR #206 merge `b1b4b492`. Sparkler cadence is derived
-from Spark Life with adjacent-bucket overlap at min/default/max life, burn thins spark selection
-through a deterministic threshold while brightness attenuates once, and fire randomness uses the
-seeded Mulberry32 random-access primitive without per-pixel generator allocation. Focused tests,
-typecheck, build, design-system regeneration, and the strict all-surface UI-shot sweep pass. The
-full local suite reached every package's normal result except one final web suite blocked by the
-host volume reaching `ENOSPC`; CI run `34017372215` then passed the full test suite, typecheck,
-dead-code verification, and desktop build/tests. The implementation is pushed; PR #212 remains
-open and no merge or release is authorized in this task. Source: Trent's PR #212 findings on
-Trent's MacBook Pro.
+**PR #212 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Merged the current `origin/main` PR #212 effects work into this PR #210 branch. The merge
+preserves both the recall/navigation implementation and the Sparkler/Flame Flicker remediation;
+the generated design system was regenerated from the merged sources. Source: Trent's PR #212
+findings on Trent's MacBook Pro.
+
+**PR #210 keyboard section stepping blocker (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the PR #210 code blocker.
+Perform section arrows now call the existing `store.stepSetlist('section', delta)` seam, which
+delegates to core `relativeNavTarget`; the App dispatcher owns no section list, active-index math,
+or modulo wrap. Regression coverage proves middle movement, first/last resolver no-ops, and parity
+with the Sections/global arrow callback. Focused core/web tests, typecheck, production build,
+design-system generation, and a strict, visually inspected Perform capture pass. The second local
+full sweep reached all core (1,478 + 5 skipped), protocol, IO, worker, desktop, and most web/server
+tests, but the host volume exhausted space during concurrent temp/cache writes. GitHub workflow
+`34019471578` then passed both `checks` and `desktop` on this head. No merge or release is
+authorized.
+
+**PR #210 remaining blockers + #211 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request. Integrated the current
+`origin/main` (#211) in merge commit `a448bd2c`, preserving the splice-material transport changes.
+Recall validation now accepts `(songId, null)` only for a resolved zero-section song in core and
+web. Server library restore preserves that explicit selection. State handshakes stage the
+authoritative pointer until both libraries adopt, then apply the newest pending recall so a
+server pointer B cannot be overwritten by authored pointer A during `adoptLibrary()`.
+Regressions cover invalid nulls, zero-section restore, already-resolved canonical refs, delayed
+canonical adoption, and supersession. Full tests, typecheck, build, design-system generation,
+and strict Songs/Sections UI shots are green. The remaining PR #210 blocker is now fixed locally:
+core `setShow` preserves an exact valid active `(songId, sectionId|null)` pair, including a
+zero-section song, while clearing queued inputs and runtime state; invalid pairs fall back to the
+first valid selection. Core and two-client server regressions cover retention, fallback, queue
+clearing, coherent state revision/sequence, and no synthetic recall broadcast. Commit `a17698da`
+is pushed and PR CI is green; do not merge.
 
 **PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
 Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
@@ -83,6 +105,14 @@ unchanged. Focused tests/typechecks pass. This branch now also integrates curren
 (PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full tests,
 typecheck, and build pass locally. Pushed at `c681ee2c`; CI run `34006731850` is green for checks
 and desktop. PR #206 remains open and unmerged here.
+
+**PR #210 + merged PR #206 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent’s MacBook Pro in this merge request. Integrated `origin/main` at
+`b1b4b492` semantically, preserving the authoritative recall/session protocol alongside
+performance keyboard ownership, active-section graph authorization, and
+`runtimeSectionFromGraphKeys()`. Full tests, typecheck, build, design-system regeneration, and
+strict `songs-bar`/`sections-bar`/`perform` captures pass locally. The branch was pushed after
+this merge; do not merge this PR.
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
 commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's
@@ -107,6 +137,20 @@ navigation, division, or effect behavior changed. Focused web tests, full typech
 tests, and strict `splice-inspector` ui-shot passed with no console errors. The styleguide does not
 mount this inspector, so `docs/design-system.html` was not regenerated. This is not merged or
 shipped; the new PR supersedes the relevant #200 work.
+
+**PR #210 architecture remediation (2026-09-06, branch `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent’s MacBook Pro, sourced from the PR #210 architecture blockers. The
+current `origin/main` (#209) was merged semantically in local merge commit `5fa4a03a`. Recall wire
+state now carries authoritative active song/section, `showRevision`, accepted `recallSequence`,
+and a boot-generated `sessionId`; the client resets ordering on session changes, never echoes cached
+recall on reconnect or autosave, and adopts only explicit user recalls outbound. Pending recalls
+remain newest-first but unapplied until canonical song/section references reconcile; valid zero-section
+songs use an explicit null section and release prior section looks, while legacy top-level section
+recalls require a null song identity. Accepted-only diagnostics, FIFO queueing, clamp/navigation,
+canonical references, and viewer follow remain intact. `vite server.fs.strict=false` was removed.
+Evidence: full monorepo tests 4,828 passed / 4 skipped, full typecheck/build, regenerated design
+system, and strict `songs-bar`/`sections-bar` captures with visual inspection. Commit/push and PR
+CI are the remaining delivery steps; do not merge or release.
 
 **Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
 on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
@@ -147,6 +191,22 @@ active canonical removal, re-add without stale-section revival, and the no-fallb
 Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorepo 4,773 passed /
 4 skipped, and full typecheck green. No UI output changed, so no shots were required. Commit/push
 and CI are still pending.
+
+**Setlist navigation and recall (implemented locally 2026-09-06, branch `feat/setlist-navigation-recall`, PR pending):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the setlist slice extracted
+from PR #200 commit `a37eebce` and its stated review requirements. The pure core navigation resolver
+now owns one clamp/no-wrap rule; `TriggerLab.stepSetlist` is the public UI/keyboard seam, and the
+voice engine resolves queued global MIDI/OSC intents against its current ordered show. Absolute and
+indexed recalls validate at engine processing time, preserve arrival order, discard queued intents
+on show replacement, and emit an accepted `recalled` message only after processing. Web recall
+adoption is guarded by show revision + monotonic recall sequence, so it follows hardware without
+echoing it. Songs/Sections chrome uses accessible `NavArrow` controls outside the chip scrollers,
+including disabled reasons and binding hints; canonical references remain navigable while existing
+mutation gates stay unchanged. The existing #206 keyboard owner calls the clean store seam rather
+than adding a second global handler. Evidence: full test 7 workspaces green (core 1,413 passed /
+3 skipped; server 603; web 2,549 passed / 1 skipped), typecheck green, production build green,
+design-system regenerated, and strict role-targeted Songs/Sections shots are console-clean. No
+release was published; branch is not merged.
 
 **PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
