@@ -6,6 +6,9 @@ Use this pattern when a splice cascade outlasts the authored life of hit-driven 
 
 - Resolve the cycle from the effect's declared `voiceLife` key and unit. Do not use the voice-tail
   factor: it describes visibility/sustain, not the authored material period.
+- Only Splice-owned members can carry a frozen `materialCycleMs`, and the compositor activates it
+  only when `maxCascadeDelayMs(model, splice) > 0`. Ordinary Mix members and direct voices keep
+  one continuous generator state; no cycle reset is inferred from their spawn.
 - Keep the cycle state in the engine-owned `GeometryState` for the voice/member. Include it in
   checkpoints and clear it with generator, model, show, and voice lifecycle resets.
 - At a boundary, create fresh generator state. Derive the cycle seed and synthetic sequence from
@@ -28,8 +31,10 @@ Test at least three cycles for an absolute-time effect, a voice-timebase effect,
 particle effect. Assert a far partition has meaningful intensity, seeds/sequences advance, and
 the result is identical on replay. Add a regression that a time-only wrap leaves state stale.
 Cover no-life, modifier/scope/Mix, checkpoint restore, model/show reset, member/voice isolation,
-and the one-render-per-frame bound. Run the opt-in realistic benchmark and report p50/p95 against
-16.7ms; include the exact machine and sample method when the result is used for a release claim.
+and the one-render-per-frame bound. Add structural performance gates for one generator render per
+frame and reused hot-path carriers; do not make correctness depend on wall-clock timing. Run the
+opt-in realistic benchmark only for reporting p50/p95, with warmup/sample method and machine
+metadata. A no-life field effect such as Plasma is a control path, not authored regeneration.
 
 ## Current implementation seam
 

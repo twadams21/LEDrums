@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { materialCycleMs } from '../effects/voice-life';
 import type { EffectGenerator } from '../effects/types';
 import { Framebuffer } from '../engine/framebuffer';
+import { createDefaultCompositor } from './compositor';
 import type { RenderContext } from '../engine/render-context';
 import { createGeneratorBridge } from './generator-bridge';
 import { ensureGeometryState } from './geometry-state';
@@ -168,6 +169,69 @@ describe('splice material regeneration', () => {
       effectsById: new Map([['fx', effect]]),
       busById: new Map([['b', runtimeBus]]), latched: new Map(), timeMs: 0, bpm: 60,
     })!.spliceInputs![0]!.materialCycleMs).toBe(8000);
+  });
+
+  it('keeps an ordinary stateful Mix member continuous at 0/50/100ms', () => {
+    const host = { ...runtimeEffect('solid-base'), id: 'host' };
+    const member = runtimeEffect('pixel-accum');
+    const action = runtimeAction({
+      effectId: 'host',
+      mixInputs: [{
+        ...runtimeAction({
+          effectId: 'fx',
+          mode: 'loop',
+          params: { decayMs: 1000, addPerHit: 1, brightness: 1 },
+        }),
+        opacity: 1,
+        originNodeId: 'member',
+      }],
+    });
+    const voice = new VoicePool().spawn(action, 'd0', 1, {
+      effectsById: new Map([['host', host], ['fx', member]]),
+      busById: new Map([['b', runtimeBus]]),
+      latched: new Map(),
+      timeMs: 0,
+      bpm: 120,
+    })!;
+    voice.level = 1;
+    const input = voice.mixInputs![0]!;
+    expect(input.materialCycleMs).toBeUndefined();
+
+    const compositor = createDefaultCompositor();
+    const model = runtimeModel([8]);
+    const dst = new Framebuffer(model.pixelCount);
+    for (const timeMs of [0, 50, 100]) {
+      compositor.render([voice], model, runtimeFrame(timeMs, timeMs === 0 ? 0 : 50), dst);
+      expect(input.materialCycle).toBeUndefined();
+      expect(input.genState).not.toBeNull();
+    }
+    const state = input.genState as { lastSeq: number; intensity: Float32Array };
+    expect(state.lastSeq).toBe(1);
+    expect(state.intensity.some((value) => value > 0)).toBe(true);
+  });
+
+  it('does not activate a frozen member life when the Splice has no cascade delay', () => {
+    const effect = runtimeEffect('pixel-accum');
+    const action = runtimeAction({
+      params: { decayMs: 1000, addPerHit: 1, brightness: 1 },
+      spliceInputs: [{ ...runtimeAction({ params: { decayMs: 1000, addPerHit: 1, brightness: 1 } }), opacity: 1, originNodeId: 'member' }],
+      splice: runtimeSplice(),
+    });
+    const voice = new VoicePool().spawn(action, 'd0', 1, {
+      effectsById: new Map([['fx', effect]]),
+      busById: new Map([['b', runtimeBus]]),
+      latched: new Map(), timeMs: 0, bpm: 120,
+    })!;
+    voice.level = 1;
+    const input = voice.spliceInputs![0]!;
+    expect(input.materialCycleMs).toBe(1000);
+    const compositor = createDefaultCompositor();
+    const model = runtimeModel([8]);
+    const dst = new Framebuffer(model.pixelCount);
+    compositor.render([voice], model, runtimeFrame(0, 0), dst);
+    compositor.render([voice], model, runtimeFrame(50, 50), dst);
+    expect(input.materialCycle).toBeUndefined();
+    expect((input.genState as { lastSeq: number }).lastSeq).toBe(1);
   });
 
   it('gives a stateless absolute generator one coherent fresh clock and one render per frame', () => {

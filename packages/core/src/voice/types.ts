@@ -812,7 +812,8 @@ export interface Voice extends GeometryState {
    * is reused. Opaque to everything but the hosted generator.
    */
   genState: unknown;
-  /** Authored material cycle duration, resolved once at member spawn BPM. */
+  /** Authored material cycle duration, resolved once at member spawn BPM. Present only on
+      Splice-owned members; ordinary Mix members remain on one continuous generator state. */
   materialCycleMs?: number;
   /** Buffer-level Mix branches rendered into intermediate buffers, then blended before
       this voice's downstream modifiers/output mask continue. Undefined for ordinary voices. */
@@ -916,7 +917,8 @@ export interface MixInput extends GeometryState {
   specs: ParamSpec[];
   modulations?: Mapping[];
   genState: unknown;
-  /** Authored material cycle duration, resolved once at member spawn BPM. */
+  /** Authored material cycle duration, resolved once at member spawn BPM. Present only on
+      Splice-owned members; ordinary Mix members remain on one continuous generator state. */
   materialCycleMs?: number;
   modifiers?: ResolvedModifier[];
   modState?: unknown[];

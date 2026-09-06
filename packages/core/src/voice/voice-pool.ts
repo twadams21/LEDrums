@@ -186,8 +186,10 @@ export class VoicePool {
     slot.renderModel = undefined;
     slot.renderGenerator = undefined;
     /** Realise a composite member (Mix branch or splice) into a sub-voice. A member whose
-        effect or generator can't be resolved is dropped rather than rendered blank. */
-    const toMember = (input: MixInputDraft, index: number): MixInput | null => {
+        effect or generator can't be resolved is dropped rather than rendered blank. The
+        splice-owned flag is intentionally explicit: ordinary Mix must not inherit regeneration
+        state merely because its generator declares a life. */
+    const toMember = (input: MixInputDraft, index: number, spliceOwned: boolean): MixInput | null => {
       const inputEffect = deps.effectsById.get(input.effectId);
       if (!inputEffect) return null;
       const generatorId = input.canvasScene ? canvasEffectId(input.canvasScene) : inputEffect.generatorId;
@@ -204,14 +206,17 @@ export class VoicePool {
         specs: inputEffect.params,
         modulations: input.modulations,
         genState: null,
-        materialCycleMs: resolveMaterialCycleMs(generatorId, input.params, deps.bpm),
+        // A frozen material duration is meaningful only for a member owned by a Splice. The
+        // compositor activates it only after it proves this Splice actually cascades on the
+        // current model. Ordinary Mix members stay on the continuous one-state path.
+        materialCycleMs: spliceOwned ? resolveMaterialCycleMs(generatorId, input.params, deps.bpm) : undefined,
         modifiers: input.modifiers,
         modState: undefined,
         opacity: input.opacity,
         originNodeId: input.originNodeId,
       };
     };
-    slot.mixInputs = a.mixInputs?.map(toMember).filter((input): input is MixInput => input !== null);
+    slot.mixInputs = a.mixInputs?.map((input, index) => toMember(input, index, false)).filter((input): input is MixInput => input !== null);
     // Splice members are index-aligned with `splice.inputBySlot`, so a dropped member would
     // shift every later slot's content onto the wrong splice. Keep the layout in step by
     // remapping the slot table through the members that actually survived.
@@ -219,7 +224,7 @@ export class VoicePool {
       const kept: MixInput[] = [];
       const remap = new Map<number, number>();
       a.spliceInputs.forEach((input, index) => {
-        const member = toMember(input, index);
+        const member = toMember(input, index, true);
         if (!member) return;
         remap.set(index, kept.length);
         kept.push(member);

@@ -139,6 +139,8 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
   let genScratch: Framebuffer | null = null;
   /** Defaults belong to the registry adapter, not its id (live upserts can replace it). */
   const genDefaults = new WeakMap<object, ResolvedParams>();
+  /** Reused overlay for the synchronous generator call; never retained by generators. */
+  const genParams: ResolvedParams = {};
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
   const genTrigger: Trigger = { seq: 1, drumId: '', note: 0, velocity: 1, timeMs: 0, ageMs: 0 };
   const genTriggers: Trigger[] = [genTrigger];
@@ -192,11 +194,12 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
         defs = defaultParams(gen.paramSpec);
         genDefaults.set(gen, defs);
       }
-      const params: ResolvedParams = { ...defs };
+      for (const key in genParams) delete genParams[key];
+      for (const key in defs) genParams[key] = defs[key]!;
       const lp = v.liveParams;
       for (const k in lp) {
         const val = lp[k];
-        if (val !== undefined) params[k] = val;
+        if (val !== undefined) genParams[k] = val;
       }
 
       const normalAge = positiveAge(timeMs, v.bornAtMs);
@@ -271,7 +274,7 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
         genCtx!.transport = voiceClock ? voiceTransport : ft;
         try {
           out.clear();
-          gen.render(genCtx!, params, out, state as never);
+          gen.render(genCtx!, genParams, out, state as never);
         } finally {
           genCtx!.model = priorModel;
           genCtx!.timeMs = priorTimeMs;
