@@ -90,8 +90,8 @@
      (buttons, selects, inputs, the bits-ui triggers) is disabled by the browser, and the CSS
      below dims the panel + neutralises the div-based slider drags. The store mutators already
      no-op for a viewer — this makes that visible. -->
-<fieldset class="inspector" disabled={node ? !store.canEditSelectedGraph : !store.canEdit}>
-  {#if node && !store.canEditSelectedGraph}
+<fieldset class="inspector" disabled={node ? !store.canMutateSelectedGraph : !store.canEdit}>
+  {#if node && !store.canMutateSelectedGraph}
     <div class="readonly-banner" role="status">
       <LockKeyhole size={16} aria-hidden="true" />
       <div>

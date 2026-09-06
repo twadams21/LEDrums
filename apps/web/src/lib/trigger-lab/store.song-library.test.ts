@@ -190,6 +190,30 @@ describe('referenced songs are navigable + playable but graph-read-only (S42 con
     expect(store.songRefs).toEqual([libId]);
   });
 
+  it('allows canonical graphs only through copy-as-source operations that create local content', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSongId = store.activeSongId;
+    const libraryId = store.exportSongToLibrary(localSongId)!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const canonicalKey = Object.keys(store.songLibrary.songs[libraryId]!.graphs)[0]!;
+    const section = store.activeSong!.sections.find((candidate) => candidate.graphs.includes(canonicalKey))!;
+    store.selectGraphInSection(section.id, canonicalKey);
+    const beforeLibrary = JSON.stringify(store.songLibrary.songs[libraryId]);
+
+    const duplicate = store.duplicateGraph(canonicalKey);
+    expect(duplicate).toBeTruthy();
+    expect(store.graphs[duplicate!]).toBeDefined();
+    expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
+
+    store.setActiveSong(localSongId);
+    const localSection = store.activeSong!.sections[0]!;
+    const copied = store.copyGraphToSection(localSection.id, canonicalKey, 'Local canonical copy');
+    expect(copied).toBeTruthy();
+    expect(store.graphs[copied!]).toBeDefined();
+    expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
+  });
+
   it('buildShow carries a referenced song + its namespaced graphs (engine push; passes integrity)', () => {
     const store = new TriggerLab(fakeClient);
     const libId = store.exportSongToLibrary('set-1')!;
@@ -223,6 +247,46 @@ describe('referenced songs are navigable + playable but graph-read-only (S42 con
     expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(false); // left the resolved view
     expect(store.songs.some((s) => s.id === libId)).toBe(false); // NOT cloned into local songs
     expect(store.songLibrary.songs[libId]).toBeTruthy(); // the library copy is untouched
+  });
+
+  it('reconciles an active reference removal and does not revive its section when re-added', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSong = store.songs[0]!;
+    const libId = store.exportSongToLibrary(localSong.id)!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+    const referencedSectionId = store.activeSectionId;
+
+    store.removeSongReference(libId);
+
+    expect(store.activeSongId).toBe(localSong.id);
+    expect(store.activeSongById?.id).toBe(localSong.id);
+    expect(store.activeSectionId).toBe(localSong.sections[0]!.id);
+    expect(store.activeSectionId).not.toBe(referencedSectionId);
+
+    store.importSongReference(libId);
+
+    expect(store.activeSongId).toBe(localSong.id);
+    expect(store.activeSectionId).toBe(localSong.sections[0]!.id);
+  });
+
+  it('keeps an active reference cleared when removal leaves no fallback song', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+    store.songs = [];
+
+    store.removeSongReference(libId);
+
+    expect(store.activeSongId).toBe('');
+    expect(store.activeSongById).toBeNull();
+    expect(store.activeSectionId).toBeNull();
+
+    store.importSongReference(libId);
+
+    expect(store.activeSongId).toBe('');
+    expect(store.activeSectionId).toBeNull();
   });
 });
 

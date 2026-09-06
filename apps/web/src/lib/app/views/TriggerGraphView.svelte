@@ -588,7 +588,7 @@
       wire. Nothing valid to offer (or a viewer / no graph) → the drag just cancels, as today. */
   function openPendingAdd(event: MouseEvent | TouchEvent, from: PendingWire): void {
     const g = store.selectedGraph;
-    if (!g || !store.canEditSelectedGraph) return;
+    if (!g || !store.canMutateSelectedGraph) return;
     if (typesForPendingWire(g, from, ADD_NODE_TYPES).length === 0) return;
     const at = pointOfEvent(event);
     if (at) openAddPopover(at, from);
@@ -630,7 +630,7 @@
       red/dotted/dull styling agrees with what release will actually do — every branch resolves
       to the store's {@link canConnect} verdict, and nothing here mutates the graph. */
   function validateDrop(from: WireDragFrom, toId: string, toHandle: string | null): boolean {
-    if (!store.canEditSelectedGraph) return false;
+    if (!store.canMutateSelectedGraph) return false;
     const g = store.selectedGraph;
     if (!g) return false;
     // Pointer inside a precise handle's radius → validate that exact port (mod / param / flow).
@@ -717,7 +717,7 @@
       onPaneClick={() => shell.clearSelection()}
       onPaneContextMenu={(e) => {
         e.preventDefault();
-        if (store.canEditSelectedGraph) openAddPopover({ x: e.clientX, y: e.clientY });
+        if (store.canMutateSelectedGraph) openAddPopover({ x: e.clientX, y: e.clientY });
       }}
       onNodeEnter={(id) => hover.enter(id)}
       onNodeLeave={() => hover.leave()}
@@ -729,7 +729,7 @@
       onReconnectAbandon={guard('delete', (edgeId) => onDeleteEdges([{ id: edgeId }]))}
       onDelete={guard('delete', ({ edges: removed }) => onDeleteEdges(removed))}
       validateDrag={validateDrop}
-      editable={store.canEditSelectedGraph}
+      editable={store.canMutateSelectedGraph}
       {wirePreview}
     >
       {#snippet overlay()}
@@ -758,7 +758,7 @@
         label="Add node"
         variant="soft"
         tooltipSide="left"
-        disabled={!store.canEditSelectedGraph}
+        disabled={!store.canMutateSelectedGraph}
         onclick={() => openAddPopover()}
       />
     </div>
@@ -768,7 +768,7 @@
         bounds={canvasBox}
         types={addTypes}
         wiring={!!addPopover.pending}
-        disabled={!store.canEditSelectedGraph}
+        disabled={!store.canMutateSelectedGraph}
         onAdd={handleAdd}
         onClose={() => (addPopover = null)}
       />

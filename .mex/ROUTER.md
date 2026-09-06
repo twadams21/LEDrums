@@ -58,11 +58,43 @@ dangling local graph refs, and orphan graph names are dropped deterministically,
 `lib:*` refs survive. ClipDoc section/song materialization fails closed on missing graph closure.
 The store exposes one graph ownership capability used by every graph mutator and the Trigger graph
 canvas/Inspector: canonical graphs remain playable/selectable but are disabled until detach, with
-an explicit read-only explanation. Canonical mutation tests cover node add/delete/param/edge no-ops,
-undo, and autosave byte stability. Evidence: full 2,525 web + 1,402 core + 601 server + 98 IO +
-13 protocol + 57 worker + 83 desktop tests green; full typecheck/build and design-system regeneration
-green; strict canonical section and Inspector shots are console-clean. Pushed as `4287cc13`; PR CI
-run `33999085790` is green (`checks` and `desktop`).
+an explicit read-only explanation. Canonical graph copy is explicit: graph duplication and
+copy-to-section may materialize local content; node clipboard copy remains blocked for canonical
+graphs. The table-driven regression covers the public graph mutator surface and asserts canonical
+library bytes/signature, authored history, autosave signatures, and transient node clipboard
+stability; a separate test proves the permitted copy-as-source paths. Viewer `copySection` is a
+controller/UI no-op with no transient clipboard write. Evidence: full monorepo tests green (220 web
+files / 2,543 tests, 51 server files / 601 tests, plus core/io/protocol/worker/desktop suites), full
+typecheck/build and design-system regeneration green; strict canonical section and Inspector shots
+are console-clean. The branch includes the resolved `origin/main` merge with #207 accessibility /
+reconciliation preserved; final commit/push and fresh CI are pending.
+**PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
+`ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
+detach, and authored-state replacement all reconcile the exact active song to a valid local fallback
+or empty state, then call the existing active-section reconciliation seam. Two regressions cover
+active canonical removal, re-add without stale-section revival, and the no-fallback/null case.
+Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorepo 4,773 passed /
+4 skipped, and full typecheck green. No UI output changed, so no shots were required. Commit/push
+and CI are still pending.
+
+**PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
+Sections `+` gate now derives from exact resolved/local song targets: canonical library references
+remain playable but show a disabled `Library song — detach a copy to edit` reason, stale or empty
+selection shows `No active song — add a song first`, and viewer state remains the generic reason only
+when a local target exists. The focusable tooltip wrapper now carries its own accessible group name,
+description and disabled state while the inner native button remains disabled. Section mutations
+require an exact local target, activate only after successful insertion, and reconcile the active
+section after song-id/list replacement or removal. Tests cover accessibility tree behavior, reason
+precedence, stale/empty/reference targets, invalid activation, insertion, replacement and removal.
+Verified with focused web tests (49 passed), full web tests (2,517 passed, 1 skipped), full monorepo
+tests (green), full typecheck, regenerated `docs/design-system.html`, and strict `songs-bar`/
+`sections-bar` shots with no console errors. The current shot seam cannot select viewer/reference/
+no-song fixtures, so those extra visual states were verified at component/store seams instead.
+
+**Chrome section-add gate replacement (2026-09-06, local `feat/chrome-section-add-gate`, current-main reimplementation of PR #199):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. Not merged or shipped; the new PR must supersede #199.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

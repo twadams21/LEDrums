@@ -413,7 +413,7 @@ export class TriggerLab {
   // look-recall (the play surface stays here) through the injected host.
   private readonly sectionsCtl = new SectionsController({
     isViewer: () => this.isViewer,
-    activeSong: () => this.activeSong,
+    activeSongById: () => this.activeSongById,
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
     isLocalSong: (songId) => this.songs.some((song) => song.id === songId),
@@ -447,7 +447,9 @@ export class TriggerLab {
     return this.sectionsCtl.activeSectionId;
   }
   set activeSectionId(id: string | null) {
-    this.sectionsCtl.activeSectionId = id;
+    const activeSong = this.activeSongById;
+    this.sectionsCtl.activeSectionId =
+      id !== null && !activeSong?.sections.some((section) => section.id === id) ? null : id;
   }
   /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
       Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
@@ -580,6 +582,7 @@ export class TriggerLab {
       this.flushSave();
     },
     setActiveSectionId: (id) => (this.activeSectionId = id),
+    reconcileActiveSection: () => this.sectionsCtl.reconcileActiveSection(),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
     send: (msg) => this.client.send(msg),
@@ -599,13 +602,14 @@ export class TriggerLab {
   }
   set songs(v: Song[]) {
     this.showsCtl.songs = v;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** Library-song references (S41): ids into {@link songLibrary} the active show resolves in. */
   get songRefs(): string[] {
     return this.showsCtl.songRefs;
   }
   set songRefs(v: string[]) {
-    this.showsCtl.songRefs = v;
+    this.showsCtl.setSongRefs(v);
   }
   /** which song the Sections view + Songs rail show. */
   get activeSongId(): string {
@@ -613,6 +617,7 @@ export class TriggerLab {
   }
   set activeSongId(id: string) {
     this.showsCtl.activeSongId = id;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
   get songLibrary(): SongLibrary {
@@ -632,6 +637,14 @@ export class TriggerLab {
   /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
   get activeSong(): Song | null {
     return this.showsCtl.activeSong;
+  }
+  /** The exact active song in the resolved setlist; unlike `activeSong`, never falls back. */
+  get activeSongById(): Song | null {
+    return this.showsCtl.activeSongById;
+  }
+  /** The exact active song in the local authored setlist, or null for a library reference/stale id. */
+  get activeLocalSong(): Song | null {
+    return this.showsCtl.activeLocalSong;
   }
   /** The active show with its library references materialized in (S42). */
   get resolvedView() {
@@ -849,10 +862,28 @@ export class TriggerLab {
     }
     return this.graphs[graphKey] ? 'local' : 'missing';
   }
-  canEditGraph(graphKey: string | null): boolean {
+  /** The single graph-authoring capability. Every graph mutator and its UI must use this
+      boundary: canonical library graphs can be selected and played, but only local graphs can
+      be changed. Copy-as-source operations use {@link canCopyGraph} instead. */
+  canMutateGraph(graphKey: string | null = this.selectedPadKey): boolean {
     return this.canEdit && this.graphOwnership(graphKey) === 'local';
   }
-  canEditSelectedGraph = $derived(this.canEditGraph(this.selectedPadKey));
+  /** Compatibility name for older view/controller call sites; it is deliberately derived from
+      the authoritative capability above rather than implementing a second policy. */
+  canEditGraph(graphKey: string | null): boolean {
+    return this.canMutateGraph(graphKey);
+  }
+  canMutateSelectedGraph = $derived(this.canMutateGraph(this.selectedPadKey));
+  canEditSelectedGraph = $derived(this.canMutateSelectedGraph);
+  /** Read-only graph copies are allowed to materialize local content. This is intentionally
+      separate from {@link canMutateGraph}: canonical graphs are valid copy sources, while the
+      viewer cannot author the resulting local copy. */
+  canCopyGraph(graphKey: string | null): boolean {
+    return this.canEdit && !!graphKey && !!this.resolvedView.graphs[graphKey] && this.graphOwnership(graphKey) !== 'missing';
+  }
+  private canMutateNode(node: GraphNode): boolean {
+    return this.canMutateSelectedGraph && !!this.selectedGraph?.nodes.some((candidate) => candidate.id === node.id);
+  }
   selectedGraphEditBlockReason = $derived(
     this.isViewer
       ? 'Another client is editing'
@@ -2140,9 +2171,9 @@ export class TriggerLab {
    * tells the engine to fire this section's graphs.
    */
   setActiveSection(sectionId: string): void {
-    if (!this.activeSong?.sections.some((section) => section.id === sectionId)) return;
-    this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
+    if (!look) return;
+    this.activeSectionId = sectionId;
     // Offline preview only: when connected the server engine spawns this section's looks
     // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
     // outbound authority gate (S12) — the sim resolves only while the link is closed.
@@ -2527,10 +2558,10 @@ export class TriggerLab {
   }
   /** Clone a graph and place the clone in one local section as one undoable transaction. */
   copyGraphToSection(sectionId: string, sourceKey: string, name?: string): string | null {
-    if (this.isViewer || !this.activeSongIsLocal) return null;
+    if (!this.canEditActiveSong) return null;
     const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
     const section = song?.sections.find((candidate) => candidate.id === sectionId);
-    const source = this.graphs[sourceKey];
+    const source = this.resolvedView.graphs[sourceKey];
     if (!song || !section || !source) return null;
     this.pushUndoSnapshot();
     const key = freshId('graph', (candidate) => candidate in this.graphs);
@@ -2889,8 +2920,8 @@ export class TriggerLab {
       duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
       the user places it where they want (reuse is by reference). Persists via autosave. */
   duplicateGraph(key: string): string | null {
-    if (!this.canEditGraph(key)) return null;
-    const src = this.graphs[key];
+    if (!this.canCopyGraph(key)) return null;
+    const src = this.resolvedView.graphs[key];
     if (!src) return null;
     this.pushUndoSnapshot();
     const newKey = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
@@ -3036,9 +3067,11 @@ export class TriggerLab {
     return clone;
   }
 
-  /** Copy a node onto the node clipboard (deep, non-reactive). No-op for the trigger node. */
+  /** Copy a node onto the node clipboard (deep, non-reactive). Node clipboard copying is an
+      authoring operation, not a read-only library export: canonical graphs are copied through
+      copyGraphToSection/copyGraphToClipboard, both of which create or export local content. */
   copyNode(node: GraphNode): void {
-    if (isAnchorNode(node)) return;
+    if (!this.canMutateNode(node) || isAnchorNode(node)) return;
     this.nodeClipboard = structuredClone($state.snapshot(node));
   }
 
@@ -3159,6 +3192,7 @@ export class TriggerLab {
   }
 
   setLiveNodePosition(nodeId: string, x: number, y: number): void {
+    if (!this.canMutateSelectedGraph || !this.selectedGraph?.nodes.some((node) => node.id === nodeId)) return;
     this.liveNodePositions = { ...this.liveNodePositions, [nodeId]: { x, y } };
   }
 
@@ -3255,7 +3289,7 @@ export class TriggerLab {
       indication) knowing release will actually splice. No side effects. */
   canSplice(edgeId: string, nodeId: string): boolean {
     const g = this.selectedGraph;
-    return !!g && !this.isViewer && canSplice(g, edgeId, nodeId);
+    return !!g && this.canMutateSelectedGraph && canSplice(g, edgeId, nodeId);
   }
 
   /** Splice dropped node `nodeId` into flow edge `edgeId` (R08): remove the edge and re-wire
@@ -4325,20 +4359,20 @@ export class TriggerLab {
     return node?.kind === 'note' ? node.noteReleaseMs ?? 0 : 0;
   }
   setNoteNodeNumber(node: GraphNode, note: number): void {
-    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(note)) return;
+    if (!this.canMutateNode(node) || node.kind !== 'note' || !Number.isFinite(note)) return;
     node.noteNumber = Math.max(0, Math.min(127, Math.round(note)));
   }
   setNoteNodeChannel(node: GraphNode, channel: number | null): void {
-    if (this.isViewer || node.kind !== 'note') return;
+    if (!this.canMutateNode(node) || node.kind !== 'note') return;
     if (channel === null) node.noteChannel = null;
     else if (Number.isFinite(channel) && channel >= 1 && channel <= 16) node.noteChannel = Math.round(channel);
   }
   setNoteNodeMode(node: GraphNode, mode: voice.NoteModMode): void {
-    if (this.isViewer || node.kind !== 'note') return;
+    if (!this.canMutateNode(node) || node.kind !== 'note') return;
     node.noteMode = mode;
   }
   setNoteNodeReleaseMs(node: GraphNode, releaseMs: number): void {
-    if (this.isViewer || node.kind !== 'note' || !Number.isFinite(releaseMs)) return;
+    if (!this.canMutateNode(node) || node.kind !== 'note' || !Number.isFinite(releaseMs)) return;
     node.noteReleaseMs = Math.max(0, Math.round(releaseMs));
   }
 
@@ -4346,14 +4380,14 @@ export class TriggerLab {
     return node?.kind === 'randomMod' ? node.randomDistribution ?? 'linear' : 'linear';
   }
   setRandomDistribution(node: GraphNode, distribution: voice.RandomDistribution): void {
-    if (this.isViewer || node.kind !== 'randomMod') return;
+    if (!this.canMutateNode(node) || node.kind !== 'randomMod') return;
     node.randomDistribution = distribution;
   }
   randomSteps(node: GraphNode): number {
     return node?.kind === 'randomMod' ? node.randomSteps ?? 4 : 4;
   }
   setRandomSteps(node: GraphNode, steps: number): void {
-    if (this.isViewer || node.kind !== 'randomMod' || !Number.isFinite(steps)) return;
+    if (!this.canMutateNode(node) || node.kind !== 'randomMod' || !Number.isFinite(steps)) return;
     node.randomSteps = Math.max(2, Math.min(64, Math.round(steps)));
   }
 }

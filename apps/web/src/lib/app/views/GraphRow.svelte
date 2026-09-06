@@ -23,8 +23,9 @@
 
   let editing = $state(false);
   const sub = $derived(describeTriggerSource(store.triggerSource(graph.key), store.drums).sub);
-  const canEdit = $derived(store.canEditActiveSong);
-  const blockedReason = $derived(store.activeSongEditBlockReason ?? 'Library graph is read-only');
+  const canMutate = $derived(store.canMutateGraph(graph.key));
+  const canCopy = $derived(store.canCopyGraph(graph.key));
+  const blockedReason = $derived(store.selectedGraphEditBlockReason ?? 'This graph is read-only');
 
   function remove(): void {
     store.deleteGraph(graph.key);
@@ -32,9 +33,9 @@
 
   const actions = $derived<ContextMenuAction[]>([
     { label: 'Open', icon: SquarePen, onSelect: () => onOpen(graph.key) },
-    { label: canEdit ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canEdit, onSelect: () => store.duplicateGraph(graph.key) },
+    { label: canCopy ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canCopy, onSelect: () => store.duplicateGraph(graph.key) },
     { label: 'Copy', icon: Copy, onSelect: () => void store.copyGraphToClipboard(graph.key) },
-    { label: canEdit ? 'Delete' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canEdit, onSelect: remove },
+    { label: canMutate ? 'Delete' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canMutate, onSelect: remove },
   ]);
 </script>
 
@@ -48,13 +49,13 @@
   onCommit={(name) => store.renameGraph(graph.key, name)}
   {actions}
   renameLabel="Graph name"
-  renameDisabled={!canEdit}
+  renameDisabled={!canMutate}
   renameDisabledLabel={blockedReason}
 >
   {#snippet quickActions()}
-    <IconButton icon={Pencil} label={canEdit ? 'Rename graph' : `Rename disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={() => (editing = true)} />
-    <IconButton icon={CopyPlus} label={canEdit ? 'Duplicate graph' : `Duplicate disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={() => store.duplicateGraph(graph.key)} />
+    <IconButton icon={Pencil} label={canMutate ? 'Rename graph' : `Rename disabled — ${blockedReason}`} size={13} disabled={!canMutate} onclick={() => (editing = true)} />
+    <IconButton icon={CopyPlus} label={canCopy ? 'Duplicate graph' : `Duplicate disabled — ${blockedReason}`} size={13} disabled={!canCopy} onclick={() => store.duplicateGraph(graph.key)} />
     <IconButton icon={Copy} label="Copy graph to clipboard" size={13} onclick={() => void store.copyGraphToClipboard(graph.key)} />
-    <IconButton icon={Trash2} label={canEdit ? 'Delete graph' : `Delete disabled — ${blockedReason}`} size={13} disabled={!canEdit} onclick={remove} />
+    <IconButton icon={Trash2} label={canMutate ? 'Delete graph' : `Delete disabled — ${blockedReason}`} size={13} disabled={!canMutate} onclick={remove} />
   {/snippet}
 </EditableRow>

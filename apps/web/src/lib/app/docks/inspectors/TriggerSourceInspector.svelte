@@ -119,7 +119,14 @@
     <span class="sub">graph input</span>
   </div>
   {#if gkey}
-    <IconButton icon={CopyPlus} label="Duplicate graph" variant="soft" size={14} onclick={() => store.duplicateGraph(gkey)} />
+    <IconButton
+      icon={CopyPlus}
+      label={store.canCopyGraph(gkey) ? 'Duplicate graph' : `Duplicate disabled — ${store.activeSongEditBlockReason ?? 'graph is read-only'}`}
+      variant="soft"
+      size={14}
+      disabled={!store.canCopyGraph(gkey)}
+      onclick={() => store.duplicateGraph(gkey)}
+    />
   {/if}
 </header>
 <div class="trigbody">
