@@ -43,9 +43,10 @@ through a deterministic threshold while brightness attenuates once, and fire ran
 seeded Mulberry32 random-access primitive without per-pixel generator allocation. Focused tests,
 typecheck, build, design-system regeneration, and the strict all-surface UI-shot sweep pass. The
 full local suite reached every package's normal result except one final web suite blocked by the
-host volume reaching `ENOSPC`; CI is the clean full-suite gate. Commit/push/CI are pending; no PR
-merge or release is authorized in this task. Source: Trent's PR #212 findings on Trent's MacBook
-Pro.
+host volume reaching `ENOSPC`; CI run `34017372215` then passed the full test suite, typecheck,
+dead-code verification, and desktop build/tests. The implementation is pushed; PR #212 remains
+open and no merge or release is authorized in this task. Source: Trent's PR #212 findings on
+Trent's MacBook Pro.
 
 **PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
 Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
