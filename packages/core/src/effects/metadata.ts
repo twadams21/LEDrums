@@ -50,6 +50,14 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'Each drum grows a flame from the bottom hoop whose height tracks your most-recent hit velocity, flickering hot white at the base to deep red at the tip — play harder, burn taller.',
     tags: ['hit', 'per-drum', 'hoop-aware'],
   },
+  sparkler: {
+    description: 'A struck drum burns like a sparkler: white-hot sparks scatter over a dark ember bed, cool through yellow to orange, and thin as the burn spends. Random changes where the sparks land.',
+    tags: ['hit', 'per-drum', 'sparkle', 'particle', 'seeded'],
+  },
+  'flame-flicker': {
+    description: 'One warm flame breathes across the struck drum from three interlocking waves. Spread moves from one coherent body to pixel variation; Random changes the flame’s steadiness and temporal stepping.',
+    tags: ['hit', 'per-drum', 'wash', 'seeded'],
+  },
   'colour-melody': {
     description: 'Every note maps to its own hue across the kit and holds until the next note — play a melody and the rig walks through the colour wheel with you.',
     tags: ['hit', 'kit-wide'],

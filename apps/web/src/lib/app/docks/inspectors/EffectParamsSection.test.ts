@@ -172,6 +172,12 @@ const decayEffect = (): EffectDef => GENERATOR_EFFECTS.find((e) => e.id === 'gen
 const plainEffect = (): EffectDef => GENERATOR_EFFECTS.find((e) => e.id === 'gen:breathing-kit')!;
 
 describe('EffectParamsSection — the decay envelope is the control, always', () => {
+  it('does not duplicate Sparkler’s declared Burn row', () => {
+    const eff = GENERATOR_EFFECTS.find((e) => e.id === 'gen:sparkler')!;
+    const { container } = mount(eff);
+    expect(labels(container).filter((label) => label === 'Burn')).toEqual(['Burn']);
+  });
+
   it('shows the curve with no toggle to reach it, for an effect that declares a decay', () => {
     const { container } = mount(decayEffect());
     expect(container.querySelector('[aria-label="Decay envelope"]')).not.toBeNull();

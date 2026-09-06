@@ -36,6 +36,27 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #212 final remediation locally complete (2026-09-06, branch `feat/sparkler-flame-effects`):**
+This branch integrates `origin/main` at the PR #206 merge `b1b4b492`. Sparkler cadence is derived
+from Spark Life with adjacent-bucket overlap at min/default/max life, burn thins spark selection
+through a deterministic threshold while brightness attenuates once, and fire randomness uses the
+seeded Mulberry32 random-access primitive without per-pixel generator allocation. Focused tests,
+typecheck, build, design-system regeneration, and the strict all-surface UI-shot sweep pass. The
+full local suite reached every package's normal result except one final web suite blocked by the
+host volume reaching `ENOSPC`; CI run `34017372215` then passed the full test suite, typecheck,
+dead-code verification, and desktop build/tests. The implementation is pushed; PR #212 remains
+open and no merge or release is authorized in this task. Source: Trent's PR #212 findings on
+Trent's MacBook Pro.
+
+**PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
+popup ownership now counts only open surfaces: Bits `data-state="open"`, native popover/open state,
+or the explicit `data-keyboard-open` marker. Closed mounted/force-mounted listboxes, menus, and
+items—including exit-animation state—no longer swallow Perform keys; items inherit ownership only
+from an open owning surface. Focused tests cover closed roots/items, exit/forceMount, open portals,
+nested items, native popovers, and the shared marker. Typecheck and full tests are green; commit,
+push, and CI verification are pending.
+
 **PR #206 integration (merged to `main`, 2026-09-06):** `origin/main` now includes PR #206's
 keyboard ownership and runtime-section authorization fixes, plus the preceding PR #211 splice
 transport merge. PR #213's branch merged that current main at `2122de55` before the final blocker

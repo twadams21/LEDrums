@@ -12,7 +12,7 @@
   import { resolveVoiceSustainMs, type CurveValue, type Hsv } from '@ledrums/core';
   import { decaySpanHint, lifeParamKey, maxBrightnessKey, seedLifeEnvelope } from '../../../trigger-lab/life-envelope';
   import { num } from '../../views/node-options';
-  import { groupParamsFiltered } from './param-families';
+  import { groupParamsFiltered, visibleParamRows } from './param-families';
   import { paramFold } from './param-disclosure.svelte';
   import ParamRow from './ParamRow.svelte';
   import Eyebrow from '../../../ui/Eyebrow.svelte';
@@ -35,7 +35,6 @@
 
   const filtering = $derived(filter.trim().length > 0);
   const grouped = $derived(groupParamsFiltered(eff.params, filter));
-  const hiddenAll = $derived(filtering && grouped.commonParams.length === 0 && grouped.specific.length === 0);
 
   /** Effects that carry hue + saturation + brightness numeric params get a colour swatch
       that writes through to all three (the picker is UI-only — persistence stays numeric). */
@@ -80,6 +79,8 @@
   const maxSpec = $derived(maxKey ? eff.params.find((p) => p.key === maxKey) ?? null : null);
   /** Rows the envelope block owns — they must not also render in the flat common list. */
   const envelopeKeys = $derived(showEnvelope ? [lifeKey, maxKey].filter((k): k is string => !!k) : []);
+  const visible = $derived(visibleParamRows(grouped, envelopeKeys));
+  const hiddenAll = $derived(filtering && visible.common.length === 0 && visible.specific.length === 0);
   /** One undo per gesture: the first live frame opens the checkpoint, the rest fold into it. */
   let lifeDragging = $state(false);
 
@@ -147,7 +148,7 @@
             />
           </div>
         {/if}
-        {#each grouped.commonParams.filter((p) => !envelopeKeys.includes(p.key)) as spec (spec.key)}
+        {#each visible.common as spec (spec.key)}
           <ParamRow {store} {node} {spec} {live} />
         {/each}
         {#if showEnvelope}
@@ -187,14 +188,14 @@
 
   <Disclosure
     label={eff.name}
-    count={grouped.specific.length}
+    count={visible.specific.length}
     open={foldOpen}
     onToggle={(v) => {
       if (!filtering) paramFold.open = v;
     }}
   >
     <div class="rows">
-      {#each grouped.specific as spec (spec.key)}
+      {#each visible.specific as spec (spec.key)}
         <ParamRow {store} {node} {spec} {live} />
       {:else}
         <p class="none">
