@@ -45,7 +45,8 @@ non-editable modal chrome and menus still suppress background Backspace/Delete a
 shortcuts. Target-handler integration tests cover marked controls outside a modal and inside both
 modal and popup surfaces, while the prior Backspace/Cmd+D cases remain green. Current
 `origin/main` (#211) was merged with both Router histories and decision-log records preserved.
-Full tests, typecheck, and production build are green locally; CI is the remaining delivery gate.
+Full tests, typecheck, and production build are green locally. CI run `34009619438` is green for
+checks and desktop. PR #206 remains open and unmerged.
 
 **PR #206 runtime follow-up + PR #209 integration (2026-09-06, local `fix/performance-key-ownership`):**
 The App capture dispatcher now yields first to editable text inside modal and popup surfaces, then
