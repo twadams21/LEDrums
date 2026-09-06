@@ -61,10 +61,16 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
 
     const t = ctx.timeMs * 0.001 * rateHz;
     const tick = Math.floor(t);
+    const coherentA = Math.sin(t * TAU);
+    const coherentB = Math.sin(t * 4.117 + 1.3);
+    const coherentC = Math.sin(t * 9.531 + 2.1);
+    for (let drumIndex = 0; drumIndex < state.drumStepByDrum.length; drumIndex += 1) {
+      state.drumStepByDrum[drumIndex] = hash01(drumIndex, tick, state.seed);
+    }
     for (let pixelIndex = 0; pixelIndex < ctx.model.pixels.length; pixelIndex += 1) {
       const pixel = ctx.model.pixels[pixelIndex]!;
-      const drumIndex = state.drumIndexById.get(pixel.drumId);
-      if (drumIndex === undefined) continue;
+      const drumIndex = state.drumIndexByPixel[pixelIndex]!;
+      if (drumIndex < 0) continue;
       const energy = state.energyByDrum[drumIndex]!;
       if (energy < VISIBLE_CUTOFF) continue;
 
@@ -72,9 +78,6 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
       // across this drum and one value keyed to this pixel. A small spread therefore remains
       // near the coherent body instead of changing the hash identity wholesale.
       const spatial = (pixel.hoopIndex - 1) * 1.9 + pixel.angleDeg * 0.021;
-      const coherentA = Math.sin(t * TAU);
-      const coherentB = Math.sin(t * 4.117 + 1.3);
-      const coherentC = Math.sin(t * 9.531 + 2.1);
       const pixelA = Math.sin(t * TAU + spatial);
       const pixelB = Math.sin(t * 4.117 + spatial * 2.7 + 1.3);
       const pixelC = Math.sin(t * 9.531 + spatial * 0.6 + 2.1);
@@ -82,7 +85,7 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
       const waveB = lerp(coherentB, pixelB, spread);
       const waveC = lerp(coherentC, pixelC, spread);
       const smooth = clamp01(0.5 + (waveA * 0.5 + waveB * 0.32 + waveC * 0.18) * 0.5);
-      const drumStep = hash01(drumIndex, tick, state.seed);
+      const drumStep = state.drumStepByDrum[drumIndex]!;
       const pixelStep = hash01(pixel.id, tick, state.seed);
       const stepped = lerp(drumStep, pixelStep, spread);
       const flame = clamp01(lerp(smooth, stepped, random));

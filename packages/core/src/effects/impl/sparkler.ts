@@ -116,7 +116,7 @@ export const sparkler: EffectGenerator<FireEffectState> = {
       for (let bucket = firstBucket; bucket <= nowBucket; bucket += 1) {
         const contribution = sparkContributionAt(
           ctx.timeMs, sparkMs, crackle, pixel.id, bucket, state.seed, density, random,
-        ) * burn;
+        );
         spark += contribution * (1 - spark);
       }
 

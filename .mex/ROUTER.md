@@ -52,6 +52,19 @@ Flame Flicker has a populated gallery preset. Local evidence: full tests (1,447 
 and `UI_SHOT_BASE=http://localhost:5250 pnpm ui-shot --all --strict` all pass. No merge or release
 was performed; push and PR CI are the remaining delivery steps.
 
+**PR #212 exact remaining defects (2026-09-06, branch `feat/sparkler-flame-effects`, not merged):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #212 review.
+Flame Flicker now uses `drumIndexByPixel[pixelIndex]` in its pixel loop, computes coherent sine
+terms once per render, and reuses fixed per-drum stepped-value scratch. Sparkler applies burn
+attenuation once to both sparks and core. The internal pure `sparkContributionAt` seam now has a
+direct fixed `(pixel,bucket,seed)` lifetime/overlap regression, and `core=0` quantitatively pins
+half-life to linear 0.5 attenuation rather than burn². Evidence: focused fire tests (24), core
+tests (1,449 passed / 5 skipped), full repository tests (2,554 web passed / 1 skipped, 601 server,
+98 IO, 13 protocol, 83 desktop, 57 worker), typecheck, build, fire benchmark, regenerated design
+system, and strict Sparkler/Flame Flicker inspector shots. The first full-repo attempt hit machine
+`/tmp` exhaustion after 2,507 web tests; the affected six suites and the complete rerun passed.
+The branch is ready to commit/push; do not merge.
+
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
 commits `89307dde` and `f21b4f37`. The current core compositor now transports each splice's

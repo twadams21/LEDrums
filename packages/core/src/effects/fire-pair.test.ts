@@ -5,7 +5,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
 import type { FireEffectState } from './fire-state';
-import { sparkContributionAt, sparkler } from './impl/sparkler';
+import { SPARK_BUCKET_CADENCE_MS, sparkContributionAt, sparkler } from './impl/sparkler';
 import { flameFlicker } from './impl/flame-flicker';
 
 function model(drums = 2, hoopCount = 4): PixelModel {
@@ -172,6 +172,39 @@ describe('Sparkler spatial and temporal behavior', () => {
       Math.max(...a.rgba.map((value, index) => Math.abs(value - b.rgba[index]!)));
     expect(maxChannelDelta(boundary, before)).toBeLessThan(0.05);
     expect(maxChannelDelta(after, boundary)).toBeLessThan(0.05);
+  });
+
+  it('keeps a fixed spark identity alive while the adjacent bucket enters', () => {
+    const pixelId = 11;
+    const seed = 7;
+    const sparkMs = 90;
+    const boundaryMs = SPARK_BUCKET_CADENCE_MS;
+
+    expect(sparkContributionAt(boundaryMs, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBeGreaterThan(0);
+    expect(sparkContributionAt(boundaryMs + 1, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBeGreaterThan(0);
+    expect(sparkContributionAt(boundaryMs + 1, sparkMs, 0, pixelId, 1, seed, 1, 0)).toBeGreaterThan(0);
+    expect(sparkContributionAt(sparkMs, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBe(0);
+  });
+
+  it('applies burn attenuation once to sparks when Core Glow is zero', () => {
+    const decayMs = 1000;
+    const timeMs = 1000;
+    const params = {
+      density: 1,
+      core: 0,
+      crackle: 0,
+      random: 0,
+      sparkMs: 45,
+      decayMs,
+    };
+    const fresh = frame(sparkler, m, timeMs, [hit('d0', 0)], params);
+    const halfBurn = frame(sparkler, m, timeMs, [hit('d0', Math.LN2 * decayMs)], params);
+    const pixelId = drum.pixelStart;
+    const freshLevel = brightness(fresh, pixelId);
+    const halfBurnLevel = brightness(halfBurn, pixelId);
+
+    expect(freshLevel).toBeGreaterThan(0);
+    expect(halfBurnLevel / freshLevel).toBeCloseTo(0.5, 3);
   });
 
   it('keeps sparks inside the warm colour-temperature range', () => {

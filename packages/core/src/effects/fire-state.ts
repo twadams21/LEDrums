@@ -10,6 +10,8 @@ export interface FireEffectState {
   /** Pixel-index lookup built once with the model's contiguous drum ranges. */
   readonly drumIndexByPixel: Int32Array;
   readonly energyByDrum: Float32Array;
+  /** Reused per-drum scratch for coherent stepped Flame Flicker values. */
+  readonly drumStepByDrum: Float32Array;
 }
 
 /** Build the grouping once when the generator voice is created, not once per frame. */
@@ -22,7 +24,13 @@ export function createFireEffectState(model: PixelModel, seed = 0): FireEffectSt
     drumIndexById.set(drum.drumId, i);
     drumIndexByPixel.fill(i, drum.pixelStart, drum.pixelStart + drum.pixelCount);
   }
-  return { seed: seed >>> 0, drumIndexById, drumIndexByPixel, energyByDrum: new Float32Array(model.drums.length) };
+  return {
+    seed: seed >>> 0,
+    drumIndexById,
+    drumIndexByPixel,
+    energyByDrum: new Float32Array(model.drums.length),
+    drumStepByDrum: new Float32Array(model.drums.length),
+  };
 }
 
 /** Fill the reused per-drum energy table and return whether any drum can render. */
