@@ -36,6 +36,15 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
+popup ownership now counts only open surfaces: Bits `data-state="open"`, native popover/open state,
+or the explicit `data-keyboard-open` marker. Closed mounted/force-mounted listboxes, menus, and
+items—including exit-animation state—no longer swallow Perform keys; items inherit ownership only
+from an open owning surface. Focused tests cover closed roots/items, exit/forceMount, open portals,
+nested items, native popovers, and the shared marker. Typecheck and full tests are green; commit,
+push, and CI verification are pending.
+
 **PR #206 keyboard-ownership gate + #211 integration (2026-09-06, local `fix/performance-key-ownership`):**
 Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. The
 App capture dispatcher now checks editable targets, then marked keyboard controls' relevant

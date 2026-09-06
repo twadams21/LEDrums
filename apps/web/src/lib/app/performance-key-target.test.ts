@@ -82,12 +82,65 @@ describe('performanceKeyTarget — DOM ownership adapter', () => {
     native.setAttribute('open', '');
     const menu = document.body.appendChild(document.createElement('div'));
     menu.setAttribute('role', 'menu');
+    menu.setAttribute('data-state', 'open');
     const item = menu.appendChild(document.createElement('div'));
     item.setAttribute('role', 'menuitem');
 
     expect(performanceKeyTarget(alert).inModal).toBe(true);
     expect(performanceKeyTarget(native).inModal).toBe(true);
     expect(performanceKeyTarget(item).inOpenPopup).toBe(true);
+  });
+
+  it('ignores mounted closed popup surfaces and their items, including exit/force-mounted content', () => {
+    const listbox = document.body.appendChild(document.createElement('div'));
+    listbox.setAttribute('role', 'listbox');
+    listbox.setAttribute('data-state', 'closed');
+    const option = listbox.appendChild(document.createElement('div'));
+    option.setAttribute('role', 'option');
+
+    const menu = document.body.appendChild(document.createElement('div'));
+    menu.setAttribute('data-keyboard-owner', 'menu');
+    menu.setAttribute('data-state', 'closed');
+    const item = menu.appendChild(document.createElement('button'));
+    item.setAttribute('data-keyboard-owner', 'menuitem');
+
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(false);
+    expect(performanceKeyTarget(option).inOpenPopup).toBe(false);
+    expect(performanceKeyTarget(item).inOpenPopup).toBe(false);
+  });
+
+  it('inherits popup ownership from an open portal surface for nested items', () => {
+    const portal = document.body.appendChild(document.createElement('div'));
+    portal.setAttribute('role', 'menu');
+    portal.setAttribute('data-state', 'open');
+    const group = portal.appendChild(document.createElement('div'));
+    const item = group.appendChild(document.createElement('button'));
+    item.setAttribute('role', 'menuitem');
+
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(true);
+    expect(performanceKeyTarget(item).inOpenPopup).toBe(true);
+  });
+
+  it('recognises a native open popover but not its mounted closed state', () => {
+    const popover = document.body.appendChild(document.createElement('div'));
+    popover.setAttribute('popover', 'auto');
+    popover.setAttribute('open', '');
+
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(true);
+
+    popover.removeAttribute('open');
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(false);
+  });
+
+  it('honours an explicit shared open marker for primitives without data-state', () => {
+    const surface = document.body.appendChild(document.createElement('div'));
+    surface.setAttribute('data-keyboard-owner', 'popover');
+    surface.setAttribute('data-keyboard-open', 'false');
+
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(false);
+
+    surface.setAttribute('data-keyboard-open', 'true');
+    expect(performanceKeyTarget(document.body).inOpenPopup).toBe(true);
   });
 
   it('recognises an xyflow canvas without relying on focus blur', () => {
