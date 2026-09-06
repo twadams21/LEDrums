@@ -216,7 +216,7 @@ describe('VoiceBusEngine — stats().voices per-voice detail (S17)', () => {
     // appear in the per-voice stream (with bus + loop mode) so a connected dock renders them.
     const e = createVoiceBusEngine();
     e.setShow(looksShow({ base: 'lkBase', lead: 'lkLead' }));
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5)); // drain recall → spawn looks
     e.tick(40, 35, transport(40)); // age past attack so levels register
 
@@ -440,7 +440,7 @@ function sectionShow(slotRefs: (string | null)[]): Show {
   };
 }
 
-function recallSection(songId: string, sectionId: string, timeMs = 0): InputEvent {
+function recallSection(songId: string | null, sectionId: string | null, timeMs = 0): InputEvent {
   return { kind: 'recallSection', songId, sectionId, timeMs };
 }
 
@@ -1651,10 +1651,43 @@ function looksShow(looks: Record<string, string | null>, extraSections: Section[
 }
 
 describe('VoiceBusEngine — section looks (spawn/release)', () => {
+  it('recalls a valid zero-section song and clears the section pointer', () => {
+    const e = createVoiceBusEngine();
+    e.setShow({
+      ...looksShow({}),
+      songs: [{ id: 'empty-song', name: 'Empty', sections: [] }],
+    });
+    e.applyInput(recallSection('empty-song', null, 0));
+    e.tick(5, 5, transport(5));
+
+    expect(e.getActiveSelection()).toEqual({ activeSongId: 'empty-song', activeSectionId: null });
+  });
+
+  it('rejects a null section recall for a non-empty song', () => {
+    const e = createVoiceBusEngine();
+    e.setShow({
+      ...looksShow({}),
+      songs: [{ id: 'song1', name: 'Song 1', sections: [{ id: 'sec1', name: 'Sec 1', slots: {} }] }],
+    });
+    e.applyInput(recallSection('song1', null, 0));
+    e.tick(5, 5, transport(5));
+
+    expect(e.getActiveSelection()).toEqual({ activeSongId: 'song1', activeSectionId: 'sec1' });
+  });
+
+  it('rejects an arbitrary song id on a legacy top-level section recall', () => {
+    const e = createVoiceBusEngine();
+    e.setShow(looksShow({}));
+    e.applyInput(recallSection('not-the-legacy-identity', 'sec1', 0));
+    e.tick(5, 5, transport(5));
+
+    expect(e.getActiveSelection()).toEqual({ activeSongId: null, activeSectionId: null });
+  });
+
   it('recall spawns a looped voice on each bus the section names (and none on empty buses)', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({ base: 'lkBase', lead: 'lkLead' }));
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5)); // drain recall → spawn looks (born at 5)
     e.tick(40, 35, transport(40)); // age past attack (10ms) so levels register
     expect(e.stats().voiceCount).toBe(2);
@@ -1665,7 +1698,7 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
   it('a bus with a null look gets no look voice', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({ base: 'lkBase', lead: null }));
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
     expect(e.stats().voiceCount).toBe(1);
@@ -1676,7 +1709,7 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
   it('empty looks is a no-op (nothing to spawn)', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({}));
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
     expect(e.stats().voiceCount).toBe(0);
@@ -1697,7 +1730,7 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({ base: 'lkBase', lead: null }, [{ id: 'sec2', name: 'Sec 2', looks: {} }]));
     // Recall sec1 → one looped voice on base.
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
     expect(e.stats().voiceCount).toBe(1);
@@ -1706,7 +1739,7 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
     e.tick(50, 10, transport(50));
     expect(e.stats().voiceCount).toBe(2); // look loop + oneshot
     // Recall sec2 (empty looks) → releases the base loop, leaves the oneshot alone.
-    e.applyInput(recallSection('song1', 'sec2', 55));
+    e.applyInput(recallSection(null, 'sec2', 55));
     e.tick(60, 10, transport(60));
     // Let the released loop decay fully (base crossfade 200ms) — the oneshot (huge
     // sustain) stays at full.
@@ -1718,13 +1751,13 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
   it('repeated recall of the same section does not stack look voices', () => {
     const e = createVoiceBusEngine();
     e.setShow(looksShow({ base: 'lkBase', lead: null }));
-    e.applyInput(recallSection('song1', 'sec1', 0));
+    e.applyInput(recallSection(null, 'sec1', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
     expect(e.stats().voiceCount).toBe(1);
     // Recall again: release-before-spawn means one releasing + one attacking (a crossfade),
     // never two live looks stacking.
-    e.applyInput(recallSection('song1', 'sec1', 45));
+    e.applyInput(recallSection(null, 'sec1', 45));
     e.tick(50, 10, transport(50));
     expect(e.stats().voiceCount).toBe(2); // transient crossfade
     for (let t = 70; t <= 360; t += 20) e.tick(t, 20, transport(t));
@@ -1733,8 +1766,8 @@ describe('VoiceBusEngine — section looks (spawn/release)', () => {
 
   it('determinism: two engines with identical look recalls produce byte-identical frames', () => {
     const events: InputEvent[] = [
-      recallSection('song1', 'sec1', 0),
-      recallSection('song1', 'sec1', 60), // a repeat to exercise release + reap
+      recallSection(null, 'sec1', 0),
+      recallSection(null, 'sec1', 60), // a repeat to exercise release + reap
     ];
     const run = (): number[] => {
       const e = createVoiceBusEngine();

@@ -142,13 +142,261 @@ it('preserves runtime and Undo for save, rename, inactive deletion and no-op ope
   } finally { store.stop(); }
 });
 
+it('follows accepted hardware recalls without ping-pong and ignores stale ordering', () => {
+  const { store, callbacks, send } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }, { id: 'a1', name: 'A1', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }, { id: 'b1', name: 'B1', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    callbacks.onState!(defaultProject(), { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } }, [], [], { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 }, null, null, null, { status: 'listening', port: 9000, hosts: [] }, 7);
+
+    callbacks.onRecalled!('song-b', 'b1', 7, 2);
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-b', 'b1']);
+    expect(send).not.toHaveBeenCalled();
+
+    callbacks.onRecalled!('song-a', 'a1', 7, 1);
+    callbacks.onRecalled!('song-a', 'a1', 6, 3);
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-b', 'b1']);
+  } finally {
+    store.stop();
+  }
+});
+
+it('rejects an authoritative null section for a non-empty resolved song', () => {
+  const { store, callbacks } = setup();
+  try {
+    store.songs = [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] }];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      null, null, null, { status: 'listening', port: 9000, hosts: [] },
+      7, 'song-a', 'a0', 1, 'server-session',
+    );
+
+    callbacks.onRecalled!('song-a', null, 7, 2, 'server-session');
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-a', 'a0']);
+  } finally { store.stop(); }
+});
+
+it('a reconnecting viewer adopts the authoritative handshake without sending cached recall', () => {
+  const { store, callbacks, send } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+
+    callbacks.onConnection!('open');
+    expect(send.mock.calls.map(([message]) => message.t)).toEqual(['setShow', 'setTransport']);
+
+    callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      null, null, null, { status: 'listening', port: 9000, hosts: [] },
+      4, 'song-b', 'b0', 12, 'server-session-a',
+    );
+
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-b', 'b0']);
+    expect(send.mock.calls.some(([message]) => message.t === 'recallSection')).toBe(false);
+  } finally {
+    store.stop();
+  }
+});
+
+it('applies the staged handshake recall after adopting an already-resolved canonical document', () => {
+  const { store, callbacks } = setup();
+  try {
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+    const source = store.songs[0]!;
+    const librarySong = (id: string, name: string, sectionId: string) => ({
+      id, name, sections: [{ ...source.sections[0]!, id: sectionId, name: sectionId.toUpperCase() }],
+      graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets,
+    });
+    const songA = librarySong('canonical-a', 'A', 'a0');
+    const songB = librarySong('canonical-b', 'B', 'b0');
+    const authored = { ...store.activeShow!.authored, songs: [], songRefs: ['canonical-a', 'canonical-b'], activeSongId: 'canonical-a', activeSectionId: 'a0' };
+    const showLibrary = serializeShowLibrary({
+      activeShowId: store.activeShowId,
+      shows: { [store.activeShowId]: { id: store.activeShowId, name: 'Remote', authored } },
+    });
+    const songLibrary = serializeSongLibrary({ songs: { 'canonical-a': songA, 'canonical-b': songB } });
+
+    callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      showLibrary, songLibrary, null, { status: 'listening', port: 9000, hosts: [] },
+      4, 'canonical-b', 'b0', 2, 'server-session',
+    );
+
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['canonical-b', 'b0']);
+  } finally { store.stop(); }
+});
+
+it('keeps a superseding recall pending across delayed canonical adoption, then applies the newest one', () => {
+  const { store, callbacks } = setup();
+  try {
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+    const source = store.songs[0]!;
+    const librarySong = (id: string, name: string, sectionId: string) => ({
+      id, name, sections: [{ ...source.sections[0]!, id: sectionId, name: sectionId.toUpperCase() }],
+      graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets,
+    });
+    const songB = librarySong('canonical-b', 'B', 'b0');
+    const songC = librarySong('canonical-c', 'C', 'c0');
+    callbacks.onRecalled!('canonical-b', 'b0', 4, 1, 'server-session');
+    callbacks.onRecalled!('canonical-c', 'c0', 4, 2, 'server-session');
+
+    const authored = { ...store.activeShow!.authored, songs: [], songRefs: ['canonical-b', 'canonical-c'], activeSongId: 'canonical-b', activeSectionId: 'b0' };
+    callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      serializeShowLibrary({ activeShowId: store.activeShowId, shows: { [store.activeShowId]: { id: store.activeShowId, name: 'Remote', authored } } }),
+      serializeSongLibrary({ songs: { 'canonical-b': songB } }),
+      null, { status: 'listening', port: 9000, hosts: [] },
+      4, 'canonical-b', 'b0', 1, 'server-session',
+    );
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['canonical-b', 'b0']);
+
+    callbacks.onSongLibrary!(serializeSongLibrary({ songs: { 'canonical-b': songB, 'canonical-c': songC } }));
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['canonical-c', 'c0']);
+  } finally { store.stop(); }
+});
+
+it('sends an explicit null section when selecting a valid zero-section song', () => {
+  const { store, callbacks, send } = setup();
+  try {
+    store.songs = [
+      { id: 'empty-song', name: 'Empty', sections: [] },
+      { id: 'song-with-section', name: 'Playable', sections: [{ id: 'section-0', name: 'Section 0', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-with-section';
+    store.activeSectionId = 'section-0';
+    store.presence = { editorId: 'me', youAreEditor: true, clientCount: 1 };
+
+    callbacks.onConnection!('open');
+    send.mockClear();
+    store.setActiveSong('empty-song');
+
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['empty-song', null]);
+    expect(send).toHaveBeenCalledWith({ t: 'recallSection', songId: 'empty-song', sectionId: null });
+  } finally {
+    store.stop();
+  }
+});
+
+it('resets recall ordering when the server session changes, even if its revision is lower', () => {
+  const { store, callbacks, send } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+    ];
+    const state = (revision: number, songId: string, sectionId: string, sequence: number, sessionId: string) => callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      null, null, null, { status: 'listening', port: 9000, hosts: [] },
+      revision, songId, sectionId, sequence, sessionId,
+    );
+
+    state(9, 'song-b', 'b0', 99, 'old-server');
+    state(1, 'song-a', 'a0', 1, 'restarted-server');
+    callbacks.onRecalled!('song-b', 'b0', 9, 100, 'old-server');
+
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-a', 'a0']);
+    expect(send.mock.calls.some(([message]) => message.t === 'recallSection')).toBe(false);
+  } finally {
+    store.stop();
+  }
+});
+
+it('keeps the newest recall pending until its canonical song and section resolve', () => {
+  const { store, callbacks } = setup();
+  try {
+    store.presence = { editorId: 'editor', youAreEditor: false, clientCount: 2 };
+    const remote = {
+      ...store.songs[0]!,
+      id: 'remote-song',
+      name: 'Remote',
+      sections: [{ ...store.songs[0]!.sections[0]!, id: 'remote-section', name: 'Remote section' }],
+      graphs: store.graphs,
+      graphNames: store.graphNames,
+      effects: store.effects,
+      presets: store.presets,
+    };
+    const showLibrary = serializeShowLibrary({
+      activeShowId: store.activeShowId,
+      shows: {
+        [store.activeShowId]: {
+          id: store.activeShowId,
+          name: 'Remote show',
+          authored: { ...store.activeShow!.authored, songs: [], songRefs: ['remote-song'] },
+        },
+      },
+    });
+    const songLibrary = serializeSongLibrary({ songs: { 'remote-song': remote } });
+
+    callbacks.onRecalled!('remote-song', 'missing-section', 4, 1, 'server-session');
+    callbacks.onRecalled!('remote-song', 'remote-section', 4, 2, 'server-session');
+    expect(store.activeSongId).not.toBe('remote-song');
+
+    callbacks.onState!(
+      defaultProject(),
+      { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } },
+      [], [],
+      { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      showLibrary, songLibrary, null, { status: 'listening', port: 9000, hosts: [] },
+      4, 'remote-song', 'remote-section', 2, 'server-session',
+    );
+
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['remote-song', 'remote-section']);
+  } finally {
+    store.stop();
+  }
+});
+
+it('allows a viewer to navigate the resolved setlist', () => {
+  const { store } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+    expect(store.stepSetlist('song', 1)).toBe(true);
+    expect(store.activeSongId).toBe('song-b');
+    expect(store.canEdit).toBe(false);
+  } finally {
+    store.stop();
+  }
+});
+
 it('resets the connected engine for equal-content Save As, but not a position-only edit', () => {
   const { store, callbacks, send } = setup();
   try {
     callbacks.onConnection!('open');
     send.mockClear();
     store.saveShowAs('Same content, new document');
-    expect(send.mock.calls.map(([m]) => m.t)).toEqual(['setShow', 'recallSection', 'setTransport']);
+    expect(send.mock.calls.map(([m]) => m.t)).toEqual(['setShow', 'setTransport']);
     send.mockClear();
     vi.useFakeTimers();
     flushSync();

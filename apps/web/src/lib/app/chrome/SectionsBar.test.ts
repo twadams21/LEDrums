@@ -22,6 +22,9 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     activeSongById: configuredActiveSong,
     activeLocalSong: configuredActiveSong,
     activeSectionId: 'sec-1',
+    globalControls: {},
+    canStepSetlist: vi.fn(() => true),
+    stepSetlist: vi.fn(),
     canEdit: true,
     setActiveSection: vi.fn(),
     addSongSection: vi.fn(),
@@ -41,6 +44,13 @@ describe('SectionsBar', () => {
     const chips = container.querySelectorAll('.chip');
     expect(chips[0]?.classList.contains('on')).toBe(true);
     expect(chips[1]?.classList.contains('on')).toBe(false);
+  });
+
+  it('flanks the scrolling chips with accessible navigation arrows', async () => {
+    const store = mockStore();
+    const { getByRole } = render(SectionsBar, { props: { store } });
+    await fireEvent.click(getByRole('button', { name: 'Next section' }));
+    expect(store.stepSetlist).toHaveBeenCalledWith('section', 1);
   });
 
   it('recalls a section when its chip is clicked', async () => {

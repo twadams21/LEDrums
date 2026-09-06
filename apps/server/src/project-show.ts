@@ -91,14 +91,23 @@ export function showFromLibraries(showLibrary: unknown, songLibrary: unknown): v
   return runtime;
 }
 
-export function selectionFromLibrary(library: unknown): { songId?: string; sectionId: string } | undefined {
+export interface PersistedSelection {
+  songId: string | null;
+  sectionId: string | null;
+}
+
+export function selectionFromLibrary(library: unknown): PersistedSelection | undefined {
   validateLibraryVersions(library, null);
   if (library === null) return undefined;
   const data = object(object(library).data);
   const selected = object(data.shows)[String(data.activeShowId)];
   if (!selected) return undefined;
   const authored = object(object(selected).authored);
-  return typeof authored.activeSectionId === 'string'
-    ? { songId: typeof authored.activeSongId === 'string' ? authored.activeSongId : undefined, sectionId: authored.activeSectionId }
-    : undefined;
+  const activeSongId = typeof authored.activeSongId === 'string' ? authored.activeSongId : null;
+  const activeSectionId = authored.activeSectionId;
+  if (typeof activeSectionId === 'string') return { songId: activeSongId, sectionId: activeSectionId };
+  // Preserve the explicit song-only pointer. The core restore path validates that the resolved
+  // song is empty; dropping it here would instead seed the first song and lose a valid selection.
+  if (activeSongId !== null && activeSectionId === null) return { songId: activeSongId, sectionId: null };
+  return undefined;
 }

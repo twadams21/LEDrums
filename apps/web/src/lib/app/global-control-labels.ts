@@ -1,6 +1,7 @@
 /* Pure display helpers for the global control bindings (Settings). No Svelte / DOM —
    unit-tested in isolation, like `trigger-source-label.ts` which it borrows from. */
 import type { GlobalControlBinding, InputMap } from '@ledrums/core';
+import { formatMidiNote } from '../midi/midi-note';
 import { describeTriggerSource, zoneLinkForSource, type DrumRef } from './trigger-source-label';
 
 /**
@@ -46,3 +47,14 @@ export function globalControlZoneWarning(
 
   return null;
 }
+
+export function globalControlBindingSummary(binding: GlobalControlBinding | undefined): string | null {
+  const parts: string[] = [];
+  if (binding?.midiNote !== undefined) parts.push(`MIDI ${formatMidiNote(binding.midiNote)}`);
+  if (binding?.midiCc !== undefined) parts.push(`CC ${binding.midiCc}`);
+  const address = binding?.oscAddress?.trim();
+  if (address) parts.push(address);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+export const BIND_INVITE = 'bind in Settings → Controls';

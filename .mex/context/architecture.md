@@ -45,6 +45,26 @@ feeding the trusted-host server HTTP input path. `workers/error-ingest` is a dep
 Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older “no cloud
 backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
 
+Setlist recall ownership (code-verified 2026-09-06, local `feat/setlist-navigation-recall`, after
+integration of origin/main #211 and merged PR #206): the
+ordered show and active song/section live in the pure voice engine at processing time. UI, keyboard,
+MIDI, and OSC navigation share the pure clamped resolver; host inputs queue relative/index intents
+instead of mutating an ahead-of-engine mirror. The typed protocol carries authoritative active
+pointers plus `showRevision`, accepted `recallSequence`, and a server-boot `sessionId` in both state
+handshakes and accepted `recalled` messages. The web adopts the handshake, resets ordering on every
+session change, never echoes cached recall on reconnect/autosave, and keeps the newest unresolved
+canonical recall pending until library/reference reconciliation; state handshakes are staged until
+the library adopt completes, so the authoritative pointer wins document activation. A null section
+is valid only for a resolved zero-section song; legacy top-level section recalls require a null song
+identity. Zero-section recalls clear old section looks.
+Show replacement clears old queued intents and advances the revision, so stale hardware messages
+cannot overwrite the adopted show. This is local implementation context, not a claim that the PR
+has merged or shipped.
+Show replacement also clears runtime state while preserving the engine-authoritative active pair
+when that exact pair remains valid in the incoming show; otherwise it selects the first valid
+song/section deterministically. This keeps reconnect/editor `setShow` from resetting hardware
+selection without emitting a synthetic recall.
+
 Ownership audit: `docs/plans/2026-09-05-codebase-health-audit.md`. The follow-up implementation
 is currently on `fix/health-integration` (not yet declared merged):
 - Core compositor/pool/envelope/member policies now also drive the offline Sim; geometry changes

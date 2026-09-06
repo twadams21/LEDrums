@@ -70,7 +70,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -82,8 +82,11 @@ export interface InputEvent {
   controller?: number; // S37
   channel?: number; // S37
   /** recallSection: activate a song's section so hits fire its slot graphs. */
-  songId?: string;
-  sectionId?: string;
+  songId?: string | null;
+  sectionId?: string | null;
+  /** Transport recall intents. Indices resolve only when the queued event is processed. */
+  songIndex?: number;
+  sectionIndex?: number;
   /** globalControl: the app-general action a bound note/address resolved to (input
       step 0). Relative navigation resolves HERE, against the engine's live active
       song/section, so N queued taps advance N steps rather than all reading one
@@ -153,6 +156,7 @@ export interface RenderEngine {
   setModel(model: PixelModel): void;
   setShow(show: Show): void;
   applyInput(ev: InputEvent): void;
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null };
   tick(now: number, dt: number, transport: TransportState): void;
   /** composited RGBA, stride 4, no copy. */
   frame(): Readonly<Float32Array>;
@@ -182,6 +186,37 @@ interface ResolvedGraph {
   graph: TriggerGraph;
   statePrefix: string;
   path: GraphResolutionPath;
+}
+
+interface ActiveSelection {
+  activeSongId: string | null;
+  activeSectionId: string | null;
+}
+
+/** The deterministic selection used when a show has no still-valid active pair. */
+function firstSelection(show: Show): ActiveSelection {
+  const song = show.songs?.[0];
+  return {
+    activeSongId: song?.id ?? null,
+    activeSectionId: song?.sections[0]?.id ?? null,
+  };
+}
+
+/** A selection is valid only as the exact song/section pair it names. In particular, null is
+ * a section value only for a real zero-section song; it is not a wildcard that keeps a stale
+ * section look alive. The legacy top-level section shape remains valid only without songs. */
+function isValidSelection(show: Show, selection: ActiveSelection): boolean {
+  if (selection.activeSongId !== null) {
+    const song = show.songs?.find((candidate) => candidate.id === selection.activeSongId);
+    if (!song) return false;
+    return selection.activeSectionId === null
+      ? song.sections.length === 0
+      : song.sections.some((section) => section.id === selection.activeSectionId);
+  }
+
+  return selection.activeSectionId !== null
+    && !show.songs?.length
+    && show.sections.some((section) => section.id === selection.activeSectionId);
 }
 
 // ---- Production adapter ------------------------------------------------------
@@ -253,7 +288,8 @@ class VoiceBusEngine implements RenderEngine {
   private oscTable = new Map<string, number>();
   private noteTable = new Map<string, NoteState>();
 
-  private queue: InputEvent[] = [];
+  private queue: Array<{ event: InputEvent; order: number }> = [];
+  private inputOrder = 0;
   private timeMs = 0;
   private beat = 0;
   private bpm = 120;
@@ -278,11 +314,18 @@ class VoiceBusEngine implements RenderEngine {
   /**
    * Active song/section for slot-aware hit resolution. Set via `recallSection`
    * input events (queued + drained deterministically, never mutated outside the
-   * queue drain). `setShow` seeds from the first song/section and clears on
-   * show change so stale ids don't resolve against a new arrangement.
+   * queue drain). `setShow` preserves the pair when it remains valid and otherwise
+   * seeds from the first valid song/section so stale ids don't resolve against a new
+   * arrangement.
    */
   private activeSongId: string | null = null;
   private activeSectionId: string | null = null;
+
+  /** The engine-owned recall pointer. The server may expose this for synchronization, but it
+   * never supplies an ordering token or session id to core. */
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId };
+  }
 
   /**
    * Panic blackout: the output reads black while set, but NOTHING else changes —
@@ -337,6 +380,13 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   setShow(show: Show): void {
+    const previousSelection: ActiveSelection = {
+      activeSongId: this.activeSongId,
+      activeSectionId: this.activeSectionId,
+    };
+    // A show replacement invalidates every queued intent from the previous arrangement.
+    this.queue = [];
+    this.inputOrder = 0;
     this.syncCanvasScenes(show.canvasScenes);
     this.show = {
       ...show,
@@ -369,10 +419,11 @@ class VoiceBusEngine implements RenderEngine {
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
-    // Seed active section from the first song/section (a recallSection event can
-    // override this immediately after; here we just ensure a clean non-null start).
-    this.activeSongId = show.songs?.[0]?.id ?? null;
-    this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+    // Preserve the engine-authoritative pair across equivalent/updated shows. A replacement
+    // still gets a deterministic first song/section when the old pair no longer exists.
+    const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
+    this.activeSongId = selection.activeSongId;
+    this.activeSectionId = selection.activeSectionId;
   }
 
   /**
@@ -411,15 +462,15 @@ class VoiceBusEngine implements RenderEngine {
   // --- input -------------------------------------------------------------
 
   applyInput(ev: InputEvent): void {
-    this.queue.push(ev);
+    this.queue.push({ event: ev, order: this.inputOrder++ });
   }
 
   private drainQueue(): void {
     if (this.queue.length === 0) return;
-    const due = this.queue.filter((e) => e.timeMs <= this.timeMs);
-    this.queue = this.queue.filter((e) => e.timeMs > this.timeMs);
-    due.sort((a, b) => a.timeMs - b.timeMs);
-    for (const e of due) this.processEvent(e);
+    const due = this.queue.filter(({ event }) => event.timeMs <= this.timeMs);
+    this.queue = this.queue.filter(({ event }) => event.timeMs > this.timeMs);
+    due.sort((a, b) => a.event.timeMs - b.event.timeMs || a.order - b.order);
+    for (const { event } of due) this.processEvent(event);
   }
 
   /**
@@ -428,8 +479,29 @@ class VoiceBusEngine implements RenderEngine {
    * global-control navigation land here, so they are indistinguishable downstream
    * (same diagnostic, same base-look spawn).
    */
-  private recallTo(songId: string | null, sectionId: string | null): void {
-    this.activeSongId = songId;
+  private recallTo(songId: string | null, sectionId: string | null): boolean {
+    // A section-only recall is a valid legacy/client input: resolve it against the engine's
+    // currently active song, never against a host-side selection mirror.
+    const song = songId === null
+      ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
+      : this.show.songs?.find((candidate) => candidate.id === songId);
+    const section = song && sectionId !== null ? song.sections.find((candidate) => candidate.id === sectionId) : undefined;
+    // Older/slot-only shows keep sections in the top-level registry without a setlist song.
+    // Preserve that valid shape, while rejecting arbitrary ids whenever the show has an ordered
+    // song list to validate against.
+    const legacySection = !this.show.songs?.length && songId === null && sectionId !== null
+      ? this.show.sections.find((candidate) => candidate.id === sectionId)
+      : undefined;
+    // A null section identifies a real zero-section song. It must never silently turn a
+    // non-empty song into a song-only recall, because that would clear the active section look
+    // while leaving the engine on an arrangement that has a valid section to play.
+    const validSongRecall = song !== undefined && (
+      sectionId !== null
+        ? section !== undefined
+        : song.sections.length === 0
+    );
+    if (!validSongRecall && !legacySection) return false;
+    this.activeSongId = song?.id ?? null;
     this.activeSectionId = sectionId;
     this.onDiagnostic?.({
       kind: 'section-recalled',
@@ -439,6 +511,7 @@ class VoiceBusEngine implements RenderEngine {
     // Spawn/release this section's base "looks" (the per-bus loop effects) so the
     // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
     this.spawnSectionLooks(this.activeSectionId);
+    return true;
   }
 
   /**
@@ -522,6 +595,24 @@ class VoiceBusEngine implements RenderEngine {
     if (e.kind === 'recallSection') {
       // Activate a section so subsequent hits fire its slot graphs (layered).
       this.recallTo(e.songId ?? null, e.sectionId ?? null);
+      return;
+    }
+    if (e.kind === 'recallSongIndex') {
+      const songIndex = e.songIndex;
+      if (typeof songIndex !== 'number' || !Number.isInteger(songIndex)) return;
+      const song = this.show.songs?.[songIndex];
+      const section = song?.sections[0];
+      if (song) this.recallTo(song.id, section?.id ?? null);
+      return;
+    }
+    if (e.kind === 'recallSectionIndex') {
+      const sectionIndex = e.sectionIndex;
+      if (typeof sectionIndex !== 'number' || !Number.isInteger(sectionIndex)) return;
+      const song = e.songIndex === undefined
+        ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
+        : this.show.songs?.[e.songIndex];
+      const section = song?.sections[sectionIndex];
+      if (song && section) this.recallTo(song.id, section.id);
       return;
     }
     if (e.kind === 'globalControl') {
@@ -801,7 +892,14 @@ class VoiceBusEngine implements RenderEngine {
   // empty looks is a pure release (a no-op when there is nothing to release).
 
   private spawnSectionLooks(sectionId: string | null): void {
-    if (sectionId === null) return;
+    if (sectionId === null) {
+      // A valid zero-section song still replaces the prior section. Release its old base looks
+      // instead of leaving visible output attached to a section the engine no longer owns.
+      for (const v of this.voices.pool) {
+        if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
+      }
+      return;
+    }
     const section = this.show.sections.find((s) => s.id === sectionId);
     if (!section) return;
     for (const bus of this.show.buses) {
@@ -1071,12 +1169,25 @@ class NullEngine implements RenderEngine {
   private fb: Float32Array = EMPTY_FRAME;
   private timeMs = 0;
   private beat = 0;
+  private activeSongId: string | null = null;
+  private activeSectionId: string | null = null;
 
   setModel(model: PixelModel): void {
     this.fb = new Float32Array(model.pixelCount * 4);
   }
-  setShow(_show: Show): void {}
+  setShow(show: Show): void {
+    const previousSelection: ActiveSelection = {
+      activeSongId: this.activeSongId,
+      activeSectionId: this.activeSectionId,
+    };
+    const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
+    this.activeSongId = selection.activeSongId;
+    this.activeSectionId = selection.activeSectionId;
+  }
   applyInput(_ev: InputEvent): void {}
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId };
+  }
   tick(now: number, _dt: number, transport: TransportState): void {
     this.timeMs = now;
     this.beat = transport.beat;

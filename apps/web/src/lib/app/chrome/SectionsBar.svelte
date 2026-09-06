@@ -5,9 +5,11 @@
      gated so presence resolution cannot make the compact chrome jump. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import NavArrow from '../../ui/NavArrow.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
   import Plus from '@lucide/svelte/icons/plus';
   import { NO_ACTIVE_SONG_REASON, REFERENCE_SONG_REASON, VIEWING_REASON } from './edit-gate';
+  import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -23,10 +25,13 @@
         ? VIEWING_REASON
         : undefined,
   );
+  const prevBinding = $derived(globalControlBindingSummary(store.globalControls.prevSection));
+  const nextBinding = $derived(globalControlBindingSummary(store.globalControls.nextSection));
 </script>
 
 <div class="bar" role="navigation" aria-label="Sections">
   <span class="rowlabel"><LayoutGrid size={13} aria-hidden="true" /> Sections</span>
+  <NavArrow direction="prev" unit="section" disabled={!store.canStepSetlist('section', -1)} binding={prevBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', -1)} />
   <div class="chips">
     {#if sections.length === 0}
       <span class="none">No sections in this song</span>
@@ -51,6 +56,7 @@
       onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
     />
   </div>
+  <NavArrow direction="next" unit="section" disabled={!store.canStepSetlist('section', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', 1)} />
 </div>
 
 <style>

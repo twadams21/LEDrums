@@ -16,6 +16,7 @@
   import ColorSwatch from '../../ui/ColorSwatch.svelte';
   import ColorField from '../../ui/ColorField.svelte';
   import IconButton from '../../ui/IconButton.svelte';
+  import NavArrow from '../../ui/NavArrow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import Field from '../../ui/Field.svelte';
   import Separator from '../../ui/Separator.svelte';
@@ -226,6 +227,8 @@
         <IconButton icon={Trash2} label="Delete" />
         <Separator orientation="vertical" />
         <IconButton icon={Plus} label="Add song" disabled disabledReason="Viewing — take over to edit" />
+        <NavArrow direction="prev" unit="song" disabled binding="MIDI C1" />
+        <NavArrow direction="next" unit="song" bindingInvite="bind in Settings → Controls" />
         <Separator orientation="vertical" />
         <Tooltip text="A custom tooltip">
           <button class="ghost">Hover me</button>

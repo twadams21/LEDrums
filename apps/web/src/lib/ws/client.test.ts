@@ -91,6 +91,11 @@ describe('WSClient', () => {
       songLibrary: null,
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
+      showRevision: 1,
+      activeSongId: 'song-1',
+      activeSectionId: 'section-2',
+      recallSequence: 4,
+      sessionId: 'server-session-1',
     };
     ws.emitText(JSON.stringify(msg));
 
@@ -117,6 +122,17 @@ describe('WSClient', () => {
     expect(onFrame).toHaveBeenCalledTimes(1);
     const got = onFrame.mock.calls[0]![0] as Uint8Array;
     expect(Array.from(got)).toEqual([10, 20, 30, 40, 50, 60]);
+  });
+
+  it('dispatches server-authoritative recall acknowledgements', () => {
+    const { client } = makeClient();
+    const onRecalled = vi.fn();
+    client.on({ onRecalled });
+    client.connect();
+    const ws = FakeWS.instances[0]!;
+    ws.open();
+    ws.emitText(JSON.stringify({ t: 'recalled', songId: 's1', sectionId: 'sec-2', showRevision: 3, recallSequence: 8, sessionId: 'server-session-1' }));
+    expect(onRecalled).toHaveBeenCalledWith('s1', 'sec-2', 3, 8, 'server-session-1');
   });
 
   it('dispatches monitor messages and reports outbound sends', () => {

@@ -74,6 +74,11 @@ function harness(opts: TunnelHarnessOpts = {}) {
     songLibrary: slot.songLib,
     tunnel: null,
     osc: { status: 'listening', port: 9000, hosts: [] },
+    showRevision: 0,
+    activeSongId: host.engine.getProject().setlist.activeSongId,
+    activeSectionId: host.engine.getProject().setlist.activeSectionId,
+    recallSequence: 0,
+    sessionId: 'test-session',
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
   const relayToOthers = (sender: FakeSocket, msg: ServerMessage): void => {
@@ -121,6 +126,34 @@ function voiceHarness() {
   const project = base.host.engine.getProject();
   const voiceHost = new VoiceEngineHost(project);
   voiceHost.setMonitor(base.monitor);
+  voiceHost.onSectionRecalled = (songId, sectionId, showRevision, recallSequence) => {
+    for (const s of base.clients) {
+      if (s.readyState === s.OPEN) s.send(encodeServer({
+        t: 'recalled', songId, sectionId, showRevision, recallSequence, sessionId: 'test-session',
+      }));
+    }
+  };
+  const stateMessage = (): ServerMessage => ({
+    t: 'state',
+    project,
+    model: serializeModel(voiceHost.getModel()),
+    effects: [],
+    projects: [],
+    output: voiceHost.getOutputStatus(),
+    showLibrary: base.slot.lib,
+    songLibrary: base.slot.songLib,
+    tunnel: null,
+    osc: { status: 'listening', port: 9000, hosts: [] },
+    showRevision: voiceHost.getShowRevision(),
+    activeSongId: voiceHost.getActiveSelection().activeSongId,
+    activeSectionId: voiceHost.getActiveSelection().activeSectionId,
+    recallSequence: voiceHost.getRecallSequence(),
+    sessionId: 'test-session',
+  });
+  const broadcastState = (): void => {
+    for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer(stateMessage()));
+  };
+  voiceHost.onShowChanged = broadcastState;
   const handleInner = createClientMessageHandler<FakeSocket>({
     clients: base.clients,
     host: base.host,
@@ -134,19 +167,8 @@ function voiceHarness() {
     broadcastPresence: () => {
       for (const s of base.clients) if (s.readyState === s.OPEN) s.send(encodeServer({ t: 'presence', ...base.clients.presenceFor(s) }));
     },
-    broadcastState: () => {},
-    stateMessage: () => ({
-      t: 'state',
-      project,
-      model: serializeModel(voiceHost.getModel()),
-      effects: [],
-      projects: [],
-      output: voiceHost.getOutputStatus(),
-      showLibrary: base.slot.lib,
-      songLibrary: base.slot.songLib,
-      tunnel: null,
-      osc: { status: 'listening', port: 9000, hosts: [] },
-    }),
+    broadcastState,
+    stateMessage,
     setShowLibrary: (lib) => {
       base.slot.lib = lib;
     },
@@ -172,7 +194,7 @@ function voiceHarness() {
     }
     return handleInner(msg, ws);
   };
-  return { ...base, voiceHost, handle };
+  return { ...base, voiceHost, handle, broadcastState };
 }
 
 function voiceEffect(id: string): voice.EffectDef {
@@ -397,6 +419,68 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
         destination: 'graph:graph:midi',
       }),
     );
+  });
+
+  it('voice mode broadcasts one accepted recall to every client, including the viewer', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const viewer = join();
+    voiceHost.setShow({
+      ...midiVoiceShow(38),
+      songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'section-a', name: 'A', slots: {} }] }],
+    });
+
+    handle({ t: 'recallSection', songId: 'wrong-song', sectionId: 'section-a' }, viewer);
+    voiceHost.step(1000 / 120);
+    expect(editor.sent.filter((message) => message.t === 'recalled')).toHaveLength(0);
+    expect(viewer.sent.filter((message) => message.t === 'recalled')).toHaveLength(0);
+
+    handle({ t: 'recallSection', songId: 'song-a', sectionId: 'section-a' }, viewer);
+    voiceHost.step(1000 / 120);
+    expect(editor.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
+    expect(viewer.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
+  });
+
+  it('reconnect setShow preserves hardware selection in one state broadcast for every client', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const viewer = join();
+    const show = {
+      ...midiVoiceShow(38),
+      songs: [
+        { id: 'song-a', name: 'A', sections: [{ id: 'section-a1', name: 'A1', slots: {} }, { id: 'section-a2', name: 'A2', slots: {} }] },
+        { id: 'song-b', name: 'B', sections: [{ id: 'section-b1', name: 'B1', slots: {} }, { id: 'section-b2', name: 'B2', slots: {} }] },
+      ],
+    } satisfies voice.Show;
+
+    handle({ t: 'setShow', show }, editor);
+    handle({ t: 'recallSection', songId: 'song-b', sectionId: 'section-b2' }, viewer);
+    // The accepted recall is processed by the authoritative engine and broadcast once to both.
+    voiceHost.step(1000 / 120);
+    expect(editor.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
+    expect(viewer.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
+
+    editor.sent.length = 0;
+    viewer.sent.length = 0;
+    handle({
+      t: 'setShow',
+      show: {
+        ...show,
+        songs: show.songs!.map((song) => ({ ...song, name: `${song.name} updated` })),
+      },
+    }, editor);
+
+    for (const client of [editor, viewer]) {
+      expect(client.sent.filter((message) => message.t === 'recalled')).toHaveLength(0);
+      expect(client.sent.filter((message) => message.t === 'state')).toEqual([
+        expect.objectContaining({
+          showRevision: 2,
+          activeSongId: 'song-b',
+          activeSectionId: 'section-b2',
+          recallSequence: 1,
+        }),
+      ]);
+    }
   });
 
   it('voice mode accepts a viewer fireGraph from the Perform keyboard', () => {

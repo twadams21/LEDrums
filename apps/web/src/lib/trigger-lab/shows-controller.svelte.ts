@@ -198,7 +198,7 @@ export class ShowsController {
   /** Load the show + song libraries from storage into the runes and reserve their ids, then RETURN
       the active show's authored slice for the store to apply over its seed defaults. Called once from
       the store constructor (BEFORE the sim is built / the link opens), so the sim's registries and
-      the first setShow/recallSection reflect the ACTIVE show's restored content. Never throws: a
+      the first setShow reflects the ACTIVE show's restored content. Never throws: a
       valid library wins; else a legacy single blob migrates to one "Default Show"; else a fresh
       "Untitled Show" is seeded. */
   hydrateFromStorage(): Partial<AuthoredState> {
@@ -531,7 +531,7 @@ export class ShowsController {
     this.activeSongId = songId;
     const firstSectionId = this.resolvedSongs.find((s) => s.id === songId)?.sections[0]?.id ?? null;
     this.host.setActiveSectionId(firstSectionId);
-    if (this.host.linkOpen() && firstSectionId) {
+    if (this.host.linkOpen()) {
       this.host.send({ t: 'recallSection', songId, sectionId: firstSectionId });
     }
   }
