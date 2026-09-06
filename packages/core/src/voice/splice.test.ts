@@ -13,6 +13,7 @@ import {
   chasePixelShift,
   chaseStaggerShift,
   chaseStepOffset,
+  colorCascadeDelayMs,
   computeSpliceBands,
   forEachPartitionUnit,
   forEachSpliceBand,
@@ -26,12 +27,13 @@ import {
   spliceOrderIndex,
   spliceSourceOffset,
   tintPixel,
+  unitCascadeDelayMs,
   unitEnvelopeLevel,
   unitFadeInLevel,
   unitMotionAge,
   wrapIndex,
 } from './splice';
-import type { GraphNode, SpliceConfig, SpliceDef } from './types';
+import type { GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
 import { DELAY_DIVISIONS } from './delay';
 
 function spliceNode(over: Partial<GraphNode> = {}): GraphNode {
@@ -416,11 +418,83 @@ describe('maxCascadeDelayMs', () => {
     expect(maxCascadeDelayMs(model, config({}))).toBe(330); // 300ms hoop + 0ms drum + 30ms colour
   });
 
+  it('uses the mapped drum order for heterogeneous hoop counts', () => {
+    expect(maxCascadeDelayMs(model, config({
+      offsetMs: 100,
+      drumOffsetMs: 200,
+      drumOrder: 'down',
+      colorOffsetMs: 0,
+    }))).toBe(500); // wide hoop 4: 3×100 + drum 2nd: 1×200
+  });
+
   it('preserves empty, per-drum, and scope values', () => {
     const empty = { ...model, drums: [] };
     expect(maxCascadeDelayMs(empty, config({ partition: 'hoop' }))).toBe(30);
     expect(maxCascadeDelayMs(model, config({ partition: 'drum', offsetMs: 100, drumOffsetMs: 0 }))).toBe(130);
     expect(maxCascadeDelayMs(model, config({ partition: 'scope', offsetMs: 999, drumOffsetMs: 999 }))).toBe(30);
+  });
+
+  it('matches enumerated production delay semantics for every supported order and partition', () => {
+    const orders: readonly SpliceOrder[] = ['up', 'down', 'outside-in', 'random'];
+    const models = [
+      model,
+      buildPixelModel(parseKit({
+        global: { ledDensityPxPerM: 30, hoopCount: 1, defaultHoopSpacingMm: 50 },
+        drums: [
+          { id: 'one', diameterIn: 12, pixelsPerHoop: 5, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, hoops: [
+            { pixelCount: 5, reverse: false },
+          ] },
+          { id: 'many', diameterIn: 10, pixelsPerHoop: 3, hoopSpacingMm: 50, origin: { x: 300, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, hoops: [
+            { pixelCount: 3, reverse: false }, { pixelCount: 3, reverse: false }, { pixelCount: 3, reverse: false }, { pixelCount: 3, reverse: false }, { pixelCount: 3, reverse: false },
+          ] },
+          { id: 'middle', diameterIn: 8, pixelsPerHoop: 4, hoopSpacingMm: 50, origin: { x: 600, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, hoops: [
+            { pixelCount: 4, reverse: false }, { pixelCount: 4, reverse: false }, { pixelCount: 4, reverse: false },
+          ] },
+        ],
+      })),
+    ];
+    const offsets = [-200, -1, 0, 1, 200];
+    const seeds = [1, 17, 0x9e3779b9];
+
+    const enumerateProductionMaximum = (candidate: typeof model, cfg: SpliceConfig): number => {
+      let maximumUnitDelay = 0;
+      forEachPartitionUnit(candidate, [{ start: 0, end: candidate.pixelCount }], cfg.partition, (unit) => {
+        const delay = unitCascadeDelayMs(
+          spliceOrderIndex(unit.ordinal, unit.ordinalCount, cfg.order, cfg.seed),
+          spliceOrderIndex(unit.drumOrdinal, unit.drumCount, cfg.drumOrder, cfg.seed),
+          cfg,
+        );
+        if (delay > maximumUnitDelay) maximumUnitDelay = delay;
+      });
+      let maximumColorDelay = 0;
+      for (let slot = 0; slot < cfg.count; slot++) {
+        const delay = colorCascadeDelayMs(slot, cfg);
+        if (delay > maximumColorDelay) maximumColorDelay = delay;
+      }
+      return maximumUnitDelay + maximumColorDelay;
+    };
+
+    for (const candidate of models) {
+      for (const partition of ['hoop', 'drum', 'scope'] as const) {
+        for (const order of orders) {
+          for (const drumOrder of orders) {
+            for (const colorOrder of orders) {
+              for (const offsetMs of offsets) {
+                for (const drumOffsetMs of offsets) {
+                  for (const colorOffsetMs of [-25, 0, 25]) {
+                    for (const seed of seeds) {
+                      const cfg = config({ partition, order, drumOrder, colorOrder, offsetMs, drumOffsetMs, colorOffsetMs, seed });
+                      expect(maxCascadeDelayMs(candidate, cfg), `${partition}/${order}/${drumOrder}/${offsetMs}/${drumOffsetMs}/${seed}`)
+                        .toBe(enumerateProductionMaximum(candidate, cfg));
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   });
 });
 
