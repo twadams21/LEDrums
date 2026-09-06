@@ -57,7 +57,10 @@ rank p50/p95, and reports machine/runtime metadata. Across three runs on Darwin/
 v25.8.2, Plasma stayed at p95 9.19–10.01ms ordinary and 9.57–11.01ms boundary; Confetti
 stayed at 1.64–1.77ms ordinary and 4.74–5.29ms boundary. Full-engine Confetti tick p95 was
 2.36–2.81ms. The Plasma gate is <=16.7ms p95. This PR is pushed/opened for review only and
-must not merge until reviewed.
+must not merge until reviewed. Clean full-repo checks recorded 1,430 core, 98 IO, 13 protocol,
+601 server, and 83 desktop tests passing; web had 2,071 passing plus the known external loader
+and WS fixture failures. Workspace typecheck/build remain blocked by the pre-existing server
+contract errors listed in the mex note.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
