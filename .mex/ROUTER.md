@@ -47,6 +47,20 @@ tests, and strict `splice-inspector` ui-shot passed with no console errors. The 
 mount this inspector, so `docs/design-system.html` was not regenerated. This is not merged or
 shipped; the new PR supersedes the relevant #200 work.
 
+**PR #210 architecture remediation (2026-09-06, branch `feat/setlist-navigation-recall`, not merged):**
+Requested by Trent on Trent’s MacBook Pro, sourced from the PR #210 architecture blockers. The
+current `origin/main` (#209) was merged semantically in local merge commit `5fa4a03a`. Recall wire
+state now carries authoritative active song/section, `showRevision`, accepted `recallSequence`,
+and a boot-generated `sessionId`; the client resets ordering on session changes, never echoes cached
+recall on reconnect or autosave, and adopts only explicit user recalls outbound. Pending recalls
+remain newest-first but unapplied until canonical song/section references reconcile; valid zero-section
+songs use an explicit null section and release prior section looks, while legacy top-level section
+recalls require a null song identity. Accepted-only diagnostics, FIFO queueing, clamp/navigation,
+canonical references, and viewer follow remain intact. `vite server.fs.strict=false` was removed.
+Evidence: full monorepo tests 4,828 passed / 4 skipped, full typecheck/build, regenerated design
+system, and strict `songs-bar`/`sections-bar` captures with visual inspection. Commit/push and PR
+CI are the remaining delivery steps; do not merge or release.
+
 **Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
 on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
 independent graph keys/objects by default; repeated keys already persisted remain explicit links;

@@ -112,10 +112,14 @@ const serverSamples: ServerMessage[] = [
     tunnel: { status: 'off', url: null, pin: null },
     osc: { status: 'listening', port: 9000, hosts: ['192.168.1.20'] },
     showRevision: 1,
+    activeSongId: 'song-1',
+    activeSectionId: 'section-2',
+    recallSequence: 4,
+    sessionId: 'server-session-1',
   },
   { t: 'stats', stats: { timeMs: 0, beat: 0, bar: 0, activeTriggers: 0, tickCount: 1, pixelCount: 2 }, latencyMs: 5, fps: 60, output: outputStatus, voice: { voiceCount: 1, busLevels: { main: 0.5 }, voices: [{ id: 'v1', busId: 'main', effectId: 'swirl', mode: 'oneshot', level: 0.5, hue: 200, releasing: false, via: 'kick', pad: 'graph:1#0' }] } },
   { t: 'input', kind: 'midi', label: 'note', value: 100, note: 38, channel: 1 },
-  { t: 'recalled', songId: 'song-1', sectionId: 'section-2', showRevision: 1, recallSequence: 4 },
+  { t: 'recalled', songId: 'song-1', sectionId: 'section-2', showRevision: 1, recallSequence: 4, sessionId: 'server-session-1' },
   { t: 'monitor', event: { id: 1, time: 1, type: 'input', direction: 'in', source: 'ws', label: 'MIDI' } },
   { t: 'projects', names: ['a', 'b'] },
   { t: 'backups', items: [{ id: '1000000000000-boot', createdAt: 1000000000000, reason: 'boot' }, { id: '1000000000001-pre-risk', createdAt: 1000000000001, reason: 'pre-risk' }] },
@@ -175,6 +179,12 @@ describe('serverMessageSchema', () => {
     expect(serverMessageSchema.safeParse({ t: 'error' }).success).toBe(false); // missing message
     expect(serverMessageSchema.safeParse({ t: 'presence', editorId: null, youAreEditor: 'yes', clientCount: 1 }).success).toBe(false);
     expect(serverMessageSchema.safeParse({ t: 'state', project: { name: 'no-kit' }, model: {}, effects: [], projects: [], output: outputStatus, showLibrary: null, songLibrary: null, tunnel: null }).success).toBe(false); // invalid project
+  });
+
+  it('accepts an explicit null recall target for zero-section songs and legacy sections', () => {
+    expect(clientMessageSchema.safeParse({ t: 'recallSection', songId: 'empty-song', sectionId: null }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ t: 'recallSection', songId: null, sectionId: 'legacy-section' }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ t: 'recallSection', sectionId: 'legacy-section' }).success).toBe(false);
   });
 });
 

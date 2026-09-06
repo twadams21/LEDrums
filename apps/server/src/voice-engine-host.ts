@@ -55,7 +55,7 @@ export type VoicePartialInput =
   | { kind: 'osc'; address: string; value: number }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number }
-  | { kind: 'recallSection'; songId?: string; sectionId: string }
+  | { kind: 'recallSection'; songId?: string | null; sectionId: string | null }
   | { kind: 'recallSongIndex'; songIndex: number }
   | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
   | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
@@ -145,8 +145,6 @@ export class VoiceEngineHost {
 
   /** The live Show, retained for state inspection and compatibility. */
   private currentShow: voice.Show | null = null;
-  /** Diagnostic-confirmed active song. It never advances when an input is merely queued. */
-  private activeSongId: string | null = null;
   private showRevision = 0;
   private recallSequence = 0;
   private monitorSink: ((event: MonitorDraft) => void) | null = null;
@@ -193,7 +191,6 @@ export class VoiceEngineHost {
         this.model = model;
         this.dmxMap = dmxMap;
         this.currentShow = show;
-        this.activeSongId = selection ? null : show?.songs?.[0]?.id ?? null;
         this.showRevision++;
         this.engineTimeMs = this.beat = 0;
         this.accumulator = this.transmitAccum = this.previewAccum = 0;
@@ -383,7 +380,6 @@ export class VoiceEngineHost {
   setShow(show: voice.Show): void {
     this.syncCanvasScenes(show);
     this.currentShow = show;
-    this.activeSongId = show.songs?.[0]?.id ?? null;
     this.showRevision++;
     this.engine.setShow({ ...show, canvasScenes: undefined });
     this.onShowChanged?.();
@@ -394,9 +390,20 @@ export class VoiceEngineHost {
     return this.currentShow;
   }
 
-  /** The active song id CC#0 section recalls resolve against (null before setShow). */
+  /** The engine-owned active song id CC#0 section recalls resolve against (null before setShow). */
   getActiveSongId(): string | null {
-    return this.activeSongId;
+    return this.activeEngine.getActiveSelection().activeSongId;
+  }
+
+  /** The engine-owned pointer exposed at the server boundary for state handshakes. */
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return this.activeEngine.getActiveSelection();
+  }
+
+  /** Accepted recalls are numbered by this host instance. The server pairs the number with its
+   * boot session id before putting it on the wire. */
+  getRecallSequence(): number {
+    return this.recallSequence;
   }
 
   getShowRevision(): number {
@@ -863,7 +870,6 @@ export class VoiceEngineHost {
 
     // This diagnostic is emitted only after the queued engine recall has been accepted.
     // Keep the host mirror downstream of the engine; transport index recalls depend on it.
-    this.activeSongId = d.songId;
     const recallSequence = ++this.recallSequence;
     this.onSectionRecalled?.(d.songId, d.sectionId, this.showRevision, recallSequence);
     this.monitorSink?.({

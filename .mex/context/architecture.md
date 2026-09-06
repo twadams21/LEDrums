@@ -33,10 +33,14 @@ Cloudflare Worker with D1/R2 interfaces for error reports and backups; the older
 backend” assertion below no longer applies. Effects are registry-driven, not fixed at 41.
 
 Setlist recall ownership (code-verified 2026-09-06, local `feat/setlist-navigation-recall`): the
-ordered show and active section live in the pure voice engine at processing time. UI, keyboard,
+ordered show and active song/section live in the pure voice engine at processing time. UI, keyboard,
 MIDI, and OSC navigation share the pure clamped resolver; host inputs queue relative/index intents
-instead of mutating an ahead-of-engine mirror. Accepted recalls produce a typed server `recalled`
-message with show revision and monotonic sequence, which the web adopts without sending an echo.
+instead of mutating an ahead-of-engine mirror. The typed protocol carries authoritative active
+pointers plus `showRevision`, accepted `recallSequence`, and a server-boot `sessionId` in both state
+handshakes and accepted `recalled` messages. The web adopts the handshake, resets ordering on every
+session change, never echoes cached recall on reconnect/autosave, and keeps the newest unresolved
+canonical recall pending until library/reference reconciliation. Zero-section songs use a null
+section and clear old section looks; legacy top-level section recalls require a null song identity.
 Show replacement clears old queued intents and advances the revision, so stale hardware messages
 cannot overwrite the adopted show. This is local implementation context, not a claim that the PR
 has merged or shipped.

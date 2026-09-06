@@ -10,8 +10,8 @@ export interface VoiceInputDescriptor {
   address?: string;
   value?: number;
   velocity?: number;
-  songId?: string;
-  sectionId?: string;
+  songId?: string | null;
+  sectionId?: string | null;
   /** `fireGraph` intent: the explicit graph key the client asked the engine to play. */
   graphKey?: string;
 }

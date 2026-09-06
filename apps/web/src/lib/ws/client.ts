@@ -57,11 +57,15 @@ export interface WSCallbacks {
      * whether the socket actually bound. */
     osc: OscListenInfo,
     showRevision?: number,
+    activeSongId?: string | null,
+    activeSectionId?: string | null,
+    recallSequence?: number,
+    sessionId?: string,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (input: InputEcho) => void;
-  onRecalled?: (songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number) => void;
+  onRecalled?: (songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number, sessionId?: string) => void;
   onMonitor?: (event: MonitorEvent) => void;
   onSend?: (msg: ClientMessage) => void;
   onProjects?: (names: string[]) => void;
@@ -253,7 +257,22 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc, msg.showRevision);
+        this.cb.onState?.(
+          msg.project,
+          msg.model,
+          msg.effects,
+          msg.projects,
+          msg.output,
+          msg.showLibrary,
+          msg.songLibrary,
+          msg.tunnel,
+          msg.osc,
+          msg.showRevision,
+          msg.activeSongId,
+          msg.activeSectionId,
+          msg.recallSequence,
+          msg.sessionId,
+        );
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
@@ -264,7 +283,7 @@ export class WSClient {
         break;
       }
       case 'recalled':
-        this.cb.onRecalled?.(msg.songId, msg.sectionId, msg.showRevision, msg.recallSequence);
+        this.cb.onRecalled?.(msg.songId, msg.sectionId, msg.showRevision, msg.recallSequence, msg.sessionId);
         break;
       case 'monitor':
         this.cb.onMonitor?.(msg.event);

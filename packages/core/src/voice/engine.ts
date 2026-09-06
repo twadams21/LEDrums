@@ -81,8 +81,8 @@ export interface InputEvent {
   controller?: number; // S37
   channel?: number; // S37
   /** recallSection: activate a song's section so hits fire its slot graphs. */
-  songId?: string;
-  sectionId?: string;
+  songId?: string | null;
+  sectionId?: string | null;
   /** Transport recall intents. Indices resolve only when the queued event is processed. */
   songIndex?: number;
   sectionIndex?: number;
@@ -151,6 +151,7 @@ export interface RenderEngine {
   setModel(model: PixelModel): void;
   setShow(show: Show): void;
   applyInput(ev: InputEvent): void;
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null };
   tick(now: number, dt: number, transport: TransportState): void;
   /** composited RGBA, stride 4, no copy. */
   frame(): Readonly<Float32Array>;
@@ -282,6 +283,12 @@ class VoiceBusEngine implements RenderEngine {
    */
   private activeSongId: string | null = null;
   private activeSectionId: string | null = null;
+
+  /** The engine-owned recall pointer. The server may expose this for synchronization, but it
+   * never supplies an ordering token or session id to core. */
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId };
+  }
 
   /**
    * Panic blackout: the output reads black while set, but NOTHING else changes —
@@ -440,11 +447,11 @@ class VoiceBusEngine implements RenderEngine {
     // Older/slot-only shows keep sections in the top-level registry without a setlist song.
     // Preserve that valid shape, while rejecting arbitrary ids whenever the show has an ordered
     // song list to validate against.
-    const legacySection = !this.show.songs?.length && sectionId !== null
+    const legacySection = !this.show.songs?.length && songId === null && sectionId !== null
       ? this.show.sections.find((candidate) => candidate.id === sectionId)
       : undefined;
-    if ((!song || !section) && !legacySection) return false;
-    this.activeSongId = song?.id ?? (legacySection ? songId : null);
+    if ((!song || (sectionId !== null && !section)) && !legacySection) return false;
+    this.activeSongId = song?.id ?? null;
     this.activeSectionId = sectionId;
     this.onDiagnostic?.({
       kind: 'section-recalled',
@@ -545,7 +552,7 @@ class VoiceBusEngine implements RenderEngine {
       if (typeof songIndex !== 'number' || !Number.isInteger(songIndex)) return;
       const song = this.show.songs?.[songIndex];
       const section = song?.sections[0];
-      if (song && section) this.recallTo(song.id, section.id);
+      if (song) this.recallTo(song.id, section?.id ?? null);
       return;
     }
     if (e.kind === 'recallSectionIndex') {
@@ -813,7 +820,14 @@ class VoiceBusEngine implements RenderEngine {
   // empty looks is a pure release (a no-op when there is nothing to release).
 
   private spawnSectionLooks(sectionId: string | null): void {
-    if (sectionId === null) return;
+    if (sectionId === null) {
+      // A valid zero-section song still replaces the prior section. Release its old base looks
+      // instead of leaving visible output attached to a section the engine no longer owns.
+      for (const v of this.voices.pool) {
+        if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
+      }
+      return;
+    }
     const section = this.show.sections.find((s) => s.id === sectionId);
     if (!section) return;
     for (const bus of this.show.buses) {
@@ -1083,12 +1097,20 @@ class NullEngine implements RenderEngine {
   private fb: Float32Array = EMPTY_FRAME;
   private timeMs = 0;
   private beat = 0;
+  private activeSongId: string | null = null;
+  private activeSectionId: string | null = null;
 
   setModel(model: PixelModel): void {
     this.fb = new Float32Array(model.pixelCount * 4);
   }
-  setShow(_show: Show): void {}
+  setShow(show: Show): void {
+    this.activeSongId = show.songs?.[0]?.id ?? null;
+    this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+  }
   applyInput(_ev: InputEvent): void {}
+  getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
+    return { activeSongId: this.activeSongId, activeSectionId: this.activeSectionId };
+  }
   tick(now: number, _dt: number, transport: TransportState): void {
     this.timeMs = now;
     this.beat = transport.beat;

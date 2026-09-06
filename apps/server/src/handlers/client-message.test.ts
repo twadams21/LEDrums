@@ -75,6 +75,10 @@ function harness(opts: TunnelHarnessOpts = {}) {
     tunnel: null,
     osc: { status: 'listening', port: 9000, hosts: [] },
     showRevision: 0,
+    activeSongId: host.engine.getProject().setlist.activeSongId,
+    activeSectionId: host.engine.getProject().setlist.activeSectionId,
+    recallSequence: 0,
+    sessionId: 'test-session',
   });
   const broadcastState = (): void => broadcastJson(stateMessage());
   const relayToOthers = (sender: FakeSocket, msg: ServerMessage): void => {
@@ -122,6 +126,13 @@ function voiceHarness() {
   const project = base.host.engine.getProject();
   const voiceHost = new VoiceEngineHost(project);
   voiceHost.setMonitor(base.monitor);
+  voiceHost.onSectionRecalled = (songId, sectionId, showRevision, recallSequence) => {
+    for (const s of base.clients) {
+      if (s.readyState === s.OPEN) s.send(encodeServer({
+        t: 'recalled', songId, sectionId, showRevision, recallSequence, sessionId: 'test-session',
+      }));
+    }
+  };
   const handleInner = createClientMessageHandler<FakeSocket>({
     clients: base.clients,
     host: base.host,
@@ -148,6 +159,10 @@ function voiceHarness() {
       tunnel: null,
       osc: { status: 'listening', port: 9000, hosts: [] },
       showRevision: voiceHost.getShowRevision(),
+      activeSongId: voiceHost.getActiveSelection().activeSongId,
+      activeSectionId: voiceHost.getActiveSelection().activeSectionId,
+      recallSequence: voiceHost.getRecallSequence(),
+      sessionId: 'test-session',
     }),
     setShowLibrary: (lib) => {
       base.slot.lib = lib;
@@ -399,6 +414,26 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
         destination: 'graph:graph:midi',
       }),
     );
+  });
+
+  it('voice mode broadcasts one accepted recall to every client, including the viewer', () => {
+    const { handle, join, voiceHost } = voiceHarness();
+    const editor = join();
+    const viewer = join();
+    voiceHost.setShow({
+      ...midiVoiceShow(38),
+      songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'section-a', name: 'A', slots: {} }] }],
+    });
+
+    handle({ t: 'recallSection', songId: 'wrong-song', sectionId: 'section-a' }, viewer);
+    voiceHost.step(1000 / 120);
+    expect(editor.sent.filter((message) => message.t === 'recalled')).toHaveLength(0);
+    expect(viewer.sent.filter((message) => message.t === 'recalled')).toHaveLength(0);
+
+    handle({ t: 'recallSection', songId: 'song-a', sectionId: 'section-a' }, viewer);
+    voiceHost.step(1000 / 120);
+    expect(editor.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
+    expect(viewer.sent.filter((message) => message.t === 'recalled')).toHaveLength(1);
   });
 
   it('voice mode drops out-of-channel MIDI before graph diagnostics', () => {

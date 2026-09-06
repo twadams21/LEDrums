@@ -75,6 +75,9 @@ async function main(): Promise<void> {
   let authoringDrained = false;
   const port = Number(process.env.PORT) || WS_PORT;
   const oscPort = Number(process.env.OSC_PORT) || OSC_DEFAULT_PORT;
+  /** Changes on every server boot. Recall sequence numbers are only meaningful within this
+   * session, so clients must reset their ordering gate when this id changes. */
+  const sessionId = randomUUID();
 
   /** Engine mode: legacy layer/clip/binding brain (default) or the voice-bus brain.
    * Opt in with `LEDRUMS_ENGINE=voice`; anything else (or unset) keeps legacy. */
@@ -438,7 +441,7 @@ async function main(): Promise<void> {
         monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
         return;
       case 'recallSection':
-        monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId}`, detail: msg.songId });
+        monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId ?? 'none'}`, detail: msg.songId ?? undefined });
         return;
     }
   }
@@ -468,6 +471,10 @@ async function main(): Promise<void> {
    * the voice host owns the live geometry, so its model is authoritative for the wire. */
   function stateMessage(): ServerMessage {
     const model = voiceHost ? voiceHost.getModel() : host.engine.getModel();
+    const active = voiceHost?.getActiveSelection() ?? {
+      activeSongId: host.engine.getProject().setlist.activeSongId,
+      activeSectionId: host.engine.getProject().setlist.activeSectionId,
+    };
     return {
       t: 'state',
       project: host.engine.getProject(),
@@ -479,6 +486,10 @@ async function main(): Promise<void> {
       songLibrary: liveSongLibrary,
       tunnel: tunnelInfo(),
       showRevision: voiceHost?.getShowRevision() ?? 0,
+      activeSongId: active.activeSongId,
+      activeSectionId: active.activeSectionId,
+      recallSequence: voiceHost?.getRecallSequence() ?? 0,
+      sessionId,
       // Where to point Sensory Percussion / a Max device, and whether the socket is actually
       // bound (#139). Read at send time, so a client always gets the settled truth.
       osc: oscListen,
@@ -490,7 +501,7 @@ async function main(): Promise<void> {
   // state so every client's transport readout follows instead of silently drifting.
   if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
   if (voiceHost) voiceHost.onSectionRecalled = (songId, sectionId, showRevision, recallSequence) => {
-    broadcastJson({ t: 'recalled', songId, sectionId, showRevision, recallSequence });
+    broadcastJson({ t: 'recalled', songId, sectionId, showRevision, recallSequence, sessionId });
   };
   else host.onFrame = (rgb) => broadcastBinary(rgb);
   host.setOutputMonitor(monitor);

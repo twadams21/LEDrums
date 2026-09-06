@@ -139,6 +139,25 @@ describe('handleVoiceInput — transport recall stays engine-authoritative', () 
     host.step(1000 / 120);
     expect(recalled).not.toHaveBeenCalled();
   });
+
+  it('requires null song identity for a legacy top-level section recall', () => {
+    const host = makeHost();
+    host.setShow({
+      ...directNoteShow(60),
+      sections: [{ id: 'legacy-section', name: 'Legacy', looks: {} }],
+    });
+    const recalled = vi.fn();
+    host.onSectionRecalled = recalled;
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
+
+    handleVoiceInput({ t: 'recallSection', songId: 'arbitrary-song', sectionId: 'legacy-section' }, deps);
+    host.step(1000 / 120);
+    expect(recalled).not.toHaveBeenCalled();
+
+    handleVoiceInput({ t: 'recallSection', songId: null, sectionId: 'legacy-section' }, deps);
+    host.step(1000 / 120);
+    expect(recalled).toHaveBeenCalledWith(null, 'legacy-section', expect.any(Number), 1);
+  });
 });
 
 /* S13 — the keyboard performance path sends a `fireGraph` INTENT (the exact graph key) instead

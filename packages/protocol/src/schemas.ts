@@ -177,7 +177,7 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('setSongLibrary'), library: songLibraryBlobSchema }).strict(),
   z.object({ t: z.literal('key'), drumId: z.string(), zone: z.string().optional(), velocity: z.number().optional() }).strict(),
   z.object({ t: z.literal('fireGraph'), graphKey: z.string(), velocity: z.number() }).strict(),
-  z.object({ t: z.literal('recallSection'), songId: z.string(), sectionId: z.string() }).strict(),
+  z.object({ t: z.literal('recallSection'), songId: z.string().nullable(), sectionId: z.string().nullable() }).strict(),
   // Release every active voice on a bus (the dock's stop button); absent busId = all buses.
   z.object({ t: z.literal('releaseBus'), busId: z.string().optional() }).strict(),
   z.object({ t: z.literal('takeover') }).strict(),
@@ -404,6 +404,10 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     tunnel: tunnelInfoSchema.nullable(),
     osc: oscListenInfoSchema,
     showRevision: z.number().int().nonnegative(),
+    activeSongId: z.string().nullable(),
+    activeSectionId: z.string().nullable(),
+    recallSequence: z.number().int().nonnegative(),
+    sessionId: z.string().min(1),
   }).strict(),
   z.object({
     t: z.literal('stats'),
@@ -432,6 +436,7 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     sectionId: z.string().nullable(),
     showRevision: z.number().int().nonnegative(),
     recallSequence: z.number().int().positive(),
+    sessionId: z.string().min(1),
   }).strict(),
   z.object({ t: z.literal('monitor'), event: monitorEventSchema }).strict(),
   z.object({ t: z.literal('projects'), names: z.array(z.string()) }).strict(),
