@@ -127,6 +127,8 @@ export interface ShowsControllerHost {
     effects?: EffectDef[];
     presets?: Preset[];
   }): void;
+  /** Record one authored checkpoint before a song/document mutation. */
+  recordUndo(): void;
   /** Read the authored runes into a plain, JSON-safe slice (proxies stripped) — spans every authored
       cluster, so it is owned by the store. */
   toAuthored(): AuthoredState;
@@ -574,6 +576,7 @@ export class ShowsController {
     if (this.host.isViewer()) return null; // read-only viewer (S2): authoring no-op
     const src = this.songs.find((s) => s.id === id);
     if (!src) return null;
+    this.host.recordUndo();
     const newId = freshId('song', (k) => this.songs.some((s) => s.id === k));
     const sections = src.sections.map((sec) => setlist.cloneSection(sec, nid('section'), sec.name));
     const copy = cloneSongGraphs(

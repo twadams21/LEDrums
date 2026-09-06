@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { voice } from '@ledrums/core';
 import { makeNode } from '../../trigger-lab/sim';
 import type { EffectDef, GraphNode } from '../../trigger-lab/sim';
 import { DIVISION_OPTS } from './node-options';
@@ -111,12 +112,24 @@ describe('divisions', () => {
     for (const v of ['1/2', '1/4', '1/8', '1/16', '1-bar', '2-bars', '4-bars']) expect(values, v).toContain(v);
   });
 
+  it('mirrors the complete core vocabulary in straight, dotted, triplet order', () => {
+    expect(DIVISION_OPTS.map((option) => option.value)).toEqual([...voice.DELAY_DIVISIONS]);
+    expect(DIVISION_OPTS.map((option) => option.value)).toEqual([
+      '4-bars', '2-bars', '1-bar', '1/2', '1/4', '1/8', '1/16', '1/32',
+      'dotted-1/2', 'dotted-1/4', 'dotted-1/8', 'dotted-1/16', 'dotted-1/32',
+      'triplet-1/2', 'triplet-1/4', 'triplet-1/8', 'triplet-1/16', 'triplet-1/32',
+    ]);
+  });
+
   it('labels bar lengths readably', () => {
     const label = (v: string) => DIVISION_OPTS.find((o) => o.value === v)?.label;
     expect(label('1-bar')).toBe('1 bar');
     expect(label('2-bars')).toBe('2 bars');
     expect(label('4-bars')).toBe('4 bars');
     expect(label('dotted-1/2')).toBe('1/2 dotted');
+    expect(label('1/32')).toBe('1/32');
+    expect(label('dotted-1/32')).toBe('1/32 dotted');
+    expect(label('triplet-1/32')).toBe('1/32 triplet');
   });
 });
 

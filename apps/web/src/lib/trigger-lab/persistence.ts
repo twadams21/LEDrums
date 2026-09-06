@@ -14,7 +14,7 @@
 
 import { SHOWS_VERSION, SHOWS_PRIOR_VERSION, SONGS_VERSION, type CanvasScene } from '@ledrums/core';
 import type { Bus, EffectDef, Preset, TriggerGraph } from './sim';
-import type { SetlistSection, Song } from '../app/setlist';
+import { sanitizeUniqueSectionIds, type SetlistSection, type Song } from '../app/setlist';
 import type { LibrarySong } from './store/song-library';
 
 /** localStorage key — carries the schema version so old payloads are namespaced
@@ -123,7 +123,7 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   // Songs are MIGRATED on the way in: a blob saved before U4 carries per-pad slot grids;
   // migrateSongs flattens each section's `slots` into the flat `graphs` list (idempotent,
   // so a U4 blob is untouched). See migrateSongs / sectionGraphList.
-  if (Array.isArray(data.songs)) out.songs = migrateSongs(data.songs);
+  if (Array.isArray(data.songs)) out.songs = sanitizeUniqueSectionIds(migrateSongs(data.songs));
   // songRefs (S41): a string-id set; keep only string entries, de-duplicated — a partially-corrupt
   // list degrades to the ids that survived. Absent → the field stays undefined (references nothing).
   if (Array.isArray(data.songRefs)) out.songRefs = dedupeStrings(data.songRefs);
@@ -133,6 +133,8 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   if (isObject(data.paneSizes)) out.paneSizes = data.paneSizes as Record<string, number>;
   if (isObject(data.patchLabels)) out.patchLabels = data.patchLabels as Record<string, string>;
   if (Array.isArray(data.canvasScenes)) out.canvasScenes = data.canvasScenes as CanvasScene[];
+
+  sanitizeAuthoredGraphReferences(out);
 
   // scalars — typeof-gated; the nullable ids also accept an explicit null
   if (typeof data.selectedPadKey === 'string' || data.selectedPadKey === null) {
@@ -151,6 +153,29 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   if (isFiniteNumber(data.beatsPerBar)) out.beatsPerBar = data.beatsPerBar;
 
   return out;
+}
+
+/** Remove references that cannot resolve in this authored slice. `lib:*` references are
+ * intentionally retained: they resolve through the canonical song library, outside this map. */
+function sanitizeAuthoredGraphReferences(state: Partial<AuthoredState>): void {
+  const localGraphs = new Set(Object.keys(state.graphs ?? {}));
+  const referenced = new Set<string>();
+  for (const song of state.songs ?? []) {
+    for (const section of song.sections) {
+      const graphs = section.graphs.filter((key) => localGraphs.has(key) || key.startsWith('lib:'));
+      for (const key of graphs) referenced.add(key);
+      section.graphs = graphs;
+    }
+  }
+  if (state.graphNames) {
+    const names: Record<string, string> = {};
+    for (const [key, name] of Object.entries(state.graphNames)) {
+      if (typeof name === 'string' && (localGraphs.has(key) || (key.startsWith('lib:') && referenced.has(key)))) {
+        names[key] = name;
+      }
+    }
+    state.graphNames = names;
+  }
 }
 
 // ---- B6 back-compat: 0-based hoop targetIds → 1-based (A1 cutover) -----------
@@ -377,6 +402,11 @@ export function deserializeShowLibrary(raw: unknown): ShowLibrary | null {
   }
   if (Object.keys(shows).length === 0) return null; // all shows malformed → fall back
 
+  const usedSectionIds = new Set<string>();
+  for (const show of Object.values(shows)) {
+    if (show.authored.songs) show.authored.songs = sanitizeUniqueSectionIds(show.authored.songs, usedSectionIds);
+  }
+
   const activeShowId =
     typeof data.activeShowId === 'string' && shows[data.activeShowId]
       ? data.activeShowId
@@ -454,12 +484,20 @@ export function serializeSongLibrary(lib: SongLibrary): PersistedSongLibrary {
 export function coerceLibrarySong(raw: unknown): LibrarySong | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || !raw.id) return null;
+  // Canonical library sections follow the same ordered-set invariant as show sections. Reuse the
+  // persisted-song migration so a malformed/older write cannot expose a duplicate key that the
+  // setlist UI can never identify as two placements.
+  const sections = migrateSongs([{ id: raw.id, name: raw.name, sections: raw.sections }])[0]?.sections ?? [];
+  const graphs = isObject(raw.graphs) ? (raw.graphs as Record<string, TriggerGraph>) : {};
+  const graphNames = isObject(raw.graphNames) ? (raw.graphNames as Record<string, string>) : {};
+  const authored: Partial<AuthoredState> = { graphs, graphNames, songs: [{ id: raw.id, name: String(raw.name ?? ''), sections }] };
+  sanitizeAuthoredGraphReferences(authored);
   return {
     id: raw.id,
     name: typeof raw.name === 'string' && raw.name ? raw.name : 'Untitled Song',
-    sections: Array.isArray(raw.sections) ? (raw.sections as SetlistSection[]) : [],
-    graphs: isObject(raw.graphs) ? (raw.graphs as Record<string, TriggerGraph>) : {},
-    graphNames: isObject(raw.graphNames) ? (raw.graphNames as Record<string, string>) : {},
+    sections: authored.songs![0]!.sections,
+    graphs: authored.graphs!,
+    graphNames: authored.graphNames!,
     effects: Array.isArray(raw.effects) ? (raw.effects as EffectDef[]) : [],
     presets: Array.isArray(raw.presets) ? (raw.presets as Preset[]) : [],
   };
@@ -483,6 +521,10 @@ export function deserializeSongLibrary(raw: unknown): SongLibrary | null {
   for (const rawSong of Object.values(data.songs)) {
     const song = coerceLibrarySong(rawSong);
     if (song) songs[song.id] = song;
+  }
+  const usedSectionIds = new Set<string>();
+  for (const song of Object.values(songs)) {
+    song.sections = sanitizeUniqueSectionIds([{ id: song.id, name: song.name, sections: song.sections }], usedSectionIds)[0]!.sections;
   }
   return { songs };
 }

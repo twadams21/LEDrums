@@ -129,11 +129,13 @@ describe('duplicateSong', () => {
 
   it('preserves cross-section graph reuse inside the copy', () => {
     const store = new TriggerLab(fakeClient);
-    // the seed song references the same pad graphs from every section — the copy must reuse its
-    // own graph in exactly the same places, not mint one clone per section.
+    // Explicitly link the source song first; fresh seeded sections are independent by default.
     const src = store.songs.find((s) => s.id === 'set-1')!;
     const sharedKey = src.sections[0]!.graphs[0]!;
-    expect(src.sections[1]!.graphs).toContain(sharedKey); // precondition: shared in the source
+    const secondKey = src.sections[1]!.graphs[0]!;
+    store.linkGraphPlacement(src.id, src.sections[0]!.id, sharedKey, src.id, src.sections[1]!.id, secondKey);
+    const linkedSrc = store.songs.find((s) => s.id === 'set-1')!;
+    expect(linkedSrc.sections[1]!.graphs).toContain(sharedKey); // precondition: shared in the source
 
     const newId = store.duplicateSong('set-1')!;
     const dup = store.songs.find((s) => s.id === newId)!;

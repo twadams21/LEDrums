@@ -6,6 +6,7 @@ import {
   sampleLfo,
   type LfoSettings,
 } from './lfo';
+import { DELAY_DIVISIONS } from './delay';
 import { applyModulations, sampleSource, type Mapping, type ModSampleCtx } from './modulation';
 import { nodeModSource, resolveNodeModulations } from './modulation-graph';
 import type { GraphNode, ParamSpec, TriggerGraph } from './types';
@@ -97,6 +98,15 @@ describe('division sync — period tracks bpm', () => {
     expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: '1/4' }), 120)).toBeCloseTo(500, 10);
     expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: '1/4' }), 240)).toBeCloseTo(250, 10);
     expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: '1/8' }), 120)).toBeCloseTo(250, 10);
+  });
+
+  it('resolves every canonical division, including the 32nd family', () => {
+    for (const division of DELAY_DIVISIONS) {
+      expect(lfoPeriodMs(lfo({ rateMode: 'beats', division }), 120), division).toBeGreaterThan(0);
+    }
+    expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: '1/32' }), 120)).toBeCloseTo(62.5, 10);
+    expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: 'dotted-1/32' }), 120)).toBeCloseTo(93.75, 10);
+    expect(lfoPeriodMs(lfo({ rateMode: 'beats', division: 'triplet-1/32' }), 120)).toBeCloseTo(62.5 * (2 / 3), 10);
   });
 
   it('the same beat-relative moment gives the same phase at any bpm', () => {

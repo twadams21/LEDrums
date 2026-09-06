@@ -180,6 +180,14 @@ export interface ShotSeam {
   /** Open Settings with a global control's MIDI (default) or OSC Learn armed, so the
       listening state is capturable without an input device to arm it against. */
   previewGlobalControlLearn(which?: 'midi' | 'osc'): void;
+  /** Seed a linked placement group for the Sections viewer shot. */
+  previewLinkedPlacement(): void;
+  /** Leave one graph unplaced so the Add Graph drawer shows default Copy and explicit Link. */
+  previewGraphPicker(): void;
+  /** Switch the active song to a canonical library reference for the read-only shot. */
+  previewCanonicalReadonly(view?: 'sections' | 'trigger'): void;
+  /** Seed a viewer presence state for the disabled-authoring shot. */
+  previewViewer(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -226,7 +234,7 @@ class ShotSeamImpl implements ShotSeam {
     if (!key) return;
     const section = this.store.activeSectionId;
     if (section) this.store.selectGraphInSection(section, key);
-    else this.store.selectedPadKey = key;
+    else this.store.selectGraph(key);
   }
 
   newGraph(): void {
@@ -664,6 +672,51 @@ class ShotSeamImpl implements ShotSeam {
     this.openSettings();
   }
 
+  previewLinkedPlacement(): void {
+    const song = this.store.songs[0];
+    const first = song?.sections[0];
+    const second = song?.sections[1];
+    const source = first?.graphs[0];
+    const target = second?.graphs[0];
+    if (!song || !first || !second || !source || !target) return;
+    this.store.linkGraphPlacement(song.id, first.id, source, song.id, second.id, target);
+    this.shell.setView('sections');
+  }
+
+  previewGraphPicker(): void {
+    const section = this.store.activeSong?.sections[0];
+    const key = section?.graphs.at(-1);
+    if (section && key) this.store.removeGraphFromSection(section.id, key);
+    this.shell.setView('sections');
+  }
+
+  previewCanonicalReadonly(view: 'sections' | 'trigger' = 'trigger'): void {
+    const local = this.store.songs[0];
+    if (!local) return;
+    const libraryId = this.store.exportSongToLibrary(local.id);
+    if (!libraryId) return;
+    this.store.importSongReference(libraryId);
+    this.store.setActiveSong(libraryId);
+    const section = this.store.activeSong?.sections[0];
+    const graphKey = section?.graphs.find((key) => this.store.resolvedView.graphs[key]);
+    if (!section || !graphKey) {
+      this.shell.setView(view);
+      return;
+    }
+    this.store.selectGraphInSection(section.id, graphKey);
+    const node = this.store.selectedGraph?.nodes.find(
+      (candidate) =>
+        (candidate.kind === 'effect' || candidate.kind === 'play') && candidate.effectId,
+    ) ?? this.store.selectedGraph?.nodes.find((candidate) => candidate.kind !== 'output');
+    if (node) this.shell.select({ kind: 'node', nodeId: node.id });
+    this.shell.setView(view);
+  }
+
+  previewViewer(): void {
+    this.store.presence = { editorId: 'shot-editor', youAreEditor: false, clientCount: 2 };
+    this.shell.setView('sections');
+  }
+
   /**
    * Run an authoring mutation once this client actually HOLDS the edit lock.
    *
@@ -848,6 +901,18 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'global-control-learn':
         this.previewGlobalControlLearn(arg === 'osc' ? 'osc' : 'midi');
+        break;
+      case 'linked-placement':
+        this.previewLinkedPlacement();
+        break;
+      case 'graph-picker':
+        this.previewGraphPicker();
+        break;
+      case 'canonical-readonly':
+        this.previewCanonicalReadonly(arg === 'sections' ? 'sections' : 'trigger');
+        break;
+      case 'viewer':
+        this.previewViewer();
         break;
       case 'toast':
       case 'toasts':

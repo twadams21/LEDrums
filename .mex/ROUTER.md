@@ -37,16 +37,46 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 ## Current Project State
 
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
-Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200
-commits `b8e65440` and `95a0cc6e`. The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
+The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
 MODE`, `HOOP CHASE`, and `DRUM CHASE`; the primary chase changes with the partition, and the
 secondary drum chase remains only under hoop partition so the labels do not collide. Visible copy
 uses project casing, while aria labels remain sentence case. No model, persisted field, runtime,
-navigation, division, or effect behavior changed. Focused web tests (19), full typecheck, full
-monorepo tests (4,775 passed / 4 skipped), and strict `splice-inspector` ui-shot passed with no
-console errors. The styleguide does not mount this inspector, so `docs/design-system.html` was not
-regenerated. This is not merged or shipped; the new PR supersedes the relevant #200 commits.
+navigation, division, or effect behavior changed. Focused web tests, full typecheck, full monorepo
+tests, and strict `splice-inspector` ui-shot passed with no console errors. The styleguide does not
+mount this inspector, so `docs/design-system.html` was not regenerated. This is not merged or
+shipped; the new PR supersedes the relevant #200 work.
 
+**Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
+on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
+independent graph keys/objects by default; repeated keys already persisted remain explicit links;
+adding an existing graph defaults to Copy, with deliberate Link/Make independent actions for exact
+placements. `SetlistSection.graphs` remains an ordered set: a key may occur once per section, while
+the exact supported placement identity is `(songId, sectionId, graphKey)`. Persistence and ClipDoc
+boundaries sanitize legacy repeats, and UI identity/counts use that same tuple. Canonical library
+sections are resolved for playback but are read-only until the existing detach flow is used;
+failed canonical or viewer operations do not mint graphs, names, clipboard snapshots, or active
+section ids. Create/copy-and-place and graph deletion each use one store-level undo checkpoint.
+The implementation uses repeated shared graph keys as linked-group identity and does not use
+placement IDs, automatic copy-on-write, or current-selection ownership. Source: Trent's PR #208
+remediation request on this machine; machine identity from `scutil --get ComputerName`.
+
+**PR #208 remediation (2026-09-06, not merged):**
+ordered-set sanitization now agrees across setlist constructors, persistence, library references,
+ClipDoc remapping, and graph closure copies. Local placement commands validate the exact
+`(songId, sectionId, graphKey)` tuple before selection or minting; duplicate global section ids,
+dangling local graph refs, and orphan graph names are dropped deterministically, while valid
+`lib:*` refs survive. ClipDoc section/song materialization fails closed on missing graph closure.
+The store exposes one graph ownership capability used by every graph mutator and the Trigger graph
+canvas/Inspector: canonical graphs remain playable/selectable but are disabled until detach, with
+an explicit read-only explanation. Canonical graph copy is explicit: graph duplication and
+copy-to-section may materialize local content; node clipboard copy remains blocked for canonical
+graphs. The table-driven regression covers the public graph mutator surface and asserts canonical
+library bytes/signature, authored history, autosave signatures, and transient node clipboard
+stability; a separate test proves the permitted copy-as-source paths. Viewer `copySection` is a
+controller/UI no-op with no transient clipboard write. Evidence: full monorepo tests, full
+typecheck/build, design-system regeneration, and strict canonical section and Inspector shots
+passed with no console errors. The #207 accessibility and reconciliation work remains preserved.
 **PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
 `ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
@@ -74,6 +104,18 @@ no-song fixtures, so those extra visual states were verified at component/store 
 
 **Chrome section-add gate replacement (2026-09-06, local `feat/chrome-section-add-gate`, current-main reimplementation of PR #199):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. Not merged or shipped; the new PR must supersede #199.
+**Rhythmic 32nd divisions (2026-09-06, PR #205, local `feat/rhythmic-32nd-divisions`):**
+Trent's request in this session, extracted from PR #200. The shared core `DELAY_DIVISIONS`
+vocabulary contains straight, dotted, and triplet 1/32 values, ordered as straight → dotted →
+triplet with each group longest → shortest; web option data derives from the core list, and Delay,
+Splice chase/offsets, and LFO sync all resolve it. Persisted node fields remain strings so unknown
+divisions retain the intentional quarter-note fallback. Verification is green with
+`pnpm --filter @ledrums/core exec vitest run src/voice/delay.test.ts src/voice/splice.test.ts src/voice/modulation-lfo.test.ts`,
+`pnpm --filter @ledrums/web exec vitest run src/lib/trigger-lab/store.delay.test.ts src/lib/app/views/splice-options.test.ts`,
+`pnpm test`, and `pnpm typecheck`. The completed strict UI captures are
+`pnpm ui-shot --strict delay-inspector`, `pnpm ui-shot --strict splice-inspector`, and
+`pnpm ui-shot --strict lfo-inspector`; no design-system output changed. PR #205 remains open and
+this slice is not shipped.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
@@ -305,7 +347,7 @@ Repeatable audit procedure: `.mex/patterns/codebase-health-audit.md`.
 **Trigger/Effects feature initiative (✅ COMPLETE — 2026-06-28, branch `feat/unified-shell`, HEAD `2be62b5`):** the three features from `docs/handoff/2026-06-27-feature-initiative-handoff.md`, built via parallel **Haiku-explore → Sonnet/Haiku-implement → orchestrator review-in-place** (5 commits, full-sweep green per merge — lighter than the worktree+`/code-review` pipeline since scope was modest). Final: typecheck 0 (2163 web files); **863 tests** (core 229 / io 13 / protocol 1 / server 80 / web 540).
 - **Per-effect scope + target** (`584cd28`): `Scope` gains `'hoop'` (kit/drum/hoop); Play nodes gain an optional `targetId` (drum = `"id"`, hoop = `"id#hoopIndex"`; absent = auto). Compositor + web `render.ts` mask to the resolved range — drum/hoop use `targetId ?? sourceDrumId` (kit ignores target), dangling targets render nothing; **generator-backed effects are scoped too** (mask precedes the generator branch). Pure `getHoopPixelRange` helper. Inspector: 3-way scope `SegmentedControl` + target dropdown (drums / drum#hoop; "Auto (firing drum)" default); store `setScope`/`setTargetId` (scope change clears stale targetId). EffectGallery scope-tab clamps hoop→drum (effects carry no intrinsic hoop scope).
 - **Live generator effect thumbnails** (`b6a3e47`/`a33dfc9`): `EffectThumb` renders the **real generator** (was a `'flash'` placeholder) for the 41 generator-backed effects via new `effect-thumb-render.ts` (renders into a cached `Framebuffer` → [intensity,hue]); pattern effects keep the `sampleWith` path. Perf: all thumbs share ONE rAF loop (`effect-thumb-ticker` singleton) instead of ~40; each subscribes only while its canvas intersects the viewport (IntersectionObserver) and renders a single static frame under prefers-reduced-motion; `genState` recreated on generatorId change; the inspector-header thumb also renders the real generator.
-- **Delay node** (`971045a` core / `2be62b5` web): new `'delay'` BlockKind defers its children by absolute ms or a musical division (1/4·1/8·1/16 + dotted/triplet). Pure `computeDelayMs` (core `voice/delay.ts`, re-exported; **web imports it — single source, no drift**) resolves the division against bpm **AT ENQUEUE**; the engine holds a pending-fire queue drained in `tick()` at an absolute `fireAtMs` (snapshot-stable across later bpm changes — a **relative real-time offset from the hit, NOT grid-quantized**), re-entering the shared `applyActions` path so nested delays + the cycle guard behave identically to an immediate fire (`delayMs<=0` fires inline; queue cleared on `setShow`). Web `Sim` mirrors the queue (drained in its tick, cleared on show change/stop); `DelayNodeInspector` (mode Time/Division + ms / division); palette `NODE_KINDS` + `kindSummary` + `DELAY_MODE_OPTS`/`DIVISION_OPTS`; store `setDelayMode`/`setDelayMs`/`setDivision`. `packages/core` stays pure + deterministic.
+- **Delay node** (`971045a` core / `2be62b5` web): new `'delay'` BlockKind defers its children by absolute ms or a musical division (at the time: straight `1/4·1/8·1/16` plus dotted/triplet; the current shared `DELAY_DIVISIONS` vocabulary is broader, spanning straight bars and `1/2` through `1/32`, with dotted/triplet variants for those note divisions). Pure `computeDelayMs` (core `voice/delay.ts`, re-exported; **web imports it — single source, no drift**) resolves the division against bpm **AT ENQUEUE**; the engine holds a pending-fire queue drained in `tick()` at an absolute `fireAtMs` (snapshot-stable across later bpm changes — a **relative real-time offset from the hit, NOT grid-quantized**), re-entering the shared `applyActions` path so nested delays + the cycle guard behave identically to an immediate fire (`delayMs<=0` fires inline; queue cleared on `setShow`). Web `Sim` mirrors the queue (drained in its tick, cleared on show change/stop); `DelayNodeInspector` (mode Time/Division + ms / division); palette `NODE_KINDS` + `kindSummary` + `DELAY_MODE_OPTS`/`DIVISION_OPTS`; store `setDelayMode`/`setDelayMs`/`setDivision`. `packages/core` stays pure + deterministic.
 - **#2 computer-keyboard graph triggering** was already shipped (`785d003`) — no work.
 - **Spot-check fixes (2026-06-28, `3bd27d9`/`a1fc99f`):** Trent's live pass surfaced trigger-graph instability + weird thumbnails. (a) `TriggerGraphView.rebuildNodes` rebuilt EVERY flow-node object on each projection (runs on node-add/click/graph-switch); the new refs failed xyflow's equality check → it dropped edge `handleBounds` (**wires vanished on add**) and re-applied store `x/y` (**nodes snapped**; the snapped pos then autosaved → **first node reset every refresh**). Fix: reuse the existing flow-node object for any node whose structure + selection are unchanged (xyflow keeps `measured` + live position); only changed/new nodes rebuild. Plus a `beforeunload` autosave flush for the debounce race. (b) Generator thumbnails rendered on the FULL kit then painted the first 338 indices (meaningless content) and round-tripped RGB→hue→RGB (wrong colours) and froze in the portaled gallery; fix: render on a 26×13 synthetic `buildThumbPixelModel` (real geometry, index↔grid 1:1), paint true Framebuffer RGB, layout-robust IntersectionObserver. Gates green (typecheck 0; **867 tests**).
 - **OWED: a FULL live `:5173` spot-check** (the above fixes are gate-verified but not yet browser-confirmed end-to-end) — trigger-graph add/drag/refresh stability; generator thumbnails (all 51 read true, correct colours, animate, offscreen-pause, reduced-motion); hoop/drum/target scoping incl. cross-drum targeting + dangling targets; the delay node end-to-end (musical-division timing relative to the hit, nested delays, before/after ordering). All prior initiatives' spot-checks remain separately owed.

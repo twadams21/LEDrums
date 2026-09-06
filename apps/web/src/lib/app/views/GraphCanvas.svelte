@@ -69,6 +69,7 @@
     wirePreview,
     overlay,
     empty,
+    editable = true,
   }: {
     nodes: NodeType[];
     edges: EdgeType[];
@@ -131,6 +132,8 @@
         guide overlay drawn in flow coordinates via ViewportPortal. */
     overlay?: Snippet;
     empty?: Snippet;
+    /** Disable graph authoring gestures while preserving pan, zoom, selection, and playback. */
+    editable?: boolean;
   } = $props();
 
   // In-drag invalid-target state (R03): the tracker flips this as the pointer crosses targets.
@@ -147,12 +150,13 @@
       {defaultEdgeOptions}
       fitView
       fitViewOptions={{ padding: fitPadding }}
-      nodesConnectable
+      nodesConnectable={editable}
+      nodesDraggable={editable}
       elevateNodesOnSelect={false}
       {snapGrid}
       minZoom={0.2}
       proOptions={{ hideAttribution: true }}
-      deleteKey={deleteKey}
+      deleteKey={editable ? deleteKey : null}
       onbeforeconnect={onBeforeConnect}
       onnodeclick={({ node }) => onNodeClick?.(node.id)}
       onedgeclick={({ edge }) => onEdgeClick?.(edge.id)}

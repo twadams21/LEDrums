@@ -21,18 +21,21 @@ describe('computeDelayMs — beats mode at 120 bpm', () => {
     expect(computeDelayMs('beats', 0, '1/4', bpm)).toBeCloseTo(500, 6);
     expect(computeDelayMs('beats', 0, '1/8', bpm)).toBeCloseTo(250, 6);
     expect(computeDelayMs('beats', 0, '1/16', bpm)).toBeCloseTo(125, 6);
+    expect(computeDelayMs('beats', 0, '1/32', bpm)).toBeCloseTo(62.5, 6);
   });
 
   it('resolves dotted values (base × 1.5)', () => {
     expect(computeDelayMs('beats', 0, 'dotted-1/4', bpm)).toBeCloseTo(750, 6);
     expect(computeDelayMs('beats', 0, 'dotted-1/8', bpm)).toBeCloseTo(375, 6);
     expect(computeDelayMs('beats', 0, 'dotted-1/16', bpm)).toBeCloseTo(187.5, 6);
+    expect(computeDelayMs('beats', 0, 'dotted-1/32', bpm)).toBeCloseTo(93.75, 6);
   });
 
   it('resolves triplet values (base × 2/3)', () => {
     expect(computeDelayMs('beats', 0, 'triplet-1/4', bpm)).toBeCloseTo(500 * (2 / 3), 6);
     expect(computeDelayMs('beats', 0, 'triplet-1/8', bpm)).toBeCloseTo(250 * (2 / 3), 6);
     expect(computeDelayMs('beats', 0, 'triplet-1/16', bpm)).toBeCloseTo(125 * (2 / 3), 6);
+    expect(computeDelayMs('beats', 0, 'triplet-1/32', bpm)).toBeCloseTo(62.5 * (2 / 3), 6);
   });
 });
 
@@ -85,5 +88,33 @@ describe('computeDelayMs — DELAY_DIVISIONS coverage', () => {
   it('unknown division falls back to quarter note duration', () => {
     expect(computeDelayMs('beats', 0, 'unknown', 120)).toBeCloseTo(500, 6);
     expect(computeDelayMs('beats', 0, '', 120)).toBeCloseTo(500, 6);
+  });
+});
+
+describe('DELAY_DIVISIONS ordering', () => {
+  const group = (division: string): number =>
+    division.startsWith('dotted-') ? 1 : division.startsWith('triplet-') ? 2 : 0;
+  const duration = (division: string): number => computeDelayMs('beats', 0, division, 120, 4);
+
+  it('keeps straight, dotted, and triplet groups in that order', () => {
+    expect(DELAY_DIVISIONS.map(group)).toEqual([
+      ...Array(8).fill(0),
+      ...Array(5).fill(1),
+      ...Array(5).fill(2),
+    ]);
+  });
+
+  it('orders each group longest to shortest', () => {
+    for (const expectedGroup of [0, 1, 2]) {
+      const durations = DELAY_DIVISIONS.filter((division) => group(division) === expectedGroup).map(duration);
+      for (let i = 1; i < durations.length; i++) {
+        expect(durations[i]!, `group ${expectedGroup} index ${i}`).toBeLessThan(durations[i - 1]!);
+      }
+    }
+  });
+
+  it('starts with four bars and ends with a 32nd triplet', () => {
+    expect(DELAY_DIVISIONS[0]).toBe('4-bars');
+    expect(DELAY_DIVISIONS[DELAY_DIVISIONS.length - 1]).toBe('triplet-1/32');
   });
 });

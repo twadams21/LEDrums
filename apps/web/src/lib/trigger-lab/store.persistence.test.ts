@@ -53,9 +53,10 @@ describe('TriggerLab hydration (restore on reload)', () => {
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
     // pad-label hydration names every seeded pad graph; the seed has NO authored graphs.
-    expect(store.graphNames['kick:0']).toBe('Kick · center');
+    const key = store.activeSong!.sections[0]!.graphs[0]!;
+    expect(store.graphNames[key]).toBe('Kick · center');
     expect(Object.keys(store.graphNames).every((k) => k in store.graphs)).toBe(true);
-    expect(Object.keys(store.graphNames).some((k) => k.startsWith('graph-') || k.startsWith('graph:'))).toBe(false);
+    expect(Object.keys(store.graphNames).every((k) => k.startsWith('graph:seed:'))).toBe(true);
   });
 
   it('restores persisted scalar fields on construction', () => {

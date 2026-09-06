@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { voice } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import type { GraphNode } from './sim';
 import type { WSClient } from '../ws/client';
@@ -97,8 +98,7 @@ describe('setDivision', () => {
 
   it('accepts every canonical delay division', () => {
     const { store, node } = withDelay();
-    const divs = ['1/4', '1/8', '1/16', 'dotted-1/4', 'dotted-1/8', 'dotted-1/16', 'triplet-1/4', 'triplet-1/8', 'triplet-1/16'] as const;
-    for (const d of divs) {
+    for (const d of voice.DELAY_DIVISIONS) {
       store.setDivision(node, d);
       expect(node.division).toBe(d);
     }

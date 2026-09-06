@@ -14,7 +14,7 @@
 import type { CanvasScene } from '@ledrums/core';
 import type { EffectDef, Preset, TriggerGraph } from '../sim';
 import type { Song, SetlistSection } from '../../app/setlist';
-import { referencedGraphs } from '../../app/setlist';
+import { makeSection, referencedGraphs } from '../../app/setlist';
 
 /** The authored sources a closure is extracted from — the reachable subset of AuthoredState the
     store already holds. Buses are intentionally absent: a section look's `busId` keys stay
@@ -153,5 +153,5 @@ function rekeySection(sec: SetlistSection, prefix: string, graphKeySet: Set<stri
   for (const [busId, effectId] of Object.entries(sec.looks)) {
     looks[busId] = effectId ? nsKey(prefix, effectId) : effectId;
   }
-  return { id: nsKey(prefix, sec.id), name: sec.name, graphs, looks };
+  return makeSection(nsKey(prefix, sec.id), sec.name, graphs, looks);
 }

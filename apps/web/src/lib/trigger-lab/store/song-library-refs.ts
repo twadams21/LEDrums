@@ -55,6 +55,7 @@ export function resolveSongRefs(base: ResolvableView, refs: readonly string[], l
   const effectIds = new Set(effects.map((e) => e.id));
   const presetIds = new Set(presets.map((p) => p.id));
   const seenRefs = new Set<string>();
+  const seenSectionIds = new Set(songs.flatMap((song) => song.sections.map((section) => section.id)));
 
   for (const id of refs) {
     if (seenRefs.has(id)) continue; // a ref list should be a set; guard a stray duplicate
@@ -76,7 +77,12 @@ export function resolveSongRefs(base: ResolvableView, refs: readonly string[], l
         presets.push(p);
       }
     }
-    songs.push({ id: lib.id, name: lib.name, sections: lib.sections });
+    const sections = lib.sections.filter((section) => {
+      if (!section.id || seenSectionIds.has(section.id)) return false;
+      seenSectionIds.add(section.id);
+      return true;
+    });
+    songs.push({ id: lib.id, name: lib.name, sections });
   }
 
   return { songs, graphs, graphNames, effects, presets };

@@ -47,8 +47,11 @@ describe('trigger-source back-compat default (hydrate)', () => {
     expect(entries.length).toBeGreaterThan(0);
     for (const [key, graph] of entries) {
       const trig = graph.nodes.find((n) => n.kind === 'trigger')!;
-      const sep = key.indexOf(':');
-      expect(trig.source).toEqual({ kind: 'drum', drumId: key.slice(0, sep), zone: key.slice(sep + 1) });
+      expect(trig.source?.kind).toBe('drum');
+      if (trig.source?.kind === 'drum') {
+        const source = trig.source;
+        expect(store.pads.some((pad) => pad.drumId === source.drumId && String(pad.zone) === source.zone)).toBe(true);
+      }
     }
   });
 

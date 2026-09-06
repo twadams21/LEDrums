@@ -614,8 +614,9 @@ export interface GraphNode {
   delayMode: 'time' | 'beats';
   /** Absolute delay in milliseconds (used when `delayMode === 'time'`). */
   ms: number;
-  /** Musical division string (used when `delayMode === 'beats'`). Full set defined by
-      `DELAY_DIVISIONS` in `delay.ts`: `'1/4'|'1/8'|'1/16'` plus dotted + triplet variants. */
+  /** Musical division string (used when `delayMode === 'beats'`). The full canonical set is
+      defined by `DELAY_DIVISIONS` in `delay.ts`; keep this as a string for persisted-data
+      compatibility and the resolver's intentional unknown-value fallback. */
   division: string;
   // trigger (only meaningful on the `trigger` node)
   /** What input fires this graph (the explicit binding). Optional + additive — graphs

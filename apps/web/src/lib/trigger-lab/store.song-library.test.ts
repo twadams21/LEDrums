@@ -131,7 +131,7 @@ describe('canonical propagation + detach', () => {
   });
 });
 
-describe('referenced songs are navigable + playable + editable (S42 consumption)', () => {
+describe('referenced songs are navigable + playable but graph-read-only (S42 consumption)', () => {
   it('a referenced song is a valid active song, and its sections resolve', () => {
     const store = new TriggerLab(fakeClient);
     const libId = store.exportSongToLibrary('set-1')!;
@@ -146,7 +146,7 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     expect(store.activeSection).toBeTruthy(); // its first section became active (playable)
   });
 
-  it('editing a referenced graph writes through to the LIBRARY copy; authored state keeps the ref (no copy)', () => {
+  it('graph mutators are no-ops for a canonical graph; authored state and library stay unchanged', () => {
     const store = new TriggerLab(fakeClient);
     const libId = store.exportSongToLibrary('set-1')!;
     store.importSongReference(libId);
@@ -156,18 +156,62 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'effect'))!;
     expect(refKey).toBeTruthy();
 
-    // edit via the EXACT path the Trigger editor uses: select the graph, mutate a play node's param
-    store.selectedPadKey = refKey;
+    store.setActiveSong(libId);
+    const section = store.activeSong!.sections.find((candidate) => candidate.graphs.includes(refKey))!;
+    store.selectGraphInSection(section.id, refKey);
     const play = store.selectedGraph!.nodes.find((n) => n.kind === 'effect')!;
-    play.params = { ...play.params, __s42probe: 0.4242 };
+    const beforeLibraryGraph = store.songLibrary.songs[libId]!.graphs[refKey]!;
+    const beforeLibraryNodeCount = beforeLibraryGraph.nodes.length;
+    const beforeLibraryEdgeCount = beforeLibraryGraph.edges.length;
+    const beforeLibraryParams = { ...play.params };
+    const beforeNodeCount = store.selectedGraph!.nodes.length;
+    const beforeEdgeCount = store.selectedGraph!.edges.length;
+    const beforeParams = { ...play.params };
+    expect(store.canEditSelectedGraph).toBe(false);
+    expect(store.graphOwnership(refKey)).toBe('canonical');
 
-    // the canonical LIBRARY copy changed (S41 aliasing — resolved holds the library rune's proxies)
-    const libPlay = store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((n) => n.kind === 'effect')!;
-    expect((libPlay.params as Record<string, number>).__s42probe).toBe(0.4242);
+    expect(store.addNode('effect', 300, 200)).toBeNull();
+    store.setParam(play, '__s42probe', 0.4242);
+    store.moveNode(play, 999, 999);
+    store.removeNode(play);
+    expect(store.connect('trigger', play.id)).toBeNull();
+    store.disconnect(store.selectedGraph!.edges[0]?.id ?? 'missing');
+
+    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.nodes).toHaveLength(beforeLibraryNodeCount);
+    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.edges).toHaveLength(beforeLibraryEdgeCount);
+    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((node) => node.id === play.id)?.params).toEqual(beforeLibraryParams);
+    expect(store.selectedGraph!.nodes).toHaveLength(beforeNodeCount);
+    expect(store.selectedGraph!.edges).toHaveLength(beforeEdgeCount);
+    expect(play.params).toEqual(beforeParams);
+    expect(store.undo()).toBe(false);
 
     // …and the show did NOT absorb a copy: authored graphs stay local-only; the show still holds a REF
     expect(store.graphs[refKey]).toBeUndefined();
     expect(store.songRefs).toEqual([libId]);
+  });
+
+  it('allows canonical graphs only through copy-as-source operations that create local content', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSongId = store.activeSongId;
+    const libraryId = store.exportSongToLibrary(localSongId)!;
+    store.importSongReference(libraryId);
+    store.setActiveSong(libraryId);
+    const canonicalKey = Object.keys(store.songLibrary.songs[libraryId]!.graphs)[0]!;
+    const section = store.activeSong!.sections.find((candidate) => candidate.graphs.includes(canonicalKey))!;
+    store.selectGraphInSection(section.id, canonicalKey);
+    const beforeLibrary = JSON.stringify(store.songLibrary.songs[libraryId]);
+
+    const duplicate = store.duplicateGraph(canonicalKey);
+    expect(duplicate).toBeTruthy();
+    expect(store.graphs[duplicate!]).toBeDefined();
+    expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
+
+    store.setActiveSong(localSongId);
+    const localSection = store.activeSong!.sections[0]!;
+    const copied = store.copyGraphToSection(localSection.id, canonicalKey, 'Local canonical copy');
+    expect(copied).toBeTruthy();
+    expect(store.graphs[copied!]).toBeDefined();
+    expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
   });
 
   it('buildShow carries a referenced song + its namespaced graphs (engine push; passes integrity)', () => {

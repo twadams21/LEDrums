@@ -9,7 +9,7 @@
   import Select from '../../../ui/Select.svelte';
   import { busIcon } from '../../views/trigger-node-meta';
 
-  let { store, sectionId, sectionName, songName, sectionIdx, recall, looks }: {
+  let { store, sectionId, sectionName, songName, sectionIdx, recall, looks, canEdit = true, editBlockReason }: {
     store: TriggerLab;
     sectionId: string;
     sectionName: string;
@@ -18,6 +18,8 @@
     recall: SectionRecall;
     /** The section's authored per-bus looks (bus id → effect id, or null/absent = None). */
     looks: Record<string, string | null>;
+    canEdit?: boolean;
+    editBlockReason?: string;
   } = $props();
 
   /** Look options for a bus: "None" plus every effect whose HOME bus is this one — a look
@@ -37,11 +39,13 @@
   </div>
 </header>
 <div class="sectionbody">
+  {#if !canEdit && editBlockReason}<p class="edit-reason">{editBlockReason}</p>{/if}
   <Field layout="row" label="Name" hint="display label">
     <CommitInput
       value={sectionName}
       placeholder="Section"
       ariaLabel="Section name"
+      disabled={!canEdit}
       onCommit={(v) => store.renameSection(sectionId, v)}
     />
   </Field>
@@ -62,6 +66,7 @@
             options={lookOptions(bus.id)}
             segment={false}
             onChange={(v) => store.setLook(sectionId, bus.id, v === '' ? null : v)}
+            disabled={!canEdit}
             placeholder="None"
             ariaLabel={`${bus.name} look`}
           />
@@ -123,6 +128,15 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-3);
+  }
+  .edit-reason {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.4;
   }
   .looks {
     display: flex;
