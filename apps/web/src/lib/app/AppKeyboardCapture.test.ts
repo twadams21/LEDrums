@@ -104,13 +104,14 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const laterWindow = installLaterWindowListener();
 
     key(overlay, '1');
-    key(overlay, 'd', { metaKey: true });
+    const shortcut = key(overlay, 'd', { metaKey: true });
     laterWindow.mockClear();
     const deleteEvent = key(overlay, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
   });
@@ -129,13 +130,14 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
 
     expect(popover.closest('[data-keyboard-owner="popover"]')).not.toBeNull();
     key(popover, '1');
-    key(popover, 'd', { metaKey: true });
+    const shortcut = key(popover, 'd', { metaKey: true });
     laterWindow.mockClear();
     const deleteEvent = key(popover, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
   });
@@ -153,13 +155,14 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(menu.getAttribute('data-keyboard-owner')).toBe('menu');
     expect(item.getAttribute('data-keyboard-owner')).toBe('menuitem');
     key(item, '1');
-    key(item, 'd', { metaKey: true });
+    const shortcut = key(item, 'd', { metaKey: true });
     laterWindow.mockClear();
     const deleteEvent = key(item, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
   });
@@ -172,11 +175,17 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const laterWindow = installLaterWindowListener();
 
     key(content, '1');
-    key(content, 'd', { metaKey: true });
+    const shortcut = key(content, 'd', { metaKey: true });
     laterWindow.mockClear();
     const dialogDelete = key(content, 'Backspace');
+    const textInput = content.appendChild(document.createElement('input'));
+    const textDelete = key(textInput, 'Backspace');
+    const textUndo = key(textInput, 'z', { metaKey: true });
     expect(dialogDelete.defaultPrevented).toBe(true);
-    expect(laterWindow).not.toHaveBeenCalled();
+    expect(shortcut.defaultPrevented).toBe(true);
+    expect(textDelete.defaultPrevented).toBe(false);
+    expect(textUndo.defaultPrevented).toBe(false);
+    expect(laterWindow).toHaveBeenCalledTimes(2);
 
     const native = document.body.appendChild(document.createElement('dialog'));
     native.setAttribute('open', '');

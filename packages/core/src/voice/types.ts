@@ -693,6 +693,9 @@ export interface SongSection {
   id: string;
   name: string;
   slots: SlotRefs;
+  /** Exact ordered graph keys the performer can select with the computer keyboard. Older
+      runtime shows omit this field; the engine then derives the set from {@link slots}. */
+  performanceGraphKeys?: string[];
 }
 
 /**

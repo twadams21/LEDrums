@@ -5,7 +5,7 @@
 import { decideDeleteKey, isDeleteKey, type DeleteKeyNode } from './delete-key';
 import { performanceKeyTarget } from './performance-key-target';
 import { claimPerformanceKey, decidePerformanceKey } from './performance-key';
-import { dispatchShortcut, type ShortcutEntry } from './shortcuts';
+import { dispatchShortcut, matchesShortcut, type ShortcutEntry } from './shortcuts';
 import type { Selection, SettingsPane, View } from './shell-nav';
 import type { ShortcutPlatform } from './primary-shortcut';
 
@@ -51,20 +51,41 @@ export function dispatchAppKeyboard({
   const target = performanceKeyTarget(event);
   const modalOpen = target.inModal || shell.settingsPane !== null;
   const popupOwnsKeys = target.inOpenPopup || target.inKeyboardControl;
+  const backgroundSurface = modalOpen || popupOwnsKeys;
+
+  // Native text editing wins before any modal/popup suppression. This keeps Backspace/Delete and
+  // platform editing chords inside a dialog or popover in the browser's native path. A
+  // non-editable modal/popup target still needs to consume the app's own shortcut families at the
+  // capture boundary, before SectionsView/xyflow/window listeners can act on the hidden surface.
+  if (target.isEditableTarget) return;
+
+  if (backgroundSurface) {
+    const performance = decidePerformanceKey({
+      key: event.key,
+      view: shell.view,
+      settingsOpen: false,
+      repeat: event.repeat,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      isEditableTarget: false,
+      inOpenPopup: false,
+      inKeyboardControl: false,
+      inFlowCanvas: false,
+    });
+    if (isDeleteKey(event.key) || performance.claim || matchesShortcut(event, shortcuts, shortcutPlatform)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
 
   // A modal or keyboard-active popup owns every key in its surface. In particular, do not let a
   // portalled menu/popover duplicate or delete the graph hidden behind it.
-  if (!modalOpen && !popupOwnsKeys && dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
+  if (dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
 
   if (isDeleteKey(event.key)) {
-    // A modal, popup, or keyboard-owning control owns the delete key completely. Stop at the
-    // capture boundary so xyflow/window listeners cannot delete the background selection.
-    if (modalOpen || popupOwnsKeys) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
     const selection = shell.selection;
     const node =
       selection?.kind === 'node'
@@ -72,21 +93,19 @@ export function dispatchAppKeyboard({
         : null;
     const { prevent, removeNode } = decideDeleteKey({
       key: event.key,
-      isEditableTarget: target.isEditableTarget || popupOwnsKeys,
+      isEditableTarget: target.isEditableTarget,
       selection,
       resolvedNode: node,
     });
     // Keep the desktop WebView from treating an unowned Backspace as history navigation. Do not
     // stop propagation here: xyflow's window listener still owns deletion of selected wires.
     if (prevent) event.preventDefault();
-    if (removeNode && node && !modalOpen && !popupOwnsKeys) {
+    if (removeNode && node) {
       store.removeNode(node);
       shell.clearSelection();
     }
     return;
   }
-
-  if (modalOpen || popupOwnsKeys) return;
 
   const decision = decidePerformanceKey({
     key: event.key,

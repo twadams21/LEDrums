@@ -230,7 +230,7 @@ function midiVoiceShow(note: number): voice.Show {
     sections: [],
     effects: [voiceEffect('fx-flash')],
     presets: [],
-    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] } }] }],
+    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] }, performanceGraphKeys: ['graph:midi'] }] }],
   };
 }
 

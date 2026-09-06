@@ -993,6 +993,95 @@ function firedBusesFor(graphs: Record<string, TriggerGraph>, ev: InputEvent): st
     .sort();
 }
 
+function performanceShow(): Show {
+  const active = flatGraph('fxA');
+  const other = flatGraph('fxB');
+  const unassigned = flatGraph('fxA');
+  return {
+    buses: buses(),
+    graphs: { active: active, other, unassigned, hostile: active },
+    sections: [],
+    effects: [effect('fxA'), effect('fxB')],
+    presets: [],
+    songs: [
+      {
+        id: 'song1',
+        name: 'Song 1',
+        sections: [
+          {
+            id: 'active',
+            name: 'Active',
+            slots: { [padKey('kick', '')]: ['active'] },
+            performanceGraphKeys: ['active'],
+          },
+          {
+            id: 'other',
+            name: 'Other',
+            slots: { [padKey('kick', '')]: ['other'] },
+            performanceGraphKeys: ['other'],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function fireViewer(graphKey: string): InputEvent {
+  return { kind: 'fireGraph', graphKey, velocity: 1, fireGraphPolicy: 'active-section', timeMs: 0 };
+}
+
+function firedBusesForShow(show: Show, events: InputEvent[]): string[] {
+  const e = createVoiceBusEngine();
+  e.setModel(testModel());
+  e.setShow(show);
+  for (const event of events) e.applyInput(event);
+  e.tick(5, 5, transport(5));
+  e.tick(40, 35, transport(40));
+  return Object.keys(e.stats().busLevels).filter((bus) => (e.stats().busLevels[bus] ?? 0) > 0).sort();
+}
+
+describe('VoiceBusEngine — viewer fireGraph active-section authorization', () => {
+  it('fires a graph in the active performance list', () => {
+    expect(firedBusesForShow(performanceShow(), [fireViewer('active')])).toEqual(['base']);
+  });
+
+  it('rejects a graph assigned only to another section', () => {
+    expect(firedBusesForShow(performanceShow(), [fireViewer('other')])).toEqual([]);
+  });
+
+  it('rejects an authored but unassigned graph and hostile keys', () => {
+    expect(firedBusesForShow(performanceShow(), [fireViewer('unassigned'), fireViewer('__proto__')])).toEqual([]);
+  });
+
+  it('rechecks the active section after a section recall', () => {
+    expect(
+      firedBusesForShow(performanceShow(), [
+        { kind: 'recallSection', songId: 'song1', sectionId: 'other', timeMs: 0 },
+        fireViewer('other'),
+      ]),
+    ).toEqual(['base']);
+  });
+
+  it('rejects viewer fireGraph when there is no active runtime section', () => {
+    const show = performanceShow();
+    show.songs = [{ id: 'song1', name: 'Song 1', sections: [] }];
+    expect(firedBusesForShow(show, [fireViewer('active')])).toEqual([]);
+  });
+
+  it('derives the allowed keys from legacy slot grids when no performance list exists', () => {
+    const show = performanceShow();
+    delete show.songs![0]!.sections[0]!.performanceGraphKeys;
+    expect(firedBusesForShow(show, [fireViewer('active')])).toEqual(['base']);
+    expect(firedBusesForShow(show, [fireViewer('other')])).toEqual([]);
+  });
+
+  it('keeps legacy shows unrestricted when no runtime songs exist', () => {
+    const show = performanceShow();
+    show.songs = undefined;
+    expect(firedBusesForShow(show, [fireViewer('unassigned')])).toEqual(['base']);
+  });
+});
+
 describe('VoiceBusEngine — direct trigger-source resolution (U3)', () => {
   it('a raw MIDI note fires the authored graph bound to that note (midi source)', () => {
     const graphs = { 'graph:1': sourcedGraph({ kind: 'midi', note: 60 }, 'base') };

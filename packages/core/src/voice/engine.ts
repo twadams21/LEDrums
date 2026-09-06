@@ -96,6 +96,10 @@ export interface InputEvent {
       re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
       precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
   graphKey?: string;
+  /** Viewer fireGraph authorization. Unset keeps the legacy unrestricted server/editor path;
+      `active-section` checks the key against the engine's current performance list or runtime
+      slot grid before resolving the graph. */
+  fireGraphPolicy?: 'active-section';
   /** releaseBus: release every active voice on this bus (absent = all buses — panic). */
   busId?: string;
   timeMs: number;
@@ -645,6 +649,13 @@ class VoiceBusEngine implements RenderEngine {
       this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'no-such-graph' });
       return;
     }
+    if (e.fireGraphPolicy === 'active-section') {
+      const allowed = this.activePerformanceGraphKeys();
+      if (allowed !== null && !allowed.has(key)) {
+        this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'not-active-section' });
+        return;
+      }
+    }
     const src = triggerSourceOf(graph);
     const ctx: TriggerCtx = {
       velocity: normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 }),
@@ -664,6 +675,21 @@ class VoiceBusEngine implements RenderEngine {
       statePrefix: resolved.statePrefix,
     });
     this.fireGraph(resolved, ctx, input);
+  }
+
+  /** Resolve the viewer's allowed performance graph keys from the engine's live arrangement.
+      A missing `songs` field is the pre-setlist runtime shape and keeps its legacy unrestricted
+      fireGraph behavior. Once runtime songs exist, no active or unknown section means an empty
+      authorization set. Newer bridges carry the exact flat performance list so direct MIDI/OSC
+      graphs remain keyboard-addressable; older slot-grid shows derive the set from every slot. */
+  private activePerformanceGraphKeys(): ReadonlySet<string> | null {
+    if (!this.show.songs) return null;
+    if (this.activeSongId === null || this.activeSectionId === null) return new Set();
+    const song = this.show.songs.find((candidate) => candidate.id === this.activeSongId);
+    const section = song?.sections.find((candidate) => candidate.id === this.activeSectionId);
+    if (!section) return new Set();
+    if (section.performanceGraphKeys) return new Set(section.performanceGraphKeys);
+    return new Set(Object.values(section.slots).flatMap((keys) => keys.filter((key): key is string => key !== null)));
   }
 
   private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {

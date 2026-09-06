@@ -70,6 +70,7 @@ export function buildShow(source: ShowSource): voice.Show {
       sections: song.sections.map((sec) => ({
         id: sec.id,
         name: sec.name,
+        performanceGraphKeys: [...sec.graphs],
         // A section is a FLAT ordered graph list, but the engine still resolves a pad
         // hit by a padKey-keyed slot grid — so bridge graphs → slots here (the explicit map
         // this adapter's header promises). See sectionSlotsFromGraphs.

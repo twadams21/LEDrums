@@ -178,7 +178,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     relayToOthers,
     monitor,
   } = deps;
-  const voiceDeps = { voiceHost, broadcastJson };
+    const voiceDeps = { voiceHost, broadcastJson, viewer: false };
   const replacement = deps.replacement ?? createProjectReplacement({
     host, voiceHost,
     readCurrent: () => ({ project: host.engine.getProject(), showLibrary: null, songLibrary: null }),
@@ -494,6 +494,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
 
     // Voice-mode inputs (recalls, native pad hits, raw midi/osc). In legacy mode the voice-only
     // types are consumed as no-ops; midi/osc fall through to the reducer below.
+    voiceDeps.viewer = !clients.canMutate(ws);
     if (handleVoiceInput(msg, voiceDeps)) return;
 
     // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
