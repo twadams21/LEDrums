@@ -21,7 +21,9 @@ function maxWarmHsv(fb: { max: (id: number, r: number, g: number, b: number, a?:
   else if (hp < 5) { r = x; b = c; }
   else { r = c; b = x; }
   const m = v - c;
-  fb.max(id, r + m, g + m, b + m, 1);
+  // Alpha is coverage/intensity, not a blanket opaque mask. Mix relies on this when a dim
+  // flame is composited over another branch.
+  fb.max(id, r + m, g + m, b + m, v);
 }
 
 /**
@@ -33,6 +35,7 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
   id: 'flame-flicker',
   name: 'Flame Flicker',
   category: 'trigger',
+  timebase: 'voice',
   voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'decayMs', label: 'Decay', type: 'number', default: 800, min: 100, max: 8000, unit: 'ms' },
@@ -65,16 +68,23 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
       const energy = state.energyByDrum[drumIndex]!;
       if (energy < VISIBLE_CUTOFF) continue;
 
-      // Spread=0 gives every pixel the exact same phase/key. At 1, angle and hoop identity
-      // both contribute, so the coherent body resolves into per-pixel variation.
+      // Spread is an interpolation between two samples of the same field: one value coherent
+      // across this drum and one value keyed to this pixel. A small spread therefore remains
+      // near the coherent body instead of changing the hash identity wholesale.
       const spatial = (pixel.hoopIndex - 1) * 1.9 + pixel.angleDeg * 0.021;
-      const phase = spatial * spread;
-      const waveA = Math.sin(t * TAU + phase);
-      const waveB = Math.sin(t * 4.117 + phase * 2.7 + 1.3);
-      const waveC = Math.sin(t * 9.531 + phase * 0.6 + 2.1);
+      const coherentA = Math.sin(t * TAU);
+      const coherentB = Math.sin(t * 4.117 + 1.3);
+      const coherentC = Math.sin(t * 9.531 + 2.1);
+      const pixelA = Math.sin(t * TAU + spatial);
+      const pixelB = Math.sin(t * 4.117 + spatial * 2.7 + 1.3);
+      const pixelC = Math.sin(t * 9.531 + spatial * 0.6 + 2.1);
+      const waveA = lerp(coherentA, pixelA, spread);
+      const waveB = lerp(coherentB, pixelB, spread);
+      const waveC = lerp(coherentC, pixelC, spread);
       const smooth = clamp01(0.5 + (waveA * 0.5 + waveB * 0.32 + waveC * 0.18) * 0.5);
-      const stepKey = Math.round(phase * 1000);
-      const stepped = hash01(stepKey, tick, state.seed);
+      const drumStep = hash01(drumIndex, tick, state.seed);
+      const pixelStep = hash01(pixel.id, tick, state.seed);
+      const stepped = lerp(drumStep, pixelStep, spread);
       const flame = clamp01(lerp(smooth, stepped, random));
       // Energy is the only burn multiplier. The depth control changes flame shape, not decay.
       const level = clamp01(energy * lerp(1, flame, depth) * brightness);

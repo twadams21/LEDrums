@@ -50,7 +50,7 @@ export interface ShotSeam {
       trigger. A source node added here gets a collision-free id, so `add:<kind>,select:<kind>`
       reliably reaches that kind's inspector even when the authored pad graphs carry ids that a
       fresh session's id counter would otherwise duplicate. */
-  newGraph(): void;
+  newGraph(): Promise<void>;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
   /** Author a one-effect graph, set the named params on it, place it in the active section
@@ -237,11 +237,24 @@ class ShotSeamImpl implements ShotSeam {
     else this.store.selectGraph(key);
   }
 
-  newGraph(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.store.createGraph();
-    this.added.clear();
-    this.lastAdded = null;
+  async newGraph(): Promise<void> {
+    await this.claimEdit(() => {
+      // Shot presets must author against a local editable song. A fresh dev session can boot on
+      // the canonical library reference, where createGraph is correctly a no-op; detach that
+      // reference through the real store seam before creating the graph the shot will inspect.
+      if (!this.store.activeSongIsLocal) {
+        const librarySongId = this.store.songRefs.includes(this.store.activeSongId)
+          ? this.store.activeSongId
+          : this.store.songRefs[0];
+        if (librarySongId) {
+          const detached = this.store.detachSongReference(librarySongId);
+          if (detached) this.store.setActiveSong(detached);
+        }
+      }
+      this.store.createGraph();
+      this.added.clear();
+      this.lastAdded = null;
+    });
   }
 
   addNode(kind: NodeKind): GraphNode | null {
@@ -725,21 +738,29 @@ class ShotSeamImpl implements ShotSeam {
    * and the capture shows stale state. Retry across a few frames until it lands (the same
    * shape `previewBackups` / `mockController` use to outlast a server echo). Dev-only.
    */
-  private claimEdit(mutate: () => void): void {
-    if (this.store.canTakeover) this.store.takeover();
-    if (!this.store.isViewer && this.store.project) {
-      mutate();
-      return;
-    }
-    let frames = 0;
-    const attempt = (): void => {
+  private claimEdit(mutate: () => void): Promise<void> {
+    return new Promise((resolve) => {
+      if (this.store.canTakeover) this.store.takeover();
       if (!this.store.isViewer && this.store.project) {
         mutate();
+        resolve();
         return;
       }
-      if (frames++ < 60) requestAnimationFrame(attempt);
-    };
-    requestAnimationFrame(attempt);
+      let frames = 0;
+      const attempt = (): void => {
+        if (!this.store.isViewer && this.store.project) {
+          mutate();
+          resolve();
+          return;
+        }
+        if (frames++ >= 60) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(attempt);
+      };
+      requestAnimationFrame(attempt);
+    });
   }
 
   previewToasts(tone?: ToastTone): void {
@@ -783,7 +804,7 @@ class ShotSeamImpl implements ShotSeam {
         this.openGraph(arg);
         break;
       case 'new-graph':
-        this.newGraph();
+        return this.newGraph();
         break;
       case 'add':
         if (arg) this.addNode(arg as NodeKind);

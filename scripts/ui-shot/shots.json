@@ -215,6 +215,11 @@
     "target": "dialog:Change effect",
     "settle": 1200
   },
+  "effect-gallery-flame-flicker": {
+    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:flame-flicker,gallery,search:flame",
+    "target": "dialog:Change effect",
+    "settle": 1200
+  },
   "effect-gallery-collection": {
     "state": "view:trigger,add:effect,select:effect,gallery",
     "target": "dialog:Change effect",

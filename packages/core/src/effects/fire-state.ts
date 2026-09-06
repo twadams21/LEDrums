@@ -7,14 +7,22 @@ import { lifeFade } from './life-fade';
 export interface FireEffectState {
   readonly seed: number;
   readonly drumIndexById: ReadonlyMap<string, number>;
+  /** Pixel-index lookup built once with the model's contiguous drum ranges. */
+  readonly drumIndexByPixel: Int32Array;
   readonly energyByDrum: Float32Array;
 }
 
 /** Build the grouping once when the generator voice is created, not once per frame. */
 export function createFireEffectState(model: PixelModel, seed = 0): FireEffectState {
   const drumIndexById = new Map<string, number>();
-  for (let i = 0; i < model.drums.length; i++) drumIndexById.set(model.drums[i]!.drumId, i);
-  return { seed: seed >>> 0, drumIndexById, energyByDrum: new Float32Array(model.drums.length) };
+  const drumIndexByPixel = new Int32Array(model.pixelCount);
+  drumIndexByPixel.fill(-1);
+  for (let i = 0; i < model.drums.length; i++) {
+    const drum = model.drums[i]!;
+    drumIndexById.set(drum.drumId, i);
+    drumIndexByPixel.fill(i, drum.pixelStart, drum.pixelStart + drum.pixelCount);
+  }
+  return { seed: seed >>> 0, drumIndexById, drumIndexByPixel, energyByDrum: new Float32Array(model.drums.length) };
 }
 
 /** Fill the reused per-drum energy table and return whether any drum can render. */

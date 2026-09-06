@@ -6,6 +6,44 @@ import { hash01, ordered01 } from '../hash';
 
 const SPARK_OFFSET_SALT = 0x5bf03635;
 const EMBER_SALT = 0x1b873593;
+/** Bucket cadence is a sampling decision, not a second meaning for Spark Life. */
+export const SPARK_BUCKET_CADENCE_MS = 45;
+
+function measurePreservingSparkPhase(pixelId: number, bucket: number, seed: number, random: number): number {
+  // A circular phase mix keeps a uniform threshold measure at every Random value. In
+  // particular, this is not lerp(ordered, scattered), which bunches values around the
+  // threshold and changes expected density as Random moves.
+  const ordered = ordered01(pixelId, bucket, seed);
+  const phase = hash01(pixelId ^ SPARK_OFFSET_SALT, bucket, seed ^ SPARK_OFFSET_SALT);
+  const scattered = hash01(pixelId, bucket, seed);
+  return (ordered + random * (phase + scattered)) % 1;
+}
+
+/** One deterministic spark identity's visible contribution at an absolute time. */
+export function sparkContributionAt(
+  timeMs: number,
+  sparkMs: number,
+  crackle: number,
+  pixelId: number,
+  bucket: number,
+  seed: number,
+  density: number,
+  random: number,
+): number {
+  const picked = measurePreservingSparkPhase(pixelId, bucket, seed, random);
+  if (picked > clamp01(density)) return 0;
+  const startMs = bucket * SPARK_BUCKET_CADENCE_MS
+    + crackle * hash01(pixelId ^ SPARK_OFFSET_SALT, bucket, seed ^ SPARK_OFFSET_SALT) * SPARK_BUCKET_CADENCE_MS;
+  const ageMs = timeMs - startMs;
+  if (ageMs < 0 || ageMs >= sparkMs) return 0;
+
+  // Fade in over the cadence and out over the remainder. The fade-in means the next
+  // identity can be blended into the previous one without a bucket-boundary pop while the
+  // half-open lifetime still remains exactly [birth, birth + sparkMs).
+  const attack = Math.min(1, ageMs / SPARK_BUCKET_CADENCE_MS);
+  const release = 1 - ageMs / sparkMs;
+  return Math.min(attack, release);
+}
 
 /** Write HSV directly to the framebuffer path without creating an RGB object per pixel. */
 function maxHsv(fb: { max: (id: number, r: number, g: number, b: number, a?: number) => void }, id: number, h: number, s: number, v: number): void {
@@ -23,7 +61,8 @@ function maxHsv(fb: { max: (id: number, r: number, g: number, b: number, a?: num
   else if (hp < 5) { r = x; b = c; }
   else { r = c; b = x; }
   const m = v - c;
-  fb.max(id, r + m, g + m, b + m, 1);
+  // Alpha follows the visible spark coverage so a dim spark does not become an opaque Mix mask.
+  fb.max(id, r + m, g + m, b + m, v);
 }
 
 /**
@@ -35,6 +74,7 @@ export const sparkler: EffectGenerator<FireEffectState> = {
   id: 'sparkler',
   name: 'Sparkler',
   category: 'trigger',
+  timebase: 'voice',
   voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
     { key: 'decayMs', label: 'Burn', type: 'number', default: 900, min: 100, max: 8000, unit: 'ms' },
@@ -60,29 +100,24 @@ export const sparkler: EffectGenerator<FireEffectState> = {
     const brightness = clamp01(pnum(params, 'brightness', 1));
     if (!updateFireEnergy(ctx, state, burnMs)) return;
 
-    // Two half-life buckets overlap to keep the spark field continuous at bucket boundaries.
-    const bucketMs = sparkMs * 0.5;
-    const nowBucket = Math.floor(ctx.timeMs / bucketMs);
-    const phase = ctx.timeMs / bucketMs - nowBucket;
+    const nowBucket = Math.floor(ctx.timeMs / SPARK_BUCKET_CADENCE_MS);
+    const firstBucket = Math.floor((ctx.timeMs - sparkMs) / SPARK_BUCKET_CADENCE_MS);
     const emberBucket = Math.floor(nowBucket / 8);
     for (let pixelIndex = 0; pixelIndex < ctx.model.pixels.length; pixelIndex += 1) {
       const pixel = ctx.model.pixels[pixelIndex]!;
-      const drumIndex = state.drumIndexById.get(pixel.drumId);
-      if (drumIndex === undefined) continue;
+      const drumIndex = state.drumIndexByPixel[pixelIndex]!;
+      if (drumIndex < 0) continue;
       const burn = state.energyByDrum[drumIndex]!;
       if (burn < VISIBLE_CUTOFF) continue;
 
       let spark = 0;
-      for (let back = 0; back < 2; back++) {
-        const bucket = nowBucket - back;
-        const ordered = ordered01(pixel.id, bucket, state.seed);
-        const scattered = hash01(pixel.id, bucket, state.seed);
-        const pick = lerp(ordered, scattered, random);
-        if (pick > density * burn) continue;
-        const offset = crackle * hash01(pixel.id ^ SPARK_OFFSET_SALT, bucket, state.seed ^ SPARK_OFFSET_SALT);
-        const age = back + phase - offset;
-        if (age < 0 || age >= 1) continue;
-        spark = Math.max(spark, 1 - age);
+      // Blend every live bucket identity. The bucket cadence is independent from Spark Life,
+      // so changing the life changes only the identity's lifespan, never its sampling phase.
+      for (let bucket = firstBucket; bucket <= nowBucket; bucket += 1) {
+        const contribution = sparkContributionAt(
+          ctx.timeMs, sparkMs, crackle, pixel.id, bucket, state.seed, density, random,
+        ) * burn;
+        spark += contribution * (1 - spark);
       }
 
       // A positive half-wave forms the ember bed; the second factor keeps real dark gaps.

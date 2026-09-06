@@ -36,17 +36,21 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Sparkler + Flame Flicker effects (2026-09-06, branch `feat/sparkler-flame-effects`):**
-Requested by Trent on Trent’s MacBook Pro, sourced from PR #200 commits `8c9c89f3` and
-`7dfdd9a2`. The current-main reimplementation adds pure, seeded `sparkler` and
-`flame-flicker` generators with state-owned per-drum grouping, allocation-free render loops,
-explicit Random/Spread behavior, voice-life declarations, metadata, registry/gallery/thumbnail
-coverage, and a narrow duplicate Burn-row regression. PixLite report, navigation, divisions,
-splice runtime, and stale Router content were not carried over. Evidence: focused behavior tests,
-2,320-pixel benchmarks, full monorepo tests, full typecheck/build, design-system regeneration,
-and strict targeted inspector/gallery captures pass. The all-shot sweep still has two unrelated
-baseline failures (`face-params-expose` timeout and `splice-node` target missing). Committed and
-PR-opened work is not merged or shipped.
+**PR #212 remediation (2026-09-06, branch `feat/sparkler-flame-effects`, not merged):**
+Requested by Trent on Trent’s MacBook Pro, sourced from PR #212 findings. Integrated current
+`origin/main` at `30f3c580` in merge commit `edf03a32`, then corrected Spark Life to be the
+actual per-spark visible lifetime with independent overlap cadence and identity continuity,
+made Random a deterministic measure-preserving phase permutation, made Flame Spread interpolate
+coherent-to-pixel amplitude/phase, and aligned effect alpha with coverage/intensity compositor
+conventions. Both fire voices now declare the voice-relative timebase; fire state uses contiguous
+per-pixel drum indices instead of a hot-loop `Map.get`. Added identity/time-series, statistical
+density, spread, timebase, Mix-over-background, duplicate-life, and 2,320-pixel all-drum benchmark
+coverage with mean/p95 metrics and optional thresholds. The duplicate-life seam filters both
+parameter derivation buckets, and `new-graph` now detaches a canonical song before shot authoring;
+Flame Flicker has a populated gallery preset. Local evidence: full tests (1,447 core, 2,554 web,
+601 server, plus IO/protocol/desktop/worker suites), typecheck, build, regenerated design system,
+and `UI_SHOT_BASE=http://localhost:5250 pnpm ui-shot --all --strict` all pass. No merge or release
+was performed; push and PR CI are the remaining delivery steps.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200

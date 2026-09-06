@@ -5,7 +5,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
 import type { FireEffectState } from './fire-state';
-import { sparkler } from './impl/sparkler';
+import { sparkContributionAt, sparkler } from './impl/sparkler';
 import { flameFlicker } from './impl/flame-flicker';
 
 function model(drums = 2, hoopCount = 4): PixelModel {
@@ -137,42 +137,47 @@ describe('Sparkler spatial and temporal behavior', () => {
     expect(Array.from(a.rgba)).not.toEqual(Array.from(b.rgba));
   });
 
-  it('blends Random from ordered sparks to scattered sparks', () => {
-    const gapVariance = (fb: Framebuffer): number => {
-      const lit = litIds(fb, 0.3).filter((id) => id >= drum.pixelStart && id < drum.pixelStart + drum.pixelCount);
-      if (lit.length < 3) return 0;
-      let sum = 0;
-      for (let i = 1; i < lit.length; i++) sum += lit[i]! - lit[i - 1]!;
-      const mean = sum / (lit.length - 1);
-      let variance = 0;
-      for (let i = 1; i < lit.length; i++) variance += Math.abs((lit[i]! - lit[i - 1]!) - mean);
-      return variance / (lit.length - 1);
-    };
-    const params = { density: 0.7, core: 0, crackle: 0, sparkMs: 300 };
-    const ordered = gapVariance(frame(sparkler, m, 20, [hit('d0', 10)], { ...params, random: 0 }));
-    const scattered = gapVariance(frame(sparkler, m, 20, [hit('d0', 10)], { ...params, random: 1 }));
-    expect(ordered).toBeLessThan(scattered);
+  it('changes placement without changing expected density across Random values', () => {
+    const large = model(24, 4);
+    const density = 0.27;
+    const randomValues = [0, 0.2, 0.5, 0.8, 1];
+    const selected = (random: number, seed: number): Set<number> => new Set(
+      large.pixels
+        .filter((pixel) => sparkContributionAt(20, 45, 0, pixel.id, 0, seed, density, random) > 0)
+        .map((pixel) => pixel.id),
+    );
+
+    const sets = randomValues.map((random) => selected(random, 101));
+    const ratios = sets.map((set) => set.size / large.pixels.length);
+    for (const ratio of ratios) expect(ratio).toBeCloseTo(density, 1);
+    expect(sets[0]).not.toEqual(sets[sets.length - 1]);
+    expect([...sets[0]!].filter((id) => sets[sets.length - 1]!.has(id)).length).toBeLessThan(sets[0]!.size * 0.9);
+    // Repeat the statistical check with different trigger seeds; placement changes, density does not.
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const set = selected(0.5, seed);
+      expect(set.size / large.pixels.length).toBeCloseTo(density, 1);
+    }
+  });
+
+  it('keeps each spark identity alive for exactly Spark Life and blends bucket boundaries', () => {
+    const sparkMs = 90;
+    expect(sparkContributionAt(89, sparkMs, 0, 11, 0, 7, 1, 0)).toBeGreaterThan(0);
+    expect(sparkContributionAt(90, sparkMs, 0, 11, 0, 7, 1, 0)).toBe(0);
+
+    const before = frame(sparkler, m, 44, [hit('d0', 44)], { density: 1, core: 0, crackle: 0, sparkMs });
+    const boundary = frame(sparkler, m, 45, [hit('d0', 45)], { density: 1, core: 0, crackle: 0, sparkMs });
+    const after = frame(sparkler, m, 46, [hit('d0', 46)], { density: 1, core: 0, crackle: 0, sparkMs });
+    expect(total(boundary)).toBeGreaterThan(0);
+    const maxChannelDelta = (a: Framebuffer, b: Framebuffer): number =>
+      Math.max(...a.rgba.map((value, index) => Math.abs(value - b.rgba[index]!)));
+    expect(maxChannelDelta(boundary, before)).toBeLessThan(0.05);
+    expect(maxChannelDelta(after, boundary)).toBeLessThan(0.05);
   });
 
   it('keeps sparks inside the warm colour-temperature range', () => {
-    const fresh = frame(sparkler, m, 100, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 1000 });
-    const cooling = frame(sparkler, m, 400, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 1000 });
-    const blueRatioOfBrightest = (fb: Framebuffer): number => {
-      let id = 0;
-      let brightest = 0;
-      for (const candidate of litIds(fb)) {
-        const level = brightness(fb, candidate);
-        if (level > brightest) {
-          brightest = level;
-          id = candidate;
-        }
-      }
-      const j = id * 4;
-      return fb.rgba[j + 2]! / fb.rgba[j]!;
-    };
-    const freshBlueRatio = blueRatioOfBrightest(fresh);
-    const coolingBlueRatio = blueRatioOfBrightest(cooling);
-    expect(freshBlueRatio).toBeGreaterThan(coolingBlueRatio);
+    const fresh = frame(sparkler, m, 100, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 45 });
+    const cooling = frame(sparkler, m, 130, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 45 });
+    expect(total(fresh)).toBeGreaterThan(total(cooling));
     for (const fb of [fresh, cooling]) {
       for (const id of litIds(fb)) {
         const j = id * 4;
@@ -198,6 +203,16 @@ describe('Flame Flicker behavior', () => {
     }
     expect(Math.max(...wholeLevels) - Math.min(...wholeLevels)).toBeLessThan(0.0001);
     expect(Math.max(...variedLevels) - Math.min(...variedLevels)).toBeGreaterThan(0.01);
+  });
+
+  it.each([0, 0.01, 0.5, 1])('changes coherently as Spread moves to per-pixel at %s', (spread) => {
+    const fb = frame(flameFlicker, m, 60, [hit('d0', 25)], { spread, random: 0 });
+    const levels = Array.from({ length: drum.pixelCount }, (_, i) => brightness(fb, drum.pixelStart + i));
+    const variation = Math.max(...levels) - Math.min(...levels);
+    if (spread === 0) expect(variation).toBeLessThan(0.0001);
+    if (spread === 0.01) expect(variation).toBeLessThan(0.01);
+    if (spread === 0.5) expect(variation).toBeGreaterThan(variationAtSpread(m, 0.01));
+    if (spread === 1) expect(variation).toBeGreaterThan(0.01);
   });
 
   it('uses fine sampling to show Random=1 stepping is less steady than Random=0 waves', () => {
@@ -226,5 +241,14 @@ describe('fire pair declarations', () => {
   it('declares the exponential burn life it visibly needs', () => {
     expect(sparkler.voiceLife).toEqual({ key: 'decayMs', unit: 'ms', factor: expect.any(Number) });
     expect(flameFlicker.voiceLife).toEqual({ key: 'decayMs', unit: 'ms', factor: expect.any(Number) });
+    expect(sparkler.timebase).toBe('voice');
+    expect(flameFlicker.timebase).toBe('voice');
   });
 });
+
+function variationAtSpread(modelValue: PixelModel, spread: number): number {
+  const fb = frame(flameFlicker, modelValue, 60, [hit('d0', 25)], { spread, random: 0 });
+  const drumValue = modelValue.drumById.get('d0')!;
+  const levels = Array.from({ length: drumValue.pixelCount }, (_, i) => brightness(fb, drumValue.pixelStart + i));
+  return Math.max(...levels) - Math.min(...levels);
+}
