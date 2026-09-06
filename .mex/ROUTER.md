@@ -36,24 +36,28 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR pending):**
+**Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR #213):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the stateful-effect review
-of PR #200 commit `703fa7f5`, and dependent on merged PR #211 material transport. A splice member
-with a declared effect life now gets deterministic, engine-owned material cycles: each boundary
-creates fresh generator state with cycle-specific seed/sequence and a coherent local clock,
-age, dt, and transport. At most one previous cycle is retained for a 100ms bounded crossfade;
-ordinary frames render once and modifiers run once after the assembled material. Cycle state is
-owned by each voice/member, included in render checkpoints, and cleared on generator, model,
-show, and voice lifecycle changes. No-life effects and non-cascading splices retain the ordinary
-path. `materialCycleMs` reads declared effect life and beats conversion, deliberately ignores the
-voice-tail factor. Focused core coverage proves 3+ cycles for stateless, voice-timebase, emitter,
-and particle effects, far-drum intensity, determinism, modifiers/Mix, reset/checkpoint lifetime,
-and failure of time-only wrapping. The opt-in 2,300-pixel/8-member benchmark measured Plasma
-p50 12.45ms/p95 13.17ms and Confetti Burst p50 0.73ms/p95 4.63ms against a 16.7ms frame budget.
-Core tests/typecheck and the core-backed web parity tests pass. Full repo typecheck/build remain
-blocked by existing server contract errors; full repo tests also retain the existing WS fixture
-failure and external `ledrums-setlist-nav` Testing Library path failures. This PR is pushed/opened
-for review only and must not merge until reviewed.
+of PR #200 commit `703fa7f5`. `origin/main` was fetched and the semantic merge was already
+up-to-date. When a splice has a real cascade delay and its member declares `voiceLife`, the
+spawned member stores `materialCycleMs` resolved once from its authored params and spawn BPM;
+the voice-tail factor is excluded. Each cycle boundary creates fresh deterministic generator
+state and a coherent local clock, age, dt, and transport. The render bridge snapshots and
+restores every shared context carrier in `finally`, including generator context, trigger,
+frame transport, voice transport, and authored-decay state, so member, ordinary, and modifier
+renders cannot inherit a cycle clock. The current cycle renders once into its framebuffer; an
+adjacent boundary retains only that pre-modifier framebuffer for a <=100ms crossfade, while a
+non-adjacent jump drops stale output. No-life and no-cascade paths remain ordinary one-render
+paths. Checkpoints, model changes, generator replacement, and voice reuse clear the carriers.
+Focused core coverage proves 3+ cycles for stateless, voice-timebase, emitter, and particle
+effects, large jumps, determinism, modifiers/scope/Mix, reset/checkpoint lifetime, BPM freezing,
+invalid-life normalization, mixed-member isolation, and failure of time-only wrapping. The
+opt-in 2,300-pixel/8-member benchmark uses non-zero offsets, 100 warmup + 500 samples, nearest-
+rank p50/p95, and reports machine/runtime metadata. Across three runs on Darwin/x64 Node
+v25.8.2, Plasma stayed at p95 9.19–10.01ms ordinary and 9.57–11.01ms boundary; Confetti
+stayed at 1.64–1.77ms ordinary and 4.74–5.29ms boundary. Full-engine Confetti tick p95 was
+2.36–2.81ms. The Plasma gate is <=16.7ms p95. This PR is pushed/opened for review only and
+must not merge until reviewed.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200

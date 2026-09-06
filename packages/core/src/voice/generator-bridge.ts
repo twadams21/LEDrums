@@ -12,11 +12,11 @@
  * is fed ONE synthetic trigger representing its own originating hit (age grows with the
  * voice; seq is stable so accumulators fire once).
  *
- * Per-frame scratch — two bounded {@link Framebuffer}s for the optional material crossfade,
- * one {@link RenderContext}, one {@link Trigger}, and the per-generator default-param cache —
+ * Per-frame scratch — one {@link Framebuffer}, one {@link RenderContext}, one {@link Trigger},
+ * and the per-generator default-param cache —
  * is owned by the bridge instance and reused across every voice in the frame. Ordinary voices
- * and ordinary splice frames still use one generator render; only a life boundary uses the
- * second scratch buffer.
+ * and ordinary splice frames still use one generator render. An adjacent life boundary blends
+ * one fresh render with a frozen previous output retained by that member's cycle state.
  */
 import { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
@@ -53,14 +53,11 @@ export interface GeneratorBridge {
     ranges: readonly PixelRange[],
     dst: Framebuffer,
     modCtx: ModSampleCtx,
-    /** Declared life of splice material. Zero keeps the ordinary one-state path. */
-    materialCycleMs?: number,
   ): void;
 }
 
-/** A material cycle is intentionally short-lived: only the outgoing generation survives
- * long enough to crossfade into its fresh successor. Two generator renders is the maximum
- * cost at a boundary; ordinary frames stay at one. */
+/** A material cycle is intentionally short-lived: only the outgoing framebuffer survives
+ * long enough to crossfade into its fresh successor. Every frame renders one generation. */
 const MATERIAL_CROSSFADE_MS = 100;
 const MATERIAL_SEED_SALT = 0x51ce1e;
 const MATERIAL_SEQ_SALT = 0x6c9e3779;
@@ -90,7 +87,6 @@ function voiceSeq(id: string): number {
 function materialCycleFor(
   v: Voice,
   model: PixelModel,
-  generator: EffectGenerator,
   timeMs: number,
   cycleMs: number,
 ): { cycle: MaterialCycleState; ageMs: number; cycleAgeMs: number; fadeMs: number } {
@@ -103,30 +99,36 @@ function materialCycleFor(
 
   if (!cycle || cycle.cycleIndex !== cycleIndex) {
     const prior = cycle;
-    const oldState = prior && prior.cycleIndex < cycleIndex ? v.genState : null;
     const oldCycleIndex = cycle?.cycleIndex ?? cycleIndex - 1;
+    const adjacent = prior != null && cycleIndex === prior.cycleIndex + 1;
+    // Only the immediately preceding cycle may crossfade. A jump over one cycle starts
+    // without any stale outgoing material.
+    const outgoing = adjacent ? prior.currentFrame : null;
+    // Recycle the old outgoing buffer after its bounded crossfade. This keeps the carriers
+    // bounded to one current and one previous framebuffer per member.
+    const reusable = prior?.previous?.framebuffer;
     const currentSeed = cycleSeed(v.seed, cycleIndex);
-    const currentState = generator.createState?.(model, currentSeed);
     cycle = {
       cycleIndex,
       currentSeed,
       currentSeq: cycleSeq(baseSeq, cycleIndex),
       currentRendered: false,
-      previous: {
+      currentFrame: reusable ?? new Framebuffer(model.pixelCount),
+      previous: outgoing ? {
         cycleIndex: oldCycleIndex,
-        seed: prior?.currentSeed ?? cycleSeed(v.seed, oldCycleIndex),
-        seq: prior?.currentSeq ?? cycleSeq(baseSeq, oldCycleIndex),
-        state: oldState,
-      },
+        seed: prior!.currentSeed,
+        seq: prior!.currentSeq,
+        framebuffer: outgoing,
+      } : null,
     };
     // No previous generation exists on a voice's first material render. A long first tick
     // still starts directly at its deterministic cycle rather than crossfading from null.
     if (!prior || cycleIndex < oldCycleIndex || oldCycleIndex < 0) cycle.previous = null;
     v.materialCycle = cycle;
-    v.genState = currentState ?? null;
+    v.genState = null;
   }
 
-  // The outgoing state is useful only during its boundary window. Release it before the
+  // The outgoing framebuffer is useful only during its boundary window. Release it before the
   // next cycle so a particle/emitter state cannot accumulate one retained generation per
   // cycle. The checkpoint captures this ownership transition like any other render state.
   if (cycle.previous && cycleAgeMs >= fadeMs) cycle.previous = null;
@@ -135,7 +137,6 @@ function materialCycleFor(
 
 export function createGeneratorBridge(resolveEffect: (id: string) => EffectGenerator | undefined = tryGetEffect): GeneratorBridge {
   let genScratch: Framebuffer | null = null;
-  let genScratchAlt: Framebuffer | null = null;
   /** Defaults belong to the registry adapter, not its id (live upserts can replace it). */
   const genDefaults = new WeakMap<object, ResolvedParams>();
   /** One synthetic trigger, mutated per generator voice (the voice's own hit). */
@@ -143,7 +144,7 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
   const genTriggers: Trigger[] = [genTrigger];
   /** Reused RenderContext (rebuilt only when the model identity changes). */
   let genCtx: RenderContext | null = null;
-  /** This frame's absolute transport (engine's, held by reference — never mutated). */
+  /** This frame's absolute transport, copied behind the generator context boundary. */
   let frameTransport: TransportState | null = null;
   /** Bridge-owned voice-local transport, refilled per voice-timebase voice so we never
       touch the shared frame transport (a `timebase:'voice'` generator reads this). */
@@ -156,21 +157,21 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
       genCtx = null;
       frameTransport = null;
       genScratch = null;
-      genScratchAlt = null;
     },
     beginFrame(model, timeMs, dt, transport): void {
-      frameTransport = transport;
+      if (!frameTransport) frameTransport = { ...transport };
+      else Object.assign(frameTransport, transport);
       // The triggers array reference is stable; its single element is mutated per voice.
       if (!genCtx || genCtx.model !== model) {
-        genCtx = { model, timeMs, dt, transport, triggers: genTriggers };
+        genCtx = { model, timeMs, dt, transport: frameTransport, triggers: genTriggers };
       } else {
         genCtx.timeMs = timeMs;
         genCtx.dt = dt;
-        genCtx.transport = transport;
+        genCtx.transport = frameTransport;
       }
     },
 
-    renderVoice(v, model, timeMs, level, ranges, dst, modCtx, cycleMs = 0): void {
+    renderVoice(v, model, timeMs, level, ranges, dst, modCtx): void {
       if (!ranges.length) return;
       const gen = resolveEffect(v.generatorId!);
       if (!gen) return; // unknown id → render nothing (don't fall through to pattern)
@@ -199,8 +200,11 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
       }
 
       const normalAge = positiveAge(timeMs, v.bornAtMs);
-      const material = cycleMs > 0 ? materialCycleFor(v, model, gen, timeMs, cycleMs) : null;
+      const cycleMs = v.materialCycleMs ?? 0;
+      const material = cycleMs > 0 ? materialCycleFor(v, model, timeMs, cycleMs) : null;
+      if (material && v.genState == null && gen.createState) v.genState = gen.createState(model, material.cycle.currentSeed);
       const frameDt = genCtx.dt;
+      const mods = v.modifiers;
 
       const renderGeneration = (
         state: unknown,
@@ -210,6 +214,35 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
         out: Framebuffer,
         dt: number,
       ): void => {
+        // RenderContext is a shared adapter object. Snapshot every mutable carrier before
+        // handing it to legacy generator code, and restore in finally so a throw cannot leak
+        // a cycle clock, trigger, transport, or authored-decay flag into the next render.
+        const priorModel = genCtx!.model;
+        const priorTimeMs = genCtx!.timeMs;
+        const priorDt = genCtx!.dt;
+        const priorTransport = genCtx!.transport;
+        const priorTriggers = genCtx!.triggers;
+        const priorAuthoredDecay = genCtx!.authoredDecay;
+        const priorTriggerSeq = genTrigger.seq;
+        const priorTriggerDrumId = genTrigger.drumId;
+        const priorTriggerNote = genTrigger.note;
+        const priorTriggerVelocity = genTrigger.velocity;
+        const priorTriggerTimeMs = genTrigger.timeMs;
+        const priorTriggerAgeMs = genTrigger.ageMs;
+        const priorFrameTimeMs = frameTransport!.timeMs;
+        const priorFrameBeat = frameTransport!.beat;
+        const priorFrameBar = frameTransport!.bar;
+        const priorFrameBeatInBar = frameTransport!.beatInBar;
+        const priorFrameBpm = frameTransport!.bpm;
+        const priorFrameBeatsPerBar = frameTransport!.beatsPerBar;
+        const priorFramePlaying = frameTransport!.playing;
+        const priorVoiceTimeMs = voiceTransport.timeMs;
+        const priorVoiceBeat = voiceTransport.beat;
+        const priorVoiceBar = voiceTransport.bar;
+        const priorVoiceBeatInBar = voiceTransport.beatInBar;
+        const priorVoiceBpm = voiceTransport.bpm;
+        const priorVoiceBeatsPerBar = voiceTransport.beatsPerBar;
+        const priorVoicePlaying = voiceTransport.playing;
         // Synthetic trigger = this voice's originating hit, or this cycle's deterministic
         // retrigger. The clock and transport are derived from the same cycle age, so a
         // generator cannot observe a wrapped time with an unwrapped beat/age companion.
@@ -236,25 +269,60 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
         const voiceClock = cycleClock || (gen.timebase ?? 'absolute') === 'voice';
         genCtx!.timeMs = voiceClock ? clockAgeMs : timeMs;
         genCtx!.transport = voiceClock ? voiceTransport : ft;
-        out.clear();
-        gen.render(genCtx!, params, out, state as never);
+        try {
+          out.clear();
+          gen.render(genCtx!, params, out, state as never);
+        } finally {
+          genCtx!.model = priorModel;
+          genCtx!.timeMs = priorTimeMs;
+          genCtx!.dt = priorDt;
+          genCtx!.transport = priorTransport;
+          genCtx!.triggers = priorTriggers;
+          genCtx!.authoredDecay = priorAuthoredDecay;
+          genTrigger.seq = priorTriggerSeq;
+          genTrigger.drumId = priorTriggerDrumId;
+          genTrigger.note = priorTriggerNote;
+          genTrigger.velocity = priorTriggerVelocity;
+          genTrigger.timeMs = priorTriggerTimeMs;
+          genTrigger.ageMs = priorTriggerAgeMs;
+          genTriggers.length = 1;
+          genTriggers[0] = genTrigger;
+          frameTransport!.timeMs = priorFrameTimeMs;
+          frameTransport!.beat = priorFrameBeat;
+          frameTransport!.bar = priorFrameBar;
+          frameTransport!.beatInBar = priorFrameBeatInBar;
+          frameTransport!.bpm = priorFrameBpm;
+          frameTransport!.beatsPerBar = priorFrameBeatsPerBar;
+          frameTransport!.playing = priorFramePlaying;
+          voiceTransport.timeMs = priorVoiceTimeMs;
+          voiceTransport.beat = priorVoiceBeat;
+          voiceTransport.bar = priorVoiceBar;
+          voiceTransport.beatInBar = priorVoiceBeatInBar;
+          voiceTransport.bpm = priorVoiceBpm;
+          voiceTransport.beatsPerBar = priorVoiceBeatsPerBar;
+          voiceTransport.playing = priorVoicePlaying;
+        }
       };
 
       if (!material) {
         if (v.genState == null && gen.createState) v.genState = gen.createState(model, v.seed);
         renderGeneration(v.genState, normalAge, voiceSeq(v.id), 0, genScratch, frameDt);
       } else {
-        renderGeneration(v.genState, material.cycleAgeMs, material.cycle.currentSeq, material.cycle.cycleIndex, genScratch, material.cycle.currentRendered ? frameDt : material.cycleAgeMs);
+        const output = mods?.length ? genScratch : material.cycle.currentFrame;
+        renderGeneration(v.genState, material.cycleAgeMs, material.cycle.currentSeq, material.cycle.cycleIndex, output, material.cycle.currentRendered ? frameDt : material.cycleAgeMs);
         material.cycle.currentRendered = true;
         const previous = material.cycle.previous;
         const weight = previous && material.cycleAgeMs < material.fadeMs
           ? 1 - material.cycleAgeMs / material.fadeMs
           : 0;
-        if (previous && weight > 0) {
-          if (!genScratchAlt || genScratchAlt.pixelCount !== model.pixelCount) genScratchAlt = new Framebuffer(model.pixelCount);
-          renderGeneration(previous.state, cycleMs + material.cycleAgeMs, previous.seq, previous.cycleIndex, genScratchAlt, frameDt);
+        if (mods?.length) {
+          // Preserve the raw current output. It is the only frame allowed to become the
+          // next cycle's frozen outgoing material; the crossfade is an assembled-frame step.
+          material.cycle.currentFrame.rgba.set(genScratch.rgba);
+        }
+        if (previous && weight > 0 && mods?.length) {
           const current = genScratch.rgba;
-          const old = genScratchAlt.rgba;
+          const old = previous.framebuffer.rgba;
           for (let i = 0; i < current.length; i++) current[i] = current[i]! * (1 - weight) + old[i]! * weight;
         }
       }
@@ -262,21 +330,25 @@ export function createGeneratorBridge(resolveEffect: (id: string) => EffectGener
       // Modifier chain (media effects) runs once over the assembled material. A crossfade
       // must not advance a stateful modifier twice or make its output depend on the frame's
       // position inside the regeneration window.
-      const mods = v.modifiers;
       if (mods && mods.length) {
         if (!v.modState) v.modState = [];
-        applyScopedModifierChain(mods, v.modState, genScratch, ranges, model, normalAge, genCtx.dt, modCtx);
+        applyScopedModifierChain(mods, v.modState, genScratch, ranges, model, normalAge, frameDt, modCtx);
       }
 
       // Composite scratch → dst, scaled by the voice envelope (brightness is
       // applied inside the generator), masked to the selected pixel set. dst.add clamps.
-      const src = genScratch.rgba;
+      const src = material && !mods?.length ? material.cycle.currentFrame.rgba : genScratch.rgba;
+      const frozen = material && !mods?.length && material.cycle.previous &&
+        material.cycleAgeMs < material.fadeMs
+        ? material.cycle.previous.framebuffer.rgba
+        : null;
+      const frozenWeight = frozen ? 1 - material!.cycleAgeMs / material!.fadeMs : 0;
       for (const range of ranges) for (let i = range.start; i < range.end; i++) {
         const j = i * 4;
-        const r = src[j]!;
-        const g = src[j + 1]!;
-        const b = src[j + 2]!;
-        const a = src[j + 3]!;
+        const r = frozen ? src[j]! * (1 - frozenWeight) + frozen[j]! * frozenWeight : src[j]!;
+        const g = frozen ? src[j + 1]! * (1 - frozenWeight) + frozen[j + 1]! * frozenWeight : src[j + 1]!;
+        const b = frozen ? src[j + 2]! * (1 - frozenWeight) + frozen[j + 2]! * frozenWeight : src[j + 2]!;
+        const a = frozen ? src[j + 3]! * (1 - frozenWeight) + frozen[j + 3]! * frozenWeight : src[j + 3]!;
         if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
         dst.add(i, r * level, g * level, b * level, a * level);
       }

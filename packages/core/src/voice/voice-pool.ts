@@ -8,7 +8,7 @@
  * (the engine, which owns transport), never read from a global clock.
  */
 import { canvasEffectId } from '../canvas/ids';
-import { resolveVoiceLife } from '../effects/voice-life';
+import { materialCycleMs as resolveMaterialCycleMs, resolveVoiceLife } from '../effects/voice-life';
 import type { MixInputDraft, PlayAction } from './eval-graph';
 import { deriveSeed } from './prng';
 import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
@@ -52,6 +52,7 @@ export function deactivateVoice(v: Voice): void {
   v.renderModel = undefined;
   v.renderGenerator = undefined;
   v.genState = null;
+  v.materialCycleMs = undefined;
   v.materialCycle = undefined;
   v.modState = undefined;
   v.mixInputs = undefined;
@@ -180,6 +181,7 @@ export class VoicePool {
       ? (effect.generatorId ?? null)
       : a.canvasScene ? canvasEffectId(a.canvasScene) : (effect.generatorId ?? null);
     slot.genState = null;
+    slot.materialCycleMs = undefined;
     slot.materialCycle = undefined;
     slot.renderModel = undefined;
     slot.renderGenerator = undefined;
@@ -202,6 +204,7 @@ export class VoicePool {
         specs: inputEffect.params,
         modulations: input.modulations,
         genState: null,
+        materialCycleMs: resolveMaterialCycleMs(generatorId, input.params, deps.bpm),
         modifiers: input.modifiers,
         modState: undefined,
         opacity: input.opacity,
@@ -291,6 +294,7 @@ function makeVoiceSlot(): Voice {
     generatorId: null,
     genState: null,
     materialCycle: undefined,
+    materialCycleMs: undefined,
     modifiers: undefined,
     modState: undefined,
     modulations: undefined,

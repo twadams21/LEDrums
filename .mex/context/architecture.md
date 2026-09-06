@@ -18,17 +18,20 @@ note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI sou
 
 # Architecture
 
-## Current runtime correction (code-verified 2026-09-05)
+## Current runtime correction (code-verified 2026-09-06)
 
 Current splice rendering also owns bounded material regeneration in the core generator bridge.
-When a cascading splice has a positive declared `voiceLife`, the bridge derives a cycle index
-from the member voice age, starts the generator from fresh deterministic state at each boundary,
-and supplies matching cycle-relative time, age, dt, and transport. It retains only the outgoing
-cycle during a short crossfade and runs the member's modifier chain once over the assembled
-framebuffer. `GeometryState.materialCycle` is per voice/member and is included in the render
-checkpoint, so model/show/voice resets cannot leak state. A missing or zero life, and a splice
-without cascade delay, use the ordinary one-render path. The cycle period is the authored effect
-life; an exponential voice-tail factor is not part of material regeneration.
+When a cascading splice has a declared `voiceLife`, the member stores its cycle duration resolved
+at spawn BPM. The bridge derives a cycle index from that frozen duration, starts the generator
+from fresh deterministic state at each boundary, and supplies matching cycle-relative time, age,
+dt, and transport. It snapshots and restores every shared context carrier around each generator
+render, including throws. The current cycle renders once into its own framebuffer; only the
+immediately preceding pre-modifier framebuffer is retained for a <=100ms adjacent crossfade.
+Non-adjacent jumps discard stale outgoing material. `GeometryState.materialCycle` is per
+voice/member and is included in the render checkpoint, so model/show/voice resets cannot leak
+state. A missing/invalid life or a splice without cascade delay uses the ordinary one-render
+path. The cycle period is the authored effect life; an exponential voice-tail factor is not part
+of material regeneration.
 
 The sections below were written for the original Composition engine and are **historical**, not
 an accurate complete map of current `main`. Current authoring uses show-global trigger graphs,

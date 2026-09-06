@@ -159,9 +159,9 @@ describe('resolveVoiceSustainMs (the pure seam)', () => {
     expect(resolveVoiceSustainMs('breathing-kit', {}, 120, 100)).toBe(100);
   });
 
-  it('ignores a non-numeric or negative life rather than producing a nonsense envelope', () => {
+  it('normalises a non-numeric or negative life without disabling the declaration', () => {
     expect(resolveVoiceSustainMs('drum-sonar', { lifeMs: 'oops' }, 120, 100)).toBe(1500); // spec default
-    expect(resolveVoiceSustainMs('drum-sonar', { lifeMs: -50 }, 120, 100)).toBe(100);
+    expect(resolveVoiceSustainMs('drum-sonar', { lifeMs: -50 }, 120, 100)).toBe(150);
   });
 
   it('guards a zero/absent bpm instead of dividing by it', () => {

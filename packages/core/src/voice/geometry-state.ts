@@ -1,4 +1,5 @@
 import type { PixelModel } from '../geometry/pixel-model';
+import type { Framebuffer } from '../engine/framebuffer';
 import type { EffectGenerator } from '../effects/types';
 
 /** Runtime state for a splice member's bounded material regeneration.
@@ -12,11 +13,14 @@ export interface MaterialCycleState {
   currentSeed: number;
   currentSeq: number;
   currentRendered: boolean;
+  /** Last assembled generator output for the current cycle, before modifiers. */
+  currentFrame: Framebuffer;
   previous: {
     cycleIndex: number;
     seed: number;
     seq: number;
-    state: unknown;
+    /** Frozen output from the immediately preceding cycle; never re-rendered. */
+    framebuffer: Framebuffer;
   } | null;
 }
 

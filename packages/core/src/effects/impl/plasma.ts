@@ -1,4 +1,3 @@
-import { renderUvField } from '../../canvas/sampler';
 import { hsvToRgb } from '../../color/color';
 import { pnum, type EffectGenerator } from '../types';
 
@@ -27,7 +26,13 @@ export const plasma: EffectGenerator = {
     const sat = pnum(params, 'saturation', 1);
     const spread = pnum(params, 'hueSpread', 120);
 
-    renderUvField(ctx, fb, 'cylindrical', (u, v, t) => {
+    // Plasma is used in the large-kit compositor budget. Keep its cylindrical field loop
+    // allocation-free: the generic field adapter returns a fresh RGB tuple per pixel, while
+    // this generator can write the converted colour directly into its framebuffer.
+    const t = ctx.timeMs / 1000;
+    for (const p of ctx.model.pixels) {
+      const u = p.uv.u;
+      const v = p.uv.v;
       const a = u * Math.PI * 2; // angle is cyclic; use sin/cos so the seam is continuous
       let n =
         Math.sin(a * sc + t * sp) +
@@ -36,7 +41,7 @@ export const plasma: EffectGenerator = {
         Math.sin(Math.hypot(Math.sin(a) * sc, v * sc - t * sp * 0.4));
       n = (n / 4) * 0.5 + 0.5; // → [0,1]
       const c = hsvToRgb(hue + n * spread, sat, bri * (0.25 + 0.75 * n));
-      return [c.r, c.g, c.b];
-    });
+      fb.set(p.id, c.r, c.g, c.b, 1);
+    }
   },
 };

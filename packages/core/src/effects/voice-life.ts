@@ -17,6 +17,21 @@ import { pnum, type ResolvedParams } from './types';
 const MS_PER_MINUTE = 60000;
 const FALLBACK_BPM = 120;
 
+/** Resolve a declared life with the same lower-bound contract as the generator/schema. A
+ * malformed value falls back to the authored default; a non-positive numeric value is
+ * normalised to the schema minimum instead of disabling a declared life at the host seam. */
+function declaredLifeValue(
+  generator: NonNullable<ReturnType<typeof tryGetEffect>>,
+  params: ResolvedParams,
+): number {
+  const life = generator.voiceLife!;
+  const spec = generator.paramSpec.find((s) => s.key === life.key);
+  const fallback = typeof spec?.default === 'number' && Number.isFinite(spec.default) ? spec.default : 0;
+  const value = pnum(params, life.key, fallback);
+  const minimum = typeof spec?.min === 'number' && Number.isFinite(spec.min) ? Math.max(0, spec.min) : 0;
+  return value > 0 ? value : minimum;
+}
+
 /**
  * The sustain (ms) a spawning voice should use.
  *
@@ -29,7 +44,8 @@ const FALLBACK_BPM = 120;
  * so the generator's spec default stands in. Beats convert at `bpm` — the same conversion the
  * effect performs internally, so the two agree. A declared `factor` scales the result: an
  * exponential decay's param is a time CONSTANT, and the eye keeps seeing it for
- * {@link EXP_TAIL_FACTOR} of those.
+ * {@link EXP_TAIL_FACTOR} of those. Non-positive authored values are normalised to the life
+ * spec's positive minimum so malformed input cannot silently disable a declared life.
  */
 export function resolveVoiceSustainMs(
   generatorId: string | null | undefined,
@@ -41,8 +57,7 @@ export function resolveVoiceSustainMs(
   const generator = tryGetEffect(generatorId);
   const life = generator?.voiceLife;
   if (!life) return categorySustainMs;
-  const spec = generator.paramSpec.find((s) => s.key === life.key);
-  const declared = Math.max(0, pnum(params, life.key, typeof spec?.default === 'number' ? spec.default : 0));
+  const declared = declaredLifeValue(generator, params);
   const ms = life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
   const lifeMs = ms * Math.max(0, life.factor ?? 1);
   return Math.max(categorySustainMs, lifeMs);
@@ -54,17 +69,16 @@ export function resolveVoiceSustainMs(
  * This intentionally reads the declared effect life, not the voice sustain. `factor` belongs
  * to the voice-tail contract above (for example, an exponential time constant multiplied by
  * its visibility tail); using it here would regenerate only after the material had become an
- * ember. A missing declaration or zero/non-positive resolved value returns 0 and leaves the
- * existing one-render path unchanged. Invalid values use the effect spec default, matching the
- * tolerant parameter-reader contract used by the generator itself.
+ * ember. A missing declaration returns 0 and leaves the existing one-render path unchanged.
+ * Invalid values use the effect spec default; non-positive values use its positive minimum,
+ * matching the tolerant parameter-reader/schema contract used by the generator itself.
  */
 export function materialCycleMs(generatorId: string | null | undefined, params: ResolvedParams, bpm: number): number {
   if (!generatorId) return 0;
   const generator = tryGetEffect(generatorId);
   const life = generator?.voiceLife;
   if (!life) return 0;
-  const spec = generator.paramSpec.find((s) => s.key === life.key);
-  const declared = Math.max(0, pnum(params, life.key, typeof spec?.default === 'number' ? spec.default : 0));
+  const declared = declaredLifeValue(generator, params);
   if (!(declared > 0)) return 0;
   return life.unit === 'beats' ? declared * (MS_PER_MINUTE / (bpm > 0 ? bpm : FALLBACK_BPM)) : declared;
 }
