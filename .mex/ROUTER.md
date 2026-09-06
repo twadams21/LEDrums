@@ -59,8 +59,8 @@ listeners cannot delete the background selection. Unsuppressed canvas deletion s
 to the window listener, and normal editable text still keeps native deletion. The mounted harness
 proves all three suppressed surfaces plus those two intended propagation cases. Focused tests, full
 typecheck, full test (4,813 passed / 4 skipped), build, design-system regeneration, and strict
-`songs-bar`, `sections-bar`, and `perform` ui-shots are green. Commit, push, and fresh CI remain
-pending.
+`songs-bar`, `sections-bar`, and `perform` ui-shots are green. Commit `f5493ed6` is pushed; fresh
+CI run `34000722540` passed in both `checks` and `desktop`. PR #206 remains open and unmerged.
 
 **PR #207 integration (2026-09-06):** `origin/main` now contains the section-add gate and song
 reference reconciliation remediation from PR #207; its implementation and regenerated design
