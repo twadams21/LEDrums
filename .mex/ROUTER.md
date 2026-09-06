@@ -49,8 +49,8 @@ and strict Songs/Sections UI shots are green. The remaining PR #210 blocker is n
 core `setShow` preserves an exact valid active `(songId, sectionId|null)` pair, including a
 zero-section song, while clearing queued inputs and runtime state; invalid pairs fall back to the
 first valid selection. Core and two-client server regressions cover retention, fallback, queue
-clearing, coherent state revision/sequence, and no synthetic recall broadcast. Commit, push, and
-PR CI remain; do not merge.
+clearing, coherent state revision/sequence, and no synthetic recall broadcast. Commit `a17698da`
+is pushed and PR CI is green; do not merge.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
