@@ -48,7 +48,8 @@ drum-derived slot routing. A server regression proves cold-restored MIDI/OSC gra
 active viewer, while other-section and unassigned graphs remain rejected and the drum slot remains
 unchanged. Focused tests/typechecks pass. This branch now also integrates current `origin/main`
 (PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full tests,
-typecheck, and build pass; push and CI remain pending. PR #206 is not merged here.
+typecheck, and build pass locally. Pushed at `c681ee2c`; CI run `34006731850` is green for checks
+and desktop. PR #206 remains open and unmerged here.
 
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
