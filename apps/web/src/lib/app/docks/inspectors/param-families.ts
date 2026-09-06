@@ -91,6 +91,22 @@ export interface ParamGrouping<T extends ParamLike = ParamLike> {
 }
 
 /**
+ * Rows owned by another inspector block are excluded from BOTH derivation buckets. Keeping this
+ * seam pure makes a malformed/custom grouping test catch a life row that accidentally returns to
+ * the effect-specific fold.
+ */
+export function visibleParamRows<T extends ParamLike>(
+  grouped: ParamGrouping<T>,
+  excludedKeys: readonly string[],
+): { common: T[]; specific: T[] } {
+  const excluded = new Set(excludedKeys);
+  return {
+    common: grouped.commonParams.filter((p) => !excluded.has(p.key)),
+    specific: grouped.specific.filter((p) => !excluded.has(p.key)),
+  };
+}
+
+/**
  * Split a generator's declared `paramSpec` into the common section and the effect-specific
  * fold. Total and order-preserving: every input spec appears exactly once in the output.
  */

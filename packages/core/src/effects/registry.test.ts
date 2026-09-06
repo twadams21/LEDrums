@@ -26,10 +26,12 @@ describe('effect registry', () => {
       'segments',
       // flat colour fill (also the host generator for a colour-only splice)
       'solid-colour',
+      // fire pair
+      'sparkler', 'flame-flicker',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(51);
+    expect(listEffects().length).toBe(53);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

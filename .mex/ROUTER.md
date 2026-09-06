@@ -36,6 +36,18 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #212 final remediation locally complete (2026-09-06, branch `feat/sparkler-flame-effects`):**
+This branch integrates `origin/main` at the PR #206 merge `b1b4b492`. Sparkler cadence is derived
+from Spark Life with adjacent-bucket overlap at min/default/max life, burn thins spark selection
+through a deterministic threshold while brightness attenuates once, and fire randomness uses the
+seeded Mulberry32 random-access primitive without per-pixel generator allocation. Focused tests,
+typecheck, build, design-system regeneration, and the strict all-surface UI-shot sweep pass. The
+full local suite reached every package's normal result except one final web suite blocked by the
+host volume reaching `ENOSPC`; CI run `34017372215` then passed the full test suite, typecheck,
+dead-code verification, and desktop build/tests. The implementation is pushed; PR #212 remains
+open and no merge or release is authorized in this task. Source: Trent's PR #212 findings on
+Trent's MacBook Pro.
+
 **PR #206 popup-state blocker (2026-09-06, local `fix/performance-key-ownership`):**
 Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. Global
 popup ownership now counts only open surfaces: Bits `data-state="open"`, native popover/open state,

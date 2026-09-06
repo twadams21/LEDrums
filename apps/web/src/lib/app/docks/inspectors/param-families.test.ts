@@ -7,6 +7,7 @@ import {
   groupParams,
   groupParamsFiltered,
   matchesParamFilter,
+  visibleParamRows,
 } from './param-families';
 
 const spec = (key: string, label = key): ParamSpec => ({ key, label, type: 'number', default: 0 });
@@ -154,6 +155,19 @@ describe('filtering', () => {
     const grouped = groupParamsFiltered(params, 'r'); // brightness (common) + trail (fold)
     expect(grouped.commonParams.map((p) => p.key)).toEqual(['brightness']);
     expect(grouped.specific.map((p) => p.key)).toEqual(['trail']);
+  });
+});
+
+describe('owned inspector rows', () => {
+  it('excludes a life key even if a custom grouping re-includes it in the specific bucket', () => {
+    const life = spec('decayMs', 'Burn');
+    const width = spec('width');
+    const grouped = groupParams([life, width]);
+    const malformed = { ...grouped, specific: [life, ...grouped.specific] };
+
+    const visible = visibleParamRows(malformed, ['decayMs']);
+    expect(visible.common.map((p) => p.key)).toEqual([]);
+    expect(visible.specific.map((p) => p.key)).toEqual(['width']);
   });
 });
 

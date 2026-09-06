@@ -9,7 +9,7 @@ triggers:
 edges:
   - target: context/conventions.md
     condition: when changing shot manifests, app state, or test expectations
-last_updated: 2026-07-08
+last_updated: 2026-09-06
 ---
 
 # ui-shot Sweep
@@ -54,6 +54,9 @@ node of the matching play type.
   instead of depending on the selected node's play type.
 - Persisted local app state can leave an unexpected graph selected after previous manual
   browser work or earlier ui-shot runs.
+- A `new-graph` shot can start on a canonical library song. The shot seam must await the editor
+  capability and detach that song through the real store seam before creating editable nodes;
+  otherwise the screenshot can look populated while controls remain read-only.
 - Strict mode only proves that selectors ran and screenshots were written. It does not prove
   the capture is visually meaningful.
 
