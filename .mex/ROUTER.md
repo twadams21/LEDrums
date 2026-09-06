@@ -67,7 +67,7 @@ controller/UI no-op with no transient clipboard write. Evidence: full monorepo t
 files / 2,543 tests, 51 server files / 601 tests, plus core/io/protocol/worker/desktop suites), full
 typecheck/build and design-system regeneration green; strict canonical section and Inspector shots
 are console-clean. The branch includes the resolved `origin/main` merge with #207 accessibility /
-reconciliation preserved. Final head is `20c7c929`; fresh CI run `34001179690` is green (checks and
+reconciliation preserved. Final head is `bb169170`; fresh CI run `34001306507` is green (checks and
 desktop), and PR #208 remains open and mergeable.
 **PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
