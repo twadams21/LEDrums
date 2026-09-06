@@ -50,8 +50,9 @@ or modulo wrap. Regression coverage proves middle movement, first/last resolver 
 with the Sections/global arrow callback. Focused core/web tests, typecheck, production build,
 design-system generation, and a strict, visually inspected Perform capture pass. The second local
 full sweep reached all core (1,478 + 5 skipped), protocol, IO, worker, desktop, and most web/server
-tests, but the host volume exhausted space during concurrent temp/cache writes; CI remains the
-clean-volume full-sweep authority. No merge or release is authorized.
+tests, but the host volume exhausted space during concurrent temp/cache writes. GitHub workflow
+`34019471578` then passed both `checks` and `desktop` on this head. No merge or release is
+authorized.
 
 **PR #210 remaining blockers + #211 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request. Integrated the current
