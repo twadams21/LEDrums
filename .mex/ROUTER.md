@@ -36,6 +36,39 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
+on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
+independent graph keys/objects by default; repeated keys already persisted remain explicit links;
+adding an existing graph defaults to Copy, with deliberate Link/Make independent actions for exact
+placements. `SetlistSection.graphs` remains an ordered set: a key may occur once per section, while
+the exact supported placement identity is `(songId, sectionId, graphKey)`. Persistence and ClipDoc
+boundaries sanitize legacy repeats, and UI identity/counts use that same tuple. Canonical library
+sections are resolved for playback but are read-only until the existing detach flow is used;
+failed canonical or viewer operations do not mint graphs, names, clipboard snapshots, or active
+section ids. Create/copy-and-place and graph deletion each use one store-level undo checkpoint.
+The implementation uses repeated shared graph keys as linked-group identity and does not use
+placement IDs, automatic copy-on-write, or current-selection ownership. Source: Trent's PR #208
+remediation request on this machine; machine identity from `scutil --get ComputerName`.
+
+**PR #208 remediation (2026-09-06, branch `fix/section-copy-link-contract`, not merged):**
+ordered-set sanitization now agrees across setlist constructors, persistence, library references,
+ClipDoc remapping, and graph closure copies. Local placement commands validate the exact
+`(songId, sectionId, graphKey)` tuple before selection or minting; duplicate global section ids,
+dangling local graph refs, and orphan graph names are dropped deterministically, while valid
+`lib:*` refs survive. ClipDoc section/song materialization fails closed on missing graph closure.
+The store exposes one graph ownership capability used by every graph mutator and the Trigger graph
+canvas/Inspector: canonical graphs remain playable/selectable but are disabled until detach, with
+an explicit read-only explanation. Canonical graph copy is explicit: graph duplication and
+copy-to-section may materialize local content; node clipboard copy remains blocked for canonical
+graphs. The table-driven regression covers the public graph mutator surface and asserts canonical
+library bytes/signature, authored history, autosave signatures, and transient node clipboard
+stability; a separate test proves the permitted copy-as-source paths. Viewer `copySection` is a
+controller/UI no-op with no transient clipboard write. Evidence: full monorepo tests green (220 web
+files / 2,543 tests, 51 server files / 601 tests, plus core/io/protocol/worker/desktop suites), full
+typecheck/build and design-system regeneration green; strict canonical section and Inspector shots
+are console-clean. The branch includes the resolved `origin/main` merge with #207 accessibility /
+reconciliation preserved. Final head is `bb169170`; fresh CI run `34001306507` is green (checks and
+desktop), and PR #208 remains open and mergeable.
 **PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
 `ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,

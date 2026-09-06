@@ -1,7 +1,7 @@
 /* Generic-graph CRUD cores — build / clone / name / delete-everywhere / label, as PURE
    functions over the graphs map + names + songs (no runes/DOM). No authored/pad distinction:
-   pad graphs (keyed `drumId:zone`) and created graphs (keyed `graph-<n>`) are first-class and
-   uniform here. The store wraps these with rune assignment + selection bookkeeping. Extracted
+   seeded and created graphs are first-class and uniform here. Legacy pad keys (`drumId:zone`)
+   remain valid references. The store wraps these with rune assignment + selection bookkeeping. Extracted
    from store.svelte.ts unchanged in behaviour. */
 
 import { type Bus, type EffectDef, type GraphNode, type ParamValues, type Preset, type TriggerGraph, defaultParams, makeNode } from '../sim';
@@ -100,7 +100,7 @@ export function spliceNodeInit(buses: readonly Bus[] = []): Pick<GraphNode, 'spl
 }
 
 /** Human label for a graph key: the stored display name (`graphNames`, populated for every
-    graph incl. pad keys at hydrate), else a kit-derived pad label, else the raw key. */
+    graph at hydrate), else a kit-derived legacy pad label, else the raw key. */
 export function graphLabelOf(graphNames: Record<string, string>, key: string, pads: readonly Pad[]): string {
   return graphNames[key] ?? padLabelForKey(pads, key) ?? key;
 }
@@ -121,8 +121,8 @@ function padLabelForKey(pads: readonly Pad[], key: string): string | null {
 
     Effects / presets are deliberately NOT copied: they are show-level library objects the user picks
     from (the Objects view lists them per show, not per song), and the clipboard song paste treats
-    them the same way. A dangling reference (a key with no graph) is carried through untouched —
-    faithful to the source song rather than silently repaired.
+    them the same way. A dangling local reference is dropped from the copy. Canonical `lib:*`
+    references are kept because they resolve outside the local graph map.
 
     Pure: `mintKey` is injected so the caller owns id minting and tests stay deterministic. Pass
     plain (snapshotted) graphs — {@link cloneGraph} structured-clones them. */
@@ -137,7 +137,7 @@ export function cloneSongGraphs(
   const nextNames: Record<string, string> = {};
   for (const key of setlist.referencedGraphs(song)) {
     const src = graphs[key];
-    if (!src) continue; // dangling ref: leave the key as-is (the copy is as broken as the source)
+    if (!src) continue;
     const newKey = mintKey();
     remap.set(key, newKey);
     nextGraphs[newKey] = cloneGraph(src);
@@ -146,8 +146,49 @@ export function cloneSongGraphs(
     const name = graphNames[key];
     if (typeof name === 'string') nextNames[newKey] = name;
   }
-  const sections = song.sections.map((sec) => ({ ...sec, graphs: sec.graphs.map((k) => remap.get(k) ?? k) }));
+  const sections = song.sections.map((sec) =>
+    setlist.makeSection(
+      sec.id,
+      sec.name,
+      sec.graphs.filter((k) => remap.has(k) || k.startsWith('lib:')).map((k) => remap.get(k) ?? k),
+      sec.looks,
+    ),
+  );
   return { song: { ...song, sections }, graphs: nextGraphs, graphNames: nextNames };
+}
+
+/** Deep-copy the graph closure referenced by one section. A source key is cloned once per
+    operation, so a repeated placement remains an explicit link to one new graph. Missing graph
+    keys stay dangling rather than being silently repaired. */
+export function cloneSectionGraphs(
+  section: setlist.SetlistSection,
+  graphs: Record<string, TriggerGraph>,
+  graphNames: Record<string, string>,
+  mintKey: () => string,
+): { section: setlist.SetlistSection; graphs: Record<string, TriggerGraph>; graphNames: Record<string, string> } {
+  const normalized = setlist.makeSection(section.id, section.name, section.graphs, section.looks);
+  const remap = new Map<string, string>();
+  const nextGraphs: Record<string, TriggerGraph> = {};
+  const nextNames: Record<string, string> = {};
+  for (const key of normalized.graphs) {
+    const source = graphs[key];
+    if (!source || remap.has(key)) continue;
+    const newKey = mintKey();
+    remap.set(key, newKey);
+    nextGraphs[newKey] = cloneGraph(source);
+    const name = graphNames[key];
+    if (typeof name === 'string') nextNames[newKey] = name;
+  }
+  return {
+    section: setlist.makeSection(
+      normalized.id,
+      normalized.name,
+      normalized.graphs.filter((key) => remap.has(key) || key.startsWith('lib:')).map((key) => remap.get(key) ?? key),
+      normalized.looks,
+    ),
+    graphs: nextGraphs,
+    graphNames: nextNames,
+  };
 }
 
 /** Delete a graph everywhere: drop it from `graphs` + `graphNames`, and purge its key from

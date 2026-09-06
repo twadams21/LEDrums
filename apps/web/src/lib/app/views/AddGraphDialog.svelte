@@ -1,9 +1,9 @@
 <script lang="ts">
   /* "+ Add graph" — the Trigger rail's picker (#177). A Dialog over the graph library with a
-     filter box: every existing graph can be added to the active section as a LINK (the same
-     key in a second place — reuse by reference, badged on the card) or as a COPY (duplicate
-     under a name you give), and the same modal carries the brand-new-graph form. Thin over
-     tested store verbs (addGraphToSection / duplicateGraph / renameGraph / createGraph) and
+     filter box: every existing graph defaults to a COPY (duplicate under a name you give),
+     with LINK as the explicit shared-key alternative. The same modal carries the brand-new-graph
+     form. Thin over
+     tested store verbs (addGraphToSection / copyGraphToSection / createGraphInSection) and
      the pure `add-graph-rows` filter; the caller opens the graph it gets back. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { SetlistSection } from '../setlist';
@@ -50,6 +50,8 @@
       query,
     ),
   );
+  const canPlace = $derived(store.canEditActiveSong && !!section);
+  const blockReason = $derived(store.activeSongEditBlockReason ?? 'Choose a local section first');
 
   /** Close and clear every transient affordance, so a stale name field never lingers. */
   function dismiss(): void {
@@ -60,8 +62,7 @@
   }
 
   function place(graphKey: string): void {
-    if (!section) return;
-    store.addGraphToSection(section.id, graphKey);
+    if (!section || !canPlace || !store.addGraphToSection(section.id, graphKey)) return;
     onAdded(graphKey);
     dismiss();
   }
@@ -71,14 +72,19 @@
   }
 
   function commitCopy(sourceKey: string, name: string): void {
-    const key = store.duplicateGraph(sourceKey);
+    if (!section || !canPlace) return;
+    const key = store.copyGraphToSection(section.id, sourceKey, name);
     if (!key) return;
-    store.renameGraph(key, name);
-    place(key);
+    onAdded(key);
+    dismiss();
   }
 
   function commitNew(name: string): void {
-    place(store.createGraph(name));
+    if (!section || !canPlace) return;
+    const key = store.createGraphInSection(section.id, name);
+    if (!key) return;
+    onAdded(key);
+    dismiss();
   }
 </script>
 
@@ -88,6 +94,7 @@
     <span class="ag-spacer"></span>
     <IconButton icon={X} label="Close" onclick={dismiss} />
   </header>
+  {#if !canPlace}<p class="ag-reason">{blockReason}</p>{/if}
 
   <div class="ag-bar">
     <SearchField bind:value={query} placeholder="Filter graphs…" ariaLabel="Filter graphs" autofocus />
@@ -103,7 +110,7 @@
         />
       </span>
     {:else}
-      <button type="button" class="ag-new" onclick={() => ((naming = true), (copying = null))}>
+      <button type="button" class="ag-new" disabled={!canPlace} title={blockReason} onclick={() => ((naming = true), (copying = null))}>
         <Plus size={14} aria-hidden="true" />
         New graph
       </button>
@@ -130,15 +137,16 @@
         {:else}
           {#if row.inSection}<span class="ag-tag">in section</span>{/if}
           <IconButton
-            icon={Link2}
-            label={row.inSection ? 'Already linked in this section' : 'Add as a link — one graph, two places'}
-            disabled={row.inSection}
-            onclick={() => link(row.key)}
+            icon={CopyPlus}
+            label="Add as a copy — independent graph (default)"
+            disabled={!canPlace}
+            onclick={() => ((copying = row.key), (naming = false))}
           />
           <IconButton
-            icon={CopyPlus}
-            label="Add as a copy — an independent graph"
-            onclick={() => ((copying = row.key), (naming = false))}
+            icon={Link2}
+            label={row.inSection ? 'Already linked in this section' : 'Add as a link — one graph, shared edits'}
+            disabled={row.inSection || !canPlace}
+            onclick={() => link(row.key)}
           />
         {/if}
       </li>
@@ -170,6 +178,14 @@
     padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--border-faint);
   }
+  .ag-reason {
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+    border-bottom: 1px solid var(--border-faint);
+  }
   .ag-bar :global(.search) {
     flex: 1;
   }
@@ -184,6 +200,10 @@
   .ag-new:hover {
     border-color: var(--accent-dim);
     color: var(--accent);
+  }
+  .ag-new:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
   .ag-name {
     display: block;

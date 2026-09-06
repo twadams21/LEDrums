@@ -8,20 +8,28 @@
   import Drawer from '../../ui/Drawer.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Workflow from '@lucide/svelte/icons/workflow';
+  import Link2 from '@lucide/svelte/icons/link-2';
+  import CopyPlus from '@lucide/svelte/icons/copy-plus';
 
   let {
     store,
     section,
-    onPlace,
+    onCopy,
+    onLink,
     onCreate,
     onClose,
+    disabled = false,
+    disabledReason,
   }: {
     store: TriggerLab;
     /** The section awaiting a graph, or null when the picker is closed. */
     section: SetlistSection | null;
-    onPlace: (graphKey: string) => void;
+    onCopy: (graphKey: string) => void;
+    onLink: (graphKey: string) => void;
     onCreate: () => void;
     onClose: () => void;
+    disabled?: boolean;
+    disabledReason?: string;
   } = $props();
 
   const sourceSub = (key: string): string =>
@@ -31,22 +39,32 @@
 <Drawer open={!!section} {onClose} title="Add a graph" side="right" width="320px">
   {#if section}
     <p class="picker-ctx">{section.name}</p>
+    {#if disabled && disabledReason}<p class="picker-reason">{disabledReason}</p>{/if}
     <div class="picker-list">
-      <button class="picker-item new" onclick={onCreate}>
+      <button class="picker-item new" disabled={disabled} title={disabledReason} onclick={onCreate}>
         <Plus size={14} aria-hidden="true" />
         <span>New graph</span>
         <span class="picker-tag">empty</span>
       </button>
       {#each store.graphLibrary as g (g.key)}
         {@const inSection = section.graphs.includes(g.key)}
-        <button class="picker-item" disabled={inSection} onclick={() => onPlace(g.key)}>
+        <div class="picker-item" class:in-section={inSection}>
           <Workflow size={14} aria-hidden="true" />
           <span class="picker-label">
             <span>{g.label}</span>
             <span class="picker-sub">{sourceSub(g.key)}</span>
           </span>
-          {#if inSection}<span class="picker-tag">in section</span>{/if}
-        </button>
+          {#if inSection}
+            <span class="picker-tag">in section</span>
+          {:else}
+            <button class="picker-action primary" type="button" disabled={disabled} title={disabledReason} aria-label={`Add ${g.label} as a copy`} onclick={() => onCopy(g.key)}>
+              <CopyPlus size={13} aria-hidden="true" /> Copy
+            </button>
+            <button class="picker-action" type="button" disabled={disabled} title={disabledReason} aria-label={`Link ${g.label} to this section`} onclick={() => onLink(g.key)}>
+              <Link2 size={13} aria-hidden="true" /> Link
+            </button>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
@@ -64,8 +82,14 @@
     flex-direction: column;
     gap: var(--space-1);
   }
+  .picker-reason {
+    margin: 0 0 var(--space-3);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+  }
   .picker-item {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
@@ -75,15 +99,37 @@
     text-align: left;
     color: var(--text);
   }
-  .picker-item:hover:not(:disabled) {
+  .picker-item.in-section { opacity: 0.55; }
+  .picker-item:hover {
     border-color: var(--border-accent);
     color: var(--ink);
   }
-  .picker-item:active:not(:disabled) {
-    scale: 0.98;
+  .picker-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: 24px;
+    padding: 0 var(--space-1_5);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-control-sm);
+    background: var(--surface-3);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-family: var(--font-mono);
+    cursor: pointer;
   }
+  .picker-action:hover {
+    border-color: var(--border-accent);
+    color: var(--ink);
+  }
+  .picker-action:disabled,
   .picker-item:disabled {
+    cursor: not-allowed;
     opacity: 0.5;
+  }
+  .picker-action.primary {
+    border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+    color: var(--accent);
   }
   .picker-item.new {
     background: var(--surface-inset);

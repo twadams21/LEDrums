@@ -269,10 +269,40 @@ describe('remapClipDoc — re-key + ref rewrite', () => {
   });
 });
 
-// ---- remap: reuse semantics -------------------------------------------------
+// ---- remap: graph-copy semantics -------------------------------------------
 
-describe('remapClipDoc — content reuse', () => {
-  it('reuses a dep whose content already exists locally (no duplicate)', () => {
+describe('remapClipDoc — graph copies with canonical dependencies', () => {
+  it('fails closed when a section dependency is unresolved instead of inserting a broken placement', () => {
+    const doc: ClipDoc = {
+      app: 'ledrums',
+      v: 2,
+      kind: 'section',
+      payload: { section: makeSection('s1', 'Broken', ['missing']) },
+      deps: { graphs: {} },
+      meta: { exportedAt: '' },
+    };
+
+    const result = remapClipDoc(doc, ctx());
+    expect(isClipParseError(result)).toBe(true);
+    if (isClipParseError(result)) expect(result.reason).toBe('unresolved-dependency');
+  });
+
+  it('fails closed for one unresolved section inside a song', () => {
+    const doc: ClipDoc = {
+      app: 'ledrums',
+      v: 2,
+      kind: 'song',
+      payload: { song: makeSong('song-1', 'Broken', [makeSection('s1', 'Broken', ['missing'])]) },
+      deps: { graphs: {} },
+      meta: { exportedAt: '' },
+    };
+
+    const result = remapClipDoc(doc, ctx());
+    expect(isClipParseError(result)).toBe(true);
+    if (isClipParseError(result)) expect(result.reason).toBe('unresolved-dependency');
+  });
+
+  it('copies a graph even when identical content already exists locally', () => {
     const src = sources({ graphs: { 'g-kick': playGraph('fx-kick', 'fx-kick:default') }, graphNames: { 'g-kick': 'Kick' }, effects: [effect('fx-kick')], presets: [preset('fx-kick:default', 'fx-kick')] });
     const doc = buildGraphClipDoc('g-kick', src);
 
@@ -281,15 +311,15 @@ describe('remapClipDoc — content reuse', () => {
     const first = remapClipDoc(doc, empty) as RemapResult;
     const show = apply(empty, first);
 
-    // Second paste of the SAME doc → everything reused, nothing new.
+    // Second paste of the SAME doc → a new graph placement; effect/preset dependencies remain reusable.
     const second = remapClipDoc(doc, show) as RemapResult;
     expect(second.effects).toHaveLength(0);
     expect(second.presets).toHaveLength(0);
-    expect(Object.keys(second.graphs)).toHaveLength(0);
-    expect(second.graphKey).toBe(first.graphKey); // resolves to the existing graph
+    expect(Object.keys(second.graphs)).toHaveLength(1);
+    expect(second.graphKey).not.toBe(first.graphKey);
   });
 
-  it('double-paste creates exactly one duplicate set', () => {
+  it('double-paste creates two independent graph copies but one dependency set', () => {
     const src = sources({ graphs: { 'g-kick': playGraph('fx-kick', 'fx-kick:default') }, effects: [effect('fx-kick')], presets: [preset('fx-kick:default', 'fx-kick')] });
     const doc = buildGraphClipDoc('g-kick', src);
 
@@ -298,14 +328,14 @@ describe('remapClipDoc — content reuse', () => {
     show = apply(show, a);
     const b = remapClipDoc(doc, show) as RemapResult;
 
-    // Across the two pastes: one new graph + one new effect total (the second reused).
+    // Across the two pastes: two new graphs, with the non-built-in effect reused on the second.
     const graphs = Object.keys(a.graphs).length + Object.keys(b.graphs).length;
     const effects = a.effects.length + b.effects.length;
-    expect(graphs).toBe(1);
+    expect(graphs).toBe(2);
     expect(effects).toBe(1);
   });
 
-  it('A→B→A round-trip creates no duplicate closure', () => {
+  it('A→B→A round-trip keeps graph ownership independent', () => {
     // Show A owns the original graph + effect.
     const graphA = playGraph('fx-kick', 'fx-kick:default');
     const showA = ctx({ graphs: { 'g-a': graphA }, effects: [effect('fx-kick')], presets: [preset('fx-kick:default', 'fx-kick')] });
@@ -317,15 +347,15 @@ describe('remapClipDoc — content reuse', () => {
     const intoB = remapClipDoc(docFromA, showBempty) as RemapResult;
     const showB = apply(showBempty, intoB);
 
-    // Copy from B, paste back into A → A already has the content → reuse, no new closure.
+    // Copy from B, paste back into A → A receives an independent graph copy.
     const bKey = intoB.graphKey!;
     const srcB = sources({ graphs: { [bKey]: showB.graphs[bKey]! }, graphNames: { [bKey]: 'Kick' }, effects: [...showB.effects], presets: [...showB.presets] });
     const docFromB = buildGraphClipDoc(bKey, srcB);
     const backIntoA = remapClipDoc(docFromB, showA) as RemapResult;
 
-    expect(Object.keys(backIntoA.graphs)).toHaveLength(0);
+    expect(Object.keys(backIntoA.graphs)).toHaveLength(1);
     expect(backIntoA.effects).toHaveLength(0);
-    expect(backIntoA.graphKey).toBe('g-a'); // resolves back to the original
+    expect(backIntoA.graphKey).not.toBe('g-a');
   });
 
   it('re-keys a non-built-in effect that collides with different local content', () => {

@@ -45,6 +45,8 @@
     trailing?: Snippet;
     /** aria-label / placeholder context for the rename input. */
     renameLabel?: string;
+    renameDisabled?: boolean;
+    renameDisabledLabel?: string;
     disabled?: boolean;
     class?: string;
   };
@@ -62,6 +64,8 @@
     quickActions,
     trailing,
     renameLabel = 'Rename',
+    renameDisabled = false,
+    renameDisabledLabel = 'Rename disabled',
     disabled = false,
     class: klass,
   }: Props = $props();
@@ -81,7 +85,7 @@
   }
 
   const menuActions = $derived<ContextMenuAction[]>([
-    { label: 'Rename', icon: Pencil, onSelect: startEditing },
+    { label: renameDisabled ? `Rename — ${renameDisabledLabel}` : 'Rename', icon: Pencil, disabled: renameDisabled, onSelect: startEditing },
     ...(actions ?? []),
   ]);
 </script>
@@ -98,7 +102,7 @@
       {secondary}
       {active}
       {onclick}
-      ondblclick={startEditing}
+      ondblclick={renameDisabled ? undefined : startEditing}
       {disabled}
       actions={quickActions}
       {trailing}

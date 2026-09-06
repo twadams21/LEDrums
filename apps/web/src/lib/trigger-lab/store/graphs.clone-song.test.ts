@@ -48,12 +48,19 @@ describe('cloneSongGraphs', () => {
     expect(out.song.sections[1]!.graphs).toEqual([out.song.sections[0]!.graphs[0]]);
   });
 
-  it('leaves a dangling reference untouched rather than repairing it', () => {
+  it('drops a dangling local reference rather than carrying it into authored state', () => {
     const song = makeSong('song-1', 'Set', [makeSection('s1', 'Intro', ['a', 'gone'])]);
     const out = cloneSongGraphs(song, graphs, graphNames, minter());
 
-    expect(out.song.sections[0]!.graphs).toEqual(['graph-new-1', 'gone']);
+    expect(out.song.sections[0]!.graphs).toEqual(['graph-new-1']);
     expect(out.graphs['gone']).toBeUndefined();
+  });
+
+  it('keeps canonical references whose graphs live outside the local map', () => {
+    const song = makeSong('song-1', 'Set', [makeSection('s1', 'Intro', ['a', 'lib:canonical/g'])]);
+    const out = cloneSongGraphs(song, graphs, graphNames, minter());
+
+    expect(out.song.sections[0]!.graphs).toEqual(['graph-new-1', 'lib:canonical/g']);
   });
 
   it('does not mutate the input song, graphs, or names', () => {

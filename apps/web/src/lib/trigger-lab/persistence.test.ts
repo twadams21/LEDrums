@@ -6,6 +6,7 @@ import {
   VERSION,
   deserializeAuthored,
   deserializeShowLibrary,
+  coerceLibrarySong,
   loadShowLibrary,
   migrateSongs,
   sectionGraphList,
@@ -218,6 +219,16 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
     expect(sectionGraphList({ id: 'a', name: 'A', graphs: ['g1', 'g2', 'g1'] })).toEqual(['g1', 'g2']);
   });
 
+  it('sanitizes canonical library sections with the same ordered-set invariant', () => {
+    const restored = coerceLibrarySong({
+      id: 'lib-1',
+      name: 'Canonical',
+      graphs: { g: graph(), h: graph() },
+      sections: [{ id: 'a', name: 'A', graphs: ['g', 'g', 'h', 'g'] }],
+    });
+    expect(restored?.sections[0]?.graphs).toEqual(['g', 'h']);
+  });
+
   it('degrades a malformed section to an empty list', () => {
     expect(sectionGraphList(null)).toEqual([]);
     expect(sectionGraphList({ id: 'a', name: 'A' })).toEqual([]);
@@ -251,14 +262,42 @@ describe('U4 back-compat — section slots → flat graphs migration', () => {
     const restored = deserializeAuthored({
       version: VERSION,
       data: {
-        songs: [
-          { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] },
-        ],
+        graphs: { 'kick:0': graph() },
+        songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }],
       },
     });
     expect(restored?.songs).toEqual([
       { id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', graphs: ['kick:0'], looks: {} }] },
     ]);
+  });
+
+  it('drops dangling local graph refs and orphan names, while preserving canonical refs', () => {
+    const restored = deserializeAuthored({
+      version: VERSION,
+      data: {
+        graphs: { local: graph() },
+        graphNames: { local: 'Local', orphan: 'Orphan', 'lib:canonical/g': 'Canonical' },
+        songs: [{ id: 'song', name: 'Song', sections: [{ id: 'section', name: 'Section', graphs: ['local', 'gone', 'lib:canonical/g'] }] }],
+      },
+    });
+
+    expect(restored?.songs?.[0]?.sections[0]?.graphs).toEqual(['local', 'lib:canonical/g']);
+    expect(restored?.graphNames).toEqual({ local: 'Local', 'lib:canonical/g': 'Canonical' });
+  });
+
+  it('keeps only the first section when malformed persistence repeats a global id', () => {
+    const restored = deserializeAuthored({
+      version: VERSION,
+      data: {
+        songs: [
+          { id: 'a', name: 'A', sections: [{ id: 'same', name: 'First' }] },
+          { id: 'b', name: 'B', sections: [{ id: 'same', name: 'Duplicate' }, { id: 'unique', name: 'Unique' }] },
+        ],
+      },
+    });
+
+    expect(restored?.songs?.flatMap((song) => song.sections).map((section) => section.id)).toEqual(['same', 'unique']);
+    expect(restored?.songs?.[1]?.sections[0]?.name).toBe('Unique');
   });
 });
 
@@ -311,7 +350,15 @@ function library(): ShowLibrary {
   return {
     shows: {
       a: { id: 'a', name: 'Main Set', authored: authored() },
-      b: { id: 'b', name: 'B-sides', authored: { ...authored(), bpm: 90 } },
+      b: {
+        id: 'b',
+        name: 'B-sides',
+        authored: {
+          ...authored(),
+          bpm: 90,
+          songs: [{ ...authored().songs[0]!, sections: [makeSection('b-intro', 'Intro')] }],
+        },
+      },
     },
     activeShowId: 'b',
   };
@@ -373,6 +420,7 @@ describe('show library — version gate + malformed tolerance', () => {
           s: {
             id: 's',
             authored: {
+              graphs: { 'kick:0': graph() },
               songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }],
             },
           },
@@ -421,7 +469,7 @@ describe('loadShowLibrary — boot migration', () => {
   it('migrates a legacy single blob carrying pre-U4 section slots into the wrapped show', () => {
     const single = {
       version: VERSION,
-      data: { songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }] },
+      data: { graphs: { 'kick:0': graph() }, songs: [{ id: 's1', name: 'S1', sections: [{ id: 'a', name: 'A', slots: { 'kick:0': ['kick:0', null] } }] }] },
     };
     const lib = loadShowLibrary(null, single, () => 'show-1');
     expect(lib.shows['show-1']!.authored.songs).toEqual([

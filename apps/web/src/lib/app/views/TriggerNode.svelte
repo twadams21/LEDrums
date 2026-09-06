@@ -58,6 +58,8 @@
   const kind = $derived((data as { kind: NodeKind }).kind);
   // the live store node (reactive — Inspector edits flow straight through)
   const node = $derived(store.selectedGraph?.nodes.find((n) => n.id === id) ?? null);
+  const canMutate = $derived(store.canMutateSelectedGraph);
+  const mutationBlockReason = $derived(store.selectedGraphEditBlockReason ?? 'This graph is read-only');
   const isEffectNode = $derived(node?.kind === 'play' || node?.kind === 'effect');
   const eff = $derived(node && isEffectNode ? store.effectOf(node) : undefined);
 
@@ -176,16 +178,17 @@
   let confirmDelete = $state(false);
   const actions = $derived.by<ContextMenuAction[]>(() => {
     if (!node) return [];
-    const canPaste = store.nodeClipboard !== null;
+    const canPaste = store.nodeClipboard !== null && canMutate;
+    const blocked = (label: string): string => canMutate ? label : `${label} — ${mutationBlockReason}`;
     if (node.kind === 'trigger' || node.kind === 'output') {
-      return [{ label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() }];
+      return [{ label: blocked('Paste'), icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() }];
     }
     const n = node;
     return [
-      { label: 'Copy', icon: Copy, onSelect: () => store.copyNode(n) },
-      { label: 'Paste', icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() },
-      { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateNode(n) },
-      { label: 'Delete', icon: Trash2, danger: true, onSelect: () => (confirmDelete = true) },
+      { label: blocked('Copy'), icon: Copy, disabled: !canMutate, onSelect: () => store.copyNode(n) },
+      { label: blocked('Paste'), icon: ClipboardPaste, disabled: !canPaste, onSelect: () => store.pasteNode() },
+      { label: blocked('Duplicate'), icon: CopyPlus, disabled: !canMutate, onSelect: () => store.duplicateNode(n) },
+      { label: blocked('Delete'), icon: Trash2, danger: true, disabled: !canMutate, onSelect: () => (confirmDelete = true) },
     ];
   });
 </script>
@@ -310,7 +313,7 @@
             step={row.spec.step}
             options={row.spec.options}
             modulated={wired}
-            disabled={store.isViewer}
+            disabled={!canMutate}
             ariaLabel={row.label}
             onChange={(v) => setFaceParam(row.param, v as ParamValue)}
             onGestureStart={() => store.beginGesture()}
@@ -342,7 +345,7 @@
        capture, not a silent blank. No handles: a stale node is not a valid wiring target. -->
   <NodeCard icon={TriangleAlert} title="Stale node" sub={id} tint="var(--warn)" stale selected={!!selected} />
 {:else}
-  <ContextMenu {actions} disabled={store.isViewer}>
+  <ContextMenu {actions} disabled={!canMutate}>
   {#if isBandsSwitch}
     {#if nodeHasInput(kind)}
       <Handle type="target" position={Position.Left} aria-label="Trigger flow in" />
