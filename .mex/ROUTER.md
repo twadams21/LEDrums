@@ -47,8 +47,8 @@ behavior. The remaining cold-restore defect is fixed by the pure core
 drum-derived slot routing. A server regression proves cold-restored MIDI/OSC graphs fire for the
 active viewer, while other-section and unassigned graphs remain rejected and the drum slot remains
 unchanged. Focused tests/typechecks pass. This branch now also integrates current `origin/main`
-(PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full
-verification, commit of the merge, push, and CI remain pending; PR #206 is not merged here.
+(PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full tests,
+typecheck, and build pass; push and CI remain pending. PR #206 is not merged here.
 
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
