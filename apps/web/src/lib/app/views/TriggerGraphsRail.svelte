@@ -39,6 +39,8 @@
 
   const section = $derived(store.activeSection);
   const graphs = $derived(section?.graphs ?? []);
+  const canArrange = $derived(store.canEditActiveSong);
+  const blockedReason = $derived(store.activeSongEditBlockReason ?? 'Library graph is read-only');
 
   /** The graph whose card is showing its inline rename field, or null. */
   let renaming = $state<string | null>(null);
@@ -54,7 +56,7 @@
   function sourceSub(key: string): string {
     return describeTriggerSource(store.triggerSource(key), store.drums).sub;
   }
-  /** How many sections across ALL songs place this graph — > 1 is the linked state. */
+  /** How many supported placements across ALL songs place this graph — > 1 is the linked state. */
   function placements(key: string): number {
     return graphPlacementCount(store.songs, key);
   }
@@ -69,21 +71,21 @@
   }
   function duplicateInto(key: string): void {
     if (!section) return;
-    const copy = store.duplicateGraph(key);
+    const copy = store.copyGraphToSection(section.id, key);
     if (!copy) return;
-    store.addGraphToSection(section.id, copy);
     openGraph(copy);
   }
   function cardActions(key: string): ContextMenuAction[] {
     return [
-      { label: 'Rename', icon: Pencil, onSelect: () => startRename(key) },
-      { label: 'Duplicate into section', icon: CopyPlus, onSelect: () => duplicateInto(key) },
+      { label: canArrange ? 'Rename' : `Rename — ${blockedReason}`, icon: Pencil, disabled: !canArrange, onSelect: () => startRename(key) },
+      { label: canArrange ? 'Duplicate into section' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => duplicateInto(key) },
       {
-        label: 'Remove from section',
+        label: canArrange ? 'Remove from section' : `Remove — ${blockedReason}`,
         icon: ListMinus,
+        disabled: !canArrange,
         onSelect: () => section && store.removeGraphFromSection(section.id, key),
       },
-      { label: 'Delete everywhere…', icon: Trash2, danger: true, onSelect: () => (deleting = key) },
+      { label: canArrange ? 'Delete everywhere…' : `Delete — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => (deleting = key) },
     ];
   }
 
@@ -126,13 +128,13 @@
             />
           </div>
         {:else}
-          <ContextMenu actions={cardActions(key)} disabled={!store.canEdit}>
+          <ContextMenu actions={cardActions(key)}>
             <button
               type="button"
               class="gcard"
               class:sel={store.selectedPadKey === key}
               onclick={() => openGraph(key)}
-              ondblclick={() => store.canEdit && startRename(key)}
+              ondblclick={() => canArrange && startRename(key)}
               title="Open {store.graphLabel(key)}"
             >
               {#if thumb}
@@ -149,7 +151,7 @@
               <span class="gscrim" aria-hidden="true"></span>
               <span class="gbadges">
                 {#if links > 1}
-                  <Tooltip text="Linked · placed in {links} sections" side="left">
+                  <Tooltip text="Linked · placed in {links} placements" side="left">
                     <span class="glink"><Link2 size={11} aria-hidden="true" />{links}</span>
                   </Tooltip>
                 {/if}
@@ -175,12 +177,10 @@
           </ContextMenu>
         {/if}
       {/each}
-      {#if store.canEdit}
-        <button type="button" class="newcard" onclick={() => (adding = true)}>
-          <Plus size={15} aria-hidden="true" />
-          Add graph
-        </button>
-      {/if}
+      <button type="button" class="newcard" disabled={!canArrange} title={canArrange ? 'Add graph' : blockedReason} onclick={() => (adding = true)}>
+        <Plus size={15} aria-hidden="true" />
+        Add graph
+      </button>
     {/if}
   </div>
 </aside>
@@ -425,6 +425,10 @@
   .newcard:hover {
     border-color: var(--accent-dim);
     color: var(--accent);
+  }
+  .newcard:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
   .newcard:active {
     scale: 0.98;

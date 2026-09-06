@@ -71,6 +71,14 @@
     "state": "view:trigger,new-graph,add:envelope,select:envelope",
     "target": "Inspector"
   },
+  "delay-inspector": {
+    "state": "view:trigger,new-graph,add:delay,select:delay",
+    "target": "Inspector"
+  },
+  "lfo-inspector": {
+    "state": "view:trigger,new-graph,add:lfo,select:lfo",
+    "target": "Inspector"
+  },
   "gen3-mix-node": {
     "state": "view:trigger,add:mix,select:mix",
     "target": "main.center"
@@ -117,6 +125,16 @@
   "sections": {
     "state": "view:sections",
     "target": "main.center"
+  },
+  "canonical-section-readonly": {
+    "state": "canonical-readonly:sections",
+    "target": "main.center",
+    "settle": 300
+  },
+  "canonical-inspector-readonly": {
+    "state": "view:trigger,canonical-readonly",
+    "target": "Inspector",
+    "settle": 300
   },
   "section-detail": {
     "state": "view:sections",

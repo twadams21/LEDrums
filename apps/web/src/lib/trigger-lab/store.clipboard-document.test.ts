@@ -177,6 +177,19 @@ describe.each([false, true])('clipboard document lifetime (same ID: %s)', (sameI
     } finally { store.stop(); }
   });
 
+  it('does not write the in-app section clipboard when the client is a viewer', () => {
+    const { store } = setup();
+    try {
+      const sectionId = store.activeSectionId!;
+      expect(store.copySection(sectionId)).toBe(true);
+      const before = JSON.stringify(store.sectionClipboard);
+      store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+      expect(store.isViewer).toBe(true);
+      expect(store.copySection(sectionId)).toBe(false);
+      expect(JSON.stringify(store.sectionClipboard)).toBe(before);
+    } finally { store.stop(); }
+  });
+
   it.each([true, false])('suppresses outgoing copy feedback (write succeeds: %s)', async (succeeds) => {
     const { store, callbacks } = setup();
     try {

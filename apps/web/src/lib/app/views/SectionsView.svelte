@@ -15,6 +15,8 @@
   import { sectionsDndPreview } from './sections-dnd-preview.svelte';
   import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
+  import LinkPlacementDialog from './LinkPlacementDialog.svelte';
+  import type { SetlistSection, Song } from '../setlist';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -104,21 +106,36 @@
 
   // graph picker: the section awaiting a graph (or null when closed)
   let pendingSectionId = $state<string | null>(null);
+  let linkSource = $state<{ song: Song; section: SetlistSection; graphKey: string } | null>(null);
   const pendingSection = $derived(
     pendingSectionId ? (sections.find((s) => s.id === pendingSectionId) ?? null) : null,
   );
 
-  function place(graphKey: string): void {
+  function copyAndPlace(graphKey: string): void {
     if (!pendingSectionId) return;
-    store.addGraphToSection(pendingSectionId, graphKey);
+    const key = store.copyGraphToSection(pendingSectionId, graphKey);
+    if (!key) return;
+    store.selectGraphInSection(pendingSectionId, key);
+    shell.setView('trigger');
     pendingSectionId = null;
+  }
+  function linkAndPlace(graphKey: string): void {
+    if (!pendingSectionId) return;
+    if (!store.addGraphToSection(pendingSectionId, graphKey)) return;
+    pendingSectionId = null;
+  }
+
+  function openLinkDialog(songId: string, sectionId: string, graphKey: string): void {
+    const sourceSong = store.songs.find((candidate) => candidate.id === songId);
+    const sourceSection = sourceSong?.sections.find((candidate) => candidate.id === sectionId);
+    if (sourceSong && sourceSection) linkSource = { song: sourceSong, section: sourceSection, graphKey };
   }
   /** Author a fresh graph, add it to the pending section, activate + open it for editing. */
   function createAndPlace(): void {
     if (!pendingSectionId) return;
     const sectionId = pendingSectionId;
-    const key = store.createGraph();
-    store.addGraphToSection(sectionId, key);
+    const key = store.createGraphInSection(sectionId);
+    if (!key) return;
     store.selectGraphInSection(sectionId, key);
     pendingSectionId = null;
     shell.setView('trigger'); // land on the canvas to edit the new graph
@@ -221,10 +238,17 @@
       <LayoutGrid size={15} aria-hidden="true" class="title-icon" />
       <h2>{song?.name ?? 'No song'}</h2>
     </div>
-    {#if store.canEdit}
-      <button class="addsection" type="button" onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}>
-        <Plus size={14} aria-hidden="true" /> Section
-      </button>
+    <button
+      class="addsection"
+      type="button"
+      disabled={!store.canEditActiveSong}
+      title={store.activeSongEditBlockReason ?? 'Add section'}
+      onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
+    >
+      <Plus size={14} aria-hidden="true" /> Section
+    </button>
+    {#if !store.canEditActiveSong && store.activeSongEditBlockReason}
+      <span class="readonly-reason">{store.activeSongEditBlockReason}</span>
     {/if}
   </header>
 
@@ -253,6 +277,7 @@
             onDragEnd={clearDrag}
             onGraphDragOver={(index, event) => graphDragOver(sec.id, index, event)}
             onGraphDrop={(index, event) => dropOnGraph(sec.id, index, event)}
+            onLinkGraph={openLinkDialog}
           />
         {/each}
         {#if draggingKind === 'section' && sectionLine}
@@ -281,6 +306,8 @@
               sectionIdx={ss.sectionIdx}
               recall={ss.recall}
               looks={ss.section.looks}
+              canEdit={store.canEditActiveSong && store.isLocalSong(ss.song.id)}
+              editBlockReason={store.activeSongEditBlockReason ?? undefined}
             />
           </div>
         </aside>
@@ -292,9 +319,21 @@
 <GraphPickerDrawer
   {store}
   section={pendingSection}
-  onPlace={place}
+  disabled={!store.canEditActiveSong}
+  disabledReason={store.activeSongEditBlockReason ?? undefined}
+  onCopy={copyAndPlace}
+  onLink={linkAndPlace}
   onCreate={createAndPlace}
   onClose={() => (pendingSectionId = null)}
+/>
+
+<LinkPlacementDialog
+  {store}
+  open={!!linkSource}
+  sourceSong={linkSource?.song ?? null}
+  sourceSection={linkSource?.section ?? null}
+  sourceGraphKey={linkSource?.graphKey ?? null}
+  onClose={() => (linkSource = null)}
 />
 
 <style>
@@ -353,6 +392,15 @@
   .addsection:hover {
     border-color: color-mix(in oklab, var(--accent), var(--border) 45%);
     background: color-mix(in oklab, var(--accent), transparent 84%);
+  }
+  .addsection:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .readonly-reason {
+    margin-inline-start: auto;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
   }
   .body {
     min-height: 0;

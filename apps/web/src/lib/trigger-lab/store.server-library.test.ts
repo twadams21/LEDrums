@@ -399,6 +399,8 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
 
     store.createSong('Nope');
     store.createGraph('Nope');
+    expect(store.createGraphInSection(firstSong.sections[0]!.id)).toBeNull();
+    expect(store.copyGraphToSection(firstSong.sections[0]!.id, store.selectedPadKey ?? '')).toBeNull();
     store.newShow('Nope');
     store.addSongSection('Nope');
     store.renameShow(store.activeShowId, 'Renamed');

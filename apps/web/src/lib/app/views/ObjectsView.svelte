@@ -97,7 +97,7 @@
 
   /** Open a graph in the Trigger editor (it need not belong to a section). */
   function openGraph(key: string): void {
-    store.selectedPadKey = key;
+    store.selectGraph(key);
     shell.setView('trigger');
   }
 </script>

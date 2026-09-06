@@ -12,7 +12,7 @@
    keyed by padKey) entirely; the back-compat migration that flattens a persisted section's
    `slots` into this `graphs` list lives in `persistence.ts`. */
 
-/** One section in a song's arrangement: an ordered list of graph keys (into store.graphs)
+/** One section in a song's arrangement: an ordered SET of graph keys (into store.graphs)
     plus its per-bus "looks" — which effect each bus LOOPS while the section is active (the
     base/trigger/effect ambience the engine spawns on recall). The graph list is de-duplicated
     (a graph appears at most once per section); `looks` is keyed by bus id, a value of `null`
@@ -53,7 +53,27 @@ export function makeSong(
   name: string,
   sections: SetlistSection[] = [makeSection(`${id}-s1`, 'Section 1')],
 ): Song {
-  return { id, name, sections };
+  return { id, name, sections: sanitizeUniqueSectionIds([{ id, name, sections }])[0]?.sections ?? [] };
+}
+
+/**
+ * Keep section ids globally unique across a resolved song list. Persistence and import callers
+ * use this at their trust boundaries; the first valid section wins so malformed data is repaired
+ * deterministically without changing the order of surviving content.
+ */
+export function sanitizeUniqueSectionIds(songs: readonly Song[], reserved = new Set<string>()): Song[] {
+  return songs.map((song) => {
+    let changed = false;
+    const sections = song.sections.filter((section) => {
+      if (!section.id || reserved.has(section.id)) {
+        changed = true;
+        return false;
+      }
+      reserved.add(section.id);
+      return true;
+    });
+    return changed ? { ...song, sections } : song;
+  });
 }
 
 // ---- immutable section/song edits ------------------------------------------
@@ -131,13 +151,28 @@ export function removeSection(song: Song, sectionId: string): Song {
   return { ...song, sections: song.sections.filter((s) => s.id !== sectionId) };
 }
 
-/** Deep-copy a section under a NEW id (name defaults to "<name> copy"). The `graphs` list is
-    copied so the clone is an INDEPENDENT section — editing one section's list never touches
-    the other. The keys themselves stay references into store.graphs, so the copy shares the
-    SAME underlying graphs (reuse); only the section's ordered key list is duplicated, never
-    the graphs. Backs the section copy/paste in the store. */
+/** Copy a section's arrangement under a NEW id (name defaults to "<name> copy"). Graph content
+    is cloned by the store operation that owns the graph map; this pure structural helper only
+    copies the ordered key list and looks. */
 export function cloneSection(section: SetlistSection, newId: string, newName?: string): SetlistSection {
-  return { id: newId, name: newName ?? `${section.name} copy`, graphs: [...section.graphs], looks: { ...section.looks } };
+  return makeSection(newId, newName ?? `${section.name} copy`, section.graphs, section.looks);
+}
+
+/** Replace one exact graph placement while preserving the section's order. The caller owns the
+    graph map; this only changes the placement identity used for explicit linking/unlinking. */
+export function replaceGraphPlacement(
+  song: Song,
+  sectionId: string,
+  fromGraphKey: string,
+  toGraphKey: string,
+): Song {
+  return mapSection(song, sectionId, (section) => {
+    const index = section.graphs.indexOf(fromGraphKey);
+    if (index < 0 || (fromGraphKey !== toGraphKey && section.graphs.includes(toGraphKey))) return section;
+    const graphs = [...section.graphs];
+    graphs[index] = toGraphKey;
+    return makeSection(section.id, section.name, graphs, section.looks);
+  });
 }
 
 export function renameSection(song: Song, sectionId: string, name: string): Song {
@@ -199,9 +234,10 @@ export function isReused(song: Song, graphKey: string): boolean {
   return graphUsageCount(song, graphKey) > 1;
 }
 
-/** How many section placements a graph key has across the WHOLE setlist (every section of
-    every song; each section counts once). `> 1` is the linked state the graph card badges —
-    reuse is explicit wiring, so the count is shown, never hidden. */
+/** How many supported section placements a graph key has across the WHOLE local setlist (every
+    section of every song; each section counts once). Canonical library sections are not in this
+    authored setlist and cannot be linked by local placement actions. `> 1` is the linked state the
+    graph card badges — reuse is explicit wiring, so the count is shown, never hidden. */
 export function graphPlacementCount(songs: readonly Song[], graphKey: string): number {
   let n = 0;
   for (const song of songs) n += graphUsageCount(song, graphKey);

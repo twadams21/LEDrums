@@ -6,16 +6,16 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Song, SetlistSection } from '../setlist';
-  import { isReused } from '../setlist';
+  import { graphPlacementCount } from '../setlist';
   import { describeTriggerSource } from '../trigger-source-label';
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
-  import StatusDot from '../../ui/StatusDot.svelte';
   import Workflow from '@lucide/svelte/icons/workflow';
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
+  import Link2 from '@lucide/svelte/icons/link-2';
 
   let {
     store,
@@ -25,6 +25,7 @@
     graphKey,
     onDragStart,
     onDragEnd,
+    onLink,
   }: {
     store: TriggerLab;
     shell: ShellStore;
@@ -33,13 +34,18 @@
     graphKey: string;
     onDragStart: (event: DragEvent) => void;
     onDragEnd: () => void;
+    onLink: (songId: string, sectionId: string, graphKey: string) => void;
   } = $props();
 
   let editing = $state(false);
   let dragging = $state(false);
   let ghostEl = $state<HTMLDivElement | null>(null);
   const current = $derived(store.activeSectionId === section.id && store.selectedPadKey === graphKey);
-  const reused = $derived(isReused(song, graphKey));
+  const placementCount = $derived(graphPlacementCount(store.songs, graphKey));
+  const reused = $derived(placementCount > 1);
+  const localPlacement = $derived(store.songs.some((candidate) => candidate.id === song.id && candidate.sections.some((s) => s.id === section.id && s.graphs.includes(graphKey))));
+  const canArrange = $derived(store.canEdit && localPlacement);
+  const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library placement is read-only — detach a copy in Objects to edit it');
   const sub = $derived(describeTriggerSource(store.triggerSource(graphKey), store.drums).sub);
 
   /* The native HTML5 drag ghost snapshots the whole row — grip, status dot, and the
@@ -65,9 +71,11 @@
   }
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateGraph(graphKey) },
-    { label: 'Remove from section', icon: X, onSelect: removeFromSection },
-    { label: 'Delete graph', icon: Trash2, danger: true, onSelect: () => store.deleteGraph(graphKey) },
+    { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.copyGraphToSection(section.id, graphKey) },
+    ...(localPlacement ? [{ label: store.canEdit ? 'Link to placement…' : 'Link — Another client is editing', icon: Link2, disabled: !store.canEdit, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
+    ...(localPlacement && reused ? [{ label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`, icon: Link2, disabled: !canArrange, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
+    { label: canArrange ? 'Remove from section' : `Remove from section — ${blockedReason}`, icon: X, disabled: !canArrange, onSelect: removeFromSection },
+    { label: canArrange ? 'Delete graph' : `Delete graph — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => store.deleteGraph(graphKey) },
   ]);
 </script>
 
@@ -76,12 +84,12 @@
   class:dragging
   role="listitem"
   data-graph-row
-  draggable={store.canEdit && !editing}
+  draggable={canArrange && !editing}
   aria-label={`Drag ${store.graphLabel(graphKey)}`}
   ondragstart={handleDragStart}
   ondragend={handleDragEnd}
 >
-  {#if store.canEdit && !editing}
+  {#if canArrange && !editing}
     <!-- Explicit drag affordance: the grab cursor is confined to this grip rather than smeared
          across the whole row (R12). Faint at rest, brightens with the row on hover. -->
     <span class="grip" aria-hidden="true"><GripVertical size={13} /></span>
@@ -96,16 +104,25 @@
     onCommit={(name) => store.renameGraph(graphKey, name)}
     {actions}
     renameLabel="Graph name"
+    renameDisabled={!canArrange}
+    renameDisabledLabel={blockedReason}
   >
     {#snippet trailing()}
-      {#if reused}<StatusDot tone="accent" />{/if}
+      {#if reused}
+        <span class="linked-status" title={`Linked in ${placementCount} placements`} aria-label={`Linked in ${placementCount} placements`}>
+          <Link2 size={12} aria-hidden="true" />{placementCount}
+        </span>
+      {/if}
     {/snippet}
     {#snippet quickActions()}
-      <IconButton icon={X} label="Remove from section" size={12} onclick={removeFromSection} />
+      {#if localPlacement}
+        <IconButton icon={Link2} label={store.canEdit ? 'Link to placement…' : `Link disabled — ${blockedReason}`} size={12} disabled={!store.canEdit} onclick={() => onLink(song.id, section.id, graphKey)} />
+      {/if}
+      <IconButton icon={X} label={canArrange ? 'Remove from section' : `Remove disabled — ${blockedReason}`} size={12} disabled={!canArrange} onclick={removeFromSection} />
     {/snippet}
   </EditableRow>
 
-  {#if store.canEdit && !editing}
+  {#if canArrange && !editing}
     <!-- Compact drag image: rendered off-screen (never display:none — Chrome won't snapshot
          a hidden node) and handed to setDragImage on dragstart. Icon + name only, no ✕. -->
     <div class="drag-ghost" bind:this={ghostEl} aria-hidden="true">
@@ -135,6 +152,14 @@
   }
   .graph-drag:hover {
     border-color: var(--border-strong);
+  }
+  .linked-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--accent);
+    font: var(--text-2xs) var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
   /* Drag source: dim the original so the moving row reads as the compact drag image,
      not a second full-layout copy. Opacity only — no layout jump. */

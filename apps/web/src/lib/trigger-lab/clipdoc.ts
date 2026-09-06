@@ -13,9 +13,12 @@
      2. parse — defensively read arbitrary clipboard text into a ClipDoc, NEVER throwing
         (mirrors `deserializeShowLibrary`): foreign / malformed / wrong-version text yields a
         typed {@link ClipParseError}, so the paste UI can toast rather than crash.
-     3. remap-on-materialize — re-key every incoming id through the id-reservation discipline
-        (`nid`/`freshId`), EXCEPT (a) a dep whose CONTENT already exists locally (reuse it — so
-        A->B->A round-trips and double-pastes create no duplicate closure), and (b) built-in
+     3. remap-on-materialize — graph placements always receive fresh graph keys and detached graph
+        objects. Other reusable dependencies may reuse local content, and built-in effect ids stay
+        canonical. Explicit linking is a section-placement action, never an implicit paste result.
+        Every graph source key is cloned once per paste operation, so repeated references remain
+        links inside the pasted section/song.
+        (`nid`/`freshId`), EXCEPT (a) a dep whose CONTENT already exists locally (reuse it), and (b) built-in
         effect ids (registry-backed shared vocabulary — never re-keyed even when content
         differs). Every internal ref (section->graph keys, play-node effect/preset ids,
         preset->effect, look effect ids) is rewritten through the remap table; node/edge ids
@@ -26,7 +29,7 @@
    `setProject` server apply is S45 — here the `patch` kind only round-trips (no remap). */
 
 import type { EffectDef, Preset, TriggerGraph, GraphNode } from './sim';
-import type { SetlistSection, Song } from '../app/setlist';
+import { makeSection, type SetlistSection, type Song } from '../app/setlist';
 import type { Project, CanvasScene } from '@ledrums/core';
 import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
@@ -269,7 +272,7 @@ export function serialize(doc: ClipDoc): string {
 
 // ---- parse (defensive, never throws) ----------------------------------------
 
-export type ClipParseReason = 'not-json' | 'not-object' | 'foreign' | 'unsupported-version' | 'unknown-kind' | 'malformed';
+export type ClipParseReason = 'not-json' | 'not-object' | 'foreign' | 'unsupported-version' | 'unknown-kind' | 'malformed' | 'unresolved-dependency';
 
 export interface ClipParseError {
   parseError: true;
@@ -385,9 +388,13 @@ function coerceSongDoc(payload: Record<string, unknown>, deps: unknown, m: ClipD
   const song = payload.song;
   if (typeof song.id !== 'string' || !Array.isArray(song.sections)) return err('malformed', 'Song payload malformed.');
   const sections: SetlistSection[] = [];
+  const sectionIds = new Set<string>();
   for (const raw of song.sections) {
     const sec = coerceSection(raw);
-    if (sec) sections.push(sec);
+    if (sec && !sectionIds.has(sec.id)) {
+      sectionIds.add(sec.id);
+      sections.push(sec);
+    }
   }
   const name = typeof song.name === 'string' ? song.name : '';
   return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'song', payload: { song: { id: song.id, name, sections } }, deps: coerceDeps(deps), meta: m };
@@ -406,7 +413,7 @@ function coercePatchDoc(payload: Record<string, unknown>, m: ClipDocMeta): Patch
     a non-object or id-less entry is unusable (null → dropped by the caller); otherwise keep the
     string graph refs + the string|null look values that survived. */
 function coerceSection(raw: unknown): SetlistSection | null {
-  if (!isObject(raw) || typeof raw.id !== 'string') return null;
+  if (!isObject(raw) || typeof raw.id !== 'string' || !raw.id) return null;
   const graphs = Array.isArray(raw.graphs) ? raw.graphs.filter((k): k is string => typeof k === 'string') : [];
   const looks: Record<string, string | null> = {};
   if (isObject(raw.looks)) {
@@ -414,13 +421,15 @@ function coerceSection(raw: unknown): SetlistSection | null {
       if (typeof v === 'string' || v === null) looks[busId] = v;
     }
   }
-  return { id: raw.id, name: typeof raw.name === 'string' ? raw.name : '', graphs, looks };
+  // External ClipDocs use the same ordered-set identity as the in-app model. Sanitizing here keeps
+  // a malformed payload from manufacturing two UI rows for one `(song, section, graphKey)`.
+  return makeSection(raw.id, typeof raw.name === 'string' ? raw.name : '', graphs, looks);
 }
 
 // ---- remap on materialize ---------------------------------------------------
 
-/** The local show state a paste reconciles against — its graphs/effects/presets (for
-    content-reuse) and which effect ids are built-in registry vocabulary (never re-keyed). */
+/** The local show state a paste reconciles against — its graphs/effects/presets and which effect
+    ids are built-in registry vocabulary (never re-keyed). Graphs themselves are always detached. */
 export interface RemapContext {
   graphs: Record<string, TriggerGraph>;
   effects: readonly EffectDef[];
@@ -428,6 +437,8 @@ export interface RemapContext {
   /** Local canvas scenes — for content-reuse: a pasted scene identical to a local one reuses its
       id (so A→B→A round-trips and double-pastes create no duplicate scene). */
   canvasScenes?: readonly CanvasScene[];
+  /** Section ids already present in the destination resolved view. */
+  sectionIds?: readonly string[];
   /** True for a registry-backed effect id (pattern + generator fixtures) — shared vocabulary
       present in every show, so its id is kept verbatim even if the incoming content differs. */
   isBuiltInEffectId: (id: string) => boolean;
@@ -450,9 +461,10 @@ export interface RemapMint {
     come off the shared monotonic counter. Effect minting also dedups against ids minted EARLIER
     in the same pass (`freshEffectId` is name-derived, not counter-backed, so without this two
     same-name effects in one closure would mint the same id — the other minters are immune). */
-export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes'>): RemapMint {
+export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | 'presets' | 'canvasScenes' | 'sectionIds'>): RemapMint {
   const mintedEffectIds = new Set<string>();
   const mintedSceneIds = new Set<string>();
+  const usedSectionIds = new Set(ctx.sectionIds ?? []);
   return {
     graph: () => freshId('graph', (k) => k in ctx.graphs),
     effect: (name) => {
@@ -461,7 +473,12 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
       return id;
     },
     preset: () => freshId('preset', (k) => ctx.presets.some((p) => p.id === k)),
-    section: () => nid('section'),
+    section: () => {
+      let id = nid('section');
+      while (usedSectionIds.has(id)) id = nid('section');
+      usedSectionIds.add(id);
+      return id;
+    },
     song: () => nid('song'),
     scene: () => {
       const id = freshId('scene', (k) => (ctx.canvasScenes ?? []).some((s) => s.id === k) || mintedSceneIds.has(k));
@@ -471,12 +488,12 @@ export function makeDefaultMint(ctx: Pick<RemapContext, 'graphs' | 'effects' | '
   };
 }
 
-/** The materialized result of a paste: the NEW closure objects to union into the show (reused
-    ones are absent) plus the primary object with every ref rewritten to its final local id. The
+/** The materialized result of a paste: the NEW detached graph closure to union into the show plus
+    the primary object with every ref rewritten to its final local id. The
     store (S44) unions the closure and inserts the primary; this function stays pure. */
 export interface RemapResult {
   kind: 'graph' | 'section' | 'song';
-  /** fresh graphs to add (key -> graph, refs already remapped). Reused graphs are absent. */
+  /** fresh graphs to add (key -> graph, refs already remapped). Every pasted graph is fresh. */
   graphs: Record<string, TriggerGraph>;
   graphNames: Record<string, string>;
   /** fresh (non-builtin, non-reused) effects to add. */
@@ -485,7 +502,7 @@ export interface RemapResult {
   presets: Preset[];
   /** fresh (non-reused) canvas scenes to add. */
   canvasScenes: CanvasScene[];
-  /** kind 'graph': the final graph key (reused or fresh) to reference. */
+  /** kind 'graph': the fresh graph key to reference. */
   graphKey?: string;
   /** kind 'section': the fresh section with graph refs + looks remapped. */
   section?: SetlistSection;
@@ -494,11 +511,10 @@ export interface RemapResult {
 }
 
 /**
- * Materialize an authored ClipDoc against a local show: re-key + reuse. Builds the remap table
- * in dependency order (effects -> presets -> graphs -> sections/song); every incoming id is
- * mapped to a fresh local id EXCEPT (a) a built-in effect id (kept verbatim) and (b) a dep whose
- * content already exists locally (mapped to the existing id, emitting nothing — the reuse that
- * makes A->B->A round-trips and double-pastes create no duplicate closure). Node/edge ids and
+ * Materialize an authored ClipDoc against a local show. Builds the remap table in dependency
+ * order (effects -> presets -> graphs -> sections/song); every incoming graph is mapped to a
+ * fresh local id, while reusable library dependencies may retain their canonical/local id.
+ * Node/edge ids and
  * modulation `param:`/`mod` ports are graph-internal and copied verbatim, so modifier wiring and
  * modulation edges survive. Returns a typed error for the non-authored `patch` kind (S45 owns it).
  */
@@ -571,15 +587,11 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
     return id;
   };
 
-  // (3) Graphs (deps): remap internal refs, then reuse-or-mint by content.
+  // (3) Graphs (deps): remap internal refs, then always mint a detached graph key. This is the
+  // default copy boundary for external ClipDocs; users can link placements explicitly afterward.
   const graphMap = new Map<string, string>();
   for (const [oldKey, g] of Object.entries(doc.deps.graphs ?? {})) {
     const remapped = remapGraph(g, remapEffectRef, remapPresetRef, remapSceneRef);
-    const reuseKey = findLocalGraphKey(ctx.graphs, remapped);
-    if (reuseKey) {
-      graphMap.set(oldKey, reuseKey);
-      continue;
-    }
     const newKey = mint.graph();
     graphMap.set(oldKey, newKey);
     out.graphs[newKey] = remapped;
@@ -590,21 +602,22 @@ export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | Cli
 
   // (4) Payload materialization.
   if (doc.kind === 'graph') {
-    // The graph IS the payload — treat it as a dep leaf (reuse-or-mint by content) so pasting an
-    // identical graph twice creates exactly one.
+    // The graph IS the payload — always detach it, even when identical content already exists in
+    // this show. A later explicit Link action can intentionally share the resulting key.
     const remapped = remapGraph(doc.payload.graph, remapEffectRef, remapPresetRef, remapSceneRef);
-    const reuseKey = findLocalGraphKey(ctx.graphs, remapped) ?? findLocalGraphKey(out.graphs, remapped);
-    if (reuseKey) {
-      out.graphKey = reuseKey;
-    } else {
-      const newKey = mint.graph();
-      out.graphKey = newKey;
-      out.graphs[newKey] = remapped;
-      if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
-    }
+    const newKey = mint.graph();
+    out.graphKey = newKey;
+    out.graphs[newKey] = remapped;
+    if (doc.payload.name !== undefined) out.graphNames[newKey] = doc.payload.name;
   } else if (doc.kind === 'section') {
+    if (doc.payload.section.graphs.some((key) => !graphMap.has(key))) {
+      return err('unresolved-dependency', 'Section payload references a graph that is missing from its dependency closure.');
+    }
     out.section = remapSection(doc.payload.section, mint.section(), remapGraphRef, remapEffectRef);
   } else {
+    if (doc.payload.song.sections.some((section) => section.graphs.some((key) => !graphMap.has(key)))) {
+      return err('unresolved-dependency', 'Song payload references a graph that is missing from its dependency closure.');
+    }
     out.song = {
       id: mint.song(),
       name: doc.payload.song.name,
@@ -656,12 +669,7 @@ function remapCanvasNode(node: GraphNode, remapSceneRef: (id: string) => string)
 
 /** Re-key a section under a fresh id, rewriting graph refs + look effect ids through the tables. */
 function remapSection(sec: SetlistSection, newId: string, remapGraphRef: (k: string) => string, remapEffectRef: (id: string) => string): SetlistSection {
-  return {
-    id: newId,
-    name: sec.name,
-    graphs: sec.graphs.map(remapGraphRef),
-    looks: mapLooks(sec.looks, remapEffectRef),
-  };
+  return makeSection(newId, sec.name, sec.graphs.map(remapGraphRef), mapLooks(sec.looks, remapEffectRef));
 }
 
 function findLocalGraphKey(graphs: Record<string, TriggerGraph>, remapped: TriggerGraph): string | undefined {
