@@ -36,6 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200
+commits `b8e65440` and `95a0cc6e`. The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
+MODE`, `HOOP CHASE`, and `DRUM CHASE`; the primary chase changes with the partition, and the
+secondary drum chase remains only under hoop partition so the labels do not collide. Visible copy
+uses project casing, while aria labels remain sentence case. No model, persisted field, runtime,
+navigation, division, or effect behavior changed. Focused web tests (19), full typecheck, full
+monorepo tests (4,775 passed / 4 skipped), and strict `splice-inspector` ui-shot passed with no
+console errors. The styleguide does not mount this inspector, so `docs/design-system.html` was not
+regenerated. This is not merged or shipped; the new PR supersedes the relevant #200 commits.
+
 **PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
 `ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
