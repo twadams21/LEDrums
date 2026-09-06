@@ -32,9 +32,12 @@ particle effect. Assert a far partition has meaningful intensity, seeds/sequence
 the result is identical on replay. Add a regression that a time-only wrap leaves state stale.
 Cover no-life, modifier/scope/Mix, checkpoint restore, model/show reset, member/voice isolation,
 and the one-render-per-frame bound. Add structural performance gates for one generator render per
-frame and reused hot-path carriers; do not make correctness depend on wall-clock timing. Run the
-opt-in realistic benchmark only for reporting p50/p95, with warmup/sample method and machine
-metadata. A no-life field effect such as Plasma is a control path, not authored regeneration.
+frame and reused hot-path carriers; exercise the real compositor path with an allocation-shape
+regression that rejects `Array.map`/spread helper implementations where feasible. The cascade span
+helper must scan the actual drum/hoop pairs in one loop, because the drum with the most hoops need
+not be the final drum. Do not make correctness depend on wall-clock timing. Run the opt-in
+realistic benchmark only for reporting p50/p95, with warmup/sample method and machine metadata. A
+no-life field effect such as Plasma is a control path, not authored regeneration.
 
 ## Current implementation seam
 
