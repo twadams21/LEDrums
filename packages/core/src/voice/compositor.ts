@@ -428,7 +428,10 @@ export function createDefaultCompositor(): PresentationCompositor {
           const ranges = pixelRangesFor(v, model);
           if (!ranges.length) continue;
           const buffers = ensureSpliceBuffers(v.spliceInputs.length);
-          const materialRegeneration = maxCascadeDelayMs(model, cfg) > 0;
+          // The cascade span is a frame/member invariant. Resolve it once and reuse it for
+          // both the regeneration gate and looping pulse duration; the helper scans the model.
+          const cascadeDelayMs = maxCascadeDelayMs(model, cfg);
+          const materialRegeneration = cascadeDelayMs > 0;
 
           // 1. Render each member ONCE over the voice's whole range. Bands reveal these renders,
           //    so an effect keeps its real geometry (a comet still travels the hoop).
@@ -487,7 +490,7 @@ export function createDefaultCompositor(): PresentationCompositor {
           // so every unit restarts together and the travelling shape is preserved.
           const pulseCycleMs =
             cfg.waitMode === 'pulse' && v.mode !== 'oneshot'
-              ? splicePulseCycleMs(maxCascadeDelayMs(model, cfg), cfg.envelope)
+              ? splicePulseCycleMs(cascadeDelayMs, cfg.envelope)
               : 0;
           const motionClock =
             cfg.motionMode === 'continuous'

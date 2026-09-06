@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { materialCycleMs } from '../effects/voice-life';
 import type { EffectGenerator } from '../effects/types';
 import { Framebuffer } from '../engine/framebuffer';
@@ -10,6 +10,7 @@ import { createRenderCheckpoint } from './render-checkpoint';
 import { runtimeAction, runtimeBus, runtimeEffect, runtimeFrame, runtimeModel, runtimeVoice, runtimeSplice } from './runtime-test-fixtures';
 import type { Voice } from './types';
 import { deactivateVoice, VoicePool } from './voice-pool';
+import * as spliceMath from './splice';
 
 describe('splice material regeneration', () => {
   it('resolves the declared material life, not the voice tail factor', () => {
@@ -232,6 +233,31 @@ describe('splice material regeneration', () => {
     compositor.render([voice], model, runtimeFrame(50, 50), dst);
     expect(input.materialCycle).toBeUndefined();
     expect((input.genState as { lastSeq: number }).lastSeq).toBe(1);
+  });
+
+  it('renders a cascading Splice without the allocating Array.map delay shape', () => {
+    const model = runtimeModel([8, 8]);
+    const originalMap = model.drums.map;
+    const delaySpy = vi.spyOn(spliceMath, 'maxCascadeDelayMs');
+    Object.defineProperty(model.drums, 'map', {
+      configurable: true,
+      value: (): never => { throw new Error('maxCascadeDelayMs used Array.map'); },
+    });
+    try {
+      const action = runtimeAction({
+        spliceInputs: [{ ...runtimeAction({ params: { decayMs: 1000, addPerHit: 1, brightness: 1 } }), opacity: 1, originNodeId: 'member' }],
+        splice: { ...runtimeSplice(), drumOffsetMs: 25, waitMode: 'pulse' },
+      });
+      const voice = runtimeVoice({}, action, 'pixel-accum');
+      const compositor = createDefaultCompositor();
+      const dst = new Framebuffer(model.pixelCount);
+
+      expect(() => compositor.render([voice], model, runtimeFrame(0, 0), dst)).not.toThrow();
+      expect(delaySpy).toHaveBeenCalledTimes(1);
+    } finally {
+      delaySpy.mockRestore();
+      Object.defineProperty(model.drums, 'map', { configurable: true, value: originalMap });
+    }
   });
 
   it('gives a stateless absolute generator one coherent fresh clock and one render per frame', () => {

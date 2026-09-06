@@ -316,8 +316,14 @@ export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number 
   const colour = Math.max(0, (cfg.count - 1) * cfg.colorOffsetMs);
   if (cfg.partition === 'scope' || model.drums.length === 0) return colour;
   const drums = model.drums.length;
-  const primary = cfg.partition === 'drum' ? drums : Math.max(...model.drums.map((d) => d.hoopCount));
-  return Math.max(0, (primary - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs) + colour;
+  let maximum = 0;
+  for (let drumIndex = 0; drumIndex < drums; drumIndex++) {
+    const drum = model.drums[drumIndex]!;
+    const primaryCount = cfg.partition === 'drum' ? drums : drum.hoopCount;
+    const delay = (primaryCount - 1) * cfg.offsetMs + drumIndex * cfg.drumOffsetMs;
+    if (delay > maximum) maximum = delay;
+  }
+  return maximum + colour;
 }
 
 /** How long a given SPLICE waits on top of its unit's turn, when the colours are staggered. */

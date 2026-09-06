@@ -19,6 +19,7 @@ import {
   forEachSpliceSegment,
   firstUnitWithMaterial,
   isBlankSplice,
+  maxCascadeDelayMs,
   resolveSplices,
   spliceDefAt,
   spliceFeatherPx,
@@ -30,7 +31,7 @@ import {
   unitMotionAge,
   wrapIndex,
 } from './splice';
-import type { GraphNode, SpliceDef } from './types';
+import type { GraphNode, SpliceConfig, SpliceDef } from './types';
 import { DELAY_DIVISIONS } from './delay';
 
 function spliceNode(over: Partial<GraphNode> = {}): GraphNode {
@@ -365,6 +366,61 @@ describe('forEachPartitionUnit', () => {
     expect(collect('drum', [{ start: 0, end: 16 }])).toEqual([[0, 16]]);
     // A range covering half of one hoop yields just that half — never a unit outside it.
     expect(collect('hoop', [{ start: 4, end: 10 }])).toEqual([[4, 8], [8, 10]]);
+  });
+});
+
+describe('maxCascadeDelayMs', () => {
+  const model = buildPixelModel(
+    parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 1, defaultHoopSpacingMm: 50 },
+      drums: [
+        { id: 'wide', diameterIn: 12, pixelsPerHoop: 8, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, hoops: [
+          { pixelCount: 8, reverse: false }, { pixelCount: 8, reverse: false }, { pixelCount: 8, reverse: false }, { pixelCount: 8, reverse: false },
+        ] },
+        { id: 'short', diameterIn: 10, pixelsPerHoop: 4, hoopSpacingMm: 50, origin: { x: 300, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, hoops: [
+          { pixelCount: 4, reverse: false }, { pixelCount: 4, reverse: false },
+        ] },
+      ],
+    }),
+  );
+
+  const config = (over: Partial<SpliceConfig>): SpliceConfig => ({
+    count: 4,
+    partition: 'hoop',
+    jitter: 0,
+    seed: 1,
+    chase: 'off',
+    chaseMs: 0,
+    direction: 1,
+    incrementPx: 0,
+    offsetMs: 100,
+    order: 'up',
+    drumOffsetMs: 25,
+    drumOrder: 'up',
+    colorOffsetMs: 10,
+    colorOrder: 'up',
+    rotationDeg: 0,
+    smudge: 0,
+    motionMode: 'restart',
+    waitMode: 'lit',
+    envelope: { attackMs: 0, sustainMs: 0, releaseMs: 0 },
+    tint: 1,
+    colors: [],
+    inputBySlot: [],
+    ...over,
+  });
+
+  it('takes the maximum existing drum/hoop delay without allocating an intermediate array', () => {
+    // The 4-hoop drum is first, so its final hoop is 300ms. The 2-hoop drum's final hoop is
+    // 125ms. Combining max hoop count with the final drum offset would incorrectly return 325ms.
+    expect(maxCascadeDelayMs(model, config({}))).toBe(330); // 300ms hoop + 0ms drum + 30ms colour
+  });
+
+  it('preserves empty, per-drum, and scope values', () => {
+    const empty = { ...model, drums: [] };
+    expect(maxCascadeDelayMs(empty, config({ partition: 'hoop' }))).toBe(30);
+    expect(maxCascadeDelayMs(model, config({ partition: 'drum', offsetMs: 100, drumOffsetMs: 0 }))).toBe(130);
+    expect(maxCascadeDelayMs(model, config({ partition: 'scope', offsetMs: 999, drumOffsetMs: 999 }))).toBe(30);
   });
 });
 
