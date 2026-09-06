@@ -36,15 +36,45 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Rhythmic 32nd divisions (2026-09-06, PR #205, head `a3413c4e`, local `feat/rhythmic-32nd-divisions`):**
-Trent's request in this session, extracted from PR #200 commits `de060eb6` and `eae715c1`. The shared core
-`DELAY_DIVISIONS` vocabulary now contains straight, dotted, and triplet 1/32 values, ordered as
-straight → dotted → triplet with each group longest → shortest; web option data derives from the
-core list, and Delay, Splice chase/offsets, and LFO sync all resolve it. Persisted node fields
-remain strings so unknown divisions retain the intentional quarter-note fallback. Targeted core
-(90) and web (29) tests, the full sweep (4,766 passed / 4 skipped), and full typecheck are green.
-Strict UI shots `delay-inspector`, `splice-inspector`, and `lfo-inspector` also pass. No design-system
-output changed; PR #205 remains open and this slice is not shipped.
+**PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
+`ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
+detach, and authored-state replacement all reconcile the exact active song to a valid local fallback
+or empty state, then call the existing active-section reconciliation seam. Two regressions cover
+active canonical removal, re-add without stale-section revival, and the no-fallback/null case.
+Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorepo 4,773 passed /
+4 skipped, and full typecheck green. No UI output changed, so no shots were required. Commit/push
+and CI are still pending.
+
+**PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
+Sections `+` gate now derives from exact resolved/local song targets: canonical library references
+remain playable but show a disabled `Library song — detach a copy to edit` reason, stale or empty
+selection shows `No active song — add a song first`, and viewer state remains the generic reason only
+when a local target exists. The focusable tooltip wrapper now carries its own accessible group name,
+description and disabled state while the inner native button remains disabled. Section mutations
+require an exact local target, activate only after successful insertion, and reconcile the active
+section after song-id/list replacement or removal. Tests cover accessibility tree behavior, reason
+precedence, stale/empty/reference targets, invalid activation, insertion, replacement and removal.
+Verified with focused web tests (49 passed), full web tests (2,517 passed, 1 skipped), full monorepo
+tests (green), full typecheck, regenerated `docs/design-system.html`, and strict `songs-bar`/
+`sections-bar` shots with no console errors. The current shot seam cannot select viewer/reference/
+no-song fixtures, so those extra visual states were verified at component/store seams instead.
+
+**Chrome section-add gate replacement (2026-09-06, local `feat/chrome-section-add-gate`, current-main reimplementation of PR #199):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. Not merged or shipped; the new PR must supersede #199.
+**Rhythmic 32nd divisions (2026-09-06, PR #205, local `feat/rhythmic-32nd-divisions`):**
+Trent's request in this session, extracted from PR #200. The shared core `DELAY_DIVISIONS`
+vocabulary contains straight, dotted, and triplet 1/32 values, ordered as straight → dotted →
+triplet with each group longest → shortest; web option data derives from the core list, and Delay,
+Splice chase/offsets, and LFO sync all resolve it. Persisted node fields remain strings so unknown
+divisions retain the intentional quarter-note fallback. Verification is green with
+`pnpm --filter @ledrums/core exec vitest run src/voice/delay.test.ts src/voice/splice.test.ts src/voice/modulation-lfo.test.ts`,
+`pnpm --filter @ledrums/web exec vitest run src/lib/trigger-lab/store.delay.test.ts src/lib/app/views/splice-options.test.ts`,
+`pnpm test`, and `pnpm typecheck`. The completed strict UI captures are
+`pnpm ui-shot --strict delay-inspector`, `pnpm ui-shot --strict splice-inspector`, and
+`pnpm ui-shot --strict lfo-inspector`; no design-system output changed. PR #205 remains open and
+this slice is not shipped.
 
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped

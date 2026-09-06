@@ -10,21 +10,45 @@
     side?: 'top' | 'bottom' | 'left' | 'right';
     delay?: number;
     class?: string;
+    /** Optional semantics for the focusable trigger wrapper when its child is not focusable. */
+    triggerRole?: string;
+    triggerLabel?: string;
+    triggerDescribedBy?: string;
+    triggerDisabled?: boolean;
     children: Snippet;
   };
 
-  let { text, side = 'top', delay = 120, class: klass, children }: Props = $props();
+  let {
+    text,
+    side = 'top',
+    delay = 120,
+    class: klass,
+    triggerRole,
+    triggerLabel,
+    triggerDescribedBy,
+    triggerDisabled = false,
+    children,
+  }: Props = $props();
 </script>
 
 <Tooltip.Provider delayDuration={delay} disableHoverableContent>
   <Tooltip.Root>
     <Tooltip.Trigger>
       {#snippet child({ props })}
-        <span {...props} class={['tt-anchor', klass]}>{@render children()}</span>
+        {@const bitsDescription = typeof props['aria-describedby'] === 'string' ? props['aria-describedby'] : undefined}
+        {@const describedBy = [bitsDescription, triggerDescribedBy].filter(Boolean).join(' ') || undefined}
+        <span
+          {...props}
+          class={['tt-anchor', klass]}
+          role={triggerRole}
+          aria-label={triggerLabel}
+          aria-describedby={describedBy}
+          aria-disabled={triggerDisabled ? 'true' : undefined}
+        >{@render children()}</span>
       {/snippet}
     </Tooltip.Trigger>
     <Tooltip.Portal>
-      <Tooltip.Content {side} sideOffset={6} class="lab-tt">{text}</Tooltip.Content>
+      <Tooltip.Content {side} sideOffset={6} class="lab-tt" role="tooltip">{text}</Tooltip.Content>
     </Tooltip.Portal>
   </Tooltip.Root>
 </Tooltip.Provider>
