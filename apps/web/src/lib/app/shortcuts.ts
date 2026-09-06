@@ -105,6 +105,17 @@ export function dispatchShortcut(
   return null;
 }
 
+/** Return whether a registered app shortcut matches this event, without running it. The App
+ * capture dispatcher uses this to consume a background shortcut behind a modal or popup while
+ * leaving the modal's own ordinary key handling intact. */
+export function matchesShortcut(
+  event: KeyEventLike,
+  registry: readonly ShortcutEntry[],
+  platform: ShortcutPlatform,
+): boolean {
+  return registry.some((entry) => matchShortcut(event, parseCombo(entry.combo), platform));
+}
+
 /** Registry as render-ready data for a future shortcut help sheet. */
 export function describeShortcuts(
   registry: readonly ShortcutEntry[],

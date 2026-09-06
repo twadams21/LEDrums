@@ -2,7 +2,7 @@ import { clamp01, lerp } from '../../math';
 import { pnum, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR, VISIBLE_CUTOFF } from '../visibility';
 import { createFireEffectState, updateFireEnergy, type FireEffectState } from '../fire-state';
-import { hash01 } from '../hash';
+import { fireRandom01 } from '../fire-random';
 
 const TAU = Math.PI * 2;
 
@@ -65,7 +65,7 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
     const coherentB = Math.sin(t * 4.117 + 1.3);
     const coherentC = Math.sin(t * 9.531 + 2.1);
     for (let drumIndex = 0; drumIndex < state.drumStepByDrum.length; drumIndex += 1) {
-      state.drumStepByDrum[drumIndex] = hash01(drumIndex, tick, state.seed);
+      state.drumStepByDrum[drumIndex] = fireRandom01(state.seed, drumIndex, tick, 0);
     }
     for (let pixelIndex = 0; pixelIndex < ctx.model.pixels.length; pixelIndex += 1) {
       const pixel = ctx.model.pixels[pixelIndex]!;
@@ -86,7 +86,7 @@ export const flameFlicker: EffectGenerator<FireEffectState> = {
       const waveC = lerp(coherentC, pixelC, spread);
       const smooth = clamp01(0.5 + (waveA * 0.5 + waveB * 0.32 + waveC * 0.18) * 0.5);
       const drumStep = state.drumStepByDrum[drumIndex]!;
-      const pixelStep = hash01(pixel.id, tick, state.seed);
+      const pixelStep = fireRandom01(state.seed, pixel.id, tick, 1);
       const stepped = lerp(drumStep, pixelStep, spread);
       const flame = clamp01(lerp(smooth, stepped, random));
       // Energy is the only burn multiplier. The depth control changes flame shape, not decay.

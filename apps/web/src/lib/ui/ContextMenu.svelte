@@ -53,10 +53,11 @@
     {/snippet}
   </ContextMenu.Trigger>
   <ContextMenu.Portal>
-    <ContextMenu.Content class="lab-ctx-content">
+    <ContextMenu.Content class="lab-ctx-content" data-keyboard-owner="menu">
       {#each actions as action (action.label)}
         <ContextMenu.Item
           class={action.danger ? 'lab-ctx-item lab-ctx-danger' : 'lab-ctx-item'}
+          data-keyboard-owner="menuitem"
           disabled={action.disabled}
           onSelect={() => action.onSelect()}
         >

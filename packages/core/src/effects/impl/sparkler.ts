@@ -2,21 +2,23 @@ import { clamp01, lerp } from '../../math';
 import { pnum, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR, VISIBLE_CUTOFF } from '../visibility';
 import { createFireEffectState, updateFireEnergy, type FireEffectState } from '../fire-state';
-import { hash01, ordered01 } from '../hash';
+import { fireRandom01 } from '../fire-random';
 
-const SPARK_OFFSET_SALT = 0x5bf03635;
-const EMBER_SALT = 0x1b873593;
-/** Bucket cadence is a sampling decision, not a second meaning for Spark Life. */
-export const SPARK_BUCKET_CADENCE_MS = 45;
+/** The upper cadence cap keeps long-lived sparks from changing too slowly. */
+export const SPARK_BUCKET_MAX_CADENCE_MS = 45;
+
+/** Keep adjacent spark identities overlapping at every allowed Spark Life value. */
+export function sparkBucketCadenceMs(sparkMs: number): number {
+  return Math.max(1, Math.min(SPARK_BUCKET_MAX_CADENCE_MS, sparkMs * 0.5));
+}
 
 function measurePreservingSparkPhase(pixelId: number, bucket: number, seed: number, random: number): number {
   // A circular phase mix keeps a uniform threshold measure at every Random value. In
   // particular, this is not lerp(ordered, scattered), which bunches values around the
   // threshold and changes expected density as Random moves.
-  const ordered = ordered01(pixelId, bucket, seed);
-  const phase = hash01(pixelId ^ SPARK_OFFSET_SALT, bucket, seed ^ SPARK_OFFSET_SALT);
-  const scattered = hash01(pixelId, bucket, seed);
-  return (ordered + random * (phase + scattered)) % 1;
+  const ordered = fireRandom01(seed, pixelId, bucket, 0);
+  const scattered = fireRandom01(seed, pixelId, bucket, 1);
+  return (ordered + random * scattered) % 1;
 }
 
 /** One deterministic spark identity's visible contribution at an absolute time. */
@@ -31,16 +33,17 @@ export function sparkContributionAt(
   random: number,
 ): number {
   const picked = measurePreservingSparkPhase(pixelId, bucket, seed, random);
-  if (picked > clamp01(density)) return 0;
-  const startMs = bucket * SPARK_BUCKET_CADENCE_MS
-    + crackle * hash01(pixelId ^ SPARK_OFFSET_SALT, bucket, seed ^ SPARK_OFFSET_SALT) * SPARK_BUCKET_CADENCE_MS;
+  if (picked >= clamp01(density)) return 0;
+  const cadenceMs = sparkBucketCadenceMs(sparkMs);
+  const startMs = bucket * cadenceMs
+    + crackle * fireRandom01(seed, pixelId, bucket, 2) * cadenceMs;
   const ageMs = timeMs - startMs;
   if (ageMs < 0 || ageMs >= sparkMs) return 0;
 
   // Fade in over the cadence and out over the remainder. The fade-in means the next
   // identity can be blended into the previous one without a bucket-boundary pop while the
   // half-open lifetime still remains exactly [birth, birth + sparkMs).
-  const attack = Math.min(1, ageMs / SPARK_BUCKET_CADENCE_MS);
+  const attack = Math.min(1, ageMs / cadenceMs);
   const release = 1 - ageMs / sparkMs;
   return Math.min(attack, release);
 }
@@ -100,8 +103,9 @@ export const sparkler: EffectGenerator<FireEffectState> = {
     const brightness = clamp01(pnum(params, 'brightness', 1));
     if (!updateFireEnergy(ctx, state, burnMs)) return;
 
-    const nowBucket = Math.floor(ctx.timeMs / SPARK_BUCKET_CADENCE_MS);
-    const firstBucket = Math.floor((ctx.timeMs - sparkMs) / SPARK_BUCKET_CADENCE_MS);
+    const cadenceMs = sparkBucketCadenceMs(sparkMs);
+    const nowBucket = Math.floor(ctx.timeMs / cadenceMs);
+    const firstBucket = Math.floor((ctx.timeMs - sparkMs) / cadenceMs);
     const emberBucket = Math.floor(nowBucket / 8);
     for (let pixelIndex = 0; pixelIndex < ctx.model.pixels.length; pixelIndex += 1) {
       const pixel = ctx.model.pixels[pixelIndex]!;
@@ -111,11 +115,11 @@ export const sparkler: EffectGenerator<FireEffectState> = {
       if (burn < VISIBLE_CUTOFF) continue;
 
       let spark = 0;
-      // Blend every live bucket identity. The bucket cadence is independent from Spark Life,
-      // so changing the life changes only the identity's lifespan, never its sampling phase.
+      // Burn thins active sparks through the threshold while brightness attenuation below is
+      // applied once to the selected shape. Blend every live adjacent bucket identity.
       for (let bucket = firstBucket; bucket <= nowBucket; bucket += 1) {
         const contribution = sparkContributionAt(
-          ctx.timeMs, sparkMs, crackle, pixel.id, bucket, state.seed, density, random,
+          ctx.timeMs, sparkMs, crackle, pixel.id, bucket, state.seed, density * burn, random,
         );
         spark += contribution * (1 - spark);
       }
@@ -123,9 +127,9 @@ export const sparkler: EffectGenerator<FireEffectState> = {
       // A positive half-wave forms the ember bed; the second factor keeps real dark gaps.
       const emberWave = Math.max(0, Math.sin(
         pixel.id * 0.37 + pixel.hoopIndex * 1.7 + emberBucket * 0.13
-          + hash01(pixel.id, 0, state.seed ^ EMBER_SALT) * Math.PI * 2,
+          + fireRandom01(state.seed ^ 0x1b873593, pixel.id, 0, 0) * Math.PI * 2,
       ));
-      const emberGrain = Math.max(0, hash01(pixel.id, emberBucket, state.seed ^ EMBER_SALT) * 2 - 1);
+      const emberGrain = Math.max(0, fireRandom01(state.seed ^ 0x1b873593, pixel.id, emberBucket, 1) * 2 - 1);
       const ember = emberWave * emberGrain;
       // Burn is applied exactly once here. The core bed is normalized shape, not burn*shape,
       // so it cannot accidentally become burn-squared while the spark probability thins.

@@ -127,6 +127,8 @@
   bind:this={el}
   class="add-popover"
   role="group"
+  data-keyboard-owner="popover"
+  data-keyboard-open="true"
   aria-label="Add node palette"
   style:--add-row-cursor={wiring ? 'pointer' : 'grab'}
   style:left={`${pos.x}px`}

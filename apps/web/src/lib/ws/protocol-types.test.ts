@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodeServer } from './protocol-types';
+import { deserializeShowLibrary } from '../trigger-lab/persistence';
 
 describe('decodeServer', () => {
   afterEach(() => {
@@ -34,5 +35,30 @@ describe('decodeServer', () => {
     const out = decodeServer(JSON.stringify({ t: 'error', message: 'boom' }));
     expect(out).toEqual({ t: 'error', message: 'boom' });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each(['__proto__', 'constructor', 'toString'])('decodes a viewer library with hostile graph key %s', (graphKey) => {
+    const graph = { nodes: [{ id: 'trigger', kind: 'trigger' }], edges: [] };
+    const decoded = decodeServer(JSON.stringify({
+      t: 'showLibrary',
+      library: {
+        version: 2,
+        data: {
+          activeShowId: 'show',
+          shows: {
+            show: {
+              id: 'show',
+              name: 'Show',
+              authored: { graphs: Object.fromEntries([[graphKey, graph]]), songs: [], effects: [], presets: [], buses: [] },
+            },
+          },
+        },
+      },
+    }));
+    expect(decoded?.t).toBe('showLibrary');
+    if (decoded?.t !== 'showLibrary') return;
+    const library = deserializeShowLibrary(decoded.library);
+    expect(library).not.toBeNull();
+    expect(Object.hasOwn(library!.shows.show!.authored.graphs, graphKey)).toBe(true);
   });
 });

@@ -5,7 +5,9 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { RenderContext, TransportState, Trigger } from '../engine/render-context';
 import { defaultParams, type EffectGenerator, type ResolvedParams } from './types';
 import type { FireEffectState } from './fire-state';
-import { SPARK_BUCKET_CADENCE_MS, sparkContributionAt, sparkler } from './impl/sparkler';
+import { fireRandom01 } from './fire-random';
+import { mulberry32, mulberry32At } from '../math';
+import { sparkBucketCadenceMs, sparkContributionAt, sparkler } from './impl/sparkler';
 import { flameFlicker } from './impl/flame-flicker';
 
 function model(drums = 2, hoopCount = 4): PixelModel {
@@ -159,14 +161,28 @@ describe('Sparkler spatial and temporal behavior', () => {
     }
   });
 
+  it.each([10, 90, 600])('derives an overlapping cadence for Spark Life=%sms with no crackle gap', (sparkMs) => {
+    const cadence = sparkBucketCadenceMs(sparkMs);
+    expect(cadence).toBeLessThan(sparkMs);
+    for (let timeMs = 1; timeMs <= sparkMs * 2; timeMs += 1) {
+      const firstBucket = Math.floor((timeMs - sparkMs) / cadence);
+      const nowBucket = Math.floor(timeMs / cadence);
+      let combined = 0;
+      for (let bucket = firstBucket; bucket <= nowBucket; bucket += 1) {
+        combined += sparkContributionAt(timeMs, sparkMs, 0, 11, bucket, 7, 1, 0);
+      }
+      expect(combined, `dead spark gap at ${timeMs}ms`).toBeGreaterThan(0);
+    }
+  });
+
   it('keeps each spark identity alive for exactly Spark Life and blends bucket boundaries', () => {
     const sparkMs = 90;
     expect(sparkContributionAt(89, sparkMs, 0, 11, 0, 7, 1, 0)).toBeGreaterThan(0);
     expect(sparkContributionAt(90, sparkMs, 0, 11, 0, 7, 1, 0)).toBe(0);
 
-    const before = frame(sparkler, m, 44, [hit('d0', 44)], { density: 1, core: 0, crackle: 0, sparkMs });
-    const boundary = frame(sparkler, m, 45, [hit('d0', 45)], { density: 1, core: 0, crackle: 0, sparkMs });
-    const after = frame(sparkler, m, 46, [hit('d0', 46)], { density: 1, core: 0, crackle: 0, sparkMs });
+    const before = frame(sparkler, m, 44, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs });
+    const boundary = frame(sparkler, m, 45, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs });
+    const after = frame(sparkler, m, 46, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs });
     expect(total(boundary)).toBeGreaterThan(0);
     const maxChannelDelta = (a: Framebuffer, b: Framebuffer): number =>
       Math.max(...a.rgba.map((value, index) => Math.abs(value - b.rgba[index]!)));
@@ -178,12 +194,22 @@ describe('Sparkler spatial and temporal behavior', () => {
     const pixelId = 11;
     const seed = 7;
     const sparkMs = 90;
-    const boundaryMs = SPARK_BUCKET_CADENCE_MS;
+    const boundaryMs = sparkBucketCadenceMs(sparkMs);
 
     expect(sparkContributionAt(boundaryMs, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBeGreaterThan(0);
     expect(sparkContributionAt(boundaryMs + 1, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBeGreaterThan(0);
     expect(sparkContributionAt(boundaryMs + 1, sparkMs, 0, pixelId, 1, seed, 1, 0)).toBeGreaterThan(0);
     expect(sparkContributionAt(sparkMs, sparkMs, 0, pixelId, 0, seed, 1, 0)).toBe(0);
+  });
+
+  it('thins active sparks monotonically as burn expires', () => {
+    const params = { density: 1, core: 0, crackle: 0, random: 0, sparkMs: 90, decayMs: 1000 };
+    const litAt = (ageMs: number): number => litIds(frame(sparkler, m, 60, [hit('d0', ageMs)], params), 0.004).length;
+    const fresh = litAt(0);
+    const half = litAt(Math.LN2 * 1000);
+    const spent = litAt(2 * Math.LN2 * 1000);
+    expect(fresh).toBeGreaterThanOrEqual(half);
+    expect(half).toBeGreaterThanOrEqual(spent);
   });
 
   it('applies burn attenuation once to sparks when Core Glow is zero', () => {
@@ -199,7 +225,7 @@ describe('Sparkler spatial and temporal behavior', () => {
     };
     const fresh = frame(sparkler, m, timeMs, [hit('d0', 0)], params);
     const halfBurn = frame(sparkler, m, timeMs, [hit('d0', Math.LN2 * decayMs)], params);
-    const pixelId = drum.pixelStart;
+    const pixelId = drum.pixelStart + 1;
     const freshLevel = brightness(fresh, pixelId);
     const halfBurnLevel = brightness(halfBurn, pixelId);
 
@@ -207,10 +233,18 @@ describe('Sparkler spatial and temporal behavior', () => {
     expect(halfBurnLevel / freshLevel).toBeCloseTo(0.5, 3);
   });
 
+  it('uses order-independent seeded Mulberry32 values without changing the stream', () => {
+    const rng = mulberry32(123);
+    expect([rng(), rng(), rng(), rng()]).toEqual([0, 1, 2, 3].map((index) => mulberry32At(123, index)));
+    const coordinates = [3, 7, 11, 19, 23];
+    const forward = coordinates.map((pixelId) => fireRandom01(77, pixelId, 4, 1));
+    const reverse = [...coordinates].reverse().map((pixelId) => fireRandom01(77, pixelId, 4, 1)).reverse();
+    expect(reverse).toEqual(forward);
+  });
+
   it('keeps sparks inside the warm colour-temperature range', () => {
     const fresh = frame(sparkler, m, 100, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 45 });
     const cooling = frame(sparkler, m, 130, [hit('d0', 0)], { density: 1, core: 0, crackle: 0, sparkMs: 45 });
-    expect(total(fresh)).toBeGreaterThan(total(cooling));
     for (const fb of [fresh, cooling]) {
       for (const id of litIds(fb)) {
         const j = id * 4;

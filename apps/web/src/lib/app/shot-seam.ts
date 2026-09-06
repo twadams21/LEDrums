@@ -269,30 +269,31 @@ class ShotSeamImpl implements ShotSeam {
     return node;
   }
 
-  fireEffect(generatorId: string, params: Record<string, number>): void {
-    if (this.store.canTakeover) this.store.takeover();
-    const section = this.store.activeSection;
-    if (!section) return;
-    const key = this.store.createGraph(`Shot ${generatorId}`);
-    const created = this.store.addNode('effect', 360, 200);
-    if (!created) return;
-    // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
-    // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
-    // re-resolve through the graph or the edit lands on a detached object.
-    const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
-    const target = live();
-    if (target) this.store.pickEffect(target, `gen:${generatorId}`);
-    for (const [paramKey, value] of Object.entries(params)) {
-      const node = live();
-      if (node) this.store.setParam(node, paramKey, value);
-    }
-    // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
-    // Output, but nothing drives it.
-    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
-    if (trigger) this.store.connect(trigger.id, created.id);
-    this.store.addGraphToSection(section.id, key);
-    this.firedGraphKey = key;
-    this.refire();
+  fireEffect(generatorId: string, params: Record<string, number>): Promise<void> {
+    return this.claimEdit(() => {
+      const section = this.store.activeSection;
+      if (!section) return;
+      const key = this.store.createGraph(`Shot ${generatorId}`);
+      const created = this.store.addNode('effect', 360, 200);
+      if (!created) return;
+      // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
+      // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
+      // re-resolve through the graph or the edit lands on a detached object.
+      const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
+      const target = live();
+      if (target) this.store.pickEffect(target, `gen:${generatorId}`);
+      for (const [paramKey, value] of Object.entries(params)) {
+        const node = live();
+        if (node) this.store.setParam(node, paramKey, value);
+      }
+      // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
+      // Output, but nothing drives it.
+      const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
+      if (trigger) this.store.connect(trigger.id, created.id);
+      this.store.addGraphToSection(section.id, key);
+      this.firedGraphKey = key;
+      this.refire();
+    });
   }
 
   wait(ms: number): Promise<void> {
@@ -476,8 +477,8 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
-  openAddPopover(): void {
-    if (this.store.canTakeover) this.store.takeover();
+  async openAddPopover(): Promise<void> {
+    if (!this.store.canMutateSelectedGraph) await this.newGraph();
     this.shell.setView('trigger');
     document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
   }
@@ -836,8 +837,7 @@ class ShotSeamImpl implements ShotSeam {
           const [k, v] = splitOnce(pair.trim(), '=');
           if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
         }
-        this.fireEffect(head, params);
-        break;
+        return this.fireEffect(head, params);
       }
       case 'refire':
         this.refire();
@@ -859,8 +859,7 @@ class ShotSeamImpl implements ShotSeam {
         this.previewBackups();
         break;
       case 'add-popover':
-        this.openAddPopover();
-        break;
+        return this.openAddPopover();
       case 'search':
         this.setSearch(arg ?? '');
         break;

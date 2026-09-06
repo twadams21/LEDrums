@@ -75,6 +75,18 @@ export function mulberry32(seed: number): SeededRandom {
   return next;
 }
 
+/**
+ * Read one value from a seeded Mulberry32 stream without allocating a cursor.
+ * This is the random-access form for order-independent per-pixel decisions: index 0 is the
+ * first value returned by `mulberry32(seed)`, index 1 the second, and so on.
+ */
+export function mulberry32At(seed: number, index: number): number {
+  const a = ((seed >>> 0) + Math.imul((index + 1) | 0, 0x6d2b79f5)) | 0;
+  let t = Math.imul(a ^ (a >>> 15), 1 | a);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 /** Deterministic 32-bit string hash (FNV-1a) — used to derive RNG seeds from clip ids. */
 export function hashString(s: string): number {
   let h = 0x811c9dc5;
