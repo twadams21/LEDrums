@@ -35,11 +35,13 @@ import {
   computeSpliceBands,
   forEachPartitionUnit,
   forEachSpliceSegment,
+  firstUnitWithMaterial,
   spliceFeatherPx,
   maxCascadeDelayMs,
   spliceOrderIndex,
   splicePulseCycleMs,
   spliceRotationPx,
+  spliceSourceOffset,
   spliceTintColour,
   unitCascadeDelayMs,
   unitEnvelopeLevel,
@@ -48,7 +50,7 @@ import {
   tintPixel,
   type SpliceBand,
 } from './splice';
-import type { MixInput, ParamValues, SpliceConfig, Voice } from './types';
+import type { MixInput, ParamValues, SpliceConfig, SpliceMaterialCoverage, Voice } from './types';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
@@ -199,6 +201,50 @@ function buildSpliceUnits(cfg: SpliceConfig, model: PixelModel, ranges: readonly
     });
   });
   return units;
+}
+
+function ensureSpliceCoverage(v: Voice, memberCount: number, unitCount: number): SpliceMaterialCoverage {
+  const cells = memberCount * unitCount;
+  const current = v.spliceCoverage;
+  if (!current || current.materialUnits.length < cells || current.sourceUnitByMember.length < memberCount) {
+    const materialUnits = new Uint8Array(Math.max(cells, current?.materialUnits.length ?? 0));
+    const sourceUnitByMember = new Int32Array(Math.max(memberCount, current?.sourceUnitByMember.length ?? 0));
+    v.spliceCoverage = { memberCount, unitCount, materialUnits, sourceUnitByMember };
+  } else {
+    current.memberCount = memberCount;
+    current.unitCount = unitCount;
+  }
+  const coverage = v.spliceCoverage!;
+  coverage.materialUnits.fill(0, 0, cells);
+  coverage.sourceUnitByMember.fill(-1, 0, memberCount);
+  return coverage;
+}
+
+/** Scan each member buffer once across the selected units. This is O(members × selectedPixels),
+ * not a full pixel scan nested inside every member/unit pair. The first lit unit is the stable
+ * sparse fallback source, matching partition order and never retaining a previous frame's choice. */
+function scanSpliceCoverage(
+  coverage: SpliceMaterialCoverage,
+  memberIndex: number,
+  rgba: Float32Array,
+  units: readonly SpliceUnit[],
+): void {
+  const row = memberIndex * coverage.unitCount;
+  for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
+    const unit = units[unitIndex]!;
+    let hasMaterial = false;
+    for (let pixel = unit.start; pixel < unit.end; pixel++) {
+      const j = pixel * 4;
+      if (rgba[j]! > 0 || rgba[j + 1]! > 0 || rgba[j + 2]! > 0 || rgba[j + 3]! > 0) {
+        hasMaterial = true;
+        break;
+      }
+    }
+    if (hasMaterial) {
+      coverage.materialUnits[row + unitIndex] = 1;
+    }
+  }
+  coverage.sourceUnitByMember[memberIndex] = firstUnitWithMaterial(coverage.materialUnits, row, units.length);
 }
 
 function pixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
@@ -352,9 +398,8 @@ export function createDefaultCompositor(): PresentationCompositor {
           if (!ranges.length) continue;
           const buffers = ensureSpliceBuffers(v.spliceInputs.length);
 
-          // 1. Render each member ONCE over the voice's whole range. Bands are windows onto
-          //    these renders, so an effect keeps its real geometry (a comet still travels the
-          //    hoop) and is merely revealed inside the splices showing it.
+          // 1. Render each member ONCE over the voice's whole range. Bands reveal these renders,
+          //    so an effect keeps its real geometry (a comet still travels the hoop).
           for (let i = 0; i < v.spliceInputs.length; i++) {
             const member = v.spliceInputs[i]!;
             const buf = buffers[i]!;
@@ -379,7 +424,15 @@ export function createDefaultCompositor(): PresentationCompositor {
             spliceLayouts.set(layoutKey, units);
           }
 
-          // 3. Reveal each band from its member's buffer, tinted by that splice's colour.
+          // 3. Record which partition units contain current material. Empty units borrow the
+          // first material-bearing unit for that member, while a member empty everywhere stays
+          // empty. The scratch belongs to the pooled voice and survives ordinary frames.
+          const coverage = ensureSpliceCoverage(v, v.spliceInputs.length, units.length);
+          for (let memberIndex = 0; memberIndex < v.spliceInputs.length; memberIndex++) {
+            scanSpliceCoverage(coverage, memberIndex, buffers[memberIndex]!.rgba, units);
+          }
+
+          // 4. Reveal each band from its member's buffer, tinted by that splice's colour.
           const { mix } = ensureScratch();
           mix.clear();
           const age = timeMs - v.bornAtMs;
@@ -401,7 +454,8 @@ export function createDefaultCompositor(): PresentationCompositor {
                 ? (v.spliceMotionMs ?? 0) // only ran while lit — see `advanceLatchedSpliceMotion`
                 : age;
           const dstRgba = mix.rgba;
-          for (const unit of units) {
+          for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
+            const unit = units[unitIndex]!;
             const len = unit.end - unit.start;
             // Each unit runs on its own clock, so an offset cascade starts hoop after hoop —
             // and, on a kit-wide splice, drum after drum. With no offsets every unit gets the
@@ -423,7 +477,7 @@ export function createDefaultCompositor(): PresentationCompositor {
                   ? chaseStaggerShift(unitAge, cfg.chaseMs, cfg.direction, cfg.incrementPx)
                   : 0);
             const feather = spliceFeatherPx(cfg.smudge, unit.bands, len);
-            forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1) => {
+            forEachSpliceSegment(unit.bands, len, shift, stepOffset, feather, (slot, bandStart, bandEnd, w0, w1, bandIndex, bandOffset) => {
               const inputIndex = cfg.inputBySlot[slot] ?? -1;
               if (inputIndex < 0) return; // a blank splice shows nothing
               // The reveal is per SPLICE, not just per unit: a colour offset staggers when each
@@ -443,16 +497,31 @@ export function createDefaultCompositor(): PresentationCompositor {
                     ? unitFadeInLevel(age - reveal, cfg.envelope.attackMs, cfg.attackEase)
                     : 1;
               if (unitLevel <= 0) return;
+              const materialRow = inputIndex * coverage.unitCount;
+              const sourceUnitIndex = coverage.materialUnits[materialRow + unitIndex] === 1
+                ? unitIndex
+                : coverage.sourceUnitByMember[inputIndex]!;
+              const from = units[sourceUnitIndex];
+              if (!from) return; // this member rendered nothing anywhere this frame
+              const destinationBand = unit.bands[bandIndex];
+              const sourceBand = from.bands[slot];
+              if (!destinationBand || !sourceBand) return;
               const src = buffers[inputIndex]!.rgba;
               const colour = spliceTintColour(cfg.colors[slot]);
               const span = bandEnd - bandStart;
               for (let i = 0; i < span; i++) {
                 const p = unit.start + bandStart + i;
                 const j = p * 4;
-                const r = src[j]!;
-                const g = src[j + 1]!;
-                const b = src[j + 2]!;
-                const a = src[j + 3]!;
+                // Material follows its selected source band. Stretching is proportional when
+                // source and destination runs differ, and edge-clamping keeps smudge ramps from
+                // bleeding into a neighbouring source band.
+                const sourceOffset = spliceSourceOffset(bandOffset + i, destinationBand.width, sourceBand);
+                if (sourceOffset < 0) continue;
+                const sj = (from.start + sourceOffset) * 4;
+                const r = src[sj]!;
+                const g = src[sj + 1]!;
+                const b = src[sj + 2]!;
+                const a = src[sj + 3]!;
                 if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
                 // Accumulate, never assign: across a smudge two neighbouring splices write the
                 // same pixel with complementary weights that sum to 1. With no smudge the
@@ -474,7 +543,7 @@ export function createDefaultCompositor(): PresentationCompositor {
             });
           }
 
-          // 4. Downstream modifiers see the assembled splice frame, then it lands in `dst`
+          // 5. Downstream modifiers see the assembled splice frame, then it lands in `dst`
           //    scaled by the voice envelope — the same tail as the Mix branch.
           const spliceMods = v.modifiers;
           if (spliceMods && spliceMods.length) {
