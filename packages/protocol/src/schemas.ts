@@ -403,6 +403,7 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     songLibrary: songLibraryBlobSchema.nullable(),
     tunnel: tunnelInfoSchema.nullable(),
     osc: oscListenInfoSchema,
+    showRevision: z.number().int().nonnegative(),
   }).strict(),
   z.object({
     t: z.literal('stats'),
@@ -424,6 +425,13 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     /** The drum the zone-map claimed this hit for, when it claimed one. Absent =
         unrouted or not a drum trigger. */
     drumId: z.string().optional(),
+  }).strict(),
+  z.object({
+    t: z.literal('recalled'),
+    songId: z.string().nullable(),
+    sectionId: z.string().nullable(),
+    showRevision: z.number().int().nonnegative(),
+    recallSequence: z.number().int().positive(),
   }).strict(),
   z.object({ t: z.literal('monitor'), event: monitorEventSchema }).strict(),
   z.object({ t: z.literal('projects'), names: z.array(z.string()) }).strict(),

@@ -102,6 +102,18 @@ describe('relativeNavTarget — degenerate setlists', () => {
     expect(relativeNavTarget(emptyShow(), { activeSongId: null, activeSectionId: null }, 'section', 1)).toBeNull();
   });
 
+  it('starts from the first song when the active song id is missing', () => {
+    expect(relativeNavTarget(showFixture(), { activeSongId: 'gone', activeSectionId: null }, 'song', 1)).toEqual({
+      songId: 'B',
+      sectionId: 'b1',
+    });
+  });
+
+  it('is null for an empty active song even when another song has sections', () => {
+    const show: Show = { ...emptyShow(), songs: [song('A', []), song('B', ['b1'])] };
+    expect(relativeNavTarget(show, { activeSongId: 'A', activeSectionId: null }, 'section', 1)).toBeNull();
+  });
+
   it('is a no-op for a single-song, single-section set on every direction', () => {
     const one: Show = { ...emptyShow(), songs: [song('A', ['a1'])] };
     const at = { activeSongId: 'A', activeSectionId: 'a1' };

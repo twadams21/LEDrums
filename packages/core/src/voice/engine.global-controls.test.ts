@@ -49,6 +49,28 @@ function setup(): { engine: RenderEngine; recalls: Array<{ songId: string | null
 }
 
 describe('globalControl input — navigation', () => {
+  it('keeps equal-time recalls in arrival order', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput(nav('nextSection', 0));
+    engine.applyInput(nav('nextSection', 0));
+    engine.tick(10, 10, transport(10));
+    expect(recalls.map((recall) => recall.sectionId)).toEqual(['a2', 'a3']);
+  });
+
+  it('rejects an absolute recall that is not in the adopted show', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput({ kind: 'recallSection', songId: 'gone', sectionId: 'gone', timeMs: 0 });
+    engine.tick(10, 10, transport(10));
+    expect(recalls).toEqual([]);
+  });
+
+  it('drops queued recalls when a newer show replaces the old one', () => {
+    const { engine, recalls } = setup();
+    engine.applyInput(nav('nextSong', 0));
+    engine.setShow({ ...showFixture(), songs: [{ id: 'new', name: 'New', sections: [{ id: 'new-1', name: 'New 1', slots: {} }] }] });
+    engine.tick(10, 10, transport(10));
+    expect(recalls).toEqual([]);
+  });
   it('advances a section', () => {
     const { engine, recalls } = setup();
     engine.applyInput(nav('nextSection', 0));

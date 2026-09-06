@@ -312,6 +312,7 @@
     activeSongId = $state('song-1');
     activeSectionId = $state('sec-1');
     canEdit = true;
+    globalControls = {};
     get activeSong() {
       return this.songs.find((s) => s.id === this.activeSongId) ?? null;
     }
@@ -320,6 +321,12 @@
     }
     setActiveSection(id: string): void {
       this.activeSectionId = id;
+    }
+    canStepSetlist(): boolean {
+      return true;
+    }
+    stepSetlist(): boolean {
+      return true;
     }
     createSong(): void {}
   }

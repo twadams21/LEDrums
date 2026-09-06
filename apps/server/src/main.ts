@@ -16,7 +16,6 @@ import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
 import {
   oscToEvent,
-  oscRecall,
   parseSectionRecallAddress,
 } from './input-router';
 import { listProjects, loadProject, projectExists, projectFilePath, resolveProjectsDir } from './projects';
@@ -46,7 +45,6 @@ import { selectionFromLibrary, showFromLibraries, validateLibraryVersions } from
 import { createNativeMidiHandler } from './http/native-midi';
 import { createHostEventHandler } from './http/host-event';
 import { createUpdateStatusHandler } from './http/update-status';
-import { applyTransportRecall } from './handlers/voice-input';
 import { startupDiagnostics } from './diagnostics';
 import { broadcastPreview } from './preview-broadcast';
 import { createMonitorBus } from './monitor';
@@ -480,6 +478,7 @@ async function main(): Promise<void> {
       showLibrary: liveShowLibrary,
       songLibrary: liveSongLibrary,
       tunnel: tunnelInfo(),
+      showRevision: voiceHost?.getShowRevision() ?? 0,
       // Where to point Sensory Percussion / a Max device, and whether the socket is actually
       // bound (#139). Read at send time, so a client always gets the settled truth.
       osc: oscListen,
@@ -490,6 +489,9 @@ async function main(): Promise<void> {
   // Tap tempo (global control 9) changes the transport bpm server-side; rebroadcast the
   // state so every client's transport readout follows instead of silently drifting.
   if (voiceHost) voiceHost.onTransportChanged = () => broadcastJson(stateMessage());
+  if (voiceHost) voiceHost.onSectionRecalled = (songId, sectionId, showRevision, recallSequence) => {
+    broadcastJson({ t: 'recalled', songId, sectionId, showRevision, recallSequence });
+  };
   else host.onFrame = (rgb) => broadcastBinary(rgb);
   host.setOutputMonitor(monitor);
   voiceHost?.setOutputMonitor(monitor);
@@ -562,6 +564,7 @@ async function main(): Promise<void> {
   // Shared collaborators handed to the extracted message handler. The broadcast/relay closures
   // capture the wiring so the handler stays free of module-level state + socket plumbing.
   const broadcastState = (): void => broadcastJson(stateMessage());
+  if (voiceHost) voiceHost.onShowChanged = broadcastState;
 
   /** Relay a server message to every client EXCEPT `sender` (the live showLibrary relay). */
   function relayToOthers(sender: WebSocket, msg: ServerMessage): void {
@@ -766,9 +769,10 @@ async function main(): Promise<void> {
       // A section-recall address (e.g. from a show-control system) is always consumed by the
       // recall handler before the zone-map, exactly like the WS osc path; anything else is a
       // normal OSC input.
-      if (parseSectionRecallAddress(event.address) !== null) {
-        const target = oscRecall(voiceHost.getShow(), event.address, event.value);
-        if (target) applyTransportRecall(oscVoiceDeps, target, { kind: 'osc', label: event.address, value: event.value });
+      const songIndex = parseSectionRecallAddress(event.address);
+      if (songIndex !== null) {
+        voiceHost.applyInput({ kind: 'recallSectionIndex', songIndex, sectionIndex: Math.floor(event.value) });
+        broadcastJson({ t: 'input', kind: 'osc', label: event.address, value: event.value });
         return;
       }
       voiceHost.applyInput({ kind: 'osc', address: event.address, value: event.value });

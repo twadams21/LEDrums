@@ -108,12 +108,8 @@
     }
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       if (el?.closest('.svelte-flow')) return; // canvas owns arrows (node nudge)
-      const sections = store.activeSong?.sections ?? [];
-      if (sections.length === 0) return;
-      const cur = sections.findIndex((s) => s.id === store.activeSectionId);
       const step = e.key === 'ArrowRight' ? 1 : -1;
-      const next = sections[(cur + step + sections.length) % sections.length];
-      if (next) store.setActiveSection(next.id);
+      store.stepSetlist('section', step);
     }
   }
 </script>

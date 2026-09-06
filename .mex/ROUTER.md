@@ -79,6 +79,22 @@ Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorep
 4 skipped, and full typecheck green. No UI output changed, so no shots were required. Commit/push
 and CI are still pending.
 
+**Setlist navigation and recall (implemented locally 2026-09-06, branch `feat/setlist-navigation-recall`, PR pending):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the setlist slice extracted
+from PR #200 commit `a37eebce` and its stated review requirements. The pure core navigation resolver
+now owns one clamp/no-wrap rule; `TriggerLab.stepSetlist` is the public UI/keyboard seam, and the
+voice engine resolves queued global MIDI/OSC intents against its current ordered show. Absolute and
+indexed recalls validate at engine processing time, preserve arrival order, discard queued intents
+on show replacement, and emit an accepted `recalled` message only after processing. Web recall
+adoption is guarded by show revision + monotonic recall sequence, so it follows hardware without
+echoing it. Songs/Sections chrome uses accessible `NavArrow` controls outside the chip scrollers,
+including disabled reasons and binding hints; canonical references remain navigable while existing
+mutation gates stay unchanged. The existing #206 keyboard owner calls the clean store seam rather
+than adding a second global handler. Evidence: full test 7 workspaces green (core 1,413 passed /
+3 skipped; server 603; web 2,549 passed / 1 skipped), typecheck green, production build green,
+design-system regenerated, and strict role-targeted Songs/Sections shots are console-clean. No
+release was published; branch is not merged.
+
 **PR #207 review remediation (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
 Sections `+` gate now derives from exact resolved/local song targets: canonical library references

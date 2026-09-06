@@ -69,7 +69,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -83,6 +83,9 @@ export interface InputEvent {
   /** recallSection: activate a song's section so hits fire its slot graphs. */
   songId?: string;
   sectionId?: string;
+  /** Transport recall intents. Indices resolve only when the queued event is processed. */
+  songIndex?: number;
+  sectionIndex?: number;
   /** globalControl: the app-general action a bound note/address resolved to (input
       step 0). Relative navigation resolves HERE, against the engine's live active
       song/section, so N queued taps advance N steps rather than all reading one
@@ -248,7 +251,8 @@ class VoiceBusEngine implements RenderEngine {
   private oscTable = new Map<string, number>();
   private noteTable = new Map<string, NoteState>();
 
-  private queue: InputEvent[] = [];
+  private queue: Array<{ event: InputEvent; order: number }> = [];
+  private inputOrder = 0;
   private timeMs = 0;
   private beat = 0;
   private bpm = 120;
@@ -332,6 +336,9 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   setShow(show: Show): void {
+    // A show replacement invalidates every queued intent from the previous arrangement.
+    this.queue = [];
+    this.inputOrder = 0;
     this.syncCanvasScenes(show.canvasScenes);
     this.show = {
       ...show,
@@ -406,15 +413,15 @@ class VoiceBusEngine implements RenderEngine {
   // --- input -------------------------------------------------------------
 
   applyInput(ev: InputEvent): void {
-    this.queue.push(ev);
+    this.queue.push({ event: ev, order: this.inputOrder++ });
   }
 
   private drainQueue(): void {
     if (this.queue.length === 0) return;
-    const due = this.queue.filter((e) => e.timeMs <= this.timeMs);
-    this.queue = this.queue.filter((e) => e.timeMs > this.timeMs);
-    due.sort((a, b) => a.timeMs - b.timeMs);
-    for (const e of due) this.processEvent(e);
+    const due = this.queue.filter(({ event }) => event.timeMs <= this.timeMs);
+    this.queue = this.queue.filter(({ event }) => event.timeMs > this.timeMs);
+    due.sort((a, b) => a.event.timeMs - b.event.timeMs || a.order - b.order);
+    for (const { event } of due) this.processEvent(event);
   }
 
   /**
@@ -423,8 +430,21 @@ class VoiceBusEngine implements RenderEngine {
    * global-control navigation land here, so they are indistinguishable downstream
    * (same diagnostic, same base-look spawn).
    */
-  private recallTo(songId: string | null, sectionId: string | null): void {
-    this.activeSongId = songId;
+  private recallTo(songId: string | null, sectionId: string | null): boolean {
+    // A section-only recall is a valid legacy/client input: resolve it against the engine's
+    // currently active song, never against a host-side selection mirror.
+    const song = songId === null
+      ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
+      : this.show.songs?.find((candidate) => candidate.id === songId);
+    const section = song && sectionId !== null ? song.sections.find((candidate) => candidate.id === sectionId) : undefined;
+    // Older/slot-only shows keep sections in the top-level registry without a setlist song.
+    // Preserve that valid shape, while rejecting arbitrary ids whenever the show has an ordered
+    // song list to validate against.
+    const legacySection = !this.show.songs?.length && sectionId !== null
+      ? this.show.sections.find((candidate) => candidate.id === sectionId)
+      : undefined;
+    if ((!song || !section) && !legacySection) return false;
+    this.activeSongId = song?.id ?? (legacySection ? songId : null);
     this.activeSectionId = sectionId;
     this.onDiagnostic?.({
       kind: 'section-recalled',
@@ -434,6 +454,7 @@ class VoiceBusEngine implements RenderEngine {
     // Spawn/release this section's base "looks" (the per-bus loop effects) so the
     // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
     this.spawnSectionLooks(this.activeSectionId);
+    return true;
   }
 
   /**
@@ -517,6 +538,24 @@ class VoiceBusEngine implements RenderEngine {
     if (e.kind === 'recallSection') {
       // Activate a section so subsequent hits fire its slot graphs (layered).
       this.recallTo(e.songId ?? null, e.sectionId ?? null);
+      return;
+    }
+    if (e.kind === 'recallSongIndex') {
+      const songIndex = e.songIndex;
+      if (typeof songIndex !== 'number' || !Number.isInteger(songIndex)) return;
+      const song = this.show.songs?.[songIndex];
+      const section = song?.sections[0];
+      if (song && section) this.recallTo(song.id, section.id);
+      return;
+    }
+    if (e.kind === 'recallSectionIndex') {
+      const sectionIndex = e.sectionIndex;
+      if (typeof sectionIndex !== 'number' || !Number.isInteger(sectionIndex)) return;
+      const song = e.songIndex === undefined
+        ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
+        : this.show.songs?.[e.songIndex];
+      const section = song?.sections[sectionIndex];
+      if (song && section) this.recallTo(song.id, section.id);
       return;
     }
     if (e.kind === 'globalControl') {

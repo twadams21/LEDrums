@@ -418,14 +418,14 @@ describe('VoiceEngineHost', () => {
     expect(host.getShow()).toBe(show);
     expect(host.getActiveSongId()).toBe('songA');
 
-    // A recall that names a song (UI- or transport-driven) updates the active song, so a
-    // subsequent CC#0 section recall resolves against it.
+    // A queued recall must not update the host mirror ahead of the engine. The live handler now
+    // queues the index intent and the engine diagnostic is the acknowledgement path.
     host.applyInput({ kind: 'recallSection', songId: 'songB', sectionId: 'b0' });
-    expect(host.getActiveSongId()).toBe('songB');
+    expect(host.getActiveSongId()).toBe('songA');
 
-    // A sectionId-only recall leaves the active song unchanged.
+    // A sectionId-only recall also leaves the engine-confirmed song unchanged until processing.
     host.applyInput({ kind: 'recallSection', sectionId: 'b0' });
-    expect(host.getActiveSongId()).toBe('songB');
+    expect(host.getActiveSongId()).toBe('songA');
   });
 
   it('setKitTransform with pixelsPerHoop changes the live model pixel count', () => {

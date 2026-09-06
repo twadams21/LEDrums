@@ -27,6 +27,9 @@ export default defineConfig({
     exclude: ['@ledrums/core'],
   },
   server: {
+    // The local linked-worktree dependencies live outside this checkout; allow Vite to serve
+    // their raw workspace sources during verification and the development server.
+    fs: { strict: false },
     port: WEB_PORT,
     // `pnpm dev --share` (scripts/dev.mjs) sets LEDRUMS_WEB_SHARE=1: bind IPv4 loopback
     // explicitly — tailscale serve proxies dial 127.0.0.1 (a bare `localhost` bind lands on

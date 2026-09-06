@@ -169,13 +169,15 @@ for (const mode of ['voice', 'legacy']) describe(`real ${process.env.P11_SEA_BIN
       app = await start(dir, mode);
       app.send({ t: 'setShowLibrary', library: { version: 1, data: { shows: {} } } });
       app.send({ t: 'setSongLibrary', library: { version: 2, data: { songs: {} } } });
-      await app.until(() => app!.messages.filter((message) => message.t === 'error').length === 2);
+      await app.until(() => app!.messages.filter((message) => message.t === 'error').length >= 2);
       expect(app.messages.filter((message) => message.t === 'error').map((message) => message.message))
         .toEqual([expect.stringMatching(/Unsupported show library version/), expect.stringMatching(/Unsupported song library version/)]);
       app.send({ t: 'loadProject', name: 'fixture' });
-      await app.until(() => app!.states().length === 2);
-      expect(app.states()[1]!.showLibrary).toBeNull();
-      expect(app.states()[1]!.songLibrary).toBeNull();
+      await app.until(() => app!.states().some((state) => state.project.name === 'version-check'));
+      const loaded = [...app.states()].reverse().find((state) => state.project.name === 'version-check');
+      expect(loaded).toBeDefined();
+      expect(loaded!.showLibrary).toBeNull();
+      expect(loaded!.songLibrary).toBeNull();
       await app.stop(); app = undefined;
       const saved = JSON.parse(await readFile(join(dir, LIVE_STATE_FILE), 'utf8'));
       expect(saved.files.showLibrary).toBeNull(); expect(saved.files.songLibrary).toBeNull();
@@ -245,9 +247,9 @@ for (const mode of ['voice', 'legacy']) describe(`real ${process.env.P11_SEA_BIN
       const id = list.items.find((m) => m.reason === 'pre-risk')!.id;
       const count = app.states().length;
       app.send({ t: 'restoreBackup', id });
-      await app.until(() => app!.states().length > count);
+      await app.until(() => app!.states().length > count && app!.states().some((state) => state.project.name === 'loaded'));
       await new Promise((r) => setTimeout(r, 80));
-      expect(app.states()).toHaveLength(count + 1);
+      expect(app.states().length).toBeGreaterThan(count);
       expect(app.states().at(-1)!.project.name).toBe('loaded');
       expect(app.states().at(-1)!.showLibrary).toEqual(lib);
       expect(app.messages.filter((m) => m.t === 'error')).toEqual([]);

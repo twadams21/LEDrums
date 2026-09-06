@@ -56,10 +56,12 @@ export interface WSCallbacks {
     /** OSC listen surface (#139): the host:port a third-party sender should target, plus
      * whether the socket actually bound. */
     osc: OscListenInfo,
+    showRevision?: number,
   ) => void;
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (input: InputEcho) => void;
+  onRecalled?: (songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number) => void;
   onMonitor?: (event: MonitorEvent) => void;
   onSend?: (msg: ClientMessage) => void;
   onProjects?: (names: string[]) => void;
@@ -251,7 +253,7 @@ export class WSClient {
   private dispatch(msg: ServerMessage): void {
     switch (msg.t) {
       case 'state':
-        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc);
+        this.cb.onState?.(msg.project, msg.model, msg.effects, msg.projects, msg.output, msg.showLibrary, msg.songLibrary, msg.tunnel, msg.osc, msg.showRevision);
         break;
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
@@ -261,6 +263,9 @@ export class WSClient {
         this.cb.onInput?.(input);
         break;
       }
+      case 'recalled':
+        this.cb.onRecalled?.(msg.songId, msg.sectionId, msg.showRevision, msg.recallSequence);
+        break;
       case 'monitor':
         this.cb.onMonitor?.(msg.event);
         break;

@@ -705,6 +705,31 @@ export class TriggerLab {
   setActiveSong(songId: string): void {
     this.showsCtl.setActiveSong(songId);
   }
+
+  /** Whether a relative move has a destination in the resolved, ordered setlist. */
+  canStepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    return this.setlistNavTarget(axis, delta) !== null;
+  }
+
+  /** Resolve a relative move through the same pure core rule used by the engine. */
+  setlistNavTarget(axis: voice.NavAxis, delta: number): voice.NavTarget | null {
+    return voice.relativeNavTarget(
+      { songs: this.resolvedSongs },
+      { activeSongId: this.activeSongId || null, activeSectionId: this.activeSectionId },
+      axis,
+      delta,
+    );
+  }
+
+  /** Navigate without an edit-permission gate. The server/engine remains authoritative when
+      connected; the local setters provide the immediate view transition. */
+  stepSetlist(axis: voice.NavAxis, delta: number): boolean {
+    const target = this.setlistNavTarget(axis, delta);
+    if (!target) return false;
+    if (axis === 'song') this.setActiveSong(target.songId);
+    else this.setActiveSection(target.sectionId);
+    return true;
+  }
   createSong(name?: string): string {
     return this.showsCtl.createSong(name);
   }
@@ -722,6 +747,9 @@ export class TriggerLab {
       pre-handshake) — treated as standalone (local-wins authoring) so the single-user path is
       unchanged. */
   presence = $state<{ editorId: string | null; youAreEditor: boolean; clientCount: number } | null>(null);
+  /** Server-authoritative show/recall ordering. */
+  private adoptedShowRevision = 0;
+  private lastRecallSequence = 0;
   /** Local project backups (#123), newest-first — the server's reply to `listBackups`, rendered by
       the Backups dialog. Populated on demand via {@link refreshBackups}; empty until then. Public +
       settable like {@link presence}/{@link controllerStatus} so the dev shot-seam can seed it. */
@@ -1591,7 +1619,7 @@ export class TriggerLab {
   /** Attach the WS callbacks (idempotent — start() may be called after a stop). */
   private wireClient(): void {
     this.client.on({
-      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc) => {
+      onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc, showRevision = 0) => {
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
@@ -1604,11 +1632,26 @@ export class TriggerLab {
         this.tunnel = tunnel;
         // where a third-party OSC sender should aim, and whether the socket is actually bound
         this.oscListen = osc;
+        if (showRevision > this.adoptedShowRevision) {
+          this.adoptedShowRevision = showRevision;
+          this.lastRecallSequence = 0;
+        }
         // Cold-load reconcile of BOTH server-authoritative libraries (show library + canonical song
         // pool): adopt server on first state / seed it from our cache / viewer live-follows. Role-
         // aware (S1) — presence arrives before this state on a (re)connect, so `isViewer` is settled.
         // Owned by {@link ShowsController} (R23).
         this.showsCtl.reconcileOnState(showLibrary, songLibrary);
+      },
+      onRecalled: (songId, sectionId, showRevision, recallSequence) => {
+        // This is an engine acknowledgement, not a command. Direct pointer adoption avoids
+        // sending the same hardware recall back to the server.
+        if (showRevision !== this.adoptedShowRevision || recallSequence <= this.lastRecallSequence) return;
+        this.lastRecallSequence = recallSequence;
+        const song = songId === null ? null : this.resolvedSongs.find((candidate) => candidate.id === songId);
+        const section = song && sectionId !== null ? song.sections.find((candidate) => candidate.id === sectionId) : null;
+        if (!song || !section) return;
+        this.activeSongId = song.id;
+        this.activeSectionId = section.id;
       },
       onPresence: (editorId, youAreEditor, clientCount) => {
         // Adopt the server's view of who edits + the headcount. Drives `role`/`isViewer`, which

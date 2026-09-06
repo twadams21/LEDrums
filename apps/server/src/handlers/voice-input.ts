@@ -1,14 +1,11 @@
 import {
-  oscRecall,
   parseSectionRecallAddress,
-  programChangeRecall,
-  sectionIndexRecall,
   SECTION_RECALL_CC,
   zoneForNote,
   zoneForOsc,
   type RecallTarget,
 } from '../input-router';
-import type { VoiceEngineHost } from '../voice-engine-host';
+import type { VoiceEngineHost, VoicePartialInput } from '../voice-engine-host';
 import type { ClientMessage, ServerMessage } from '../ws-protocol';
 
 /** Collaborators the voice-input handler needs from the server wiring. */
@@ -35,6 +32,16 @@ export function applyTransportRecall(
   deps.broadcastJson({ t: 'input', kind: monitor.kind, label: monitor.label, value: monitor.value });
 }
 
+function queueTransportInput(
+  deps: VoiceInputDeps,
+  input: VoicePartialInput,
+  monitor: { kind: 'midi' | 'osc'; label: string; value: number },
+): void {
+  if (!deps.voiceHost) return;
+  deps.voiceHost.applyInput(input);
+  deps.broadcastJson({ t: 'input', kind: monitor.kind, label: monitor.label, value: monitor.value });
+}
+
 /**
  * Voice-mode input dispatch (programChange / cc / setShow / key / recallSection / midi /
  * osc, plus the global transport recalls). Returns `true` when `msg` has been fully
@@ -49,16 +56,15 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
   const { voiceHost } = deps;
   if (voiceHost) {
     // Global transport recall — STEP 0, before the per-trigger zone-map. A Program Change
-    // selects a song (+ its first section); CC#0 recalls a section in the active song.
+    // and CC#0 are queued as indices. The engine resolves them against its adopted show and
+    // processed active position, not a host-side prediction.
     if (msg.t === 'programChange') {
-      const target = programChangeRecall(voiceHost.getShow(), msg.value);
-      if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
+      queueTransportInput(deps, { kind: 'recallSongIndex', songIndex: msg.value }, { kind: 'midi', label: `PC ${msg.value}`, value: msg.value });
       return true;
     }
     if (msg.t === 'cc') {
       if (msg.controller === SECTION_RECALL_CC) {
-        const target = sectionIndexRecall(voiceHost.getShow(), voiceHost.getActiveSongId(), msg.value);
-        if (target) applyTransportRecall(deps, target, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
+        queueTransportInput(deps, { kind: 'recallSectionIndex', sectionIndex: Math.floor(msg.value) }, { kind: 'midi', label: `CC0 ${msg.value}`, value: msg.value });
       } else {
         // S37: any other controller feeds the engine's CC value table (queued input event),
         // where `cc` modulation sources read it per frame. Determinism preserved — same events,
@@ -127,8 +133,14 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       // here (recall on a valid index, no-op when out of range) and never falls through to
       // the zone-map. Any other address is a normal OSC input.
       if (parseSectionRecallAddress(msg.address) !== null) {
-        const target = oscRecall(voiceHost.getShow(), msg.address, msg.value);
-        if (target) applyTransportRecall(deps, target, { kind: 'osc', label: msg.address, value: msg.value });
+        const parsed = parseSectionRecallAddress(msg.address);
+        if (parsed !== null) {
+          queueTransportInput(
+            deps,
+            { kind: 'recallSectionIndex', songIndex: parsed, sectionIndex: Math.floor(msg.value) },
+            { kind: 'osc', label: msg.address, value: msg.value },
+          );
+        }
         return true;
       }
       voiceHost.applyInput({ kind: 'osc', address: msg.address, value: msg.value });

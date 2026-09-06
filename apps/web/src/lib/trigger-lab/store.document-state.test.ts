@@ -142,6 +142,47 @@ it('preserves runtime and Undo for save, rename, inactive deletion and no-op ope
   } finally { store.stop(); }
 });
 
+it('follows accepted hardware recalls without ping-pong and ignores stale ordering', () => {
+  const { store, callbacks, send } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }, { id: 'a1', name: 'A1', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }, { id: 'b1', name: 'B1', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    callbacks.onState!(defaultProject(), { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } }, [], [], { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 }, null, null, null, { status: 'listening', port: 9000, hosts: [] }, 7);
+
+    callbacks.onRecalled!('song-b', 'b1', 7, 2);
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-b', 'b1']);
+    expect(send).not.toHaveBeenCalled();
+
+    callbacks.onRecalled!('song-a', 'a1', 7, 1);
+    callbacks.onRecalled!('song-a', 'a1', 6, 3);
+    expect([store.activeSongId, store.activeSectionId]).toEqual(['song-b', 'b1']);
+  } finally {
+    store.stop();
+  }
+});
+
+it('allows a viewer to navigate the resolved setlist', () => {
+  const { store } = setup();
+  try {
+    store.songs = [
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+    ];
+    store.activeSongId = 'song-a';
+    store.activeSectionId = 'a0';
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+    expect(store.stepSetlist('song', 1)).toBe(true);
+    expect(store.activeSongId).toBe('song-b');
+    expect(store.canEdit).toBe(false);
+  } finally {
+    store.stop();
+  }
+});
+
 it('resets the connected engine for equal-content Save As, but not a position-only edit', () => {
   const { store, callbacks, send } = setup();
   try {

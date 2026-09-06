@@ -115,6 +115,9 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
     expect(h.host.engine.getProject().name).toBe('new');
     expect(h.broadcast).toHaveBeenCalledTimes(3);
     if (h.voiceHost) {
+      // The restore selection is queued on the staged engine. The host mirror changes only after
+      // that queued recall is processed and acknowledged.
+      h.voiceHost.step(10);
       expect(h.voiceHost.getActiveSongId()).toBe('song');
       expect(h.voiceHost.engine.frame().length).toBe(h.voiceHost.getModel().pixelCount * 4);
       h.voiceHost.applyInput({ kind: 'noteOn', note: 70, velocity: 1 });
