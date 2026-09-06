@@ -63,7 +63,7 @@ tests (1,449 passed / 5 skipped), full repository tests (2,554 web passed / 1 sk
 98 IO, 13 protocol, 83 desktop, 57 worker), typecheck, build, fire benchmark, regenerated design
 system, and strict Sparkler/Flame Flicker inspector shots. The first full-repo attempt hit machine
 `/tmp` exhaustion after 2,507 web tests; the affected six suites and the complete rerun passed.
-The branch is ready to commit/push; do not merge.
+Commit `22f5ef35` is pushed and PR CI is green; do not merge.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
