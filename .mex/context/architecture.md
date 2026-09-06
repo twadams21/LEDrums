@@ -47,6 +47,10 @@ identity. Zero-section recalls clear old section looks.
 Show replacement clears old queued intents and advances the revision, so stale hardware messages
 cannot overwrite the adopted show. This is local implementation context, not a claim that the PR
 has merged or shipped.
+Show replacement also clears runtime state while preserving the engine-authoritative active pair
+when that exact pair remains valid in the incoming show; otherwise it selects the first valid
+song/section deterministically. This keeps reconnect/editor `setShow` from resetting hardware
+selection without emitting a synthetic recall.
 
 Ownership audit: `docs/plans/2026-09-05-codebase-health-audit.md`. The follow-up implementation
 is currently on `fix/health-integration` (not yet declared merged):

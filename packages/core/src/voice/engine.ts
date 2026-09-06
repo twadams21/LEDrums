@@ -183,6 +183,37 @@ interface ResolvedGraph {
   path: GraphResolutionPath;
 }
 
+interface ActiveSelection {
+  activeSongId: string | null;
+  activeSectionId: string | null;
+}
+
+/** The deterministic selection used when a show has no still-valid active pair. */
+function firstSelection(show: Show): ActiveSelection {
+  const song = show.songs?.[0];
+  return {
+    activeSongId: song?.id ?? null,
+    activeSectionId: song?.sections[0]?.id ?? null,
+  };
+}
+
+/** A selection is valid only as the exact song/section pair it names. In particular, null is
+ * a section value only for a real zero-section song; it is not a wildcard that keeps a stale
+ * section look alive. The legacy top-level section shape remains valid only without songs. */
+function isValidSelection(show: Show, selection: ActiveSelection): boolean {
+  if (selection.activeSongId !== null) {
+    const song = show.songs?.find((candidate) => candidate.id === selection.activeSongId);
+    if (!song) return false;
+    return selection.activeSectionId === null
+      ? song.sections.length === 0
+      : song.sections.some((section) => section.id === selection.activeSectionId);
+  }
+
+  return selection.activeSectionId !== null
+    && !show.songs?.length
+    && show.sections.some((section) => section.id === selection.activeSectionId);
+}
+
 // ---- Production adapter ------------------------------------------------------
 
 /**
@@ -278,8 +309,9 @@ class VoiceBusEngine implements RenderEngine {
   /**
    * Active song/section for slot-aware hit resolution. Set via `recallSection`
    * input events (queued + drained deterministically, never mutated outside the
-   * queue drain). `setShow` seeds from the first song/section and clears on
-   * show change so stale ids don't resolve against a new arrangement.
+   * queue drain). `setShow` preserves the pair when it remains valid and otherwise
+   * seeds from the first valid song/section so stale ids don't resolve against a new
+   * arrangement.
    */
   private activeSongId: string | null = null;
   private activeSectionId: string | null = null;
@@ -343,6 +375,10 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   setShow(show: Show): void {
+    const previousSelection: ActiveSelection = {
+      activeSongId: this.activeSongId,
+      activeSectionId: this.activeSectionId,
+    };
     // A show replacement invalidates every queued intent from the previous arrangement.
     this.queue = [];
     this.inputOrder = 0;
@@ -378,10 +414,11 @@ class VoiceBusEngine implements RenderEngine {
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
-    // Seed active section from the first song/section (a recallSection event can
-    // override this immediately after; here we just ensure a clean non-null start).
-    this.activeSongId = show.songs?.[0]?.id ?? null;
-    this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+    // Preserve the engine-authoritative pair across equivalent/updated shows. A replacement
+    // still gets a deterministic first song/section when the old pair no longer exists.
+    const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
+    this.activeSongId = selection.activeSongId;
+    this.activeSectionId = selection.activeSectionId;
   }
 
   /**
@@ -1112,8 +1149,13 @@ class NullEngine implements RenderEngine {
     this.fb = new Float32Array(model.pixelCount * 4);
   }
   setShow(show: Show): void {
-    this.activeSongId = show.songs?.[0]?.id ?? null;
-    this.activeSectionId = show.songs?.[0]?.sections[0]?.id ?? null;
+    const previousSelection: ActiveSelection = {
+      activeSongId: this.activeSongId,
+      activeSectionId: this.activeSectionId,
+    };
+    const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
+    this.activeSongId = selection.activeSongId;
+    this.activeSectionId = selection.activeSectionId;
   }
   applyInput(_ev: InputEvent): void {}
   getActiveSelection(): { activeSongId: string | null; activeSectionId: string | null } {
