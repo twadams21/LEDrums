@@ -36,14 +36,30 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**PR #206 follow-up and integration (2026-09-06, local `fix/performance-key-ownership`):**
+**PR #206 runtime follow-up + PR #209 integration (2026-09-06, local `fix/performance-key-ownership`):**
 The App capture dispatcher now yields first to editable text inside modal and popup surfaces, then
 consumes non-editable background shortcuts before later window/SectionsView/xyflow listeners.
 Viewer `fireGraph` intents are checked in core against the active runtime section's exact
 performance list or legacy slot grid; editor and pre-setlist runtime paths retain unrestricted
-behavior. Focused web/core/server tests pass. This branch has also integrated current `origin/main`,
-including PR #205 rhythmic divisions and PR #208 section graph ownership. Full verification and
-push remain pending; PR #206 is not merged here.
+behavior. The remaining cold-restore defect is fixed by the pure core
+`voice.runtimeSectionFromGraphKeys()` conversion, shared by server `showFromLibraries()` and web
+`buildShow()`: every section preserves its exact flat `performanceGraphKeys` list while retaining
+drum-derived slot routing. A server regression proves cold-restored MIDI/OSC graphs fire for the
+active viewer, while other-section and unassigned graphs remain rejected and the drum slot remains
+unchanged. Focused tests/typechecks pass. This branch now also integrates current `origin/main`
+(PR #209, including PR #205 rhythmic divisions and PR #208 section graph ownership). Full
+verification, commit of the merge, push, and CI remain pending; PR #206 is not merged here.
+
+**Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
+The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
+MODE`, `HOOP CHASE`, and `DRUM CHASE`; the primary chase changes with the partition, and the
+secondary drum chase remains only under hoop partition so the labels do not collide. Visible copy
+uses project casing, while aria labels remain sentence case. No model, persisted field, runtime,
+navigation, division, or effect behavior changed. Focused web tests, full typecheck, full monorepo
+tests, and strict `splice-inspector` ui-shot passed with no console errors. The styleguide does not
+mount this inspector, so `docs/design-system.html` was not regenerated. This is not merged or
+shipped; the new PR supersedes the relevant #200 work.
 
 **Section graph ownership contract (2026-09-06, replacement for PR #201):** Trent's requirement
 on Trent's MacBook Pro is explicit: fresh seeded, duplicated, copied, and pasted sections own
@@ -59,7 +75,7 @@ The implementation uses repeated shared graph keys as linked-group identity and 
 placement IDs, automatic copy-on-write, or current-selection ownership. Source: Trent's PR #208
 remediation request on this machine; machine identity from `scutil --get ComputerName`.
 
-**PR #208 remediation (2026-09-06, branch `fix/section-copy-link-contract`, not merged):**
+**PR #208 remediation (2026-09-06, not merged):**
 ordered-set sanitization now agrees across setlist constructors, persistence, library references,
 ClipDoc remapping, and graph closure copies. Local placement commands validate the exact
 `(songId, sectionId, graphKey)` tuple before selection or minting; duplicate global section ids,
@@ -72,12 +88,9 @@ copy-to-section may materialize local content; node clipboard copy remains block
 graphs. The table-driven regression covers the public graph mutator surface and asserts canonical
 library bytes/signature, authored history, autosave signatures, and transient node clipboard
 stability; a separate test proves the permitted copy-as-source paths. Viewer `copySection` is a
-controller/UI no-op with no transient clipboard write. Evidence: full monorepo tests green (220 web
-files / 2,543 tests, 51 server files / 601 tests, plus core/io/protocol/worker/desktop suites), full
-typecheck/build and design-system regeneration green; strict canonical section and Inspector shots
-are console-clean. The branch includes the resolved `origin/main` merge with #207 accessibility /
-reconciliation preserved. Final head is `bb169170`; fresh CI run `34001306507` is green (checks and
-desktop), and PR #208 remains open and mergeable.
+controller/UI no-op with no transient clipboard write. Evidence: full monorepo tests, full
+typecheck/build, design-system regeneration, and strict canonical section and Inspector shots
+passed with no console errors. The #207 accessibility and reconciliation work remains preserved.
 **PR #207 final blocker fixed locally (2026-09-06, branch `feat/chrome-section-add-gate`, not merged):**
 Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
 `ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
