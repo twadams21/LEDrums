@@ -57,6 +57,14 @@ export function dispatchAppKeyboard({
   if (!modalOpen && !popupOwnsKeys && dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
 
   if (isDeleteKey(event.key)) {
+    // A modal, popup, or keyboard-owning control owns the delete key completely. Stop at the
+    // capture boundary so xyflow/window listeners cannot delete the background selection.
+    if (modalOpen || popupOwnsKeys) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     const selection = shell.selection;
     const node =
       selection?.kind === 'node'
@@ -68,8 +76,8 @@ export function dispatchAppKeyboard({
       selection,
       resolvedNode: node,
     });
-    // Keep the desktop WebView from treating an unowned Backspace as history navigation, but never
-    // mutate the workspace while a modal or popup owns the surface.
+    // Keep the desktop WebView from treating an unowned Backspace as history navigation. Do not
+    // stop propagation here: xyflow's window listener still owns deletion of selected wires.
     if (prevent) event.preventDefault();
     if (removeNode && node && !modalOpen && !popupOwnsKeys) {
       store.removeNode(node);

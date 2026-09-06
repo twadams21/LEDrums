@@ -31,7 +31,13 @@ beforeEach(() => {
   }));
 });
 
-afterEach(cleanup);
+const laterWindowListeners: Array<(event: KeyboardEvent) => void> = [];
+
+afterEach(() => {
+  cleanup();
+  for (const listener of laterWindowListeners) window.removeEventListener('keydown', listener);
+  laterWindowListeners.length = 0;
+});
 
 const LIVE: TunnelInfo = { status: 'live', url: 'https://foo.trycloudflare.com', pin: '4821' };
 
@@ -39,6 +45,13 @@ function key(target: EventTarget, keyName: string, init: KeyboardEventInit = {})
   const event = new KeyboardEvent('keydown', { key: keyName, bubbles: true, cancelable: true, ...init });
   target.dispatchEvent(event);
   return event;
+}
+
+function installLaterWindowListener(): ReturnType<typeof vi.fn> {
+  const listener = vi.fn<(event: KeyboardEvent) => void>();
+  window.addEventListener('keydown', listener);
+  laterWindowListeners.push(listener);
+  return listener;
 }
 
 function fixture() {
@@ -88,14 +101,18 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const { store, duplicate } = fixture();
     render(BootOverlay, { props: { active: true, status: initialBootStatus } });
     const overlay = screen.getByRole('alertdialog');
+    const laterWindow = installLaterWindowListener();
 
     key(overlay, '1');
-    key(overlay, 'Backspace');
     key(overlay, 'd', { metaKey: true });
+    laterWindow.mockClear();
+    const deleteEvent = key(overlay, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(deleteEvent.defaultPrevented).toBe(true);
+    expect(laterWindow).not.toHaveBeenCalled();
   });
 
   it('suppresses every background action inside the real portalled ShareInfo popover', async () => {
@@ -108,15 +125,19 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     render(ShareInfo, { props: { store: shareStore } });
     await fireEvent.click(screen.getByLabelText('Share room'));
     const popover = await screen.findByText('Share room');
+    const laterWindow = installLaterWindowListener();
 
     expect(popover.closest('[data-keyboard-owner="popover"]')).not.toBeNull();
     key(popover, '1');
-    key(popover, 'Backspace');
     key(popover, 'd', { metaKey: true });
+    laterWindow.mockClear();
+    const deleteEvent = key(popover, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(deleteEvent.defaultPrevented).toBe(true);
+    expect(laterWindow).not.toHaveBeenCalled();
   });
 
   it('suppresses every background action inside the real portalled ContextMenu menu', async () => {
@@ -127,16 +148,20 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     await fireEvent.contextMenu(container.querySelector('.ctx-anchor')!);
     const menu = await waitFor(() => screen.getByRole('menu'));
     const item = screen.getByRole('menuitem');
+    const laterWindow = installLaterWindowListener();
 
     expect(menu.getAttribute('data-keyboard-owner')).toBe('menu');
     expect(item.getAttribute('data-keyboard-owner')).toBe('menuitem');
     key(item, '1');
-    key(item, 'Backspace');
     key(item, 'd', { metaKey: true });
+    laterWindow.mockClear();
+    const deleteEvent = key(item, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(deleteEvent.defaultPrevented).toBe(true);
+    expect(laterWindow).not.toHaveBeenCalled();
   });
 
   it('suppresses every background action inside the shared Dialog and native open dialog', () => {
@@ -144,21 +169,28 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const children = createRawSnippet(() => ({ render: () => '<button>dialog action</button>' }));
     render(Dialog, { props: { open: true, title: 'Dialog', children } });
     const content = document.querySelector('[data-keyboard-owner="modal"]')!;
+    const laterWindow = installLaterWindowListener();
 
     key(content, '1');
-    key(content, 'Backspace');
     key(content, 'd', { metaKey: true });
+    laterWindow.mockClear();
+    const dialogDelete = key(content, 'Backspace');
+    expect(dialogDelete.defaultPrevented).toBe(true);
+    expect(laterWindow).not.toHaveBeenCalled();
 
     const native = document.body.appendChild(document.createElement('dialog'));
     native.setAttribute('open', '');
     key(native, '1');
-    key(native, 'Backspace');
     key(native, 'd', { metaKey: true });
+    laterWindow.mockClear();
+    const nativeDelete = key(native, 'Backspace');
     native.remove();
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
     expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
+    expect(nativeDelete.defaultPrevented).toBe(true);
+    expect(laterWindow).not.toHaveBeenCalled();
   });
 
   it('keeps ordinary Perform canvas arrows with the canvas and still fires a digit', () => {
@@ -176,5 +208,23 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(arrow.defaultPrevented).toBe(false);
     expect(digit.defaultPrevented).toBe(true);
     expect(bubbled).toBe(1); // ArrowRight reaches the canvas; the claimed digit stops in capture.
+  });
+
+  it('keeps intended delete propagation on the canvas and in normal editable text', () => {
+    const { store } = fixture();
+    const canvas = document.body.appendChild(document.createElement('div'));
+    canvas.className = 'svelte-flow';
+    const laterWindow = installLaterWindowListener();
+
+    const canvasDelete = key(canvas, 'Backspace');
+    expect(canvasDelete.defaultPrevented).toBe(true);
+    expect(store.removeNode).toHaveBeenCalledOnce();
+    expect(laterWindow).toHaveBeenCalledOnce();
+
+    const input = document.body.appendChild(document.createElement('input'));
+    const textDelete = key(input, 'Backspace');
+    expect(textDelete.defaultPrevented).toBe(false);
+    expect(store.removeNode).toHaveBeenCalledOnce();
+    expect(laterWindow).toHaveBeenCalledTimes(2);
   });
 });

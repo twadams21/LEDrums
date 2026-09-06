@@ -52,6 +52,47 @@ and a strict Perform ui-shot against the project's live `5174` dev port are gree
 on this branch and is not merged or shipped. No new reusable visual component or design-system
 artifact was needed.
 
+**PR #206 final integration fix (2026-09-06, local after merging `origin/main`):** suppressed
+Backspace/Delete events owned by a dialog, menu, popover, or keyboard-owner control now call both
+`preventDefault()` and `stopPropagation()` at the App capture boundary, so later window/xyflow
+listeners cannot delete the background selection. Unsuppressed canvas deletion still propagates
+to the window listener, and normal editable text still keeps native deletion. The mounted harness
+proves all three suppressed surfaces plus those two intended propagation cases. Focused tests, full
+typecheck, full test (4,813 passed / 4 skipped), build, design-system regeneration, and strict
+`songs-bar`, `sections-bar`, and `perform` ui-shots are green. Commit, push, and fresh CI remain
+pending.
+
+**PR #207 integration (2026-09-06):** `origin/main` now contains the section-add gate and song
+reference reconciliation remediation from PR #207; its implementation and regenerated design
+system artifact are included in this branch's local merge. PR #206 remains unmerged.
+**PR #207 final blocker (merged to `main` via PR #207 on 2026-09-06):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from the PR #207 review findings.
+`ShowsController.setSongRefs` is now the single reference-list replacement seam: import, removal,
+detach, and authored-state replacement all reconcile the exact active song to a valid local fallback
+or empty state, then call the existing active-section reconciliation seam. Two regressions cover
+active canonical removal, re-add without stale-section revival, and the no-fallback/null case.
+Evidence: focused web 59 passed, full web 2,519 passed / 1 skipped, full monorepo 4,773 passed /
+4 skipped, and full typecheck green. No UI output changed, so no shots were required. The result is
+now included in `origin/main`.
+
+**PR #207 review remediation (merged to `main` via PR #207 on 2026-09-06):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from PR #207 review findings. The
+Sections `+` gate now derives from exact resolved/local song targets: canonical library references
+remain playable but show a disabled `Library song — detach a copy to edit` reason, stale or empty
+selection shows `No active song — add a song first`, and viewer state remains the generic reason only
+when a local target exists. The focusable tooltip wrapper now carries its own accessible group name,
+description and disabled state while the inner native button remains disabled. Section mutations
+require an exact local target, activate only after successful insertion, and reconcile the active
+section after song-id/list replacement or removal. Tests cover accessibility tree behavior, reason
+precedence, stale/empty/reference targets, invalid activation, insertion, replacement and removal.
+Verified with focused web tests (49 passed), full web tests (2,517 passed, 1 skipped), full monorepo
+tests (green), full typecheck, regenerated `docs/design-system.html`, and strict `songs-bar`/
+`sections-bar` shots with no console errors. The current shot seam cannot select viewer/reference/
+no-song fixtures, so those extra visual states were verified at component/store seams instead.
+
+**Chrome section-add gate replacement (merged to `main` via PR #207 on 2026-09-06; originally local `feat/chrome-section-add-gate`):**
+Requested by Trent in-session on Trent’s MacBook Pro, sourced from this request’s intent and review requirements. Sections chrome now calls the section controller action and activates the created section; viewer add controls remain visible with native disabled semantics and `Viewing — take over to edit`; no active song reports `No active song — add a song first`. `IconButton` exposes disabled reasons through a keyboard-focusable tooltip wrapper, `aria-describedby` text, and an explicit callback guard. Controller/store boundaries reject section creation without an active song and clear stale active-section IDs. Evidence: focused 43-test gate, full web 2,511-test pass, full monorepo 4,765-test pass, full typecheck, regenerated design-system output, and strict isolated `sections-bar`/`songs-bar` captures with no console errors. It is now included in `origin/main`; no release or shipment is implied.
+
 **P02 frozen-review corrections (2026-09-05, local `fix/health-integration`):**
 Trent's in-session request on Trent's MacBook Pro; sources, recovery procedure and exact scoped
 checks: `docs/reports/2026-09-05-health-project-review-fixes.md`. Four blockers from frozen

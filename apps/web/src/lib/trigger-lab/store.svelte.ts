@@ -410,7 +410,7 @@ export class TriggerLab {
   // look-recall (the play surface stays here) through the injected host.
   private readonly sectionsCtl = new SectionsController({
     isViewer: () => this.isViewer,
-    activeSong: () => this.activeSong,
+    activeSongById: () => this.activeSongById,
     activeSongId: () => this.activeSongId,
     songs: () => this.songs,
     setSongs: (songs) => (this.songs = songs),
@@ -429,7 +429,9 @@ export class TriggerLab {
     return this.sectionsCtl.activeSectionId;
   }
   set activeSectionId(id: string | null) {
-    this.sectionsCtl.activeSectionId = id;
+    const activeSong = this.activeSongById;
+    this.sectionsCtl.activeSectionId =
+      id !== null && !activeSong?.sections.some((section) => section.id === id) ? null : id;
   }
   /** Section copy/paste scratch — a deep copy of the last-copied section, or null when empty.
       Transient (NOT persisted): a fresh session starts empty. `pasteSection` clones it. */
@@ -561,6 +563,7 @@ export class TriggerLab {
       this.flushSave();
     },
     setActiveSectionId: (id) => (this.activeSectionId = id),
+    reconcileActiveSection: () => this.sectionsCtl.reconcileActiveSection(),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
     send: (msg) => this.client.send(msg),
@@ -580,13 +583,14 @@ export class TriggerLab {
   }
   set songs(v: Song[]) {
     this.showsCtl.songs = v;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** Library-song references (S41): ids into {@link songLibrary} the active show resolves in. */
   get songRefs(): string[] {
     return this.showsCtl.songRefs;
   }
   set songRefs(v: string[]) {
-    this.showsCtl.songRefs = v;
+    this.showsCtl.setSongRefs(v);
   }
   /** which song the Sections view + Songs rail show. */
   get activeSongId(): string {
@@ -594,6 +598,7 @@ export class TriggerLab {
   }
   set activeSongId(id: string) {
     this.showsCtl.activeSongId = id;
+    this.sectionsCtl.reconcileActiveSection();
   }
   /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
   get songLibrary(): SongLibrary {
@@ -613,6 +618,14 @@ export class TriggerLab {
   /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
   get activeSong(): Song | null {
     return this.showsCtl.activeSong;
+  }
+  /** The exact active song in the resolved setlist; unlike `activeSong`, never falls back. */
+  get activeSongById(): Song | null {
+    return this.showsCtl.activeSongById;
+  }
+  /** The exact active song in the local authored setlist, or null for a library reference/stale id. */
+  get activeLocalSong(): Song | null {
+    return this.showsCtl.activeLocalSong;
   }
   /** The active show with its library references materialized in (S42). */
   get resolvedView() {
@@ -2075,8 +2088,9 @@ export class TriggerLab {
    * tells the engine to fire this section's graphs.
    */
   setActiveSection(sectionId: string): void {
-    this.activeSectionId = sectionId;
     const look = this.sections.find((s) => s.id === sectionId);
+    if (!look) return;
+    this.activeSectionId = sectionId;
     // Offline preview only: when connected the server engine spawns this section's looks
     // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
     // outbound authority gate (S12) — the sim resolves only while the link is closed.

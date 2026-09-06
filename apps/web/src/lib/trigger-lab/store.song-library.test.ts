@@ -204,6 +204,46 @@ describe('referenced songs are navigable + playable + editable (S42 consumption)
     expect(store.songs.some((s) => s.id === libId)).toBe(false); // NOT cloned into local songs
     expect(store.songLibrary.songs[libId]).toBeTruthy(); // the library copy is untouched
   });
+
+  it('reconciles an active reference removal and does not revive its section when re-added', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSong = store.songs[0]!;
+    const libId = store.exportSongToLibrary(localSong.id)!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+    const referencedSectionId = store.activeSectionId;
+
+    store.removeSongReference(libId);
+
+    expect(store.activeSongId).toBe(localSong.id);
+    expect(store.activeSongById?.id).toBe(localSong.id);
+    expect(store.activeSectionId).toBe(localSong.sections[0]!.id);
+    expect(store.activeSectionId).not.toBe(referencedSectionId);
+
+    store.importSongReference(libId);
+
+    expect(store.activeSongId).toBe(localSong.id);
+    expect(store.activeSectionId).toBe(localSong.sections[0]!.id);
+  });
+
+  it('keeps an active reference cleared when removal leaves no fallback song', () => {
+    const store = new TriggerLab(fakeClient);
+    const libId = store.exportSongToLibrary('set-1')!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+    store.songs = [];
+
+    store.removeSongReference(libId);
+
+    expect(store.activeSongId).toBe('');
+    expect(store.activeSongById).toBeNull();
+    expect(store.activeSectionId).toBeNull();
+
+    store.importSongReference(libId);
+
+    expect(store.activeSongId).toBe('');
+    expect(store.activeSectionId).toBeNull();
+  });
 });
 
 describe('delete-in-use guard', () => {
