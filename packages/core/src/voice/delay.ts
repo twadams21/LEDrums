@@ -5,25 +5,33 @@
  * wall-clock, no Math.random.
  */
 
-/** The full canonical set of delay divisions the delay node supports. */
+/**
+ * The canonical division vocabulary. Three groups — straight, then dotted, then triplet — each
+ * run longest to shortest. Bars belong to the straight group because they have no dotted or
+ * triplet form. Keep this order: web option lists derive from it directly.
+ */
 export const DELAY_DIVISIONS = [
+  // Straight
+  '4-bars',
+  '2-bars',
+  '1-bar',
   '1/2',
   '1/4',
   '1/8',
   '1/16',
+  '1/32',
+  // Dotted
   'dotted-1/2',
   'dotted-1/4',
   'dotted-1/8',
   'dotted-1/16',
+  'dotted-1/32',
+  // Triplet
   'triplet-1/2',
   'triplet-1/4',
   'triplet-1/8',
   'triplet-1/16',
-  // Bar-length values, for movement that spans phrases rather than beats. A bar is
-  // `beatsPerBar` quarters, so unlike every value above these depend on the time signature.
-  '1-bar',
-  '2-bars',
-  '4-bars',
+  'triplet-1/32',
 ] as const;
 
 export type DelayDivision = (typeof DELAY_DIVISIONS)[number];
@@ -37,6 +45,7 @@ export type DelayDivision = (typeof DELAY_DIVISIONS)[number];
  *     - `1/4`  → `60000 / bpm`  (quarter note)
  *     - `1/8`  → `30000 / bpm`  (eighth note)
  *     - `1/16` → `15000 / bpm`  (sixteenth note)
+ *     - `1/32` → `7500 / bpm`   (thirty-second note)
  *     - `1-bar` / `2-bars` / `4-bars` → whole bars, i.e. `beatsPerBar` quarters each.
  *       These are the only values that read the time signature; everything else is
  *       signature-independent, which is why `beatsPerBar` merely defaults to 4.
@@ -64,6 +73,7 @@ export function computeDelayMs(
   let base: number;
   if (clean === '1/8') base = quarter / 2;
   else if (clean === '1/16') base = quarter / 4;
+  else if (clean === '1/32') base = quarter / 8;
   else if (clean === '1/2') base = quarter * 2;
   else if (clean === '1-bar') base = bar;
   else if (clean === '2-bars') base = bar * 2;

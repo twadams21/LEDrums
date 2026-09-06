@@ -105,7 +105,7 @@ function divisionLabel(d: string): string {
 
 /** One option per `DELAY_DIVISIONS` value — value = the canonical division string,
     label = human-readable (e.g. `'1/8 dotted'`, `'1/4 triplet'`). */
-export const DIVISION_OPTS: Array<{ value: string; label: string }> = voice.DELAY_DIVISIONS.map(
+export const DIVISION_OPTS: Array<{ value: voice.DelayDivision; label: string }> = voice.DELAY_DIVISIONS.map(
   (d) => ({ value: d, label: divisionLabel(d) }),
 );
 
