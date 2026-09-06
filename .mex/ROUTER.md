@@ -38,33 +38,34 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 **PR #206 integration (merged to `main`, 2026-09-06):** `origin/main` now includes PR #206's
 keyboard ownership and runtime-section authorization fixes, plus the preceding PR #211 splice
-transport merge. This branch is integrating that current main before the PR #213 blocker fixes.
+transport merge. PR #213's branch merged that current main at `2122de55` before the final blocker
+fix commit `b0ac0710`.
 
 **Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR #213):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the stateful-effect review
-of PR #200 commit `703fa7f5`. `origin/main` was fetched and merged in this session. When a splice
-has a real cascade delay and its member declares `voiceLife`, the
-spawned member stores `materialCycleMs` resolved once from its authored params and spawn BPM;
-the voice-tail factor is excluded. Each cycle boundary creates fresh deterministic generator
-state and a coherent local clock, age, dt, and transport. The render bridge snapshots and
-restores every shared context carrier in `finally`, including generator context, trigger,
-frame transport, voice transport, and authored-decay state, so member, ordinary, and modifier
-renders cannot inherit a cycle clock. The current cycle renders once into its framebuffer; an
-adjacent boundary retains only that pre-modifier framebuffer for a <=100ms crossfade, while a
-non-adjacent jump drops stale output. No-life and no-cascade paths remain ordinary one-render
-paths. Checkpoints, model changes, generator replacement, and voice reuse clear the carriers.
-Focused core coverage proves 3+ cycles for stateless, voice-timebase, emitter, and particle
-effects, large jumps, determinism, modifiers/scope/Mix, reset/checkpoint lifetime, BPM freezing,
-invalid-life normalization, mixed-member isolation, and failure of time-only wrapping. The
-opt-in 2,300-pixel/8-member benchmark uses non-zero offsets, 100 warmup + 500 samples, nearest-
-rank p50/p95, and reports machine/runtime metadata. Across three runs on Darwin/x64 Node
-v25.8.2, Plasma stayed at p95 9.19–10.01ms ordinary and 9.57–11.01ms boundary; Confetti
-stayed at 1.64–1.77ms ordinary and 4.74–5.29ms boundary. Full-engine Confetti tick p95 was
-2.36–2.81ms. The Plasma gate is <=16.7ms p95. This PR is pushed/opened for review only and
-must not merge until reviewed. Clean full-repo checks recorded 1,430 core, 98 IO, 13 protocol,
-601 server, and 83 desktop tests passing; web had 2,071 passing plus the known external loader
-and WS fixture failures. Workspace typecheck/build remain blocked by the pre-existing server
-contract errors listed in the mex note.
+of PR #200 commit `703fa7f5`. `origin/main` was fetched and merged at `b1b4b492` (PR #206 on top
+of PR #211). Only Splice-owned members carry a spawn-frozen `materialCycleMs`; the compositor
+activates it only when `maxCascadeDelayMs(model, splice) > 0` and the effect declared life.
+Ordinary Mix and direct voices never receive material cycle state and keep one continuous
+generator state. Cycle boundaries create fresh deterministic state and a coherent local clock,
+age, dt, and transport. The bridge snapshots and restores every shared context carrier in
+`finally`, including generator context, trigger, frame transport, voice transport, and
+authored-decay state. The current cycle renders once into its framebuffer; an adjacent boundary
+retains only that pre-modifier framebuffer for a <=100ms crossfade, while a non-adjacent jump
+drops stale output. Checkpoints, model changes, generator replacement, and voice reuse clear the
+carriers. Focused core coverage proves 3+ cycles, determinism, modifiers/scope/Mix, reset and
+checkpoint lifetime, BPM freezing, invalid-life normalization, member isolation, and the
+ordinary Mix 0/50/100ms regression. Structural performance coverage pins one generator render
+per frame and reused synchronous carriers; no wall-clock assertion is a correctness gate. The
+opt-in 2,300-pixel/8-member benchmark uses non-zero offsets, 100 warmup + 500 samples,
+nearest-rank p50/p95, and machine/runtime metadata. Plasma is a no-regeneration control because
+it declares no `voiceLife`; Radial Wash and Confetti Burst are the authored regeneration cases.
+Three warm runs on Trent's MacBook Pro (Darwin/x64, Node v25.8.2) are recorded in PR #213 notes
+as observations only, with no CI SLA. The committed implementation is `b0ac0710`; full core,
+workspace typecheck, build, and dead-code verification are green. The second full-repo test pass
+reached 2,544 passing / 1 skipped before five web suites stopped on host `ENOSPC`; CI remains the
+authoritative clean-environment check. This PR is pushed/opened for review only and must not
+merge until reviewed.
 
 **Splice material transport (2026-09-06, branch `fix/splice-material-transport`, PR pending):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and extracted from PR #200
