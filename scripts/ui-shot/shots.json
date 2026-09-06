@@ -39,6 +39,16 @@
     "state": "view:trigger,add:effect,select:effect,effect:gen:comet-trails",
     "target": "Inspector"
   },
+  "fx-params-sparkler": {
+    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:sparkler",
+    "target": "Inspector",
+    "settle": 300
+  },
+  "fx-params-flame-flicker": {
+    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:flame-flicker",
+    "target": "Inspector",
+    "settle": 300
+  },
   "fx-params-confetti": {
     "state": "view:trigger,add:effect,select:effect,effect:gen:confetti-burst",
     "target": "Inspector"
@@ -197,6 +207,11 @@
   },
   "effect-gallery": {
     "state": "view:trigger,add:effect,select:effect,gallery",
+    "target": "dialog:Change effect",
+    "settle": 1200
+  },
+  "effect-gallery-sparkler": {
+    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:sparkler,gallery,search:sparkler",
     "target": "dialog:Change effect",
     "settle": 1200
   },

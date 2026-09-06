@@ -36,6 +36,18 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**Sparkler + Flame Flicker effects (2026-09-06, branch `feat/sparkler-flame-effects`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from PR #200 commits `8c9c89f3` and
+`7dfdd9a2`. The current-main reimplementation adds pure, seeded `sparkler` and
+`flame-flicker` generators with state-owned per-drum grouping, allocation-free render loops,
+explicit Random/Spread behavior, voice-life declarations, metadata, registry/gallery/thumbnail
+coverage, and a narrow duplicate Burn-row regression. PixLite report, navigation, divisions,
+splice runtime, and stale Router content were not carried over. Evidence: focused behavior tests,
+2,320-pixel benchmarks, full monorepo tests, full typecheck/build, design-system regeneration,
+and strict targeted inspector/gallery captures pass. The all-shot sweep still has two unrelated
+baseline failures (`face-params-expose` timeout and `splice-node` target missing). Committed and
+PR-opened work is not merged or shipped.
+
 **Splice movement language extraction (2026-09-06, local `refactor/splice-movement-language`):**
 Requested by Trent on Trent's MacBook Pro, sourced from this request and the extracted PR #200.
 The Splice inspector now uses `MOVE THROUGH`, `MOVE THROUGH
