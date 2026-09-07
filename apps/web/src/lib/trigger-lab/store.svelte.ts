@@ -46,8 +46,10 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { graphFireKeyOf } from '@ledrums/protocol';
 import { WSClient, type ConnectionState, type InputEcho } from '../ws/client';
-import { type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
-import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { type MidiClockEvent, type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
+import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MidiClockStatus, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
+import { LocalMidiClock, parseClockInputValue, readStoredClockDevice, resolveClockStatus, shouldForwardClock, writeStoredClockDevice } from './store/midi-clock';
+import type { ClockInput, TransportSource } from '@ledrums/core';
 import { appendVelocityHit, type VelocityHits } from '../app/velocity-hits';
 import type { CurveHit } from '../ui/curve-field';
 import { selectDockVoices, type DockVoice } from './dock-voices';
@@ -1005,6 +1007,32 @@ export class TriggerLab {
     return this.midi.unavailableReason;
   }
 
+  // --- MIDI clock (external transport sync) ---------------------------------
+  /** Timing source, from the server project's transport (server-authoritative, like the MIDI
+      channel filter): `manual` (default) or `midiClock`. */
+  timingSource = $derived<TransportSource>(this.project?.composition.transport.source ?? 'manual');
+  /** Which route the server accepts the clock from: the desktop app's native port, or this
+      browser's selected WebMIDI port. */
+  clockInput = $derived<ClockInput>(this.project?.composition.transport.clockInput ?? 'native');
+  /** The WebMIDI port that owns the clock in `browser` mode — machine-local (localStorage), never
+      part of the show, because a port id means nothing on another machine. */
+  clockDeviceId = $state<string | null>(readStoredClockDevice());
+  /** The server's clock truth from the throttled stats stream (null until the first tick). */
+  private serverClock = $state<MidiClockStatus | null>(null);
+  /** The offline preview's own clock: the same core reducer, fed from the selected port. */
+  private readonly localClock = new LocalMidiClock(120);
+  /** Mirror of the local reducer's state, so `clockStatus` re-derives on each offline advance. */
+  private localClockState = $state.raw(this.localClock.state);
+  /** What the settings panel shows: server truth while connected, the local reducer when this
+      browser reads a port offline, and never "synced" when neither can confirm it. */
+  clockStatus = $derived<MidiClockStatus>(
+    resolveClockStatus(this.link === 'open', this.serverClock, this.localClockState, {
+      source: this.timingSource,
+      clockInput: this.clockInput,
+      manualBpm: this.bpm,
+    }),
+  );
+
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
       badges. Keyed via {@link activityKey} so a binding's badge is a single lookup and
@@ -1193,8 +1221,19 @@ export class TriggerLab {
     const loop = (now: number): void => {
       const dt = Math.min(64, now - this.last);
       this.last = now;
-      this.sim.bpm = this.bpm;
-      if (this.playing) this.sim.tick(dt);
+      if (this.timingSource === 'midiClock' && this.clockInput === 'browser' && this.link !== 'open') {
+        // Offline preview under external clock: the same reducer the server runs, fed from the
+        // selected port. The sim's beat is set from the reducer (tick-counted + interpolated),
+        // never accumulated from dt, so it cannot drift from the pulses.
+        const snap = this.localClock.advance();
+        this.localClockState = this.localClock.state;
+        this.sim.bpm = snap.bpm;
+        if (snap.playing) this.sim.tick(dt);
+        this.sim.beat = snap.beat;
+      } else {
+        this.sim.bpm = this.bpm;
+        if (this.playing) this.sim.tick(dt);
+      }
       // Skip the sim composite while the visualiser is adopting SERVER frames — the local
       // buffer would be rendered and thrown away every frame (wave-1 finding: wasted work,
       // and a second render truth ticking in the background). The sim still ticks above so
@@ -1297,6 +1336,9 @@ export class TriggerLab {
         return;
       case 'programChange':
         this.client.send({ t: 'programChange', value: ev.value, channel: ev.channel });
+        return;
+      case 'clock':
+        this.receiveClock(ev);
         return;
     }
   }
@@ -1727,6 +1769,9 @@ export class TriggerLab {
           // Drop the server voice list — offline the dock reads the sim again, and stale server
           // voices must not linger into the next connect.
           this.serverVoices = [];
+          // A dropped link cannot confirm the server's clock: forget it (offline the panel
+          // reads the local reducer, or shows waiting for a native selection).
+          this.serverClock = null;
         }
       },
       onStats: (_stats, latencyMs, fps, output, voice) => {
@@ -1743,6 +1788,16 @@ export class TriggerLab {
         // is only an offline preview once the socket is connected (the sim no longer fires — S12).
         if (voice?.busLevels) this.busLevels = voice.busLevels;
         this.serverVoices = voice?.voices ?? [];
+        // External clock truth rides the stats stream (100Hz). Only assign on a real change so
+        // the derived panel state is not invalidated every tick.
+        const clock = voice?.clock ?? null;
+        const prev = this.serverClock;
+        if (
+          (clock === null) !== (prev === null) ||
+          (clock && prev && (clock.status !== prev.status || clock.locked !== prev.locked || clock.playing !== prev.playing || Math.abs(clock.bpm - prev.bpm) >= 0.05))
+        ) {
+          this.serverClock = clock;
+        }
       },
       onFrame: (frame) => {
         this.serverFrame = frame;
@@ -2392,6 +2447,57 @@ export class TriggerLab {
   setMidiChannel(channel: number | null): void {
     if (this.isViewer || !this.project) return;
     this.setInputMap({ ...this.project.inputMap, midiChannel: channel });
+  }
+
+  /** A beat-clock message from a WebMIDI port. The selected port owns the clock: its pulses feed
+      the offline reducer (so the preview follows offline) and, when the link is open and we are
+      the editor, ride the link as `midiClock` — never Monitor-logged, never persisted. Any other
+      port's clock is dropped here so two clocks can never combine. */
+  private receiveClock(ev: MidiClockEvent): void {
+    const ctx = { source: this.timingSource, clockInput: this.clockInput, deviceId: this.clockDeviceId, isViewer: this.isViewer };
+    if (!shouldForwardClock(ev, ctx)) return;
+    this.localClock.apply(ev);
+    this.localClockState = this.localClock.state;
+    if (this.link === 'open') {
+      this.client.send({ t: 'midiClock', command: ev.command, ...(ev.command === 'position' ? { position: ev.position } : {}) });
+    }
+  }
+
+  /** Timing source (Manual / MIDI Clock). Persisted on the server project's transport (editor-
+      only, like every setTransport). Switching to Manual leaves the authored bpm/playing exactly as
+      they are — the manual transport controls remain the explicit way to set tempo. */
+  setTimingSource(source: TransportSource): void {
+    if (this.isViewer || !this.project) return;
+    if (source === this.timingSource) return;
+    this.localClock.reset(this.bpm);
+    this.localClockState = this.localClock.state;
+    this.client.send({ t: 'setTransport', source });
+    // Optimistic: the state broadcast confirms it, but the panel should not lag a round trip.
+    this.project = { ...this.project, composition: { ...this.project.composition, transport: { ...this.project.composition.transport, source } } };
+  }
+
+  /** Clock input from the picker value (`native` or `browser:<port>`): the route goes to the
+      server, the port stays on this machine. */
+  setClockInput(value: string): void {
+    if (this.isViewer || !this.project) return;
+    const { clockInput, deviceId } = parseClockInputValue(value);
+    this.clockDeviceId = deviceId;
+    writeStoredClockDevice(deviceId);
+    this.localClock.reset(this.bpm);
+    this.localClockState = this.localClock.state;
+    if (clockInput !== this.clockInput) {
+      this.client.send({ t: 'setTransport', clockInput });
+      this.project = { ...this.project, composition: { ...this.project.composition, transport: { ...this.project.composition.transport, clockInput } } };
+    }
+  }
+
+  /** Adopt the clock's last tempo as the authored manual tempo — the explicit recovery path
+      after switching back to Manual (or to freeze the DAW's tempo into the show). Goes through the
+      ordinary `bpm` field, so it syncs like any tempo edit. */
+  adoptClockBpm(): void {
+    const bpm = Math.round(this.clockStatus.bpm * 10) / 10;
+    if (this.isViewer || !Number.isFinite(bpm) || bpm <= 0) return;
+    this.bpm = bpm;
   }
 
   startMidiLearn(target: MidiLearnTarget): void {

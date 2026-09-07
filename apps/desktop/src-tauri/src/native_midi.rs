@@ -365,17 +365,45 @@ mod imp {
         }
     }
 
-    /// Translate a raw CoreMIDI channel message into the server's WS client-message JSON.
+    /// Translate a raw CoreMIDI message into the server's WS client-message JSON.
+    ///
+    /// System real-time beat clock (0xF8 tick, 0xFA start, 0xFB continue, 0xFC stop) and the
+    /// Song Position Pointer (0xF2, 14-bit in 16th notes) are decoded BEFORE the channel-message
+    /// parse: they are single-byte (or channel-less) system messages and must never be
+    /// channel-filtered. Other system messages (sysex, MTC, song select, active sensing, reset)
+    /// are not forwarded. Receipt timing is the server's: a pulse rides the same queued HTTP hop
+    /// as a note, so the server stamps arrival time and smooths — this bridge is not a precision
+    /// clock transport and the timing jitter of that hop is documented as unmeasured.
     ///
     /// Channel is reported 1-based (`(status & 0x0f) + 1`), matching the browser WebMIDI path
     /// (`apps/web/src/lib/midi/webmidi.ts`) and therefore the app-wide MIDI channel filter, and a
     /// note-on with velocity 0 is reported as a note-off — both verified against the server in
     /// `native_midi_tests`.
     pub fn midi_message_json(message: &[u8]) -> Option<String> {
+        let raw_status = *message.first()?;
+        let clock = match raw_status {
+            0xf8 => Some("tick"),
+            0xfa => Some("start"),
+            0xfb => Some("continue"),
+            0xfc => Some("stop"),
+            _ => None,
+        };
+        if let Some(command) = clock {
+            return Some(json!({ "t": "midiClock", "command": command }).to_string());
+        }
+        if raw_status == 0xf2 {
+            if message.len() < 3 {
+                return None;
+            }
+            let position = (message[1] as u16 & 0x7f) | ((message[2] as u16 & 0x7f) << 7);
+            return Some(
+                json!({ "t": "midiClock", "command": "position", "position": position })
+                    .to_string(),
+            );
+        }
         if message.len() < 2 {
             return None;
         }
-        let raw_status = *message.first()?;
         let status = raw_status & 0xf0;
         let channel = (raw_status & 0x0f) + 1;
 
@@ -445,6 +473,67 @@ mod imp {
             assert_eq!(
                 messages(&[0xf0, 0x7e, 0x01, 0xf7, 0x90, 38, 100]),
                 vec![vec![0xf0, 0x7e, 0x01, 0xf7], vec![0x90, 38, 100]]
+            );
+        }
+
+        fn parsed(message: &[u8]) -> Option<serde_json::Value> {
+            midi_message_json(message).map(|body| serde_json::from_str(&body).expect("valid JSON"))
+        }
+
+        #[test]
+        fn encodes_beat_clock_and_song_position_as_midi_clock_messages() {
+            assert_eq!(
+                parsed(&[0xf8]),
+                Some(json!({ "t": "midiClock", "command": "tick" }))
+            );
+            assert_eq!(
+                parsed(&[0xfa]),
+                Some(json!({ "t": "midiClock", "command": "start" }))
+            );
+            assert_eq!(
+                parsed(&[0xfb]),
+                Some(json!({ "t": "midiClock", "command": "continue" }))
+            );
+            assert_eq!(
+                parsed(&[0xfc]),
+                Some(json!({ "t": "midiClock", "command": "stop" }))
+            );
+            // 14-bit position, LSB first: 0x20 | (0x01 << 7) = 160 sixteenths.
+            assert_eq!(
+                parsed(&[0xf2, 0x20, 0x01]),
+                Some(json!({ "t": "midiClock", "command": "position", "position": 160 }))
+            );
+            assert_eq!(
+                parsed(&[0xf2, 0x7f, 0x7f]),
+                Some(json!({ "t": "midiClock", "command": "position", "position": 16383 }))
+            );
+            assert_eq!(parsed(&[0xf2, 0x20]), None); // truncated pointer
+        }
+
+        #[test]
+        fn does_not_forward_other_system_messages() {
+            for status in [0xf0u8, 0xf1, 0xf3, 0xf6, 0xfe, 0xff] {
+                assert_eq!(
+                    midi_message_json(&[status, 0x00, 0x00]),
+                    None,
+                    "status {status:#x}"
+                );
+            }
+        }
+
+        #[test]
+        fn realtime_pulses_interleaved_with_channel_messages_all_translate() {
+            // A DAW packet: pulse, note-on, pulse, CC, pulse — the walker splits them and every
+            // one becomes a message (pulses are never channel-filtered).
+            let packet = [0xf8, 0x90, 38, 100, 0xf8, 0xb0, 7, 64, 0xf8];
+            let mut kinds = Vec::new();
+            for_each_message(&packet, |message| {
+                let body = parsed(message).expect("every message translates");
+                kinds.push(body["t"].as_str().unwrap().to_string());
+            });
+            assert_eq!(
+                kinds,
+                vec!["midiClock", "midi", "midiClock", "cc", "midiClock"]
             );
         }
 

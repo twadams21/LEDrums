@@ -47,6 +47,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'midi', note: 38, velocity: 100, on: true, channel: 1 },
   { t: 'cc', controller: 0, value: 5 },
   { t: 'programChange', value: 2 },
+  { t: 'midiClock', command: 'position', position: 16383 },
   { t: 'osc', address: '/vol', value: 0.5 },
   { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
   { t: 'setLayer', layerId: 'base', blendMode: 'add', opacity: 0.5, activeClipId: null, name: 'x' },
@@ -54,7 +55,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'removeLayer', layerId: 'base' },
   { t: 'addClip', layerId: 'base', clip },
   { t: 'removeClip', layerId: 'base', clipId: 'c1' },
-  { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4 },
+  { t: 'setTransport', bpm: 128, playing: false, beatsPerBar: 4, source: 'midiClock', clockInput: 'browser' },
   { t: 'releaseBus', busId: 'base' },
   { t: 'setKitTransform', drumId: 'kick', origin: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, localSpinDeg: 90, startAngleDeg: 0, pixelsPerHoop: 32, hoopSpacingMm: 50, diameterIn: 8, flip: true, color: '#ff8800' },
   { t: 'setKitGlobal', mirror: 'x', expanded: true, ledDensityPxPerM: 72, hoopCount: 5, defaultHoopSpacingMm: 45, maxPixelsPerOutput: 300 },
@@ -147,6 +148,19 @@ describe('clientMessageSchema', () => {
     }
     // Coverage guard: one sample per variant.
     expect(seen.size).toBe(clientSamples.length);
+  });
+
+  it('rejects a MIDI clock message with a bad command, out-of-range position, or a channel', () => {
+    for (const command of ['tick', 'start', 'continue', 'stop'] as const) {
+      expect(clientMessageSchema.safeParse({ t: 'midiClock', command }).success).toBe(true);
+    }
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'reset' }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'position', position: 16384 }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'position', position: -1 }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'position', position: 1.5 }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'tick', channel: 1 }).success).toBe(false); // system messages carry no channel
+    expect(clientMessageSchema.safeParse({ t: 'midiClock', command: 'tick', atMs: 12 }).success).toBe(false); // receipt time is the host's, never the client's
+    expect(clientMessageSchema.safeParse({ t: 'setTransport', source: 'link' }).success).toBe(false);
   });
 
   it('rejects unknown t, missing fields, wrong types, and unknown keys', () => {
