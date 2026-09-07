@@ -14,5 +14,6 @@ Lookup table for all pattern files in this directory. Check here before starting
 | [add-a-graph-node-kind.md](add-a-graph-node-kind.md) | Adding a new node kind to the Gen3 trigger graph (core types → eval → compositor → web mirror → UI) |
 | [ui-shot-sweep.md](ui-shot-sweep.md) | Running or repairing the ui-shot screenshot sweep for gallery, shell, or visual close-out tasks |
 | [section-graph-ownership.md](section-graph-ownership.md) | Changing section graph placement, copy, link, unlink, or legacy repeated-key behavior |
+| [splice-material-regeneration.md](splice-material-regeneration.md) | Carrying short-lived stateful effect material through a deliberately slow splice cascade |
 | [authoritative-recall-sync.md](authoritative-recall-sync.md) | Changing server-owned recall ordering, reconnect adoption, or canonical reference replay |
 | [keyboard-ownership.md](keyboard-ownership.md) | Adding global keyboard shortcuts without stealing native or component keyboard accessibility |

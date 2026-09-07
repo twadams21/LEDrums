@@ -100,61 +100,90 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
 }
 
 /** The frame-wide slice of a {@link ModSampleCtx}: the absolute clock + tempo and the live
-    CC/OSC/note tables, all identical for every voice this frame. Built once per render and
-    stamped with each voice's own `phase` by {@link modCtxFor}. */
+    CC/OSC/note tables, all identical for every voice this frame. Reused by the compositor and
+    stamped with each voice's own `phase` by {@link writeModCtx}. */
 type FrameModCtx = Omit<ModSampleCtx, 'phase'>;
 
 /** Build the per-frame modulation-sample context for a voice — its life phase (envelope
     sources restart per hit) over the shared frame context (absolute clock + tempo continuous
     sources, S36/S37). Shared by the play-param sweep and the modifier chain so both restart
     together. */
-function modCtxFor(v: Voice, frame: FrameModCtx): ModSampleCtx {
-  return { phase: voicePhase(v, frame.timeMs), ...frame };
+function writeModCtx(out: ModSampleCtx, v: Voice, frame: FrameModCtx): ModSampleCtx {
+  out.phase = voicePhase(v, frame.timeMs);
+  out.timeMs = frame.timeMs;
+  out.bpm = frame.bpm;
+  out.cc = frame.cc;
+  out.osc = frame.osc;
+  out.notes = frame.notes;
+  return out;
 }
 
-function mixInputVoice(input: MixInput, host: Voice): Voice {
+function createMixInputVoice(): Voice {
   return {
-    active: true,
-    id: `${host.id}m${input.seed}`,
-    effectId: host.effectId,
-    playType: host.playType,
-    canvasScene: host.canvasScene,
-    busId: host.busId,
-    mode: host.mode,
-    scope: input.scope,
-    targetId: input.targetId,
-    sourceDrumId: input.sourceDrumId,
-    velocity: input.velocity,
-    seed: input.seed,
-    generatorId: input.generatorId,
-    genState: input.genState,
-    renderModel: input.renderModel,
-    renderGenerator: input.renderGenerator,
-    mixInputs: undefined,
-    modifiers: input.modifiers,
-    modState: input.modState,
-    modulations: input.modulations,
-    params: input.params,
-    mixBlendMode: undefined,
-    liveParams: input.liveParams,
-    specs: input.specs,
-    attackMs: host.attackMs,
-    sustainMs: host.sustainMs,
-    releaseMs: host.releaseMs,
-    phase: host.phase,
-    level: 1,
-    // Metadata only: the host applies its envelope gain once, after composition.
-    lifeEnvelope: host.lifeEnvelope,
-    bornAtMs: host.bornAtMs,
-    releaseAtMs: host.releaseAtMs,
-    releaseFromLevel: host.releaseFromLevel,
-    via: host.via,
-    deckGain: 1,
+    active: true, id: 'v1', effectId: '', playType: undefined, canvasScene: undefined, busId: '',
+    mode: 'loop', scope: 'kit', targetId: undefined, sourceDrumId: null, velocity: 1, seed: 0,
+    generatorId: null, genState: null, materialCycleMs: undefined, materialCycle: undefined,
+    renderModel: undefined, renderGenerator: undefined, mixInputs: undefined, spliceInputs: undefined,
+    splice: undefined, spliceMotionMs: undefined, spliceCoverage: undefined, modifiers: undefined,
+    modState: undefined, modulations: undefined, params: {}, mixBlendMode: undefined, liveParams: {},
+    specs: [], attackMs: 0, attackEase: undefined, sustainMs: 0, releaseMs: 0, lifeEnvelope: null,
+    lifeSpanMs: 0, phase: 'attack', level: 1, bornAtMs: 0, releaseAtMs: null, releaseFromLevel: 1,
+    via: '', deckGain: 1,
   };
 }
 
-function syncMixInputState(input: MixInput, rendered: Voice): void {
+/** Fill the one synchronous member shell used by both composite paths. */
+function fillMixInputVoice(out: Voice, input: MixInput, host: Voice, cycleOwned: boolean): void {
+  out.active = true;
+  // The old derived member id parsed as sequence 1; keep that deterministic sequence without
+  // allocating a template string every frame.
+  out.id = 'v1';
+  out.effectId = host.effectId;
+  out.playType = host.playType;
+  out.canvasScene = host.canvasScene;
+  out.busId = host.busId;
+  out.mode = host.mode;
+  out.scope = input.scope;
+  out.targetId = input.targetId;
+  out.sourceDrumId = input.sourceDrumId;
+  out.velocity = input.velocity;
+  out.seed = input.seed;
+  out.generatorId = input.generatorId;
+  out.genState = input.genState;
+  out.materialCycleMs = cycleOwned ? input.materialCycleMs : undefined;
+  out.materialCycle = cycleOwned ? input.materialCycle : undefined;
+  out.renderModel = input.renderModel;
+  out.renderGenerator = input.renderGenerator;
+  out.mixInputs = undefined;
+  out.spliceInputs = undefined;
+  out.splice = undefined;
+  out.spliceMotionMs = undefined;
+  out.spliceCoverage = undefined;
+  out.modifiers = input.modifiers;
+  out.modState = input.modState;
+  out.modulations = input.modulations;
+  out.params = input.params;
+  out.mixBlendMode = undefined;
+  out.liveParams = input.liveParams;
+  out.specs = input.specs;
+  out.attackMs = host.attackMs;
+  out.attackEase = host.attackEase;
+  out.sustainMs = host.sustainMs;
+  out.releaseMs = host.releaseMs;
+  out.phase = host.phase;
+  out.level = 1;
+  out.lifeEnvelope = host.lifeEnvelope;
+  out.lifeSpanMs = host.lifeSpanMs;
+  out.bornAtMs = host.bornAtMs;
+  out.releaseAtMs = host.releaseAtMs;
+  out.releaseFromLevel = host.releaseFromLevel;
+  out.via = host.via;
+  out.deckGain = 1;
+}
+
+function syncMixInputState(input: MixInput, rendered: Voice, cycleOwned: boolean): void {
   input.genState = rendered.genState;
+  if (cycleOwned) input.materialCycle = rendered.materialCycle;
   input.renderGenerator = rendered.renderGenerator;
   input.modState = rendered.modState;
 }
@@ -326,6 +355,8 @@ export function createDefaultCompositor(): PresentationCompositor {
   const checkpoint = createRenderCheckpoint();
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
+  /** One synchronous member shell; state is copied back to its owning MixInput after render. */
+  const compositeVoiceScratch = createMixInputVoice();
   /** One buffer per splice member, grown on demand and reused across voices + frames. */
   let spliceBuffers: Framebuffer[] = [];
   /** Band layouts by {@link spliceLayoutKey} — bounded, cleared wholesale when it fills
@@ -333,6 +364,8 @@ export function createDefaultCompositor(): PresentationCompositor {
   const spliceLayouts = new Map<string, SpliceUnit[]>();
   let spliceLayoutModel: PixelModel | null = null;
   const SPLICE_LAYOUT_CACHE_CAP = 64;
+  const frameCtx: FrameModCtx = { timeMs: 0, bpm: 120 };
+  const modCtxScratch: ModSampleCtx = { phase: 0, timeMs: 0, bpm: 120 };
 
   const bindModel = (model: PixelModel | null): void => {
     if (spliceLayoutModel === model) return;
@@ -360,13 +393,11 @@ export function createDefaultCompositor(): PresentationCompositor {
       // Equal pixel totals/ranges can hide changed hoop or drum boundaries.
       bindModel(model);
       const timeMs = frame.timeMs;
-      const frameCtx: FrameModCtx = {
-        timeMs,
-        bpm: frame.transport.bpm,
-        cc: frame.cc,
-        osc: frame.osc,
-        notes: frame.notes,
-      };
+      frameCtx.timeMs = timeMs;
+      frameCtx.bpm = frame.transport.bpm;
+      frameCtx.cc = frame.cc;
+      frameCtx.osc = frame.osc;
+      frameCtx.notes = frame.notes;
 
       // Refresh the reusable hosted-generator RenderContext for this frame.
       generators.beginFrame(model, timeMs, frame.dt, frame.transport);
@@ -397,6 +428,10 @@ export function createDefaultCompositor(): PresentationCompositor {
           const ranges = pixelRangesFor(v, model);
           if (!ranges.length) continue;
           const buffers = ensureSpliceBuffers(v.spliceInputs.length);
+          // The cascade span is a frame/member invariant. Resolve it once and reuse it for
+          // both the regeneration gate and looping pulse duration; the helper scans the model.
+          const cascadeDelayMs = maxCascadeDelayMs(model, cfg);
+          const materialRegeneration = cascadeDelayMs > 0;
 
           // 1. Render each member ONCE over the voice's whole range. Bands reveal these renders,
           //    so an effect keeps its real geometry (a comet still travels the hoop).
@@ -404,15 +439,25 @@ export function createDefaultCompositor(): PresentationCompositor {
             const member = v.spliceInputs[i]!;
             const buf = buffers[i]!;
             buf.clear();
-            for (const key of Object.keys(member.liveParams)) delete member.liveParams[key];
-            for (const key of Object.keys(member.params)) member.liveParams[key] = member.params[key]!;
+            for (const key in member.liveParams) delete member.liveParams[key];
+            for (const key in member.params) member.liveParams[key] = member.params[key]!;
             if (member.modulations?.length) {
-              applyModulations(member.params, member.liveParams, member.modulations, member.specs, modCtxFor(v, frameCtx));
+              applyModulations(member.params, member.liveParams, member.modulations, member.specs, writeModCtx(modCtxScratch, v, frameCtx));
             }
-            const memberVoice = mixInputVoice(member, v);
-            const memberCtx = modCtxFor(memberVoice, frameCtx);
+            fillMixInputVoice(compositeVoiceScratch, member, v, true);
+            const memberVoice = compositeVoiceScratch;
+            const memberCtx = writeModCtx(modCtxScratch, memberVoice, frameCtx);
+            // A splice may carry a hit-driven effect farther than that effect's own visible
+            // life. The bridge owns the bounded fresh-state cycle and renders at most one extra
+            // generation during its short boundary crossfade; the splice still receives one
+            // reusable material buffer per member.
+            // Life is an authored material property, so modulation of a live numeric value must
+            // not resize or reset the member's lifecycle mid-voice. This mirrors the spawn-time
+            // voice-life resolution and keeps cycle boundaries deterministic.
+            memberVoice.materialCycleMs = materialRegeneration ? member.materialCycleMs : undefined;
+            if (!materialRegeneration) memberVoice.materialCycle = undefined;
             generators.renderVoice(memberVoice, model, timeMs, 1, ranges, buf, memberCtx);
-            syncMixInputState(member, memberVoice);
+            syncMixInputState(member, memberVoice, true);
           }
 
           // 2. Cut the bands (cached — the cut never moves; only what shows in it does).
@@ -445,7 +490,7 @@ export function createDefaultCompositor(): PresentationCompositor {
           // so every unit restarts together and the travelling shape is preserved.
           const pulseCycleMs =
             cfg.waitMode === 'pulse' && v.mode !== 'oneshot'
-              ? splicePulseCycleMs(maxCascadeDelayMs(model, cfg), cfg.envelope)
+              ? splicePulseCycleMs(cascadeDelayMs, cfg.envelope)
               : 0;
           const motionClock =
             cfg.motionMode === 'continuous'
@@ -548,7 +593,7 @@ export function createDefaultCompositor(): PresentationCompositor {
           const spliceMods = v.modifiers;
           if (spliceMods && spliceMods.length) {
             if (!v.modState) v.modState = [];
-            const modCtx = modCtxFor(v, frameCtx);
+            const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
             applyScopedModifierChain(spliceMods, v.modState, mix, ranges, model, age, frame.dt, modCtx);
           }
           for (const range of ranges) {
@@ -570,15 +615,16 @@ export function createDefaultCompositor(): PresentationCompositor {
           mix.clear();
           for (const branch of v.mixInputs) {
             input.clear();
-            for (const key of Object.keys(branch.liveParams)) delete branch.liveParams[key];
-            for (const key of Object.keys(branch.params)) branch.liveParams[key] = branch.params[key]!;
+            for (const key in branch.liveParams) delete branch.liveParams[key];
+            for (const key in branch.params) branch.liveParams[key] = branch.params[key]!;
             if (branch.modulations?.length) {
-              applyModulations(branch.params, branch.liveParams, branch.modulations, branch.specs, modCtxFor(v, frameCtx));
+              applyModulations(branch.params, branch.liveParams, branch.modulations, branch.specs, writeModCtx(modCtxScratch, v, frameCtx));
             }
-            const branchVoice = mixInputVoice(branch, v);
-            const branchCtx = modCtxFor(branchVoice, frameCtx);
+            fillMixInputVoice(compositeVoiceScratch, branch, v, false);
+            const branchVoice = compositeVoiceScratch;
+            const branchCtx = writeModCtx(modCtxScratch, branchVoice, frameCtx);
             generators.renderVoice(branchVoice, model, timeMs, 1, pixelRangesFor(branchVoice, model), input, branchCtx);
-            syncMixInputState(branch, branchVoice);
+            syncMixInputState(branch, branchVoice, false);
             const src = input.rgba;
             for (let i = 0; i < src.length; i += 4) {
               compositeInto(mix.rgba, i, src[i]!, src[i + 1]!, src[i + 2]!, src[i + 3]!, v.mixBlendMode ?? 'normal', branch.opacity);
@@ -589,7 +635,7 @@ export function createDefaultCompositor(): PresentationCompositor {
           const mods = v.modifiers;
           if (mods && mods.length) {
             if (!v.modState) v.modState = [];
-            const modCtx = modCtxFor(v, frameCtx);
+            const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
             applyScopedModifierChain(mods, v.modState, mix, ranges, model, timeMs - v.bornAtMs, frame.dt, modCtx);
           }
           for (const range of ranges) {
@@ -609,7 +655,7 @@ export function createDefaultCompositor(): PresentationCompositor {
         if (!v.generatorId) continue; // every selectable effect is generator-backed (U3)
 
         // One generation/temporal advance, followed by the canonical multi-range mask.
-        const modCtx = modCtxFor(v, frameCtx);
+        const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
         generators.renderVoice(v, model, timeMs, level, pixelRangesFor(v, model), dst, modCtx);
       }
     },

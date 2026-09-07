@@ -52,8 +52,18 @@ export function uvFor(pixelId: number, model: PixelModel, mode: UvMode): [number
  */
 export function renderUvField(ctx: RenderContext, fb: Framebuffer, mode: UvMode, sample: FieldSample): void {
   const t = ctx.timeMs / 1000;
+  if (mode === 'cylindrical') {
+    // This is the hot path for drum textures. Keep the per-pixel loop allocation-free: an
+    // intermediate [u, v] tuple here is multiplied by every hosted generator and every
+    // splice member.
+    for (const p of ctx.model.pixels) {
+      const c = sample(p.uv.u, p.uv.v, t, ctx);
+      if (c) fb.set(p.id, c[0], c[1], c[2], 1);
+    }
+    return;
+  }
   for (const p of ctx.model.pixels) {
-    const [u, v] = mode === 'cylindrical' ? [p.uv.u, p.uv.v] : uvFor(p.id, ctx.model, mode);
+    const [u, v] = uvFor(p.id, ctx.model, mode);
     const c = sample(u, v, t, ctx);
     if (c) fb.set(p.id, c[0], c[1], c[2], 1);
   }

@@ -119,7 +119,7 @@ interface Journal {
 }
 interface Snapshot {
   owner: RenderState;
-  data: { genState: unknown; modState: unknown[] | undefined };
+  data: { genState: unknown; materialCycle: GeometryState['materialCycle']; modState: unknown[] | undefined };
   journals: (Journal | undefined)[];
   renderGenerator: GeometryState['renderGenerator'];
   mixInputs?: Snapshot[];
@@ -132,8 +132,12 @@ function capture(state: RenderState, model: PixelModel, previous?: Snapshot): Sn
     // The bridge would reset this too. Do it before copying so a registry upsert/removal
     // cannot retain (or copy) a retired sampler/history until some later tick.
     state.genState = null;
+    state.materialCycle = undefined;
     state.renderGenerator = generator;
-    if (previous) previous.data.genState = null;
+    if (previous) {
+      previous.data.genState = null;
+      previous.data.materialCycle = undefined;
+    }
   }
   const journals: Snapshot['journals'] = [];
   const modState = state.modState?.map((value, i) => {
@@ -152,7 +156,7 @@ function capture(state: RenderState, model: PixelModel, previous?: Snapshot): Sn
   });
   return {
     owner: state,
-    data: copyRenderState({ genState: state.genState, modState }, model, previous?.data),
+    data: copyRenderState({ genState: state.genState, materialCycle: state.materialCycle, modState }, model, previous?.data),
     journals,
     renderGenerator: state.renderGenerator,
     mixInputs: state.mixInputs?.map((m, i) => capture(m, model, previous?.mixInputs?.[i])),
@@ -163,14 +167,17 @@ function restore(state: RenderState, snapshot: Snapshot, model: PixelModel): voi
   const generator = state.generatorId ? tryGetEffect(state.generatorId) : undefined;
   if (snapshot.renderGenerator && snapshot.renderGenerator !== generator) {
     snapshot.data.genState = null;
+    snapshot.data.materialCycle = undefined;
     snapshot.renderGenerator = generator;
   }
   const data = copyRenderState(snapshot.data, model, {
     genState: state.genState,
+    materialCycle: state.materialCycle,
     // Journal-owned live rings must never enter the generic spare-buffer pool.
     modState: state.modState?.map((v, i) => snapshot.journals[i] ? undefined : v),
   });
   state.genState = data.genState;
+  state.materialCycle = data.materialCycle;
   state.modState = data.modState;
   for (let i = 0; i < snapshot.journals.length; i++) {
     const journal = snapshot.journals[i];

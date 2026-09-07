@@ -36,6 +36,17 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
+**PR #213 sole cascade-maximum gate defect (2026-09-06, branch `fix/splice-material-regeneration`):**
+Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #213 sole gate
+finding. Merged current `origin/main` at PR #210 merge `aa166610` via `d2872ad0`, preserving the
+recall/session protocol and Router history. `maxCascadeDelayMs` now walks actual drum/hoop pairs
+and reuses `spliceOrderIndex` plus `unitCascadeDelayMs`, including seeded random order without
+scratch allocation. The explicit heterogeneous `[4,2]` down-order regression is 500ms for
+`offset=100` and `drumOffset=200`; exhaustive parity covers all supported orders, signed/zero
+offsets, heterogeneous hoop counts, and hoop/drum/scope partitions. Core passed 1,500 tests and
+typecheck; CI run `34020270735` passed full checks and desktop. Commit `fa69e460` is pushed; PR
+#213 remains open and must not merge.
+
 **PR #212 integration (2026-09-06, local `feat/setlist-navigation-recall`, not merged):**
 Merged the current `origin/main` PR #212 effects work into this PR #210 branch. The merge
 preserves both the recall/navigation implementation and the Sparkler/Flame Flicker remediation;
@@ -79,17 +90,37 @@ from an open owning surface. Focused tests cover closed roots/items, exit/forceM
 nested items, native popovers, and the shared marker. Typecheck and full tests are green; commit,
 push, and CI verification are pending.
 
-**PR #206 keyboard-ownership gate + #211 integration (2026-09-06, local `fix/performance-key-ownership`):**
-Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #206 gate. The
-App capture dispatcher now checks editable targets, then marked keyboard controls' relevant
-Perform arrows/digits, before modal/popup background suppression. Sliders, Selects, segmented,
-radio/toggle, and other marked controls inside or outside overlays receive those keys normally;
-non-editable modal chrome and menus still suppress background Backspace/Delete and Cmd/Ctrl
-shortcuts. Target-handler integration tests cover marked controls outside a modal and inside both
-modal and popup surfaces, while the prior Backspace/Cmd+D cases remain green. Current
-`origin/main` (#211) was merged with both Router histories and decision-log records preserved.
-Full tests, typecheck, and production build are green locally. CI run `34009619438` is green for
-checks and desktop. PR #206 remains open and unmerged.
+**PR #206 integration (merged to `main`, 2026-09-06):** `origin/main` now includes PR #206's
+keyboard ownership and runtime-section authorization fixes, plus the preceding PR #211 splice
+transport merge. PR #213's branch merged that current main at `2122de55` before the final blocker
+fix commit `b0ac0710`.
+
+**Splice material regeneration (2026-09-06, branch `fix/splice-material-regeneration`, PR #213):**
+Requested by Trent on Trent's MacBook Pro, sourced from this request and the stateful-effect review
+of PR #200 commit `703fa7f5`. `origin/main` was fetched and merged through PR #212 at merge commit
+`bec00b38`. Only Splice-owned members carry a spawn-frozen `materialCycleMs`; the compositor
+activates it only when `maxCascadeDelayMs(model, splice) > 0` and the effect declared life.
+Ordinary Mix and direct voices never receive material cycle state and keep one continuous
+generator state. Cycle boundaries create fresh deterministic state and a coherent local clock,
+age, dt, and transport. The bridge snapshots and restores every shared context carrier in
+`finally`, including generator context, trigger, frame transport, voice transport, and
+authored-decay state. The current cycle renders once into its framebuffer; an adjacent boundary
+retains only that pre-modifier framebuffer for a <=100ms crossfade, while a non-adjacent jump
+drops stale output. Checkpoints, model changes, generator replacement, and voice reuse clear the
+carriers. Focused core coverage proves 3+ cycles, determinism, modifiers/scope/Mix, reset and
+checkpoint lifetime, BPM freezing, invalid-life normalization, member isolation, and the
+ordinary Mix 0/50/100ms regression. Structural performance coverage pins one generator render
+per frame and reused synchronous carriers; no wall-clock assertion is a correctness gate. The
+opt-in 2,300-pixel/8-member benchmark uses non-zero offsets, 100 warmup + 500 samples,
+nearest-rank p50/p95, and machine/runtime metadata. Plasma is a no-regeneration control because
+it declares no `voiceLife`; Radial Wash and Confetti Burst are the authored regeneration cases.
+Three warm runs on Trent's MacBook Pro (Darwin/x64, Node v25.8.2) are recorded in PR #213 notes
+as observations only, with no CI SLA. The implementation is `8b3d2522`, documented by
+`f9793eb2`; hosted checks are green. Full core,
+workspace typecheck, build, and dead-code verification are green. The second full-repo test pass
+reached 2,544 passing / 1 skipped before five web suites stopped on host `ENOSPC`; CI remains the
+authoritative clean-environment check. This PR is pushed/opened for review only and must not
+merge until reviewed.
 
 **PR #206 runtime follow-up + PR #209 integration (2026-09-06, local `fix/performance-key-ownership`):**
 The App capture dispatcher now yields first to editable text inside modal and popup surfaces, then

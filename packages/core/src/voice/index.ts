@@ -13,7 +13,7 @@ export * from './types';
 export * from './diagnostics';
 export * from './easing';
 export * from './envelope';
-export { ensureGeometryState, type GeometryState } from './geometry-state';
+export { ensureGeometryState, type GeometryState, type MaterialCycleState } from './geometry-state';
 export { VoicePool, releaseVoice, type SpawnDeps } from './voice-pool';
 export { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 export { shapeCascadeVoice, advanceLatchedSpliceMotion } from './runtime-policy';

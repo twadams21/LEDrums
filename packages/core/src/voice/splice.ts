@@ -18,7 +18,7 @@
  * requires.
  */
 import { hexToRgb, type Rgb } from '../color/color';
-import { clamp01, hashString, mulberry32 } from '../math';
+import { clamp01, hashString, mulberry32, mulberry32At } from '../math';
 import { drumHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { PixelRange } from '../modifiers/types';
 import { computeDelayMs } from './delay';
@@ -264,6 +264,30 @@ export function forEachPartitionUnit(
  * PERMUTATION: every position is used exactly once, which is what keeps a random cascade
  * evenly spread instead of clumping several hoops onto the same start time.
  */
+function fnv1aChar(hash: number, charCode: number): number {
+  return Math.imul(hash ^ charCode, 0x01000193) >>> 0;
+}
+
+/** The numeric equivalent of hashString(`splice-order:${count}:${seed >>> 0}`), without a string. */
+function spliceOrderSeed(count: number, seed: number): number {
+  let hash = 0x811c9dc5;
+  const prefix = 'splice-order:';
+  for (let i = 0; i < prefix.length; i++) hash = fnv1aChar(hash, prefix.charCodeAt(i));
+  let divisor = 1;
+  while (divisor <= count / 10) divisor *= 10;
+  for (; divisor >= 1; divisor = Math.floor(divisor / 10)) {
+    hash = fnv1aChar(hash, 48 + Math.floor(count / divisor) % 10);
+  }
+  hash = fnv1aChar(hash, 58);
+  const unsignedSeed = seed >>> 0;
+  divisor = 1;
+  while (divisor <= unsignedSeed / 10) divisor *= 10;
+  for (; divisor >= 1; divisor = Math.floor(divisor / 10)) {
+    hash = fnv1aChar(hash, 48 + Math.floor(unsignedSeed / divisor) % 10);
+  }
+  return hash;
+}
+
 export function spliceOrderIndex(ordinal: number, count: number, order: SpliceOrder, seed: number): number {
   const n = Math.max(1, Math.floor(count));
   const i = Math.min(n - 1, Math.max(0, Math.floor(ordinal)));
@@ -276,15 +300,17 @@ export function spliceOrderIndex(ordinal: number, count: number, order: SpliceOr
       return i <= fromEnd ? i * 2 : fromEnd * 2 + 1;
     }
     case 'random': {
-      const rng = mulberry32(hashString(`splice-order:${n}:${seed >>> 0}`));
-      const perm = Array.from({ length: n }, (_, k) => k);
-      for (let k = n - 1; k > 0; k--) {
-        const j = Math.floor(rng() * (k + 1));
-        const tmp = perm[k]!;
-        perm[k] = perm[j]!;
-        perm[j] = tmp;
+      // Fisher–Yates is normally represented by an array. Reverse its swaps instead: the
+      // value at final position `i` can be traced back to its original position with no scratch
+      // allocation, while preserving the previous seeded permutation byte for byte.
+      let position = i;
+      const randomSeed = spliceOrderSeed(n, seed);
+      for (let k = 1; k < n; k++) {
+        const j = Math.floor(mulberry32At(randomSeed, n - 1 - k) * (k + 1));
+        if (position === k) position = j;
+        else if (position === j) position = k;
       }
-      return perm[i]!;
+      return position;
     }
     default:
       return i;
@@ -308,16 +334,31 @@ export function unitMotionAge(ageMs: number, delayMs: number): number {
 
 /**
  * The LONGEST cascade delay any unit of this splice will take on the given model — what a voice
- * has to outlive for the cascade to finish rather than being cut off mid-travel. Derived from
- * the model's shape rather than by walking units, so the engine can extend a voice at spawn.
+ * has to outlive for the cascade to finish rather than being cut off mid-travel. Walks the actual
+ * drum/hoop pairs so heterogeneous hoop counts and mapped orders stay in production parity.
  */
 export function maxCascadeDelayMs(model: PixelModel, cfg: SpliceConfig): number {
   // The colour axis applies even under the `scope` partition, where there is only one unit.
   const colour = Math.max(0, (cfg.count - 1) * cfg.colorOffsetMs);
   if (cfg.partition === 'scope' || model.drums.length === 0) return colour;
   const drums = model.drums.length;
-  const primary = cfg.partition === 'drum' ? drums : Math.max(...model.drums.map((d) => d.hoopCount));
-  return Math.max(0, (primary - 1) * cfg.offsetMs + (drums - 1) * cfg.drumOffsetMs) + colour;
+  let maximum = 0;
+  for (let drumIndex = 0; drumIndex < drums; drumIndex++) {
+    const drum = model.drums[drumIndex]!;
+    const drumOrderIndex = spliceOrderIndex(drumIndex, drums, cfg.drumOrder, cfg.seed);
+    if (cfg.partition === 'drum') {
+      const orderIndex = spliceOrderIndex(drumIndex, drums, cfg.order, cfg.seed);
+      const delay = unitCascadeDelayMs(orderIndex, drumOrderIndex, cfg);
+      if (delay > maximum) maximum = delay;
+      continue;
+    }
+    for (let hoopIndex = 0; hoopIndex < drum.hoopCount; hoopIndex++) {
+      const orderIndex = spliceOrderIndex(hoopIndex, drum.hoopCount, cfg.order, cfg.seed);
+      const delay = unitCascadeDelayMs(orderIndex, drumOrderIndex, cfg);
+      if (delay > maximum) maximum = delay;
+    }
+  }
+  return maximum + colour;
 }
 
 /** How long a given SPLICE waits on top of its unit's turn, when the colours are staggered. */
