@@ -276,6 +276,9 @@ class ShotSeamImpl implements ShotSeam {
       const key = this.store.createGraph(`Shot ${generatorId}`);
       const created = this.store.addNode('effect', 360, 200);
       if (!created) return;
+      // Keep follow-up `select:effect` / `mode:loop` aimed at this effect, just like addNode.
+      this.added.set('effect', created);
+      this.lastAdded = created;
       // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
       // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
       // re-resolve through the graph or the edit lands on a detached object.
