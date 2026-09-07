@@ -139,6 +139,12 @@ async function serverUp() {
 }
 async function ensureServer() {
   if (await serverUp()) return;
+  // A custom URL belongs to an explicitly managed preview. Starting a detached default
+  // stack cannot make that URL reachable and leaves an orphan when the capture fails.
+  if (process.env.UI_SHOT_BASE) {
+    console.error(`configured dev server is unreachable at ${BASE}; start that preview explicitly (check localhost vs 127.0.0.1)`);
+    process.exit(1);
+  }
   console.log(`dev server not detected at ${BASE} — starting \`pnpm dev\`…`);
   const child = spawn('pnpm', ['dev'], { cwd: repoRoot, detached: true, stdio: 'ignore' });
   child.unref();

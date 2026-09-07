@@ -15,6 +15,7 @@ import type { ParamSpec, Project, voice } from '@ledrums/core';
 export {
   clientMessageSchema,
   clientMessageTypes,
+  midiClockStatusSchema,
   serverMessageSchema,
   showLibraryBlobSchema,
   showSchema,
@@ -145,12 +146,23 @@ export interface VoiceStat {
   pad: string;
 }
 
+/** External MIDI clock truth for the UI (see `midiClockStatusSchema`). `off` while the transport
+ * source is manual; the other statuses mirror core's `MidiClockStatus`. */
+export interface MidiClockStatus {
+  status: 'off' | 'waiting' | 'running' | 'stopped' | 'lost';
+  bpm: number;
+  locked: boolean;
+  playing: boolean;
+}
+
 /** Optional voice-bus telemetry, present only when the server runs the voice engine. */
 export interface VoiceStats {
   voiceCount: number;
   busLevels: Record<string, number>;
   /** Per-voice detail for the Layers/Buses dock (S17) — empty when nothing sounds. */
   voices: VoiceStat[];
+  /** External clock state, present once the host reports it (voice mode only). */
+  clock?: MidiClockStatus;
 }
 
 // ---------------------------------------------------------------------------

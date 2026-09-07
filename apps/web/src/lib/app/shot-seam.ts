@@ -53,6 +53,9 @@ export interface ShotSeam {
   newGraph(): Promise<void>;
   /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
   addNode(kind: NodeKind): GraphNode | null;
+  /** Stage the Settings › Input audio meters WITHOUT capture (GH #214): `running` (a synthetic
+      frame), `denied`, `lost`, `unsupported`, or `off`. Nothing here opens a microphone. */
+  previewAudioMeter(state?: string): void;
   /** Author a one-effect graph, set the named params on it, place it in the active section
       and FIRE it — so a capture can show what an effect actually renders, at whatever moment
       `--settle` lands on. The route to "does this effect's Life param do anything" and to any
@@ -257,6 +260,18 @@ class ShotSeamImpl implements ShotSeam {
     });
   }
 
+  previewAudioMeter(state = 'running'): void {
+    const frame = { level: 0.72, bass: 0.91, mids: 0.38, highs: 0.16 };
+    if (state === 'denied') this.store.previewAudioMeter('error', voice.ZERO_AUDIO_FRAME, 'permission-denied');
+    else if (state === 'lost') this.store.previewAudioMeter('device-lost', voice.ZERO_AUDIO_FRAME);
+    else if (state === 'unsupported') this.store.previewAudioMeter('error', voice.ZERO_AUDIO_FRAME, 'unsupported');
+    else if (state === 'off') this.store.previewAudioMeter('stopped', voice.ZERO_AUDIO_FRAME);
+    else {
+      this.store.previewAudioMeter('running', frame);
+      this.store.sim.setAudio(frame); // the graph's Audio node faces read the sim table
+    }
+  }
+
   addNode(kind: NodeKind): GraphNode | null {
     if (this.store.canTakeover) this.store.takeover();
     // Stagger placements so successive adds don't stack on one another in the canvas.
@@ -276,6 +291,9 @@ class ShotSeamImpl implements ShotSeam {
       const key = this.store.createGraph(`Shot ${generatorId}`);
       const created = this.store.addNode('effect', 360, 200);
       if (!created) return;
+      // Keep follow-up `select:effect` / `mode:loop` aimed at this effect, just like addNode.
+      this.added.set('effect', created);
+      this.lastAdded = created;
       // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
       // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
       // re-resolve through the graph or the edit lands on a detached object.
@@ -921,6 +939,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'global-control-learn':
         this.previewGlobalControlLearn(arg === 'osc' ? 'osc' : 'midi');
+        break;
+      case 'audio-meter':
+        this.previewAudioMeter(arg);
         break;
       case 'linked-placement':
         this.previewLinkedPlacement();

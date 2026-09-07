@@ -35,6 +35,7 @@
   import CcNodeInspector from './inspectors/CcNodeInspector.svelte'; // S37
   import NoteNodeInspector from './inspectors/NoteNodeInspector.svelte';
   import OscNodeInspector from './inspectors/OscNodeInspector.svelte';
+  import AudioNodeInspector from './inspectors/AudioNodeInspector.svelte';
   import RandomModNodeInspector from './inspectors/RandomModNodeInspector.svelte';
   import PatchTriggerInspector from './inspectors/PatchTriggerInspector.svelte';
   import PatchZoneInspector from './inspectors/PatchZoneInspector.svelte';
@@ -120,6 +121,9 @@
   {:else if node && node.kind === 'osc'}
     {@render modSourceHead(node)}
     <OscNodeInspector {store} {node} />
+  {:else if node && node.kind === 'audio'}
+    {@render modSourceHead(node)}
+    <AudioNodeInspector {store} {node} />
   {:else if node && node.kind === 'randomMod'}
     {@render modSourceHead(node)}
     <RandomModNodeInspector {store} {node} />

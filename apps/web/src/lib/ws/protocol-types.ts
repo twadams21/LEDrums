@@ -11,6 +11,7 @@ export type {
   ControllerUniverseRx,
   DiscoveredController,
   EffectSpec,
+  MidiClockStatus,
   MonitorEvent,
   NetworkAdapter,
   OscListenInfo,

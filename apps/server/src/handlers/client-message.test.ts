@@ -269,6 +269,33 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
     for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
     }
+    // GH #214: audio feature frames are NOT drummer hardware — only the editor's capture is
+    // authoritative, so a viewer's frames are silently dropped by the gate (deny-by-default).
+    expect(requiresEditor('audioFeatures')).toBe(true);
+  });
+});
+
+describe('midiClock — editor-only, route-tagged, never an authoring mutation', () => {
+  it('feeds the voice host from the editor and drops a viewer\'s stream', () => {
+    const { voiceHost, handle, join } = voiceHarness();
+    const project = voiceHost.getProject();
+    project.composition.transport.source = 'midiClock';
+    project.composition.transport.clockInput = 'browser';
+    const editor = join();
+    const viewer = join();
+    handle({ t: 'midiClock', command: 'start' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('running');
+    handle({ t: 'midiClock', command: 'stop' }, viewer); // a viewer must never steer timing
+    expect(voiceHost.getClockStatus().status).toBe('running');
+    handle({ t: 'midiClock', command: 'stop' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('stopped');
+  });
+
+  it('is ignored while the transport source is manual', () => {
+    const { voiceHost, handle, join } = voiceHarness();
+    const editor = join();
+    handle({ t: 'midiClock', command: 'start' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('off');
   });
 });
 

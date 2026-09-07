@@ -43,6 +43,8 @@ export function triggerNodeSignature(n: GraphNode, graph?: TriggerGraph | null):
       return `${base}:note=${n.noteNumber ?? ''}:${n.noteChannel ?? ''}:${n.noteMode ?? ''}:${n.noteReleaseMs ?? ''}`;
     case 'osc':
       return `${base}:osc=${n.oscAddress ?? ''}`;
+    case 'audio':
+      return `${base}:audio=${n.audioBand ?? ''}`;
     case 'randomMod':
       return `${base}:random=${n.randomDistribution ?? ''}:${n.randomSteps ?? ''}`;
     case 'lfo':

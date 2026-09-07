@@ -12,6 +12,8 @@ import { z } from 'zod';
 import {
   BLEND_MODES,
   clipSchema,
+  clockInputSchema,
+  transportSourceSchema,
   curveValueSchema,
   inputMapSchema,
   kitGlobalSchema,
@@ -29,7 +31,8 @@ import {
   triggerBindingSchema,
   vec3Schema,
 } from '@ledrums/core';
-import type { CurveValue, EngineStats, voice } from '@ledrums/core';
+import { voice } from '@ledrums/core';
+import type { CurveValue, EngineStats } from '@ledrums/core';
 import type {
   BackupSnapshotMeta,
   ControllerStatus,
@@ -96,7 +99,20 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('midi'), note: z.number(), velocity: z.number(), on: z.boolean(), channel: z.number().optional() }).strict(),
   z.object({ t: z.literal('cc'), controller: z.number(), value: z.number(), channel: z.number().optional() }).strict(),
   z.object({ t: z.literal('programChange'), value: z.number(), channel: z.number().optional() }).strict(),
+  // MIDI beat clock (system real-time / song position). No channel — these are system messages.
+  // The route it arrived by (native bridge vs editor browser) is the source identity; the payload
+  // never claims one. The host stamps receipt time; a client-supplied time is never trusted.
+  z.object({
+    t: z.literal('midiClock'),
+    command: z.enum(['tick', 'start', 'continue', 'stop', 'position']),
+    /** Song position in 16th notes, `position` only (14-bit). */
+    position: z.number().int().min(0).max(16383).optional(),
+  }).strict(),
   z.object({ t: z.literal('osc'), address: z.string(), value: z.number() }).strict(),
+  // GH #214 — one analysed audio feature frame (four finite 0..1 bands), flat on the envelope. The
+  // band constraints are core's (`audioFeatureFrameSchema`), so the wire and the engine agree by
+  // construction. No client timestamp: the host stamps arrival with its own engine clock.
+  z.object({ t: z.literal('audioFeatures'), ...voice.audioFeatureFrameSchema.shape }).strict(),
   z.object({ t: z.literal('setParam'), layerId: z.string(), clipId: z.string(), key: z.string(), value: paramValueSchema }).strict(),
   z.object({
     t: z.literal('setLayer'),
@@ -110,7 +126,14 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('removeLayer'), layerId: z.string() }).strict(),
   z.object({ t: z.literal('addClip'), layerId: z.string(), clip: clipSchema }).strict(),
   z.object({ t: z.literal('removeClip'), layerId: z.string(), clipId: z.string() }).strict(),
-  z.object({ t: z.literal('setTransport'), bpm: z.number().optional(), playing: z.boolean().optional(), beatsPerBar: z.number().optional() }).strict(),
+  z.object({
+    t: z.literal('setTransport'),
+    bpm: z.number().optional(),
+    playing: z.boolean().optional(),
+    beatsPerBar: z.number().optional(),
+    source: transportSourceSchema.optional(),
+    clockInput: clockInputSchema.optional(),
+  }).strict(),
   z.object({
     t: z.literal('setKitTransform'),
     drumId: z.string(),
@@ -309,10 +332,23 @@ const voiceStatSchema = z.object({
   pad: z.string(),
 });
 
+/** Compact external-clock truth, piggybacked on the throttled stats so the UI never promises
+    "synchronised" while the host is actually waiting or has lost the stream. */
+export const midiClockStatusSchema = z.object({
+  /** `off` while the transport source is manual. */
+  status: z.enum(['off', 'waiting', 'running', 'stopped', 'lost']),
+  /** Tempo the transport is running at (the estimate once locked, else the seed). */
+  bpm: z.number(),
+  /** Whether `bpm` is measured from enough pulses to be trusted. */
+  locked: z.boolean(),
+  playing: z.boolean(),
+});
+
 const voiceStatsSchema = z.object({
   voiceCount: z.number(),
   busLevels: z.record(z.number()),
   voices: z.array(voiceStatSchema),
+  clock: midiClockStatusSchema.optional(),
 });
 
 const monitorEventSchema = z.object({

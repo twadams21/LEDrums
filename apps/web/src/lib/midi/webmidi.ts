@@ -26,15 +26,29 @@ export interface MidiProgramChangeEvent {
   channel: number;
 }
 
+/** MIDI beat clock: system real-time (0xF8 tick / 0xFA start / 0xFB continue / 0xFC stop) and
+    the Song Position Pointer (0xF2). System messages carry no channel, so the app-wide channel
+    filter never applies. `deviceId` is the WebMIDI port the message arrived on — the clock
+    forwarder accepts ONE selected port so two clocks are never combined. */
+export interface MidiClockEvent {
+  command: 'tick' | 'start' | 'continue' | 'stop' | 'position';
+  /** 14-bit song position in 16th notes, `position` only. */
+  position?: number;
+  /** Port id, set by {@link initMidi} (absent from a bare {@link parseMidiMessage} result). */
+  deviceId?: string;
+}
+
 /**
  * A parsed MIDI message the engine cares about — a discriminated union so the
  * forwarder can route each shape to its own WS message. `note` covers note-on/off,
- * `cc` a Control Change (0xB0), `programChange` a Program Change (0xC0).
+ * `cc` a Control Change (0xB0), `programChange` a Program Change (0xC0), `clock` the
+ * system real-time beat clock + song position.
  */
 export type MidiEvent =
   | ({ kind: 'note' } & MidiNoteEvent)
   | ({ kind: 'cc' } & MidiCcEvent)
-  | ({ kind: 'programChange' } & MidiProgramChangeEvent);
+  | ({ kind: 'programChange' } & MidiProgramChangeEvent)
+  | ({ kind: 'clock' } & MidiClockEvent);
 
 export type MidiEventHandler = (ev: MidiEvent) => void;
 
@@ -125,8 +139,22 @@ export function enumerateDevices(access: MidiAccessLike): MidiDeviceInfo[] {
  * app-wide MIDI filter. Program Change is a 2-byte message; everything else needs 3.
  */
 export function parseMidiMessage(data: Uint8Array | number[] | null): MidiEvent | null {
-  if (!data || data.length < 2) return null;
+  if (!data || data.length < 1) return null;
   const rawStatus = data[0]!;
+  // System messages first — the beat clock is a single byte and has no channel, so it must be
+  // recognised before the channel parse (and before the 2-byte minimum) can discard it.
+  switch (rawStatus) {
+    case 0xf8: return { kind: 'clock', command: 'tick' };
+    case 0xfa: return { kind: 'clock', command: 'start' };
+    case 0xfb: return { kind: 'clock', command: 'continue' };
+    case 0xfc: return { kind: 'clock', command: 'stop' };
+    case 0xf2: {
+      if (data.length < 3) return null;
+      return { kind: 'clock', command: 'position', position: (data[1]! & 0x7f) | ((data[2]! & 0x7f) << 7) };
+    }
+  }
+  if (rawStatus >= 0xf0) return null; // sysex, MTC, song select, active sensing, reset: not forwarded
+  if (data.length < 2) return null;
   const status = rawStatus & 0xf0;
   const channel = (rawStatus & 0x0f) + 1;
   // Program Change: status + program (2 bytes). Selects a song by setlist index.
@@ -181,12 +209,16 @@ export async function initMidi(
 
   const bound = new Set<MidiInputLike>();
   const bind = (): void => {
-    for (const input of inputValues(access)) {
+    for (const [key, input] of inputEntries(access)) {
       if (bound.has(input)) continue;
       bound.add(input);
+      const deviceId = input.id ?? key;
       input.onmidimessage = (ev) => {
         const parsed = parseMidiMessage(ev.data);
-        if (parsed) handler(parsed);
+        if (!parsed) return;
+        // Only the clock carries its port: notes/CC/PC stay exactly as before (their tests and
+        // consumers are unchanged), while clock ownership needs to know which port spoke.
+        handler(parsed.kind === 'clock' ? { ...parsed, deviceId } : parsed);
       };
     }
   };

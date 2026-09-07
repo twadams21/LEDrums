@@ -74,6 +74,7 @@ export * from './engine/framebuffer';
 export * from './engine/render-context';
 export * from './engine/control-state';
 export * from './engine/transport';
+export * from './engine/midi-clock';
 export * from './engine/modulation';
 export * from './engine/compositor';
 export * from './engine/engine';

@@ -119,7 +119,7 @@ export function defaultProject(): Project {
     kit: DEFAULT_KIT,
     composition: {
       layers,
-      transport: { bpm: 120, playing: true, beatsPerBar: 4 },
+      transport: { bpm: 120, playing: true, beatsPerBar: 4, source: 'manual', clockInput: 'native' },
     },
     inputMap: {
       midiChannel: null,

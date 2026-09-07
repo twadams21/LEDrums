@@ -1,6 +1,6 @@
 # ui-shot — semantic app screenshots
 
-Headless captures of the running app via system Chrome (playwright-core, `channel:'chrome'` — no browser downloads). Starts `pnpm dev` automatically if the server isn't up. Output: `.ui-shots/<name>.png` (gitignored). Console/page errors during capture are printed per shot.
+Headless captures of the running app via system Chrome (playwright-core, `channel:'chrome'` — no browser downloads). Starts `pnpm dev` automatically if the default server isn't up. With `UI_SHOT_BASE` set, the preview must already be running: an unreachable custom URL fails without spawning a detached default stack. Use the exact reachable hostname (`localhost` can bind IPv6 while `127.0.0.1` is unreachable). Output: `.ui-shots/<name>.png` (gitignored). Console/page errors during capture are printed per shot.
 
 The interface is **semantic**, not maintenance-driven. You capture a surface by its accessible name and put the app into the state you need with a tiny state string — you do **not** register a screenshot name or hand-write a click chain.
 

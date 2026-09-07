@@ -75,6 +75,7 @@ export function nodeCategory(kind: NodeKind): RenderPlanNodeCategory {
     case 'cc':
     case 'note':
     case 'osc':
+    case 'audio':
     case 'randomMod':
       return 'modulation-source';
   }

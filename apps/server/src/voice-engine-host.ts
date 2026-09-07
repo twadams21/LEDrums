@@ -1,5 +1,10 @@
 import {
+  advanceMidiClock,
   advanceTransport,
+  applyMidiClockEvent,
+  createMidiClockState,
+  midiClockBpm,
+  midiClockLocked,
   BUILTIN_CANVAS_SCENES,
   registerCanvasScene,
   unregisterCanvasScene,
@@ -33,10 +38,14 @@ import {
   type OutputSettings,
   type Project,
   type ProjectPatch,
+  type ClockInput,
+  type MidiClockCommand,
+  type MidiClockState,
   type Transport,
+  type TransportSource,
   type TransportState,
 } from '@ledrums/core';
-import { graphFiredMonitorLabel, graphMonitorDestination } from '@ledrums/protocol';
+import { graphFiredMonitorLabel, graphMonitorDestination, type MidiClockStatus } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { TickRate } from './tick-rate';
 import { zoneForNote, zoneForOsc } from './input-router';
@@ -59,7 +68,10 @@ export type VoicePartialInput =
   | { kind: 'recallSongIndex'; songIndex: number }
   | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
   | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
-  | { kind: 'releaseBus'; busId?: string };
+  | { kind: 'releaseBus'; busId?: string }
+  /** GH #214: one analysed audio feature frame from the editor client. Stamped with the engine
+      clock here; the engine keeps only the latest and never treats it as a trigger. */
+  | { kind: 'audioFeatures'; level: number; bass: number; mids: number; highs: number };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -139,6 +151,19 @@ export class VoiceEngineHost {
       new state and the UI follows. Wired by `main.ts`. */
   onTransportChanged: (() => void) | null = null;
 
+  /** External MIDI clock state (pure reducer, core). Live only while the project transport's
+      `source` is `midiClock`; recreated (fresh, seeded from the authored bpm) whenever the source
+      flips to it, so a stale position/tempo from a previous session never leaks in. */
+  private clock: MidiClockState;
+  /** The transport source the clock state was built for — the flip detector. */
+  private clockSource: TransportSource;
+  /** Last clock status reported to the Monitor, so only TRANSITIONS are logged (never per pulse). */
+  private clockStatusReported: MidiClockStatus['status'] = 'off';
+  /** Monotonic receipt clock for MIDI clock pulses. Wall time, not engine time: the engine clock
+      advances in fixed 8.3ms steps, which would quantise pulse intervals and wreck the tempo
+      estimate. Injectable so tests drive a synthetic stream deterministically. */
+  clockNow: () => number = nowWall;
+
   /** Callbacks emitted only after the engine accepts and processes a state change. */
   onSectionRecalled: ((songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number) => void) | null = null;
   onShowChanged: (() => void) | null = null;
@@ -162,6 +187,8 @@ export class VoiceEngineHost {
     this.project = project;
     this.kit = project.kit;
     this.activeEngine = engine ?? voice.createVoiceBusEngine({ onDiagnostic: (d) => this.monitorVoiceDiagnostic(d) });
+    this.clockSource = project.composition.transport.source;
+    this.clock = createMidiClockState(project.composition.transport.bpm);
     this.output = output;
     this.model = buildPixelModel(this.kit);
     this.dmxMap = this.buildMapSafe(this.kit);
@@ -198,6 +225,8 @@ export class VoiceEngineHost {
         this.lastLatencyMs = 0;
         this.transmitMuted = false;
         this.tapTimes.length = 0;
+        this.clockSource = project.composition.transport.source;
+        this.clock = createMidiClockState(project.composition.transport.bpm);
         this.lastWall = nowWall();
         this.tickRate.reset(this.lastWall);
         this.onShowChanged?.();
@@ -427,7 +456,9 @@ export class VoiceEngineHost {
    * (the engine decays voices on their own envelopes).
    */
   applyInput(partial: VoicePartialInput): void {
-    this.pendingInputWall = nowWall();
+    // Audio frames arrive continuously (≤30 Hz) and are not a hit: they must not restart the
+    // input→frame latency measurement that a real trigger owns.
+    if (partial.kind !== 'audioFeatures') this.pendingInputWall = nowWall();
     const ev = this.toInputEvent(partial);
     if (!ev) return;
     // Two global controls are the HOST's, not the engine's: bpm lives on this project's
@@ -561,6 +592,13 @@ export class VoiceEngineHost {
       case 'releaseBus':
         // The dock's stop button: release the bus's voices (absent busId = all buses).
         return { kind: 'releaseBus', busId: partial.busId, timeMs };
+      case 'audioFeatures':
+        // GH #214: the host's engine clock is the freshness authority — never a client timestamp.
+        return {
+          kind: 'audioFeatures',
+          audio: { level: partial.level, bass: partial.bass, mids: partial.mids, highs: partial.highs },
+          timeMs,
+        };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
         // action and never reaches the zone-map or a trigger-source graph (the same
@@ -729,12 +767,87 @@ export class VoiceEngineHost {
     if (this.accumulator >= TICK_MS) this.accumulator = 0; // drop backlog; never spiral
   }
 
+  // --- MIDI clock ----------------------------------------------------------
+
+  /**
+   * Feed one external clock message, stamped with the host's receipt clock. `route` is WHERE it
+   * arrived from (the desktop bridge's own CoreMIDI destination, or the editor browser's WebMIDI
+   * forward) — the caller establishes that from the transport it came in on, never from the
+   * payload. Ignored (returns false) while the source is manual or the route is not the selected
+   * clock input, so two routes can never combine into one clock and an unsolicited stream can
+   * never take over a manual show.
+   */
+  applyMidiClock(msg: { command: MidiClockCommand; position?: number }, route: ClockInput): boolean {
+    const config = this.project.composition.transport;
+    if (config.source !== 'midiClock' || config.clockInput !== route) return false;
+    this.syncClockSource(config);
+    const atMs = this.clockNow();
+    this.clock = applyMidiClockEvent(this.clock, { command: msg.command, position: msg.position, atMs });
+    return true;
+  }
+
+  /** Recreate the clock state when the transport source flips (manual ⇄ midiClock). */
+  private syncClockSource(config: Transport): void {
+    if (this.clockSource === config.source) return;
+    this.clockSource = config.source;
+    this.clock = createMidiClockState(config.bpm);
+  }
+
+  /** Compact clock truth for the throttled stats broadcast (never a per-pulse message). */
+  getClockStatus(): MidiClockStatus {
+    if (this.project.composition.transport.source !== 'midiClock') {
+      return { status: 'off', bpm: this.project.composition.transport.bpm, locked: false, playing: false };
+    }
+    return {
+      status: this.clock.status,
+      bpm: midiClockBpm(this.clock),
+      locked: midiClockLocked(this.clock),
+      playing: this.clock.playing,
+    };
+  }
+
+  /** Log clock status TRANSITIONS to the Monitor (waiting → running → lost …), never pulses. */
+  private reportClockTransition(): void {
+    const status = this.getClockStatus();
+    if (status.status === this.clockStatusReported) return;
+    this.clockStatusReported = status.status;
+    if (status.status === 'off') return;
+    const detail = status.locked ? `bpm=${status.bpm.toFixed(1)}` : `bpm=${status.bpm.toFixed(1)} (seed, not locked)`;
+    this.monitorSink?.({
+      type: 'input',
+      direction: 'local',
+      source: 'server/voice',
+      label: `MIDI clock ${status.status}`,
+      detail: status.status === 'lost' ? `${detail}; no pulse for 1s — transport frozen` : detail,
+    });
+  }
+
   /** Compute the transport snapshot for the current engine time + dt. */
   private transport(dt: number): TransportState {
     const config: Transport = this.project.composition.transport;
-    const { beat, state } = advanceTransport(config, this.beat, this.engineTimeMs, dt);
-    this.beat = beat;
-    return state;
+    this.syncClockSource(config);
+    if (config.source !== 'midiClock') {
+      if (this.clockStatusReported !== 'off') this.clockStatusReported = 'off';
+      const { beat, state } = advanceTransport(config, this.beat, this.engineTimeMs, dt);
+      this.beat = beat;
+      return state;
+    }
+    // External clock: the pure reducer owns beat/bpm/playing; the authored `playing` flag is
+    // ignored and the authored bpm was only the seed. Same bar/beatInBar derivation as manual.
+    const snap = advanceMidiClock(this.clock, this.clockNow());
+    this.clock = snap.state;
+    this.reportClockTransition();
+    this.beat = snap.beat;
+    const bar = Math.floor(snap.beat / config.beatsPerBar);
+    return {
+      timeMs: this.engineTimeMs,
+      beat: snap.beat,
+      bar,
+      beatInBar: snap.beat - bar * config.beatsPerBar,
+      bpm: snap.bpm,
+      beatsPerBar: config.beatsPerBar,
+      playing: snap.playing,
+    };
   }
 
   /**

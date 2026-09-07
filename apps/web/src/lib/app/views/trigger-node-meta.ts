@@ -27,7 +27,9 @@ import Dice5 from '@lucide/svelte/icons/dice-5';
 import Music2 from '@lucide/svelte/icons/music-2';
 import RadioTower from '@lucide/svelte/icons/radio-tower';
 import { listModifiers, voice } from '@ledrums/core';
+import AudioLines from '@lucide/svelte/icons/audio-lines';
 import type { GraphNode, NodeKind } from '../../trigger-lab/sim';
+import { audioBandLabel } from '../../audio/band-labels';
 
 /** Icon per node kind (add palette, node card chip, kind selector). */
 export const kindIcon: Record<NodeKind, Component> = {
@@ -51,6 +53,7 @@ export const kindIcon: Record<NodeKind, Component> = {
   cc: SlidersHorizontal, // S37
   note: Music2,
   osc: RadioTower,
+  audio: AudioLines, // GH #214
   randomMod: Dice5,
 };
 
@@ -83,6 +86,7 @@ export const tint: Record<NodeKind, string> = {
   cc: 'var(--role-modulation)', // S37
   note: 'var(--role-modulation)',
   osc: 'var(--role-modulation)',
+  audio: 'var(--role-modulation)', // GH #214
   randomMod: 'var(--role-modulation)',
 };
 
@@ -108,6 +112,7 @@ export const kindLabel: Record<NodeKind, string> = {
   cc: 'CC', // S37
   note: 'Note',
   osc: 'OSC',
+  audio: 'Audio', // GH #214
   randomMod: 'Random',
 };
 
@@ -164,6 +169,8 @@ export function kindSummary(node: GraphNode): string {
       return `Note ${node.noteNumber ?? 60}${node.noteMode === 'velocity' ? ' · velocity' : ' · gate'}`;
     case 'osc':
       return `OSC ${node.oscAddress || '—'}`;
+    case 'audio':
+      return `Audio · ${audioBandLabel(node.audioBand ?? 'level')}`;
     case 'randomMod':
       return node.randomDistribution === 'stepped'
         ? `stepped · ${node.randomSteps ?? 4}`

@@ -22,7 +22,7 @@
   import { readThemeTokens } from '../../ui/theme-tokens';
 
   interface Props {
-    kind: 'envelope' | 'lfo' | 'cc' | 'note' | 'osc' | 'random';
+    kind: 'envelope' | 'lfo' | 'cc' | 'note' | 'osc' | 'audio' | 'random';
     env?: voice.Envelope;
     lfo?: voice.LfoSettings;
     bpm?: number;
@@ -59,6 +59,9 @@
 
   let ccReadout = $state('0');
   const PAD = 3;
+  // Live-value kinds share the bar face; audio reads as a percentage (it is a 0..1 energy, not a
+  // MIDI byte), the controller kinds keep the 0..127 readout.
+  const isBarKind = $derived(kind === 'cc' || kind === 'note' || kind === 'osc' || kind === 'audio');
 
   function drawTrace(g: CanvasRenderingContext2D, t: SignalTrace): void {
     const iw = w - PAD * 2;
@@ -148,10 +151,10 @@
   // The signal itself animates via the shared ticker (SignalFace), which reads live values each
   // frame; reduced-motion falls back to one static frame — the existing thumb-ticker behaviour.
   const draw = (g: CanvasRenderingContext2D, tMs: number): void => {
-    if (kind === 'cc' || kind === 'note' || kind === 'osc') {
+    if (isBarKind) {
       const v = ccValue ? ccValue() : 0;
       drawBar(g, v);
-      ccReadout = formatCcReadout(v);
+      ccReadout = kind === 'audio' ? `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%` : formatCcReadout(v);
       return;
     }
     if (kind === 'random') {
@@ -181,16 +184,18 @@
           ? 'Note live value'
           : kind === 'osc'
             ? 'OSC live value'
-            : kind === 'random'
-              ? 'Random distribution preview'
-              : 'CC live value',
+            : kind === 'audio'
+              ? 'Audio live value'
+              : kind === 'random'
+                ? 'Random distribution preview'
+                : 'CC live value',
   );
 </script>
 
-<div class="preview" bind:this={root} class:cc={kind === 'cc' || kind === 'note' || kind === 'osc'}>
+<div class="preview" bind:this={root} class:cc={isBarKind}>
   <SignalFace {draw} {w} {h} ariaLabel={label} />
-  {#if kind === 'cc' || kind === 'note' || kind === 'osc'}
-    <span class="readout" aria-hidden="true">{ccReadout}</span>
+  {#if isBarKind}
+    <span class="readout" class:pct={kind === 'audio'} aria-hidden="true">{ccReadout}</span>
   {/if}
 </div>
 
@@ -210,5 +215,8 @@
     line-height: 1;
     min-width: 2ch;
     text-align: right;
+  }
+  .readout.pct {
+    min-width: 4ch;
   }
 </style>

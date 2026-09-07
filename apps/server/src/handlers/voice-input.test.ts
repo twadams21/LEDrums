@@ -284,3 +284,96 @@ describe('handleVoiceInput — the input echo names the drum', () => {
     expect(echoes(broadcasts)[1]!.drumId).toBeUndefined();
   });
 });
+
+/* GH #214 — audio feature frames reach the engine's audio table through the voice host (stamped
+   with the engine clock, never a trigger), only from the editor, and never as monitor traffic. */
+describe('handleVoiceInput — audioFeatures', () => {
+  function audioShow(): voice.Show {
+    const fx: voice.EffectDef = {
+      id: 'fx', name: 'fx', generatorId: 'solid-base', busId: 'main', scope: 'kit',
+      params: [
+        { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 0 },
+        { key: 'saturation', label: 'Saturation', kind: 'number', min: 0, max: 1, default: 1 },
+        { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
+        { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, default: 0 },
+        { key: 'noise', label: 'Noise', kind: 'number', min: 0, max: 1, default: 0 },
+      ],
+      attackMs: 0, sustainMs: 100000, releaseMs: 100,
+    };
+    const graph: voice.TriggerGraph = {
+      nodes: [
+        node('trig', 'trigger', { source: { kind: 'midi', note: 60 } }),
+        node('play', 'play', { effectId: 'fx', busId: 'main', mode: 'loop', params: { hue: 0, saturation: 1, brightness: 0, speed: 0, noise: 0 }, modInputs: [{ param: 'brightness' }] }),
+        node('a1', 'audio', { audioBand: 'level' }),
+      ],
+      edges: [
+        { id: 'e1', from: 'trig', to: 'play' },
+        { id: 'e2', from: 'a1', to: 'play', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
+      ],
+    };
+    return { buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }], graphs: { 'graph:1': graph }, sections: [], effects: [fx], presets: [] };
+  }
+
+  const STEP = 1000 / 120;
+  /** Advance the host by `ms` at the 120 Hz tick; the preview callback fires at ~30 fps. */
+  function run(host: VoiceEngineHost, ms: number): void {
+    for (let t = 0; t < ms; t += STEP) host.step(STEP);
+  }
+  const lit = (rgb: Uint8Array | null): number => {
+    if (!rgb) throw new Error('no preview frame emitted');
+    let s = 0;
+    for (const b of rgb) s += b;
+    return s;
+  };
+
+  function litHost(): { host: VoiceEngineHost; broadcast: ReturnType<typeof vi.fn>; frame: () => Uint8Array | null } {
+    const host = makeHost();
+    host.setShow(audioShow());
+    let last: Uint8Array | null = null;
+    host.onFrame = (rgb) => { last = rgb; };
+    const broadcast = vi.fn();
+    handleVoiceInput({ t: 'midi', note: 60, velocity: 127, on: true }, { voiceHost: host, broadcastJson: broadcast });
+    run(host, 100);
+    return { host, broadcast, frame: () => last };
+  }
+
+  it("the editor's frame drives the engine (mapped param lights the voice) with no echo or monitor traffic", () => {
+    const { host, broadcast, frame } = litHost();
+    broadcast.mockClear();
+    expect(lit(frame())).toBe(0);
+    const handled = handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast, viewer: false });
+    run(host, 100);
+    expect(handled).toBe(true);
+    expect(lit(frame())).toBeGreaterThan(0);
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it("a viewer's frame is dropped: the engine never sees it", () => {
+    const { host, broadcast, frame } = litHost();
+    const handled = handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast, viewer: true });
+    run(host, 100);
+    expect(handled).toBe(true);
+    expect(lit(frame())).toBe(0);
+  });
+
+  it('a frame is a modulation value, not a trigger: it spawns no voice', () => {
+    const host = makeHost();
+    host.setShow(audioShow());
+    handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 1, mids: 1, highs: 1 }, { voiceHost: host, broadcastJson: vi.fn() });
+    run(host, 100);
+    expect(host.getStats().engine.voiceCount).toBe(0);
+  });
+
+  it('goes stale on the HOST clock: with no new frame the mapped param returns to zero', () => {
+    const { host, broadcast, frame } = litHost();
+    handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast });
+    run(host, 100);
+    expect(lit(frame())).toBeGreaterThan(0);
+    run(host, 800); // > AUDIO_STALE_MS, no further frame
+    expect(lit(frame())).toBe(0);
+  });
+
+  it('legacy mode (no voice host) consumes the frame as a no-op', () => {
+    expect(handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: null, broadcastJson: vi.fn() })).toBe(true);
+  });
+});

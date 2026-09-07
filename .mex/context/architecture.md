@@ -12,11 +12,30 @@ edges:
     condition: when specific technology details are needed
   - target: context/decisions.md
     condition: when understanding why the architecture is structured this way
-last_updated: 2026-09-06
+last_updated: 2026-09-07
 note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI source) are external runtime endpoints, not npm packages — `mex check` flags them as missing-from-manifest; that is expected.
 ---
 
 # Architecture
+
+## Spatial/audio input additions (2026-09-07, GH #214)
+
+`spatial-field` is a CPU generator sampling world XYZ at actual LED positions, independent of the
+preview camera. Its bounded disturbance emitters follow the existing per-voice generator bridge;
+it is not a global hit subscriber and does not change Scope/Mix/bus semantics.
+
+Web Audio capture (`apps/web/src/lib/audio/`) is explicitly enabled on a selected input. Raw audio
+stays local; four normalized features cross the validated WS protocol to `VoiceEngineHost`, which
+owns receive timestamps and a 500ms freshness window. The Audio graph source and existing
+parameter mapping share the same pure core path for effects, modifiers and offline simulation.
+Device selection/gain/smoothing are local settings, not capture permission stored in a show.
+
+MIDI timing uses the pure injected-time `packages/core/src/engine/midi-clock.ts` reducer. Native
+MIDI and browser WebMIDI feed the chosen route; 24PPQN pulses and transport messages update the
+server transport, with the same reducer offline. Manual is the default. External clock loss freezes
+transport after one second; tempo-step relocking is tested. This is not Ableton Link, beat detection,
+or automatic system-audio capture. Packaged-webview and physical hardware behavior remain
+operator verification items; requirements are sourced from Trent's confirmed GH #214 spec.
 
 ## Current runtime correction (code-verified 2026-09-06)
 
