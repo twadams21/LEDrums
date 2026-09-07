@@ -63,6 +63,8 @@ import { drumSonar } from './impl/drum-sonar';
 import { gravityDrops } from './impl/gravity-drops';
 // Angular wedges across the struck drum (E1).
 import { segments } from './impl/segments';
+// World-space continuous field with hit-centred distortion (GH #214).
+import { spatialField } from './impl/spatial-field';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -118,6 +120,7 @@ const ALL: EffectGenerator<any>[] = [
   drumSonar,
   gravityDrops,
   segments,
+  spatialField,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();

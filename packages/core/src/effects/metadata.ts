@@ -142,6 +142,10 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   },
 
   // --- Textures: continuous 2D fields on the drum surfaces --------------------
+  'spatial-field': {
+    description: 'One continuous, slowly twisting luminous field sampled at every pixel\'s world position, so the four drums read as windows onto a single volume of light — and each hit launches an expanding wave that visibly bends and brightens the field as it travels across the kit.',
+    tags: ['texture', '3d', 'kit-wide', 'airspace', 'hit', 'emission', 'ambient'],
+  },
   plasma: {
     description: 'Classic multi-sine plasma wrapped around each drum — several sine layers churn into a smoothly shifting field where colour and brightness move together. A warm, hypnotic backdrop.',
     tags: ['texture', 'ambient', 'per-drum'],

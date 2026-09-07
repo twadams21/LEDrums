@@ -28,10 +28,12 @@ describe('effect registry', () => {
       'solid-colour',
       // fire pair
       'sparkler', 'flame-flicker',
+      // world-space continuous field (GH #214)
+      'spatial-field',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(53);
+    expect(listEffects().length).toBe(54);
   });
 
   it('paramSpec defaults sit within declared min/max', () => {
