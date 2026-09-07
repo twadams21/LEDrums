@@ -36,9 +36,9 @@ Read these before any redesign, restyle, or new-UI task, and drive the work with
 
 ## Current Project State
 
-**Spatial Field + Audio + MIDI Clock experiment (2026-09-07, GH #214):**
+**PR #215 — Spatial Field + Audio + MIDI Clock experiment (2026-09-07, GH #214):**
 Requested by Trent on Trent’s MacBook Pro; source: this session’s confirmed spec in issue #214.
-Integrated on `feat/spatial-audio-lab`: CPU world-XYZ Spatial Field in the normal effect registry,
+Implementation in PR #215: CPU world-XYZ Spatial Field in the normal effect registry,
 explicit local audio/loopback capture feeding reusable Level/Bass/Mids/Highs graph modulation,
 and opt-in selected-port MIDI Clock with manual default. No GPU runtime or audio beat detection.
 Capture is off until enabled; only normalized features travel over WS, and engine-owned freshness
