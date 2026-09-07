@@ -272,6 +272,30 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
   });
 });
 
+describe('midiClock — editor-only, route-tagged, never an authoring mutation', () => {
+  it('feeds the voice host from the editor and drops a viewer\'s stream', () => {
+    const { voiceHost, handle, join } = voiceHarness();
+    const project = voiceHost.getProject();
+    project.composition.transport.source = 'midiClock';
+    project.composition.transport.clockInput = 'browser';
+    const editor = join();
+    const viewer = join();
+    handle({ t: 'midiClock', command: 'start' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('running');
+    handle({ t: 'midiClock', command: 'stop' }, viewer); // a viewer must never steer timing
+    expect(voiceHost.getClockStatus().status).toBe('running');
+    handle({ t: 'midiClock', command: 'stop' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('stopped');
+  });
+
+  it('is ignored while the transport source is manual', () => {
+    const { voiceHost, handle, join } = voiceHarness();
+    const editor = join();
+    handle({ t: 'midiClock', command: 'start' }, editor);
+    expect(voiceHost.getClockStatus().status).toBe('off');
+  });
+});
+
 describe('takeover flips roles + re-broadcasts presence to all (S2)', () => {
   it('hands the editor slot to the claimant; every client converges on the new editor', () => {
     const { handle, join } = harness();

@@ -180,6 +180,8 @@ export function applyClientMessage(engine: Engine, msg: ClientMessage, now: numb
         ...(msg.bpm !== undefined ? { bpm: msg.bpm } : {}),
         ...(msg.playing !== undefined ? { playing: msg.playing } : {}),
         ...(msg.beatsPerBar !== undefined ? { beatsPerBar: msg.beatsPerBar } : {}),
+        ...(msg.source !== undefined ? { source: msg.source } : {}),
+        ...(msg.clockInput !== undefined ? { clockInput: msg.clockInput } : {}),
       });
       return { structural: true };
     case 'setKitTransform':

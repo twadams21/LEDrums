@@ -215,6 +215,18 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
+    // MIDI beat clock from the editor's browser (the native bridge feeds the host directly in
+    // main.ts, tagged with its own route). Editor-only on purpose: timing is authority over the
+    // whole show, so a viewer's forwarded stream must never take it over. Not an authoring
+    // mutation (nothing is persisted) and never Monitor-logged per pulse — 48/s at 120bpm. The host
+    // itself ignores it while the transport source is manual or this route is not the selected
+    // clock input. Legacy (non-voice) mode has no external clock.
+    if (msg.t === 'midiClock') {
+      if (!clients.canMutate(ws)) return;
+      voiceHost?.applyMidiClock(msg, 'browser');
+      return;
+    }
+
     // (2) Read-only gating (S2). Authoring mutations are editor-only; a non-editor's attempt is a
     // silent no-op (the viewer's UI already disables the affordance — this is the authoritative
     // server backstop). Engine inputs (the drummer's hardware) + pure reads always pass.

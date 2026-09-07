@@ -35,6 +35,18 @@ describe('parseMidiMessage', () => {
     expect(parseMidiMessage([0xc0, 2])).toEqual({ kind: 'programChange', value: 2, channel: 1 });
     expect(parseMidiMessage([0xc5, 0])).toEqual({ kind: 'programChange', value: 0, channel: 6 });
   });
+  it('parses the single-byte beat clock and song position before the channel parse', () => {
+    expect(parseMidiMessage([0xf8])).toEqual({ kind: 'clock', command: 'tick' });
+    expect(parseMidiMessage([0xfa])).toEqual({ kind: 'clock', command: 'start' });
+    expect(parseMidiMessage([0xfb])).toEqual({ kind: 'clock', command: 'continue' });
+    expect(parseMidiMessage([0xfc])).toEqual({ kind: 'clock', command: 'stop' });
+    expect(parseMidiMessage([0xf2, 0x20, 0x01])).toEqual({ kind: 'clock', command: 'position', position: 160 });
+    expect(parseMidiMessage([0xf2, 0x7f, 0x7f])).toEqual({ kind: 'clock', command: 'position', position: 16383 });
+    expect(parseMidiMessage([0xf2, 0x20])).toBeNull(); // truncated pointer
+    // other system messages are still not forwarded
+    for (const status of [0xf0, 0xf1, 0xf3, 0xf6, 0xfe, 0xff]) expect(parseMidiMessage([status, 0, 0])).toBeNull();
+    expect(parseMidiMessage([])).toBeNull();
+  });
   it('ignores unknown statuses and short payloads', () => {
     expect(parseMidiMessage([0x90, 38])).toBeNull(); // note needs 3 bytes
     expect(parseMidiMessage([0xa0, 1, 2])).toBeNull(); // poly aftertouch (not forwarded)
@@ -69,6 +81,22 @@ describe('initMidi', () => {
     input.emit([0xb0, 0, 2]); // CC#0 value 2 → section 2
     expect(handler).toHaveBeenNthCalledWith(1, { kind: 'programChange', value: 3, channel: 1 });
     expect(handler).toHaveBeenNthCalledWith(2, { kind: 'cc', controller: 0, value: 2, channel: 1 });
+  });
+
+  it('tags clock events with the port they arrived on, and only clock events', async () => {
+    const a = new FakeInput('Ableton');
+    const b = new FakeInput('Pad');
+    const access = fakeAccess([a, b]);
+    const events: unknown[] = [];
+    await initMidi((ev) => events.push(ev), { requestMIDIAccess: vi.fn().mockResolvedValue(access) });
+    a.emit([0xf8]);
+    b.emit([0xfa]);
+    b.emit([0x90, 36, 100]);
+    expect(events).toEqual([
+      { kind: 'clock', command: 'tick', deviceId: '0' },
+      { kind: 'clock', command: 'start', deviceId: '1' },
+      { kind: 'note', note: 36, velocity: 100, on: true, channel: 1 },
+    ]);
   });
 
   it('degrades gracefully when requestMIDIAccess is absent', async () => {

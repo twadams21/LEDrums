@@ -431,6 +431,19 @@ async function main(): Promise<void> {
           detail: msg.channel != null ? `channel=${msg.channel}` : undefined,
         });
         return;
+      case 'midiClock':
+        // Pulses are 48/s at 120bpm: never a Monitor line each. Transport commands are rare and
+        // worth seeing; the host logs status transitions (running/lost…) itself.
+        if (msg.command === 'tick') return;
+        monitor({
+          type: 'input',
+          direction: 'in',
+          source: origin,
+          destination,
+          label: `MIDI clock ${msg.command}`,
+          detail: msg.command === 'position' ? `position=${msg.position ?? 0} (16ths)` : undefined,
+        });
+        return;
       case 'osc':
         monitor({ type: 'input', direction: 'in', source: origin, destination, label: `OSC ${msg.address}`, detail: `value=${msg.value}` });
         return;
@@ -724,7 +737,16 @@ async function main(): Promise<void> {
   nativeHttpHandler = createNativeMidiHandler({
     hostToken,
     monitorInput: (msg) => monitorInput(msg, 'native-midi'),
-    dispatch: (msg) => { void dispatchClientMessage(msg, nativeInputSocket).catch((error) => console.error('[input]', error)); },
+    dispatch: (msg) => {
+      // The beat clock goes straight to the host tagged with THIS route ('native'): it must not
+      // ride the WS handler, whose editor gate would refuse the stub socket, and the route is the
+      // source identity the host checks against the selected clock input.
+      if (msg.t === 'midiClock') {
+        voiceHost?.applyMidiClock(msg, 'native');
+        return;
+      }
+      void dispatchClientMessage(msg, nativeInputSocket).catch((error) => console.error('[input]', error));
+    },
     monitor,
   });
 
@@ -814,7 +836,7 @@ async function main(): Promise<void> {
         latencyMs: s.latencyMs,
         fps: s.fps,
         output: s.output,
-        voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices },
+        voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices, clock: voiceHost.getClockStatus() },
       });
       return;
     }

@@ -67,7 +67,7 @@ function deps(overrides: Partial<NativeMidiDeps> = {}): NativeMidiDeps {
 }
 
 describe('isNativeMidiMessage', () => {
-  it.each(['midi', 'cc', 'programChange'] as const)('accepts %s', (t) => {
+  it.each(['midi', 'cc', 'programChange', 'midiClock'] as const)('accepts %s', (t) => {
     expect(isNativeMidiMessage({ t } as ClientMessage)).toBe(true);
   });
   it.each(['osc', 'takeover', 'listProjects', 'setProject'] as const)('rejects %s', (t) => {
@@ -116,6 +116,17 @@ describe('createNativeMidiHandler', () => {
     expect(d.dispatch).toHaveBeenCalledWith(expect.objectContaining({ t: 'midi', note: 60 }));
     expect(res.status).toBe(204);
     expect(res.body).toBe('');
+  });
+
+  it('dispatches a MIDI clock pulse (system real-time, no channel) and replies 204', () => {
+    const d = deps();
+    const handler = createNativeMidiHandler(d);
+    const req = new FakeReq();
+    const res = new FakeRes();
+    handler(req as unknown as IncomingMessage, res as unknown as ServerResponse);
+    req.send(JSON.stringify({ t: 'midiClock', command: 'tick' }));
+    expect(d.dispatch).toHaveBeenCalledWith({ t: 'midiClock', command: 'tick' });
+    expect(res.status).toBe(204);
   });
 
   it('400s a decodable-but-unsupported client message without dispatching', () => {

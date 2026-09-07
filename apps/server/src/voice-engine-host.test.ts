@@ -579,3 +579,120 @@ describe('VoiceEngineHost', () => {
     expect(events).toContainEqual(expect.objectContaining({ label: 'No graph resolved' }));
   });
 });
+
+describe('VoiceEngineHost — MIDI clock transport', () => {
+  const PULSE_120 = 60_000 / (120 * 24);
+
+  /** A host with an injected receipt clock and the transport switched to the external clock. */
+  function clockHost(clockInput: 'native' | 'browser' = 'native') {
+    const made = makeHost();
+    let now = 0;
+    made.host.clockNow = () => now;
+    made.project.composition.transport.source = 'midiClock';
+    made.project.composition.transport.clockInput = clockInput;
+    made.project.composition.transport.bpm = 100;
+    const at = (ms: number): void => {
+      now = ms;
+    };
+    /** Advance both the receipt clock and the engine by `ms` in engine steps. */
+    const run = (ms: number): void => {
+      const steps = Math.round(ms / STEP);
+      for (let i = 0; i < steps; i++) {
+        now += STEP;
+        made.host.step(STEP);
+      }
+    };
+    return { ...made, at, run };
+  }
+
+  it('ignores every clock message while the transport source is manual', () => {
+    const { host, project } = makeHost();
+    expect(host.applyMidiClock({ command: 'start' }, 'native')).toBe(false);
+    for (let i = 0; i < 48; i++) expect(host.applyMidiClock({ command: 'tick' }, 'native')).toBe(false);
+    host.step(STEP);
+    expect(host.getClockStatus()).toEqual({ status: 'off', bpm: project.composition.transport.bpm, locked: false, playing: false });
+    expect(host.getStats().engine.beat).toBeGreaterThan(0); // the manual transport kept running
+  });
+
+  it('accepts only the selected route, so browser and native clocks can never combine', () => {
+    const { host } = clockHost('native');
+    expect(host.applyMidiClock({ command: 'start' }, 'browser')).toBe(false);
+    expect(host.getClockStatus().status).toBe('waiting');
+    expect(host.applyMidiClock({ command: 'start' }, 'native')).toBe(true);
+    expect(host.getClockStatus().status).toBe('running');
+  });
+
+  it('drives beat, bpm and playing from a synthetic 24 PPQN stream stamped with the receipt clock', () => {
+    const { host, at, run } = clockHost();
+    // Before any pulse: waiting, seeded from the authored bpm, not locked, not playing.
+    run(STEP);
+    expect(host.getClockStatus()).toEqual({ status: 'waiting', bpm: 100, locked: false, playing: false });
+    expect(host.getStats().engine.beat).toBe(0);
+
+    at(1000);
+    host.applyMidiClock({ command: 'start' }, 'native');
+    for (let i = 0; i <= 96; i++) {
+      at(1000 + i * PULSE_120);
+      host.applyMidiClock({ command: 'tick' }, 'native');
+    }
+    run(STEP);
+    const status = host.getClockStatus();
+    expect(status.status).toBe('running');
+    expect(status.playing).toBe(true);
+    expect(status.locked).toBe(true);
+    expect(status.bpm).toBeCloseTo(120, 3);
+    // 96 pulses after the anchoring one = exactly 4 beats, plus one engine step of interpolation.
+    expect(host.getStats().engine.beat).toBeGreaterThanOrEqual(4);
+    expect(host.getStats().engine.beat).toBeLessThan(4 + 1 / 24);
+  });
+
+  it('goes lost after a second of silence, freezes the beat and stops, then resumes on the next pulse', () => {
+    const { host, at, run } = clockHost();
+    at(0);
+    host.applyMidiClock({ command: 'start' }, 'native');
+    for (let i = 0; i <= 48; i++) {
+      at(i * PULSE_120);
+      host.applyMidiClock({ command: 'tick' }, 'native');
+    }
+    run(STEP);
+    const beatBefore = host.getStats().engine.beat;
+    run(1200);
+    expect(host.getClockStatus().status).toBe('lost');
+    expect(host.getClockStatus().playing).toBe(false);
+    expect(host.getClockStatus().bpm).toBeCloseTo(120, 3); // retained for display
+    expect(host.getStats().engine.beat).toBeCloseTo(beatBefore, 1); // frozen (≤ one pulse), no catch-up
+    host.applyMidiClock({ command: 'tick' }, 'native');
+    run(STEP);
+    expect(host.getClockStatus().status).toBe('running');
+    expect(host.getClockStatus().playing).toBe(true);
+  });
+
+  it('logs clock status transitions to the Monitor, never pulses', () => {
+    const { host, at, run } = clockHost();
+    const events: Array<{ label: string }> = [];
+    host.setMonitor((e) => events.push(e as { label: string }));
+    run(STEP);
+    at(0);
+    host.applyMidiClock({ command: 'start' }, 'native');
+    for (let i = 0; i < 200; i++) {
+      at(i * PULSE_120);
+      host.applyMidiClock({ command: 'tick' }, 'native');
+      run(STEP);
+    }
+    host.applyMidiClock({ command: 'stop' }, 'native');
+    run(STEP);
+    const clockLabels = events.map((e) => e.label).filter((l) => l.startsWith('MIDI clock'));
+    expect(clockLabels).toEqual(['MIDI clock waiting', 'MIDI clock running', 'MIDI clock stopped']);
+  });
+
+  it('switching the source back to manual resumes the authored transport and reports off', () => {
+    const { host, project, at, run } = clockHost();
+    at(0);
+    host.applyMidiClock({ command: 'start' }, 'native');
+    run(STEP);
+    project.composition.transport.source = 'manual';
+    run(STEP);
+    expect(host.getClockStatus().status).toBe('off');
+    expect(host.applyMidiClock({ command: 'tick' }, 'native')).toBe(false);
+  });
+});

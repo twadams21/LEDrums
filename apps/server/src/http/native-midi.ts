@@ -6,13 +6,15 @@ import { decodeClient, type ClientMessage } from '../ws-protocol';
 /** POST route for the desktop shell's native (Core-MIDI / node-midi) input bridge. */
 export const NATIVE_MIDI_PATH = '/api/native-midi';
 
-/** The three MIDI channel-message kinds the native bridge may forward (matches the WS input path). */
-export type NativeMidiMessage = Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }>;
+/** The MIDI message kinds the native bridge may forward: the three channel messages (matching the
+ * WS input path) plus the system real-time beat clock, which is deliberately NOT channel-filtered
+ * (system messages carry no channel). */
+export type NativeMidiMessage = Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' | 'midiClock' }>;
 
-/** Only channel MIDI (note/cc/programChange) is accepted over the native bridge; anything else is a
- * 400. Shared decode/dispatch is the same as the WS path — this just fences the payload type. */
+/** Only MIDI (note/cc/programChange/midiClock) is accepted over the native bridge; anything else is
+ * a 400. Shared decode/dispatch is the same as the WS path — this just fences the payload type. */
 export function isNativeMidiMessage(msg: ClientMessage): msg is NativeMidiMessage {
-  return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
+  return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange' || msg.t === 'midiClock';
 }
 
 /** Collaborators the native-MIDI HTTP handler needs from the server wiring. `hostToken`/host-trust

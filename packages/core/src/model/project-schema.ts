@@ -50,10 +50,21 @@ export const layerSchema = z.object({
   activeClipId: z.string().nullable().default(null),
 });
 
+/** Where musical time comes from. `manual` (default) is the authored bpm/playing; `midiClock`
+    follows an external MIDI beat clock (Ableton's Sync) and ignores the authored playing flag,
+    using the authored bpm only as the seed until the clock's tempo locks. */
+export const transportSourceSchema = z.enum(['manual', 'midiClock']);
+/** Which route the clock is accepted from in `midiClock` mode: the desktop app's own "LEDrums"
+    CoreMIDI destination, or the editor browser's selected WebMIDI input (chosen locally). One or
+    the other — never both, so two clocks can never be combined. */
+export const clockInputSchema = z.enum(['native', 'browser']);
+
 export const transportSchema = z.object({
   bpm: z.number().positive().default(120),
   playing: z.boolean().default(true),
   beatsPerBar: z.number().int().positive().default(4),
+  source: transportSourceSchema.default('manual'),
+  clockInput: clockInputSchema.default('native'),
 });
 
 export const compositionSchema = z.object({
@@ -237,6 +248,8 @@ export type Clip = z.infer<typeof clipSchema>;
 export type LayerRole = z.infer<typeof layerRoleSchema>;
 export type Layer = z.infer<typeof layerSchema>;
 export type Transport = z.infer<typeof transportSchema>;
+export type TransportSource = z.infer<typeof transportSourceSchema>;
+export type ClockInput = z.infer<typeof clockInputSchema>;
 export type Composition = z.infer<typeof compositionSchema>;
 export type MidiNoteMap = z.infer<typeof midiNoteMapSchema>;
 export type OscMap = z.infer<typeof oscMapSchema>;
