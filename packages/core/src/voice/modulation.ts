@@ -18,6 +18,7 @@ import { sampleEnvelope } from './envelope';
 import { sampleLfo, type LfoSettings } from './lfo'; // S36
 import type { Envelope, NoteModMode, ParamSpec, ParamValues, RandomDistribution } from './types';
 import type { Prng } from './prng';
+import { sampleAudio, type AudioBand, type AudioTable } from './audio-features';
 
 /**
  * What drives a mapping. A discriminated union keyed by `kind` so new source kinds extend
@@ -32,6 +33,7 @@ export type ModSource =
   | { kind: 'cc'; controller: number; channel: number | null } // S37
   | { kind: 'osc'; address: string } // OSC modulation — a live 0..1 value at an OSC address
   | { kind: 'note'; note: number; channel: number | null; mode: NoteModMode; releaseMs: number }
+  | { kind: 'audio'; band: AudioBand } // GH #214: one band of the latest live audio feature frame
   | { kind: 'random'; value: number; distribution: RandomDistribution; steps: number }; // per-voice frozen random value, resolved at trigger time
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
@@ -201,6 +203,9 @@ export interface ModSampleCtx {
   osc?: OscTable;
   /** Live MIDI note table — a `note` source reads note gate/velocity here. */
   notes?: NoteTable;
+  /** Latest audio feature frame + its engine stamp — an `audio` source reads one band here,
+      gated by freshness against `timeMs` (see `sampleAudio`). Optional ⇒ neutral. */
+  audio?: AudioTable | null;
 }
 
 const num = (v: number | boolean | string | undefined, d: number): number =>
@@ -241,6 +246,8 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return sampleNote(ctx.notes, src.note, src.channel, src.mode, src.releaseMs, ctx.timeMs);
     case 'random':
       return src.value;
+    case 'audio': // GH #214 — latest frame's band while fresh, else 0
+      return sampleAudio(ctx.audio, src.band, ctx.timeMs);
   }
 }
 

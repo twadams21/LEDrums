@@ -38,7 +38,7 @@ const BY_ID = {
   input: {
     id: 'input',
     label: 'Input',
-    sub: 'MIDI + OSC into the rig',
+    sub: 'MIDI, OSC + audio into the rig',
     icon: Music,
     group: 'input',
   },

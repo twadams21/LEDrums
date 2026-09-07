@@ -91,6 +91,9 @@ import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
 import { ControllerTest } from './controller-test.svelte';
 import { MidiController, type MidiLearnTarget } from './midi-controller.svelte';
+import { AudioController } from './audio-controller.svelte';
+import type { AudioCaptureErrorCode, AudioCaptureStatus, AudioInputInfo } from '../audio/capture';
+import type { AudioAnalysisSettings } from '../audio/analysis';
 import { OscLearnController, type OscLearnTarget } from './osc-learn.svelte';
 import {
   ShowsController,
@@ -982,6 +985,12 @@ export class TriggerLab {
       return true;
     },
   });
+  /** Audio input capture (GH #214): lifecycle, meter and local preferences live on the
+      controller; frames come back through {@link forwardAudio}. */
+  private readonly audio = new AudioController({
+    isViewer: () => this.isViewer,
+    onFrame: (frame) => this.forwardAudio(frame),
+  });
   /** The armed MIDI-learn target, or null when nothing is waiting to bind. See
       {@link MidiController.learnTarget}. */
   get midiLearnTarget(): MidiLearnTarget | null {
@@ -1032,6 +1041,73 @@ export class TriggerLab {
       manualBpm: this.bpm,
     }),
   );
+
+  // --- audio input (GH #214) -----------------------------------------------
+  get audioStatus(): AudioCaptureStatus {
+    return this.audio.status;
+  }
+  get audioError(): AudioCaptureErrorCode | undefined {
+    return this.audio.error;
+  }
+  get audioMessage(): string | undefined {
+    return this.audio.message;
+  }
+  get audioTrackLabel(): string | undefined {
+    return this.audio.trackLabel;
+  }
+  get audioSampleRate(): number | undefined {
+    return this.audio.sampleRate;
+  }
+  /** Latest analysed frame for the settings meters (zero when not capturing). */
+  get audioMeter(): voice.AudioFeatureFrame {
+    return this.audio.meter;
+  }
+  get audioDevices(): AudioInputInfo[] {
+    return this.audio.devices;
+  }
+  get audioDeviceId(): string | null {
+    return this.audio.deviceId;
+  }
+  get audioSettings(): AudioAnalysisSettings {
+    return this.audio.settings;
+  }
+  get audioSupported(): boolean {
+    return this.audio.supported;
+  }
+  get audioUnsupportedReason(): string | undefined {
+    return this.audio.unsupportedReason;
+  }
+  get audioRunning(): boolean {
+    return this.audio.running;
+  }
+  /** Explicit user start — the only path that ever opens an input. Viewers are refused. */
+  startAudio(): Promise<void> {
+    return this.audio.start();
+  }
+  stopAudio(): void {
+    this.audio.stop();
+  }
+  setAudioDevice(id: string | null): void {
+    this.audio.setDevice(id);
+  }
+  setAudioSettings(patch: Partial<AudioAnalysisSettings>): void {
+    this.audio.setSettings(patch);
+  }
+  refreshAudioDevices(): Promise<void> {
+    return this.audio.refreshDevices();
+  }
+  /** DEV screenshot seam: stage a meter state without capture (see `shot-seam.ts`). */
+  previewAudioMeter(status: AudioCaptureStatus, meter: voice.AudioFeatureFrame, error?: AudioCaptureErrorCode): void {
+    if (!import.meta.env.DEV) return;
+    this.audio.previewSynthetic(status, meter, error);
+  }
+  /** One analysed frame → the offline sim's audio table (the local preview + node-face meters)
+      and, when the link is open, ONE `audioFeatures` message so the server drives the visible
+      kit. `send` drops while the socket is closed, so a reconnect never replays stale frames. */
+  private forwardAudio(frame: voice.AudioFeatureFrame): void {
+    this.sim.setAudio(frame);
+    if (this.link === 'open') this.client.send({ t: 'audioFeatures', level: frame.level, bass: frame.bass, mids: frame.mids, highs: frame.highs });
+  }
 
   // --- input activity ("last heard") ---------------------------------------
   /** Last-heard event per input identity (note / OSC address), for the S04 activity
@@ -1239,6 +1315,8 @@ export class TriggerLab {
       // and a second render truth ticking in the background). The sim still ticks above so
       // the offline preview resumes instantly when the link drops.
       if (!this.useServer) this.renderFrame();
+      // Capture follows edit ownership: a client that dropped to viewer releases the input.
+      this.audio.enforceOwnership(this.isViewer);
       this.snapshot();
       this.tickDockDisplay(dt);
       // measure local output rate — but only publish it when offline; when the
@@ -1263,6 +1341,7 @@ export class TriggerLab {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
     this.midi.release();
+    this.audio.dispose();
     this.errorCaptureUninstall?.();
     this.errorCaptureUninstall = null;
     this.client.close();
@@ -3294,6 +3373,9 @@ export class TriggerLab {
       node = makeNode('note', nodeId, x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
     } else if (kind === 'osc') {
       node = makeNode('osc', nodeId, x, y, { oscAddress: '' });
+    } else if (kind === 'audio') {
+      // GH #214 — reads the broadband level until the inspector picks a band.
+      node = makeNode('audio', nodeId, x, y, { audioBand: 'level' });
     } else if (kind === 'splice') {
       // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
       // splice node renders nothing at all (every slot blank), which would read as broken.
@@ -3552,6 +3634,9 @@ export class TriggerLab {
       if (g) pruneEdgesForModSource(g, node.id);
     } else if (kind === 'osc') {
       node.oscAddress = '';
+      if (g) pruneEdgesForModSource(g, node.id);
+    } else if (kind === 'audio') {
+      node.audioBand = 'level';
       if (g) pruneEdgesForModSource(g, node.id);
     } else if (kind === 'randomMod') {
       node.randomDistribution = 'linear';
@@ -4381,6 +4466,27 @@ export class TriggerLab {
 
   oscNodeLiveValue(node: GraphNode): number {
     return node?.kind === 'osc' ? voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '') : 0;
+  }
+
+  /** An `audio` source node's live 0..1 band level, read through the SAME freshness rule the
+      render sweep uses (sim clock vs the frame's stamp) — so the node face goes quiet exactly
+      when the mapped params do. */
+  audioNodeLiveValue(node: GraphNode): number {
+    return node?.kind === 'audio' ? voice.sampleAudio(this.sim.audioTable, node.audioBand ?? 'level', this.sim.timeMs) : 0;
+  }
+  audioNodeBand(node: GraphNode): voice.AudioBand {
+    return node?.kind === 'audio' ? node.audioBand ?? 'level' : 'level';
+  }
+  /** Set which feature an audio source reads. Persists with the graph (normal node field). */
+  setAudioNodeBand(node: GraphNode, band: voice.AudioBand): void {
+    if (!this.canEditSelectedGraph) return;
+    if (node.kind !== 'audio' || !voice.isAudioBand(band)) return;
+    // Write through the graph's own (reactive) node, not a caller-held raw reference — a plain
+    // object handed back by `addNode` is not the proxy autosave and the canvas observe.
+    const target = this.selectedGraph?.nodes.find((n) => n.id === node.id) ?? node;
+    if (target.audioBand === band) return;
+    this.pushUndoSnapshot();
+    target.audioBand = band;
   }
 
   noteNodeLiveValue(node: GraphNode): number {

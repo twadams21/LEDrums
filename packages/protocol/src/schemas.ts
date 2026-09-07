@@ -31,7 +31,8 @@ import {
   triggerBindingSchema,
   vec3Schema,
 } from '@ledrums/core';
-import type { CurveValue, EngineStats, voice } from '@ledrums/core';
+import { voice } from '@ledrums/core';
+import type { CurveValue, EngineStats } from '@ledrums/core';
 import type {
   BackupSnapshotMeta,
   ControllerStatus,
@@ -108,6 +109,10 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     position: z.number().int().min(0).max(16383).optional(),
   }).strict(),
   z.object({ t: z.literal('osc'), address: z.string(), value: z.number() }).strict(),
+  // GH #214 — one analysed audio feature frame (four finite 0..1 bands), flat on the envelope. The
+  // band constraints are core's (`audioFeatureFrameSchema`), so the wire and the engine agree by
+  // construction. No client timestamp: the host stamps arrival with its own engine clock.
+  z.object({ t: z.literal('audioFeatures'), ...voice.audioFeatureFrameSchema.shape }).strict(),
   z.object({ t: z.literal('setParam'), layerId: z.string(), clipId: z.string(), key: z.string(), value: paramValueSchema }).strict(),
   z.object({
     t: z.literal('setLayer'),

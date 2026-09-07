@@ -1,8 +1,7 @@
 <script lang="ts">
-  /* Settings › Input (S4a §2.1) — the two ways sound gets in: MIDI (channel filter +
-     connected-device list, from General, plus `MidiClockPanel` for the external transport
-     clock) and OSC (`OscInputPanel` reused wholesale, which owns its listen status, fault
-     callout and learn affordances).
+  /* Settings › Input — MIDI channels/devices and external transport clock, OSC listen
+     status/learning, and analysed audio (device, enable/stop, meters, gain/floor/smoothing).
+     Each adapter owns its own lifecycle; these panels only expose the controls.
 
      The per-drum zone wiring and the global control bindings that used to stack below
      these are their own sections now (Drum trigger zones · Global controls) — same
@@ -19,6 +18,7 @@
   import { deviceListEmptyState } from '../../chrome/midi-devices';
   import OscInputPanel from '../../chrome/OscInputPanel.svelte';
   import MidiClockPanel from '../../chrome/MidiClockPanel.svelte';
+  import AudioInputPanel from '../../chrome/AudioInputPanel.svelte';
   import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
@@ -72,6 +72,9 @@
 
   <Separator />
   <OscInputPanel {store} />
+
+  <Separator />
+  <AudioInputPanel {store} />
 </div>
 
 <style>

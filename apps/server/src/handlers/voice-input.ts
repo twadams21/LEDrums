@@ -131,6 +131,13 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       });
       return true;
     }
+    if (msg.t === 'audioFeatures') {
+      // GH #214: only the editor's capture is authoritative. A viewer's frame is dropped here (the
+      // editor gate already refuses it upstream — this is the belt to that brace). No input echo
+      // and no monitor event: a 30 Hz stream must not spam the timeline or the badges.
+      if (!deps.viewer) voiceHost.applyInput({ kind: 'audioFeatures', level: msg.level, bass: msg.bass, mids: msg.mids, highs: msg.highs });
+      return true;
+    }
     if (msg.t === 'osc') {
       // A section-recall address is a reserved global convention: it is ALWAYS consumed
       // here (recall on a valid index, no-op when out of range) and never falls through to
@@ -168,7 +175,8 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
     msg.t === 'recallSection' ||
     msg.t === 'releaseBus' ||
     msg.t === 'cc' ||
-    msg.t === 'programChange'
+    msg.t === 'programChange' ||
+    msg.t === 'audioFeatures'
   ) {
     // These only apply to the voice engine; ignore in legacy mode.
     return true;

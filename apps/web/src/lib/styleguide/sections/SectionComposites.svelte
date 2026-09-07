@@ -110,6 +110,7 @@
     toggle: 'on · off',
     delay: '1/8 dotted',
     modifier: 'Trail',
+    audio: 'Audio · bass',
     mix: 'normal',
     scope: 'Snare',
     output: 'Hoop',

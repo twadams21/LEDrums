@@ -269,6 +269,9 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
     for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
     }
+    // GH #214: audio feature frames are NOT drummer hardware — only the editor's capture is
+    // authoritative, so a viewer's frames are silently dropped by the gate (deny-by-default).
+    expect(requiresEditor('audioFeatures')).toBe(true);
   });
 });
 

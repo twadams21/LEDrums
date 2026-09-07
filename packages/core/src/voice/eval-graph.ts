@@ -695,6 +695,7 @@ function evalGraphGen3FromPlan(
       case 'cc':
       case 'note':
       case 'osc':
+      case 'audio':
         break;
     }
   }
