@@ -1,3 +1,4 @@
+import type { AudioBand } from './audio-features';
 import type { GeometryState } from './geometry-state';
 /**
  * Pure data model for the trigger-graph / voice-bus lighting brain (ported from the
@@ -219,6 +220,7 @@ export type CanonicalGraphNodeKind =
   | 'cc'
   | 'note'
   | 'osc'
+  | 'audio'
   | 'randomMod';
 
 export type BlockKind = LegacyGraphNodeKind | 'effect' | 'splice' | 'all' | 'random' | 'sequence' | 'switch' | 'chance' | 'toggle' | 'delay';
@@ -581,6 +583,8 @@ export interface GraphNode {
   /** OSC address this source reads a 0..1 value from when {@link ccSource} is 'osc'. Absent → ''
       (⇒ `sampleOsc` neutral until an address is set). */
   oscAddress?: string;
+  /** Which live audio feature an `audio` modulation source reads (GH #214). Absent → 'level'. */
+  audioBand?: AudioBand;
   /** MIDI note this note modulation source reads (0..127). Absent → 60. */
   noteNumber?: number;
   /** MIDI channel filter (1..16), or `null` for omni. Absent → omni. */

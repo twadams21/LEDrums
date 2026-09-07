@@ -1,7 +1,8 @@
 <script lang="ts">
-  /* Settings › Input (S4a §2.1) — the two ways sound gets in: MIDI (channel filter +
-     connected-device list, from General) and OSC (`OscInputPanel` reused wholesale, which
-     owns its listen status, fault callout and learn affordances).
+  /* Settings › Input (S4a §2.1) — the ways sound gets in: MIDI (channel filter +
+     connected-device list, from General), OSC (`OscInputPanel` reused wholesale, which
+     owns its listen status, fault callout and learn affordances) and, since GH #214, an
+     analysed audio input (`AudioInputPanel`: device, enable/stop, meters, gain/floor/smoothing).
 
      The per-drum zone wiring and the global control bindings that used to stack below
      these are their own sections now (Drum trigger zones · Global controls) — same
@@ -17,6 +18,7 @@
   import { midiChannelOptions } from '../../../midi/midi-note';
   import { deviceListEmptyState } from '../../chrome/midi-devices';
   import OscInputPanel from '../../chrome/OscInputPanel.svelte';
+  import AudioInputPanel from '../../chrome/AudioInputPanel.svelte';
   import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
@@ -68,6 +70,9 @@
 
   <Separator />
   <OscInputPanel {store} />
+
+  <Separator />
+  <AudioInputPanel {store} />
 </div>
 
 <style>

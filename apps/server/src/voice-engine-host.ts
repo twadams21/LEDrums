@@ -59,7 +59,10 @@ export type VoicePartialInput =
   | { kind: 'recallSongIndex'; songIndex: number }
   | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
   | { kind: 'cc'; controller: number; value: number; channel?: number } // S37
-  | { kind: 'releaseBus'; busId?: string };
+  | { kind: 'releaseBus'; busId?: string }
+  /** GH #214: one analysed audio feature frame from the editor client. Stamped with the engine
+      clock here; the engine keeps only the latest and never treats it as a trigger. */
+  | { kind: 'audioFeatures'; level: number; bass: number; mids: number; highs: number };
 
 /** Stats reported to clients for the voice path (the voice extension of `stats`). */
 export interface VoiceHostStats {
@@ -427,7 +430,9 @@ export class VoiceEngineHost {
    * (the engine decays voices on their own envelopes).
    */
   applyInput(partial: VoicePartialInput): void {
-    this.pendingInputWall = nowWall();
+    // Audio frames arrive continuously (≤30 Hz) and are not a hit: they must not restart the
+    // input→frame latency measurement that a real trigger owns.
+    if (partial.kind !== 'audioFeatures') this.pendingInputWall = nowWall();
     const ev = this.toInputEvent(partial);
     if (!ev) return;
     // Two global controls are the HOST's, not the engine's: bpm lives on this project's
@@ -561,6 +566,13 @@ export class VoiceEngineHost {
       case 'releaseBus':
         // The dock's stop button: release the bus's voices (absent busId = all buses).
         return { kind: 'releaseBus', busId: partial.busId, timeMs };
+      case 'audioFeatures':
+        // GH #214: the host's engine clock is the freshness authority — never a client timestamp.
+        return {
+          kind: 'audioFeatures',
+          audio: { level: partial.level, bass: partial.bass, mids: partial.mids, highs: partial.highs },
+          timeMs,
+        };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
         // action and never reaches the zone-map or a trigger-source graph (the same

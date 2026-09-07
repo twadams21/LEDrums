@@ -27,7 +27,7 @@ export const ENVELOPE_NODE_KEY = 'shape';
 /** The `NodeKind`s that are modulation SOURCES (wire from their output into a `param:<key>`
     input). Widens with S36 (`'lfo'`) / S37 (`'cc'`). Kept here so the web wiring layer and the
     resolver agree on one list. */
-export const MOD_SOURCE_KINDS = ['envelope', 'lfo', 'cc', 'note', 'osc', 'randomMod'] as const; // S36 'lfo' + S37 'cc'
+export const MOD_SOURCE_KINDS = ['envelope', 'lfo', 'cc', 'note', 'osc', 'audio', 'randomMod'] as const; // S36 'lfo' + S37 'cc'
 
 /** Whether a node kind is a modulation source. */
 export function isModSourceKind(kind: string): boolean {
@@ -56,6 +56,8 @@ export function nodeModSource(node: GraphNode): ModSource | null {
       return { kind: 'cc', controller: node.ccController ?? 1, channel: node.ccChannel ?? null };
     case 'osc':
       return { kind: 'osc', address: node.oscAddress ?? '' };
+    case 'audio': // GH #214 — band lives on node.audioBand; unset reads the broadband level
+      return { kind: 'audio', band: node.audioBand ?? 'level' };
     case 'note':
       return {
         kind: 'note',

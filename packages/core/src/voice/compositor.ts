@@ -20,6 +20,7 @@ import { getHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import { Framebuffer } from '../engine/framebuffer';
 import type { TransportState } from '../engine/render-context';
 import { applyModulations, type CcTable, type ModSampleCtx, type NoteTable, type OscTable } from './modulation';
+import type { AudioTable } from './audio-features';
 import { ensureGeometryState } from './geometry-state';
 import { createRenderCheckpoint } from './render-checkpoint';
 import { createGeneratorBridge } from './generator-bridge';
@@ -83,7 +84,7 @@ export function voicePhase(v: Pick<Voice, 'bornAtMs' | 'mode' | 'attackMs' | 'su
  * `bpm` is supplied by the engine (which owns transport); the compositor reads the
  * already-resolved `liveParams`, keeping its `render` signature narrow.
  */
-export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable): ParamValues {
+export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?: CcTable, osc?: OscTable, notes?: NoteTable, audio?: AudioTable | null): ParamValues {
   const out = v.liveParams;
   // Refill the scratch from the spawn snapshot.
   for (const k of Object.keys(out)) delete out[k];
@@ -93,7 +94,7 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
   // absolute clock + tempo (LFO) or a live table (CC / OSC). The legacy env sweep folded in S35.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes });
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes, audio });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
@@ -115,6 +116,7 @@ function writeModCtx(out: ModSampleCtx, v: Voice, frame: FrameModCtx): ModSample
   out.cc = frame.cc;
   out.osc = frame.osc;
   out.notes = frame.notes;
+  out.audio = frame.audio;
   return out;
 }
 
@@ -320,6 +322,9 @@ export interface CompositorFrame {
       engine's current per-address values this frame. Absent → no OSC contribution. */
   osc?: OscTable;
   notes?: NoteTable;
+  /** Latest audio feature frame + engine stamp (GH #214) — `audio` sources read a band while it
+      is fresh against `timeMs`. Absent → no audio contribution. */
+  audio?: AudioTable | null;
 }
 
 /** Voices → pixels. The inner seam. */
@@ -398,6 +403,7 @@ export function createDefaultCompositor(): PresentationCompositor {
       frameCtx.cc = frame.cc;
       frameCtx.osc = frame.osc;
       frameCtx.notes = frame.notes;
+      frameCtx.audio = frame.audio;
 
       // Refresh the reusable hosted-generator RenderContext for this frame.
       generators.beginFrame(model, timeMs, frame.dt, frame.transport);

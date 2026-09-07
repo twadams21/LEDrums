@@ -39,6 +39,7 @@ import { shapeCascadeVoice, advanceLatchedSpliceMotion } from './runtime-policy'
 import { ensureGeometryState } from './geometry-state';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { ccKey, ccValue01, noteKey, noteValue01, oscValue01, type NoteState } from './modulation';
+import { normalizeAudioFrame, type AudioFeatureFrame, type AudioTable } from './audio-features';
 import {
   emptyShow,
   normalizeTriggerValue,
@@ -70,7 +71,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus' | 'audioFeatures';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -105,6 +106,9 @@ export interface InputEvent {
   fireGraphPolicy?: 'active-section';
   /** releaseBus: release every active voice on this bus (absent = all buses — panic). */
   busId?: string;
+  /** audioFeatures (GH #214): the latest analysed frame. Replaces the engine's audio table and
+      NEVER fires a graph — audio is a continuous modulation source, not a trigger. */
+  audio?: AudioFeatureFrame;
   timeMs: number;
 }
 
@@ -287,6 +291,12 @@ class VoiceBusEngine implements RenderEngine {
    */
   private oscTable = new Map<string, number>();
   private noteTable = new Map<string, NoteState>();
+  /**
+   * Latest audio feature frame (GH #214) stamped with the engine time it was queued at. Written
+   * ONLY inside the queue drain; read per frame by `audio` modulation sources through
+   * `sampleAudio`, which zeroes it once older than `AUDIO_STALE_MS`. `null` until the first frame.
+   */
+  private audioTable: AudioTable | null = null;
 
   private queue: Array<{ event: InputEvent; order: number }> = [];
   private inputOrder = 0;
@@ -419,6 +429,7 @@ class VoiceBusEngine implements RenderEngine {
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
+    this.audioTable = null; // fresh show → no lingering audio frame
     // Preserve the engine-authoritative pair across equivalent/updated shows. A replacement
     // still gets a deterministic first song/section when the old pair no longer exists.
     const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
@@ -647,6 +658,12 @@ class VoiceBusEngine implements RenderEngine {
       };
       write(e.channel ?? null);
       write(null);
+    }
+    // An audio feature frame ONLY replaces the audio table (GH #214). It is never a trigger: it
+    // returns here before any graph resolution, so a 30 Hz sender cannot fire or miss anything.
+    if (e.kind === 'audioFeatures') {
+      this.audioTable = { frame: normalizeAudioFrame(e.audio), atMs: e.timeMs };
+      return;
     }
     // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
     // here) in addition to firing trigger graphs below — deterministic: state only changes here.
@@ -1060,12 +1077,12 @@ class VoiceBusEngine implements RenderEngine {
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
       for (const v of this.voices.pool) {
-        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
+        if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable, this.audioTable);
       }
       this.compositor.render(
         this.voices.pool,
         this.model,
-        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable, notes: this.noteTable },
+        { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable, notes: this.noteTable, audio: this.audioTable },
         this.finalFb,
       );
     }

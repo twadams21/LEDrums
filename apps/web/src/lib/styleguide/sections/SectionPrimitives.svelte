@@ -23,6 +23,7 @@
   import Disclosure from '../../ui/Disclosure.svelte';
   import Tooltip from '../../ui/Tooltip.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
+  import LevelMeter from '../../ui/LevelMeter.svelte';
   import Pill from '../../ui/Pill.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
   import InputActivityBadge from '../../ui/InputActivityBadge.svelte';
@@ -489,6 +490,19 @@
     </DemoCard>
 
     <DemoCard
+      title="Level meter"
+      src="lib/ui/LevelMeter"
+      note="Read-only 0..1 level with a tabular readout. Settings › Input › Audio input stacks four (Level / Bass / Mids / Highs); a source node's face uses the compact bar in NodeSignalPreview instead."
+    >
+      <div class="meter-stack">
+        <LevelMeter label="Level" value={0.72} />
+        <LevelMeter label="Bass" value={0.91} />
+        <LevelMeter label="Mids" value={0.38} />
+        <LevelMeter label="Highs" value={0} />
+      </div>
+    </DemoCard>
+
+    <DemoCard
       title="Pill"
       src="lib/ui/Pill"
       note="Small tag/label pill. Static (span) for read-only tags + count badges; interactive (button + selected) for filter chips. Used across the effect gallery cards + filter row."
@@ -900,5 +914,11 @@
     align-items: center;
     gap: var(--space-3);
     flex-wrap: wrap;
+  }
+  .meter-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    width: 240px;
   }
 </style>

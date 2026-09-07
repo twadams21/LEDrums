@@ -321,6 +321,10 @@ export class Sim {
       modulation source previews live; the render sweep reads it per frame via `render.ts`. */
   oscTable = new Map<string, number>();
   noteTable = new Map<string, voice.NoteState>();
+  /** Latest audio feature frame + sim stamp (GH #214) — the offline mirror of the core engine's
+      audio table. Fed by {@link setAudio}; `audio` sources read it through `voice.sampleAudio`
+      against `timeMs`, so it goes stale to 0 exactly as it does on the server. */
+  audioTable: voice.AudioTable | null = null;
 
   constructor(buses: Bus[], effects: EffectDef[], presets: Preset[]) {
     this.buses = buses;
@@ -501,6 +505,12 @@ export class Sim {
     this.oscTable.set(address, voice.oscValue01(value));
   }
 
+  /** Replace the audio table with `frame` stamped at the sim clock — mirrors the core engine's
+      `audioFeatures` drain, so offline preview and real output share one freshness rule. */
+  setAudio(frame: voice.AudioFeatureFrame): void {
+    this.audioTable = { frame: voice.normalizeAudioFrame(frame), atMs: this.timeMs };
+  }
+
   setNote(note: number, velocity: number, channel: number | null, on: boolean): void {
     const v = voice.noteValue01(velocity / 127);
     const write = (ch: number | null): void => {
@@ -576,7 +586,7 @@ export class Sim {
     // These adapter inputs are public, so setter-only revision counters are insufficient.
     // Do not serialize voices/opaque render state: only small presentation input tables.
     const presentation = JSON.stringify([this.timeMs, this.beat, this.bpm, this.beatsPerBar,
-      [...this.ccTable], [...this.oscTable], [...this.noteTable], this.voices.map((v) => v.id)]);
+      [...this.ccTable], [...this.oscTable], [...this.noteTable], this.audioTable, this.voices.map((v) => v.id)]);
     const generators: unknown[] = [];
     const collect = (v: voice.GeometryState & { generatorId?: string | null }): void => {
       generators.push(v.generatorId ? tryGetEffect(v.generatorId) : undefined);
@@ -588,13 +598,13 @@ export class Sim {
       this.renderedPresentation === presentation && generators.length === this.renderedGenerators.length &&
       generators.every((g, i) => g === this.renderedGenerators[i])) return this.framebuffer.rgba;
     if (!this.framebuffer || this.framebuffer.pixelCount !== model.pixelCount) this.framebuffer = new Framebuffer(model.pixelCount);
-    for (const v of this.voices) voice.applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable);
+    for (const v of this.voices) voice.applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable, this.audioTable);
     const bar = Math.floor(this.beat / this.beatsPerBar);
     this.compositor.renderPresentation(this.pool.pool, model, {
       timeMs: this.timeMs, dt: this.lastDt,
       transport: { timeMs: this.timeMs, beat: this.beat, bar, beatInBar: this.beat - bar * this.beatsPerBar,
         bpm: this.bpm, beatsPerBar: this.beatsPerBar, playing: true },
-      cc: this.ccTable, osc: this.oscTable, notes: this.noteTable,
+      cc: this.ccTable, osc: this.oscTable, notes: this.noteTable, audio: this.audioTable,
     }, this.framebuffer, this.tickRevision);
     this.renderedRevision = this.tickRevision;
     this.renderedModel = model;

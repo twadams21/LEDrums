@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the bundle's Info.plist by tauri-bundler (Tauri 2 picks up `src-tauri/Info.plist`
+       automatically). macOS refuses `getUserMedia` audio capture from the embedded WKWebView unless
+       the app declares WHY it wants the microphone; without this string the request fails silently
+       or the process is terminated by TCC. Audio is analysed locally into four feature values for
+       light modulation (GH #214) — nothing is recorded. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>LEDrums analyses the selected audio input into level, bass, mids and highs to modulate the lights. Audio is not recorded.</string>
+</dict>
+</plist>

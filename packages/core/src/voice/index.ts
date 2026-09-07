@@ -18,6 +18,7 @@ export { VoicePool, releaseVoice, type SpawnDeps } from './voice-pool';
 export { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 export { shapeCascadeVoice, advanceLatchedSpliceMotion } from './runtime-policy';
 export * from './modulation';
+export * from './audio-features';
 export * from './scope';
 export * from './graph-integrity';
 export * from './navigation';

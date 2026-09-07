@@ -48,6 +48,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'cc', controller: 0, value: 5 },
   { t: 'programChange', value: 2 },
   { t: 'osc', address: '/vol', value: 0.5 },
+  { t: 'audioFeatures', level: 0.5, bass: 0.25, mids: 0, highs: 1 },
   { t: 'setParam', layerId: 'base', clipId: 'swirl', key: 'hue', value: 200 },
   { t: 'setLayer', layerId: 'base', blendMode: 'add', opacity: 0.5, activeClipId: null, name: 'x' },
   { t: 'addLayer', layer },
@@ -152,6 +153,15 @@ describe('clientMessageSchema', () => {
   it('rejects unknown t, missing fields, wrong types, and unknown keys', () => {
     expect(clientMessageSchema.safeParse({ t: 'releaseBus' }).success).toBe(true); // busId optional = all buses
     expect(clientMessageSchema.safeParse({ t: 'bogus' }).success).toBe(false);
+    // audioFeatures (GH #214): four finite 0..1 bands, nothing else.
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: 0.5, bass: 1, mids: 0, highs: 0.25 }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: 0.5, bass: 1, mids: 0 }).success).toBe(false); // missing band
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: 1.5, bass: 0, mids: 0, highs: 0 }).success).toBe(false); // out of range
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: -0.1, bass: 0, mids: 0, highs: 0 }).success).toBe(false); // negative
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: Number.NaN, bass: 0, mids: 0, highs: 0 }).success).toBe(false); // non-finite
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: 0, bass: Number.POSITIVE_INFINITY, mids: 0, highs: 0 }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: 0, bass: 0, mids: 0, highs: 0, timeMs: 12 }).success).toBe(false); // no client clock
+    expect(clientMessageSchema.safeParse({ t: 'audioFeatures', level: '0.5', bass: 0, mids: 0, highs: 0 }).success).toBe(false); // wrong type
     expect(clientMessageSchema.safeParse({ t: 'midi', velocity: 1, on: true }).success).toBe(false); // missing note
     expect(clientMessageSchema.safeParse({ t: 'midi', note: 'x', velocity: 1, on: true }).success).toBe(false); // wrong type
     expect(clientMessageSchema.safeParse({ t: 'takeover', extra: 1 }).success).toBe(false); // strict envelope
