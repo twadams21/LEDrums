@@ -7,7 +7,7 @@ Source: Trent's 2026-09-07 session; Fable/low workers requested. Base origin/mai
 
 - Integration: `/Users/trent/Documents/dev/ledrums-wt/spatial-audio`, `feat/spatial-audio-lab` (Pi parent).
 - F1: `feat/spatial-field` merged at f2d191b5. twux `spatial-field-dab29f` killed and worktree removed after integration.
-- A1: `/Users/trent/Documents/dev/ledrums-wt/audio-modulation`, `feat/audio-modulation`, twux `audio-modulation-2e4362` (Fable/low).
+- A1: `feat/audio-modulation` implementation ca304a0f and report f05924db merged. twux `audio-modulation-2e4362` killed and worktree removed after integration.
 - T1: `feat/midi-clock` merged at 75743dbf. twux `midi-clock-2adba1` killed and its worktree removed after integration.
 
 The original `/Users/trent/Documents/dev/ledrums` tree and all unrelated tmux sessions/processes are out of bounds. The CAD agent's dirty .mex/docs files remain untouched.
@@ -25,7 +25,13 @@ The original `/Users/trent/Documents/dev/ledrums` tree and all unrelated tmux se
 - Spec published and user confirmed effect/audio seams.
 - F1 merged: generator + 16 new tests; worker targeted core 174/web 33 green, core typecheck green. No formal review pipeline.
 - T1 merged before A1 (finished first; no dependency). Targeted core/protocol/server/web tests and typechecks green per report; Rust formatted but compilation deferred to CI. Parent's two correctness observations (tempo-step re-lock, Start-with-no-pulse timeout) fixed by worker with tests.
-- A1 finishing UI/tests. Parent's capture-startup resource observations (cleanup on resume/setup failure, preserve user activation) fixed by worker with tests. No heavy review pipeline.
+- A1 merged. Parent's capture-startup observations (cleanup on resume/setup failure, preserve user activation) fixed by worker; parent added immediate partial-resource disposal on Stop during a pending permission/resume. The mounted real-controller Enable/Stop regression passes. No heavy review pipeline.
+- Full serial sweep passed: core 1556, IO 98, worker 57, protocol 15, server 627, web 2689; desktop scripts 83. Existing skips: core 5, web 1. The additional mounted AudioInputPanel test and final capture tests pass separately. Integrated typecheck and dead-code verification clean; design system regenerated.
+- Connected Chrome smoke used a synthetic MediaStream, not a real microphone: zero getUserMedia calls at boot; Enable produced nonzero analysed features and lit server-rendered Spatial Field pixels; Stop released the stream and returned zero-brightness mapped output to dark. Synthetic WebMIDI reached Running/locked, then Lost/not-playing after pulses ceased. No browser console/page errors.
+- Strict pnpm ui-shot captures cover audio Running/permission denied, Audio inspector and manual MIDI Clock. Additional connected smoke captures cover real analysis meters and clock Running/Lost. A clipped band selector was found visually and changed to a stacked Field so all four choices remain visible.
+- Final clock reconnect check found an unresolved browser port displayed as Native; the picker now shows an explicit missing browser-input state. Clock helper/store tests: 20 passing. Manual recovery and full unresolved-input captures inspected; use a taller viewport when Settings clips a target.
+- All task-owned preview processes stopped; ports 5374/4374/9374 verified closed. Only pre-existing tmux sessions remain. Captures and the synthetic smoke script archived at `/Users/trent/.pi/agent/artifacts/ledrums-spatial-audio-214-20260907` before integration-worktree cleanup.
+- PR pending; no desktop release. See INTEGRATION-RESULT.md for evidence and outstanding human checks.
 - Field full-app and inspector captures verified via connected preview on `http://localhost:5374`, isolated project data under `.ui-shots/projects`, output disabled. Preview stopped after captures (bt-8); ports 5374/4374/9374 confirmed closed. A header-only Kit preview crop is not evidence; use full-app shot or `.viz` container next pass.
 - ui-shot gotcha: Vite binds localhost/IPv6 under pnpm dev; `127.0.0.1` was unreachable, causing the screenshot tool to auto-spawn a detached default dev stack. That task-owned orphan was identified by cwd/PIDs and terminated (24769/25006/25047/25281 confirmed gone). Always HTTP-probe the exact UI_SHOT_BASE before capture.
 - Dev-only fireEffect seam now records the created effect, so follow-up `select:effect` targets the effect instead of falling back to Output. Confirmed by spatial-field-controls capture.

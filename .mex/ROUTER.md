@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-06
+last_updated: 2026-09-07
 ---
 
 # Session Bootstrap
@@ -35,6 +35,19 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Spatial Field + Audio + MIDI Clock experiment (2026-09-07, GH #214):**
+Requested by Trent on Trent’s MacBook Pro; source: this session’s confirmed spec in issue #214.
+Integrated on `feat/spatial-audio-lab`: CPU world-XYZ Spatial Field in the normal effect registry,
+explicit local audio/loopback capture feeding reusable Level/Bass/Mids/Highs graph modulation,
+and opt-in selected-port MIDI Clock with manual default. No GPU runtime or audio beat detection.
+Capture is off until enabled; only normalized features travel over WS, and engine-owned freshness
+returns stale modulation to zero. Core remains IO-free. Existing per-voice hit semantics remain:
+a looping field does not receive every subsequent global drum hit. Full serial tests and integrated
+typechecks pass; synthetic browser capture → WS → rendered field and WebMIDI → server clock
+were exercised. Real Ableton, packaged-webview capture and physical kit latency remain human
+checks, not established capability claims. No desktop release. See
+`../docs/plans/2026-09-07-spatial-audio/TRY-IT.md` and `patterns/audio-midi-inputs.md`.
 
 **PR #213 sole cascade-maximum gate defect (2026-09-06, branch `fix/splice-material-regeneration`):**
 Requested by Trent on Trent’s MacBook Pro, sourced from this request and the PR #213 sole gate

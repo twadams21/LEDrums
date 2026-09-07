@@ -55,14 +55,14 @@ export function writeStoredClockDevice(deviceId: string | null): void {
 /** The Select's value for a (clockInput, deviceId) pair: `native` or `browser:<port id>`. A
     browser selection whose port is unknown here still round-trips (the port may be unplugged). */
 export function clockInputValue(clockInput: ClockInput, deviceId: string | null): string {
-  if (clockInput === 'native' || deviceId === null) return NATIVE_CLOCK_INPUT;
-  return `${BROWSER_PREFIX}${deviceId}`;
+  if (clockInput === 'native') return NATIVE_CLOCK_INPUT;
+  return `${BROWSER_PREFIX}${deviceId ?? ''}`;
 }
 
 /** Decode a Select value back into what to persist: the route for the server, the port for us. */
 export function parseClockInputValue(value: string): { clockInput: ClockInput; deviceId: string | null } {
-  if (value.startsWith(BROWSER_PREFIX) && value.length > BROWSER_PREFIX.length) {
-    return { clockInput: 'browser', deviceId: value.slice(BROWSER_PREFIX.length) };
+  if (value.startsWith(BROWSER_PREFIX)) {
+    return { clockInput: 'browser', deviceId: value.slice(BROWSER_PREFIX.length) || null };
   }
   return { clockInput: 'native', deviceId: null };
 }
@@ -76,8 +76,15 @@ export interface ClockInputOption {
 /** Options for the clock-input picker: the native destination first, then every WebMIDI port
     (a disconnected port stays listed but disabled so a selection made while it was plugged in
     still shows where the clock is expected from). */
-export function clockInputOptions(devices: readonly MidiDeviceInfo[], selectedDeviceId: string | null): ClockInputOption[] {
+export function clockInputOptions(
+  devices: readonly MidiDeviceInfo[], selectedDeviceId: string | null, clockInput: ClockInput = 'native',
+): ClockInputOption[] {
   const options: ClockInputOption[] = [{ value: NATIVE_CLOCK_INPUT, label: 'Native LEDrums port' }];
+  // The project's browser route can outlive this machine's local port selection. Never label
+  // that unresolved route as native: choosing Native must remain a real, explicit change.
+  if (clockInput === 'browser' && selectedDeviceId === null) {
+    options.push({ value: BROWSER_PREFIX, label: 'Choose a browser MIDI input', disabled: true });
+  }
   let selectedListed = false;
   for (const d of devices) {
     if (d.id === selectedDeviceId) selectedListed = true;

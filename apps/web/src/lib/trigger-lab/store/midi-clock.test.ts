@@ -20,11 +20,19 @@ describe('clock input selection', () => {
     expect(clockInputValue('native', null)).toBe('native');
     expect(clockInputValue('native', 'p1')).toBe('native');
     expect(clockInputValue('browser', 'p1')).toBe('browser:p1');
-    expect(clockInputValue('browser', null)).toBe('native'); // no port ⇒ nothing to read from
+    expect(clockInputValue('browser', null)).toBe('browser:'); // missing local port must not claim native routing
     expect(parseClockInputValue('native')).toEqual({ clockInput: 'native', deviceId: null });
     expect(parseClockInputValue('browser:p1')).toEqual({ clockInput: 'browser', deviceId: 'p1' });
-    expect(parseClockInputValue('browser:')).toEqual({ clockInput: 'native', deviceId: null });
+    expect(parseClockInputValue('browser:')).toEqual({ clockInput: 'browser', deviceId: null });
     expect(parseClockInputValue('garbage')).toEqual({ clockInput: 'native', deviceId: null });
+  });
+
+  it('shows an unresolved browser route rather than silently displaying native after reconnect', () => {
+    const options = clockInputOptions([], null, 'browser');
+    expect(options.find((o) => o.value === clockInputValue('browser', null))).toEqual({
+      value: 'browser:', label: 'Choose a browser MIDI input', disabled: true,
+    });
+    expect(options.find((o) => o.value === 'native')?.disabled).not.toBe(true);
   });
 
   it('lists native first, every port (disconnected disabled), and a missing selection honestly', () => {

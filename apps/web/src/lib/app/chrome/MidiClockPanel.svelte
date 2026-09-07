@@ -28,7 +28,7 @@
   const external = $derived(store.timingSource === 'midiClock');
   const disabled = $derived(!store.canEdit || !store.project);
   const inputValue = $derived(clockInputValue(store.clockInput, store.clockDeviceId));
-  const inputOptions = $derived(clockInputOptions(store.midiDevices, store.clockDeviceId));
+  const inputOptions = $derived(clockInputOptions(store.midiDevices, store.clockDeviceId, store.clockInput));
   const status = $derived(store.clockStatus);
 
   /** Which device name the Ableton hint should point at. */

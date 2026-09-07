@@ -22,7 +22,7 @@
       <NodeSignalPreview kind="audio" ccValue={() => store.audioNodeLiveValue(node)} w={188} h={30} />
       <figcaption>Live value</figcaption>
     </figure>
-    <Field layout="row" label="Band" info="Level is broadband loudness; Bass 20–250 Hz, Mids 250–2 kHz, Highs 2–12 kHz.">
+    <Field label="Band" info="Level is broadband loudness; Bass 20–250 Hz, Mids 250–2 kHz, Highs 2–12 kHz.">
       <Select
         value={band}
         options={[...AUDIO_BAND_OPTIONS]}

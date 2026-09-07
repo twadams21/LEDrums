@@ -49,11 +49,11 @@ describe('Audio input — real controller lifecycle', () => {
     } as unknown as TriggerLab;
     try {
       render(AudioInputPanel, { props: { store } });
-      await fireEvent.click(screen.getByRole('button', { name: 'Enable', exact: true }));
+      await fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
       await waitFor(() => expect(screen.getByText(/Test loopback/)).toBeTruthy());
-      const stopButton = screen.getByRole('button', { name: 'Stop', exact: true });
+      const stopButton = screen.getByRole('button', { name: 'Stop' });
       await fireEvent.click(stopButton);
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Enable', exact: true })).toBeTruthy());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Enable' })).toBeTruthy());
       expect(stopTrack).toHaveBeenCalledOnce();
       expect(closeContext).toHaveBeenCalledOnce();
     } finally {
