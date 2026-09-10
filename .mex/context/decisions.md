@@ -12,16 +12,45 @@ edges:
     condition: when a decision relates to system structure
   - target: context/stack.md
     condition: when a decision relates to technology choice
-last_updated: 2026-09-06
+last_updated: 2026-09-11
 ---
 
 # Decisions
 
 ## Decision Log
 
+### Graph digits fire in every view; only section arrows stay Perform-only
+**Date:** 2026-09-11
+**Status:** Active on `fix/keyboard-fire-in-authoring-views`; pending PR
+**Decision:** `decidePerformanceKey` no longer gates the 1-9,0 graph bank on the view. Digits are
+claimed in every view (Perform and all authoring views), still yielding to editable targets, open
+Select/combobox/listbox popups, roving radio/toggle/segmented controls, Settings, modified chords
+and key repeat. `ArrowLeft`/`ArrowRight` section stepping stays Perform-only and still yields the
+flow canvas.
+**Reasoning:** Authoring a graph means firing it to hear it. The 2026-09-06 view gate left the
+Trigger view with NO way to fire at all - the keyboard path was gated out
+(`performance-key.ts:49`) and the view's drum-grouped Play Surface had separately been replaced by
+the graph rail, which only selects. `PerformView.svelte:27` was the sole remaining `store.hit`
+call site in the app. The accessibility problem PR #206 actually solved is handled by the yield
+set, which is view-independent; the view gate was additional and cost the authoring loop.
+**Sourcing:** Requested by Trent on 2026-09-11 (this session, on Trent's MacBook Pro), reporting
+that keyboard firing did not work in the Trigger view and that this made changes hard to test.
+Trent chose "digits fire in every authoring view" from an explicit options list.
+**Correction to the superseded entry:** its **Authorization** note claimed "This requirement came
+from Trent's current-main replacement request." That is not supported. PR #206's own description
+says it is a "Replacement for PR #200 commit 4c2273bd, rebased on current main" - a rebase
+request. PR #200's line item for that commit reads "Performance number keys reach the app past a
+focused control, including after Return - they are now claimed, not merely handled", with no view
+restriction. The Perform-only scoping originated in PR #206 and was never requested; it was
+recorded as a human requirement and then treated downstream as settled. Assumption, not source.
+**Consequences:** The yield set is now the ONLY thing protecting authoring controls from the digit
+bank, so a new keyboard-owning control must carry its marker or it will lose digits. Tests pin
+digits-fire-everywhere and arrows-Perform-only as separate contracts.
+
 ### Perform computer-keyboard shortcuts have explicit surface ownership
 **Date:** 2026-09-06
-**Status:** Active on `fix/performance-key-ownership`; PR #206 remediation on branch
+**Status:** SUPERSEDED 2026-09-11 for the digit family - see "Graph digits fire in every view"
+below. The accessibility yield set it introduced remains active and unchanged.
 **Decision:** Only the Perform view may claim the performance digit and left/right arrow
 shortcuts. It yields to native/editable text entry, open Select/combobox/listbox interactions,
 radio/toggle/segmented roving focus, and flow-canvas arrow movement. A claimed event is consumed

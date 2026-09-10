@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { claimPerformanceKey, decidePerformanceKey, type PerformanceKeyInput } from './performance-key';
 
-/* The performance bank is deliberately view-aware. Perform is the live context from PRODUCT.md;
-   authoring controls keep their own keyboard contracts. Every app-owned decision is also tested
-   through the claim seam because capture-phase handling without both calls causes double action. */
+/* The graph-digit bank is view-INDEPENDENT: authoring a graph means firing it to hear it, so
+   the digits work wherever you are. What keeps them safe outside Perform is the accessibility
+   yield set below, not a view gate. Section arrows stay Perform-only. Every app-owned decision
+   is also tested through the claim seam because capture-phase handling without both calls
+   causes double action. */
 
 const at = (over: Partial<PerformanceKeyInput> = {}): PerformanceKeyInput => ({
   key: '1',
@@ -69,10 +71,30 @@ describe('decidePerformanceKey — accessibility owners', () => {
 });
 
 describe('decidePerformanceKey — context boundaries', () => {
-  it('does nothing in authoring views, even when focus is on a non-editable surface', () => {
+  it('fires graph digits in every authoring view — the author must be able to hear the graph', () => {
     for (const view of ['objects', 'sections', 'trigger', 'monitor'] as const) {
-      expect(decidePerformanceKey(at({ view, key: '1' }))).toEqual({ claim: false });
+      expect(decidePerformanceKey(at({ view, key: '1' }))).toEqual({ fireGraphIndex: 0, claim: true });
+      expect(decidePerformanceKey(at({ view, key: '0' }))).toEqual({ fireGraphIndex: 9, claim: true });
+    }
+  });
+
+  it('fires graph digits over the trigger graph canvas, where authoring actually happens', () => {
+    expect(decidePerformanceKey(at({ view: 'trigger', key: '3', inFlowCanvas: true }))).toEqual({
+      fireGraphIndex: 2,
+      claim: true,
+    });
+  });
+
+  it('still yields authoring-view digits to any keyboard-native surface', () => {
+    for (const owner of [{ isEditableTarget: true }, { inOpenPopup: true }, { inKeyboardControl: true }]) {
+      expect(decidePerformanceKey(at({ view: 'trigger', key: '1', ...owner }))).toEqual({ claim: false });
+    }
+  });
+
+  it('keeps section arrows to Perform — authoring views own their arrows', () => {
+    for (const view of ['objects', 'sections', 'trigger', 'monitor'] as const) {
       expect(decidePerformanceKey(at({ view, key: 'ArrowRight' }))).toEqual({ claim: false });
+      expect(decidePerformanceKey(at({ view, key: 'ArrowLeft' }))).toEqual({ claim: false });
     }
   });
 

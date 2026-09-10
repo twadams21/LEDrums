@@ -1,11 +1,13 @@
-/* Performance-key ownership. The live performer gets the computer-keyboard shortcuts only in
-   the Perform view. Authoring views leave their controls alone, so a digit or arrow has one
-   owner: the focused editor control/canvas, not a hidden performance action behind it.
+/* Performance-key ownership. Graph digits are claimed in EVERY view: authoring a graph means
+   firing it to hear it, so the Trigger view needs the same 1-9,0 bank the Perform view has.
+   Section arrows stay Perform-only - stepping the setlist while authoring is not an authoring
+   action, and the flow canvas owns arrows for node movement.
 
-   Perform still yields to keyboard-native surfaces. Text fields own digits/caret arrows;
-   open popup controls own typeahead/navigation; and radio/toggle/segmented controls own their
-   roving focus. The caller installs this decision in the window's capture-phase listener and
-   must claim an app-owned event with both preventDefault and stopPropagation. */
+   Ownership yields to keyboard-native surfaces in every view, which is what keeps the digits
+   safe outside Perform. Text fields own digits/caret arrows; open popup controls own
+   typeahead/navigation; and radio/toggle/segmented controls own their roving focus. The caller
+   installs this decision in the window's capture-phase listener and must claim an app-owned
+   event with both preventDefault and stopPropagation. */
 
 import type { View } from './shell-nav';
 
@@ -13,6 +15,7 @@ export type SectionStep = -1 | 1;
 
 export interface PerformanceKeyInput {
   key: string;
+  /** Only the section-arrow family reads this; graph digits are view-independent. */
   view: View;
   /** Settings overlays the workspace, so it must never expose hidden performance actions. */
   settingsOpen: boolean;
@@ -45,7 +48,7 @@ export interface PerformanceKeyDecision {
 const NOTHING: PerformanceKeyDecision = { claim: false };
 
 export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKeyDecision {
-  if (input.view !== 'perform' || input.settingsOpen) return NOTHING;
+  if (input.settingsOpen) return NOTHING;
   if (input.isEditableTarget || input.inOpenPopup || input.inKeyboardControl) return NOTHING;
   if (input.ctrlKey || input.metaKey || input.altKey || input.shiftKey) return NOTHING;
 
@@ -57,7 +60,9 @@ export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKey
   }
 
   if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
-    if (input.inFlowCanvas) return NOTHING;
+    // Setlist stepping is a performance action, not an authoring one - and every authoring
+    // view has its own arrow owner (the flow canvas moves the selected node).
+    if (input.view !== 'perform' || input.inFlowCanvas) return NOTHING;
     // Arrow repeat is intentional: holding an arrow walks through sections at the browser's
     // repeat cadence. This is different from graph digits, which are edge-triggered above.
     return { sectionStep: input.key === 'ArrowRight' ? 1 : -1, claim: true };

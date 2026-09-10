@@ -10,7 +10,7 @@ edges:
     condition: "when the shortcut changes which surface owns a physical key"
   - target: "../../PRODUCT.md"
     condition: "when deciding which operator surface should claim a shortcut"
-last_updated: 2026-09-06
+last_updated: 2026-09-11
 ---
 
 # Keyboard Ownership
@@ -23,7 +23,11 @@ The rule must be about the event's current semantic target, not about focus-blur
 ## Steps
 
 1. Define a pure decision helper that returns exactly one action or no ownership.
-2. Make the product surface part of the decision. Keep authoring views free to use their controls.
+2. Decide per key FAMILY whether the view matters. Graph digits are claimed in every view -
+   authoring a graph means firing it to hear it - and the yield set below, not a view gate, is
+   what keeps authoring controls safe. Section arrows are Perform-only, because every authoring
+   view has its own arrow owner. A view gate is a last resort: check first whether the yield set
+   already covers the case, and never add one that removes the only way to exercise a feature.
 3. Add a small DOM adapter for stable semantics: editable targets, open popup roles/state,
    roving radio/toggle/segmented markers, and any canvas that owns arrow movement.
 4. Install the decision in the window capture handler. If the app owns the event, call both
@@ -44,12 +48,17 @@ The rule must be about the event's current semantic target, not about focus-blur
   detect it through composed paths plus modal state.
 - Do not use blur or focus history as the correctness mechanism; it discards user focus and races
   component state.
+- Before scoping a shortcut to one view, ask what else can still reach the action in the views you
+  are excluding. The 2026-09-06 Perform-only gate stranded the Trigger view with no fire path at
+  all, because the view's Play Surface had separately been replaced by a select-only graph rail.
+  Two safe-looking changes removed a capability neither of them mentioned.
 - Test repeated keys, Enter/Escape aftermath, native text controls, component popups, and canvas
   movement. A key that is yielded must not also trigger a hidden app action.
 
 ## Verify
 
-- [ ] Pure mapping tests cover owned keys, yielded keys, views, and settings.
+- [ ] Pure mapping tests cover owned keys, yielded keys, views, and settings - including that each
+      key family still fires in every view it is meant to.
 - [ ] Browser/component tests cover native inputs, open Select/combobox/listbox, segmented/toggle,
       graph canvas, and Enter/Escape.
 - [ ] Server tests cover the chosen authorization policy and the real action path.
