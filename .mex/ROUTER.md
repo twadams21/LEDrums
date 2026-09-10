@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-07
+last_updated: 2026-09-11
 ---
 
 # Session Bootstrap
@@ -35,6 +35,31 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Keyboard graph firing restored to authoring views (2026-09-11, branch
+`fix/keyboard-fire-in-authoring-views`):** Requested by Trent on Trent's MacBook Pro, sourced from
+this session — he reported that keyboard firing did not work in the Trigger view and that this made
+changes hard to test, then chose "digits fire in every authoring view" from an explicit options
+list. `decidePerformanceKey` no longer gates the 1-9,0 graph bank on the view; `ArrowLeft`/
+`ArrowRight` section stepping stays Perform-only. Every accessibility yield (editable target, open
+popup, roving control, Settings, modified chords, key repeat) is unchanged and is now the only
+thing protecting authoring controls from the digit bank.
+
+Root cause, verified against git and the PRs, NOT assumed: the Perform-only gate came from PR #206
+(merged 2026-09-06), which describes itself as a rebase — "Replacement for PR #200 commit
+`4c2273bd`, rebased on current main". PR #200's line item for that commit carried no view
+restriction. The gate was introduced in #206 and recorded in `context/decisions.md` as
+"This requirement came from Trent's current-main replacement request" — an unsourced design choice
+written as a human requirement, then treated downstream as settled. That entry is now marked
+SUPERSEDED with the correction beside it. Compounding it, the Trigger view's drum-grouped Play
+Surface had separately been replaced by a select-only graph rail, so `PerformView.svelte:27` was
+the app's ONLY remaining `store.hit` call site: the Trigger view had no way to fire at all.
+
+Verified: full typecheck green; full `pnpm test` green (2,694 web tests, 1 opt-in skip); real
+browser probe against the running dev server confirms a digit fires the graph in perform / trigger
+/ sections / objects (server round-trip "Graph fired"), a digit typed into the effect-gallery
+search field goes to the field and fires nothing, and ArrowRight steps sections in Perform but not
+in Trigger; strict ui-shot captures clean for all three views. Not merged, not released.
 
 **PR #215 — Spatial Field + Audio + MIDI Clock experiment (2026-09-07, GH #214):**
 Requested by Trent on Trent’s MacBook Pro; source: this session’s confirmed spec in issue #214.
