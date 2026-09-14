@@ -11,6 +11,7 @@
   import SectionMotion from './sections/SectionMotion.svelte';
   import SectionPrimitives from './sections/SectionPrimitives.svelte';
   import SectionComposites from './sections/SectionComposites.svelte';
+  import SectionStagePreview from './sections/SectionStagePreview.svelte';
   import SectionGraph from './sections/SectionGraph.svelte';
   import SectionInteraction from './sections/SectionInteraction.svelte';
   import CopyChip from './CopyChip.svelte';
@@ -62,6 +63,7 @@
   <SectionMotion />
   <SectionPrimitives />
   <SectionComposites />
+  <SectionStagePreview />
   <SectionGraph />
   <SectionInteraction />
 

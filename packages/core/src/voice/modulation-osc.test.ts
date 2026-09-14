@@ -129,6 +129,40 @@ function frameSum(f: Readonly<Float32Array>): number {
 // ---- acceptance -------------------------------------------------------------
 
 describe('VoiceBusEngine — OSC modulation', () => {
+  it('track signals update modulation without firing a matching trigger graph or reset', () => {
+    const diagnostics: string[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (event) => diagnostics.push(event.kind) });
+    e.setModel(testModel());
+    const graph = oscGraph('/tracks/test/audio/level');
+    graph.nodes.push(node('sequence', 'seq', { resetSource: { kind: 'osc', address: '/tracks/test/audio/level' } }));
+    graph.edges[0] = { id: 'e0', from: 'trigger', to: 'seq' };
+    graph.edges.push({ id: 'seq-out', from: 'seq', to: 'pa' });
+    const content = show(graph);
+    const direct = oscGraph('/unused');
+    direct.nodes[0]!.source = { kind: 'osc', address: '/tracks/test/audio/level' };
+    content.graphs['graph-direct'] = direct;
+    e.setShow(content);
+    e.applyInput(hit(0));
+    e.tick(5, 5, transport(5));
+    e.tick(40, 35, transport(40));
+    expect(e.stats().voiceCount).toBe(1);
+    expect(frameSum(e.frame())).toBeCloseTo(0, 3);
+    e.applyInput({ kind: 'oscValue', address: '/tracks/test/audio/level', value: 1, timeMs: 60 });
+    e.tick(60, 20, transport(60));
+    expect(e.stats().voiceCount).toBe(1);
+    expect(frameSum(e.frame())).toBeGreaterThan(0.5);
+    e.applyInput({ kind: 'oscValue', address: '/tracks/test/audio/level', value: 0, timeMs: 80 });
+    e.tick(80, 20, transport(80));
+    expect(frameSum(e.frame())).toBeCloseTo(0, 3);
+    expect(e.stats().voiceCount).toBe(1);
+    expect(diagnostics).not.toContain('sequence-reset');
+    // Ordinary OSC retains its existing trigger/reset semantics; only the dedicated value kind yields.
+    e.applyInput(osc('/tracks/test/audio/level', 1, 100));
+    e.tick(100, 20, transport(100));
+    expect(e.stats().voiceCount).toBe(2);
+    expect(diagnostics).toContain('sequence-reset');
+  });
+
   it('a queued OSC event moves a mapped param on a live (looping) voice, continuously', () => {
     const e = createVoiceBusEngine();
     e.setModel(testModel());

@@ -37,3 +37,11 @@ Any UI-touching change must compose from the system — or extend it:
 Store-bound composites are demoed through minimal reactive stubs (see
 `sections/SectionComposites.svelte`) — the stub feeds the real component; never
 copy component markup into the styleguide.
+
+### Stage preview
+
+`sections/SectionStagePreview.svelte` mounts the real preview controls without loading a 3D
+asset in the offline artifact. It documents actual acrylic geometry, internal per-pixel LED
+sampling, Eco/Detail, stable 40px controls and explicit Pixels fallback. Runtime export,
+compatibility and lifetime contracts live in `../visualizer/README.md`. The integration owner
+regenerates the artifact after the exported GLB and browser verification land together.

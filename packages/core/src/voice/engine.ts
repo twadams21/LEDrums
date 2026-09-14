@@ -71,7 +71,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus' | 'audioFeatures';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'oscValue' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'cc' | 'globalControl' | 'releaseBus' | 'audioFeatures';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -667,9 +667,14 @@ class VoiceBusEngine implements RenderEngine {
     }
     // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
     // here) in addition to firing trigger graphs below — deterministic: state only changes here.
-    if (e.kind === 'osc' && e.address !== undefined) {
-      this.oscTable.set(e.address, oscValue01(e.value ?? 0));
+    if ((e.kind === 'osc' || e.kind === 'oscValue') && e.address !== undefined) {
+      const value = oscValue01(e.value ?? 0);
+      // Track feature/gate updates are modulation only: no graph fires, global control or
+      // reset. Clearing a local signal removes its key, so expired device IDs do not leak.
+      if (e.kind === 'oscValue' && value === 0) this.oscTable.delete(e.address);
+      else this.oscTable.set(e.address, value);
     }
+    if (e.kind === 'oscValue') return;
 
     // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
     // (voices decay on their own envelope).

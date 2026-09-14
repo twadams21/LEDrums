@@ -13,7 +13,9 @@
 
   let { store, node }: { store: TriggerLab; node: GraphNode } = $props();
   const band = $derived(store.audioNodeBand(node));
-  const capturing = $derived(store.audioStatus === 'running');
+  const trackId = $derived(store.project?.inputMap.trackAudioInput);
+  const track = $derived(store.trackInputs?.inputs.find((input) => input.id === trackId && input.kind === 'audio'));
+  const capturing = $derived(trackId ? track?.connected === true : store.audioStatus === 'running');
 </script>
 
 {#if node.kind === 'audio'}
@@ -31,7 +33,9 @@
       />
     </Field>
     {#if !capturing}
-      <p class="hint off" role="status">Audio input is off — enable it in Settings › Input. Until then this source reads 0.</p>
+      <p class="hint off" role="status">{trackId ? 'Selected track is disconnected — reconnect its device or choose another input in Settings › Input.' : 'Audio input is off — enable it in Settings › Input. Until then this source reads 0.'}</p>
+    {:else if trackId}
+      <p class="hint">Input: {track?.name ?? trackId}. Choose a different track in Settings › Input.</p>
     {/if}
     <p class="hint">
       This band drives every parameter it's wired to, live on all voices. Set wire depth,

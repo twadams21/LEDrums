@@ -1,4 +1,5 @@
 export * from './interfaces';
+export * from './local-datagram-input';
 export * from './artnet';
 export * from './sacn';
 export * from './osc';

@@ -1,4 +1,4 @@
-import { parseKit, type KitConfig } from '../geometry/kit-schema';
+import { CURRENT_KIT_VERSION, parseKit, type KitConfig } from '../geometry/kit-schema';
 import { assertProjectIntegrity } from './integrity';
 import { parseProject, type Layer, type Project } from './project-schema';
 
@@ -7,6 +7,7 @@ const drum = (
   label: string,
   color: string,
   diameterIn: number,
+  hoopSpacingMm: number,
   /** Literal LED count per hoop — the authoritative count for the physical rig
       (docs/kit-hoop-pixel-counts.md); every hoop on a drum shares it. */
   pixelsPerHoop: number,
@@ -17,7 +18,9 @@ const drum = (
   label,
   color,
   diameterIn,
-  hoopSpacingMm: 60,
+  hoopSpacingMm,
+  // Current-version seeds must carry the same first-class hoops the old v3 seed migrated to.
+  hoops: Array.from({ length: 4 }, () => ({ pixelCount: pixelsPerHoop, reverse: false })),
   pixelsPerHoop,
   localSpinDeg: 270,
   startAngleDeg: 0,
@@ -31,24 +34,28 @@ const drum = (
  * lab model (`buildLabModel`) derives from it too, so drum ids / geometry can't
  * drift between the engine and the lab preview (the prior `tom` vs `tom1` bug class).
  * Parsed once so it's a validated {@link KitConfig} with all schema defaults applied.
- * (The full hardware topology ships separately as `apps/server/projects/default.json`.)
+ * LED tape-centre dimensions: docs/default-kit-dimensions.md (not outer acrylic diameters).
+ * Origins below are the EXACT old default's post-migration world centres, not Blender poses.
+ * Seed the current version so spacing changes cannot trigger the v3 first-hoop recentering.
  */
 export const DEFAULT_KIT: KitConfig = parseKit({
-  version: 3, // A1 1-based hoop indexing + B2 expanded flag; a NEW kit → expanded defaults OFF
+  version: CURRENT_KIT_VERSION,
   units: 'mm',
   global: { ledDensityPxPerM: 30, hoopCount: 4, defaultHoopSpacingMm: 60, maxPixelsPerOutput: 4096 },
   drums: [
-    drum('kick', 'Kick', '#5bbcff', 21, 196, { x: 0, y: 430, z: 330 }, { x: 90, y: 0, z: 0 }),
-    drum('snare', 'Snare', '#72d572', 12, 108, { x: -230, y: 0, z: 650 }, { x: 0, y: 0, z: 0 }),
-    drum('tom1', 'Tom 1', '#ff8e72', 12, 108, { x: -120, y: 300, z: 840 }, { x: 18, y: 0, z: 4 }),
-    drum('tom2', 'Tom 2', '#d69cff', 15, 136, { x: 360, y: 40, z: 620 }, { x: 0, y: 0, z: 0 }),
+    drum('kick', 'Kick', '#5bbcff', 513.5 / 25.4, 94, 196, { x: 0, y: 340, z: 330 }, { x: 90, y: 0, z: 0 }),
+    drum('snare', 'Snare', '#72d572', 278.5 / 25.4, 182 / 3, 108, { x: -230, y: 0, z: 740 }, { x: 0, y: 0, z: 0 }),
+    drum('tom1', 'Tom 1', '#ff8e72', 278.5 / 25.4, 182 / 3, 108,
+      { x: -120, y: 272.18847050625476, z: 925.5950864665638 }, { x: 18, y: 0, z: 4 }),
+    // App tom2 is the CAD floor-tom; preserve its id and authored pose.
+    drum('tom2', 'Tom 2', '#d69cff', 358.5 / 25.4, 322 / 3, 136, { x: 360, y: 40, z: 710 }, { x: 0, y: 0, z: 0 }),
   ],
   outputs: [],
 });
 
 /**
- * A compact, always-valid default project used as a programmatic fallback (the
- * full hardware kit + topology ships as `apps/server/projects/default.json`, U11).
+ * A compact, always-valid default project used as the fresh-project fallback.
+ * Existing saved projects retain their own geometry and topology.
  * Density is modest and the DMX map is left flat so this never depends on a wiring
  * topology; the starter composition exercises base / trigger / effect layers.
  */

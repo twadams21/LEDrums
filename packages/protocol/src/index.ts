@@ -7,6 +7,9 @@
 // `ws-protocol.ts` and the web's `lib/ws/protocol-types.ts` both re-export these
 // types and add their own runtime (de)serialization helpers on top.
 import type { ParamSpec, Project, voice } from '@ledrums/core';
+export * from './track-input';
+export * from './frame-timing';
+export { serializePixelModel } from './model-serialization';
 
 // The runtime wire schemas (and the `ClientMessage`/`ServerMessage` types inferred from them) are
 // the single source of truth for the message contract; they live in `./schemas` and are re-exported
@@ -85,6 +88,21 @@ export interface SerializedDrum {
   color: string;
   pixelStart: number;
   pixelCount: number;
+  /** Optional physical body placement for Stage; absent means Pixels-only geometry.
+   * World millimetres, with unit world-space physical drum-local axes (XY hoop plane,
+   * Z from first to last hoop). Axes follow rotation/mirror/flip, NOT LED start angle,
+   * local spin or strip reverse. A world mirror may make this frame left-handed. */
+  stage?: {
+    /** Midpoint of the first/last hoop centres, not the skin-side effect origin. */
+    origin: [number, number, number];
+    xAxis: [number, number, number];
+    yAxis: [number, number, number];
+    zAxis: [number, number, number];
+    radiusMm: number;
+    hoopSpacingMm: number;
+    /** Authoritative counts in the unchanged serialized pixel/hoop order. */
+    hoopPixelCounts: number[];
+  };
 }
 
 export interface SerializedModel {

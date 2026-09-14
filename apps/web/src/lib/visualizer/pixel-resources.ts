@@ -1,4 +1,20 @@
 import { BufferAttribute, BufferGeometry, DoubleSide, MeshBasicMaterial } from 'three';
+import { DARK_PIXEL_RGB } from './dark-pixel';
+
+/** Read-only RGB upload, shared by both presentations. Retired/short frames clear stale LEDs. */
+export function writePixelColors(colors: Float32Array, frame: Uint8Array | null, count: number, verticesPerPixel: number): void {
+  for (let i = 0; i < count; i++) {
+    const r = frame ? (frame[i * 3] ?? 0) / 255 : DARK_PIXEL_RGB[0];
+    const g = frame ? (frame[i * 3 + 1] ?? 0) / 255 : DARK_PIXEL_RGB[1];
+    const b = frame ? (frame[i * 3 + 2] ?? 0) / 255 : DARK_PIXEL_RGB[2];
+    for (let k = 0; k < verticesPerPixel; k++) {
+      const offset = (i * verticesPerPixel + k) * 3;
+      colors[offset] = r;
+      colors[offset + 1] = g;
+      colors[offset + 2] = b;
+    }
+  }
+}
 
 /** Owns uploaded pixel buffers and their material across rebuilds and component teardown. */
 export function createPixelResources() {

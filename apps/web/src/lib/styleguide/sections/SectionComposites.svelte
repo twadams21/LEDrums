@@ -19,6 +19,7 @@
   import type { ShellStore } from '../../app/shell-store.svelte';
   import type { View } from '../../app/shell-nav';
   import OscInputPanel from '../../app/chrome/OscInputPanel.svelte';
+  import TrackInputsPanel from '../../app/chrome/TrackInputsPanel.svelte';
   import BootOverlay from '../../app/chrome/BootOverlay.svelte';
   import { initialBootStatus, type BootStatus } from '../../app/boot-reducer';
   import OutputStatusPanel from '../../app/docks/inspectors/OutputStatusPanel.svelte';
@@ -511,6 +512,13 @@
         <OutputPill store={pillStub('connecting')} />
         <OutputPill store={pillStub('offline')} />
       </div>
+    </DemoCard>
+
+    <DemoCard title="Named track inputs" src={['lib/app/chrome/TrackInputsPanel']} note="Local input producers never own the editor. Audio source selection is explicit; disconnected inputs remain identifiable. Device artifacts still need Live verification." wide>
+      <TrackInputsPanel canEdit selected="demo-audio" status={{ status: 'listening', port: 4322, inputs: [
+        { id: 'demo-midi', name: 'Drums · MIDI tap', kind: 'midi', connected: true, lastNote: 38, lastChannel: 1, received: 42, dropped: 0, audio: { level: 0, bass: 0, mids: 0, highs: 0 } },
+        { id: 'demo-audio', name: 'Bass · audio tap', kind: 'audio', connected: true, lastNote: null, lastChannel: null, received: 180, dropped: 0, audio: { level: 0.72, bass: 0.9, mids: 0.3, highs: 0.08 } },
+      ] }} />
     </DemoCard>
 
     <DemoCard

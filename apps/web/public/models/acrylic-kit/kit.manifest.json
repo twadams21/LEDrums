@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "source": {
+    "path": "docs/cad/drum-kit/.cache/blender/realism/raised-rim-v1.blend",
+    "sha256": "8715c5423ff8efe96966d7a448f617888034fd1f149c7ac2d7ee84a84b22acbc"
+  },
+  "units": "metres",
+  "axes": "gltf-y-up",
+  "drums": [
+    {
+      "id": "kick",
+      "cadId": "kick",
+      "rootName": "kit:kick",
+      "radiusMm": 256.75,
+      "hoopSpacingMm": 94.0,
+      "hoopPixelCounts": [
+        196,
+        196,
+        196,
+        196
+      ]
+    },
+    {
+      "id": "snare",
+      "cadId": "snare",
+      "rootName": "kit:snare",
+      "radiusMm": 139.25,
+      "hoopSpacingMm": 60.666666666666664,
+      "hoopPixelCounts": [
+        108,
+        108,
+        108,
+        108
+      ]
+    },
+    {
+      "id": "tom1",
+      "cadId": "tom1",
+      "rootName": "kit:tom1",
+      "radiusMm": 139.25,
+      "hoopSpacingMm": 60.666666666666664,
+      "hoopPixelCounts": [
+        108,
+        108,
+        108,
+        108
+      ]
+    },
+    {
+      "id": "tom2",
+      "cadId": "floor-tom",
+      "rootName": "kit:tom2",
+      "radiusMm": 179.25,
+      "hoopSpacingMm": 107.33333333333333,
+      "hoopPixelCounts": [
+        136,
+        136,
+        136,
+        136
+      ]
+    }
+  ]
+}

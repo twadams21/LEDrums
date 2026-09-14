@@ -4,6 +4,7 @@ import { createProjectReplacement } from '../project-replacement';
 import type { ClientRegistry, CloseableSocket } from '../client-registry';
 import type { EngineHost } from '../engine-host';
 import { applyClientMessage } from '../input-router';
+import { acceptsMidiChannel } from '../midi-channel';
 import type { VoiceEngineHost } from '../voice-engine-host';
 import { encodeServer, type BackupSnapshotMeta, type ClientMessage, type ControllerTestPattern, type NetworkAdapter, type ServerMessage, type ShowLibraryBlob, type SongLibraryBlob } from '../ws-protocol';
 import type { MonitorDraft } from '../monitor';
@@ -32,13 +33,6 @@ const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
 
 function isMidiChannelMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
   return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
-}
-
-/** App-wide MIDI channel filter. null means "omni"; when set, unknown-channel messages are
-    dropped rather than bypassing the filter. */
-function acceptsMidiChannel(msg: ClientMessage, channel: number | null): boolean {
-  if (channel === null || !isMidiChannelMessage(msg)) return true;
-  return msg.channel === channel;
 }
 
 /**
@@ -367,7 +361,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
 
     // App-wide MIDI channel filter. Runs before voice-mode recall, zone mapping and the
     // legacy reducer so every MIDI input adapter obeys the same setting.
-    if (!acceptsMidiChannel(msg, host.engine.getProject().inputMap.midiChannel)) return;
+    if (isMidiChannelMessage(msg) && !acceptsMidiChannel(msg.channel, host.engine.getProject().inputMap.midiChannel)) return;
 
     // Show-library persistence: the editor pushes its authored library on every change; the server
     // adopts it as the live slot, debounce-autosaves it, AND relays it live to the OTHER clients so
@@ -512,7 +506,11 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     // midi/osc are inputs — stamp wall time for latency before the reducer enqueues.
     if (msg.t === 'midi' || msg.t === 'osc') host.markInput();
 
+    const previousTrackAudio = voiceHost?.getInputMap().trackAudioInput;
     const result = applyClientMessage(host.engine, msg, host.engineTimeMs);
+    if (voiceHost && msg.t === 'setInputMap' && previousTrackAudio !== msg.inputMap.trackAudioInput) {
+      voiceHost.applyInput({ kind: 'audioFeatures', level: 0, bass: 0, mids: 0, highs: 0 });
+    }
 
     // Voice mode: the legacy reducer above mutated the shared project; propagate kit/output/
     // input-map edits to the voice host (which owns the live render + output).

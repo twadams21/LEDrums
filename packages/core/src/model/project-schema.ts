@@ -116,7 +116,11 @@ export const declaredZoneSchema = z.object({
   label: z.string().default(''),
 });
 
+export const trackInputIdSchema = z.string().regex(/^[a-zA-Z0-9_-]{8,64}$/);
+
 export const inputMapSchema = z.object({
+  /** Saved named track supplying Audio nodes. Absent = the editor's browser capture. */
+  trackAudioInput: trackInputIdSchema.optional(),
   midiNotes: z.array(midiNoteMapSchema).default([]),
   /** Global MIDI channel filter. null = accept all channels; otherwise 1..16. */
   midiChannel: z.number().int().min(1).max(16).nullable().default(null),

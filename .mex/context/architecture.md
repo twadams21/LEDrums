@@ -12,11 +12,59 @@ edges:
     condition: when specific technology details are needed
   - target: context/decisions.md
     condition: when understanding why the architecture is structured this way
-last_updated: 2026-09-07
+last_updated: 2026-09-14
 note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI source) are external runtime endpoints, not npm packages — `mex check` flags them as missing-from-manifest; that is expected.
 ---
 
 # Architecture
+
+## Stage, richer fields and named local inputs (2026-09-14)
+
+Source: Trent's approved build in-session on Trent's MacBook Pro. Three.js Stage is optional
+view-only presentation over authoritative model/RGB. **Visual correction from Trent later in
+this session:** the generic opaque bodies/stands are not accepted; the real kit is clear acrylic
+with internal LED strips. Prefer the accurate Blender model under
+`docs/cad/drum-kit/.cache/blender/realism/raised-rim-v1.blend` and the real-kit photos as references;
+a separate reduced GLB is now exported under `apps/web/public/models/acrylic-kit/` (explicit
+headless-export approval, original unchanged). Stage-only lazy loading, rigid pose binding,
+per-pixel live-RGB atlas sampling and owned disposal are integrated. Invalid/mismatched metadata
+falls back to Pixels instead of stretching the body. Original head membranes are retained and
+classified by physical role, even where Blender reused the shell material.
+Trent also requested corrected default kit LED dimensions; unlike view-only optics, that is an
+intentional world-geometry change. IDs/counts/wiring and old centres/rotations are preserved;
+saved projects are not auto-rewritten. Preserve original CAD assets. Camera controls/materials
+remain preview-only. Pixels remains the default. Neither mode changes lighting generation. Spatial
+Field adds opt-in analytic warp/advection/detail; zero defaults match the frozen old renderer.
+Its scratch is per-voice, not a hidden global cache. The measured neutral zero/one-wave fast path
+fills dirty coordinate/distance tables while rendering; the general rich sampler fills them
+before traversal. Exact Float32 compatibility remains tested against the frozen renderer.
+Stage atlas addressing explicitly wraps its bounded rounded index instead of GPU-sensitive
+reciprocal modulo; `scripts/preview-kit/browser-check.mjs` verifies actual RGB readback.
+Mutable core scratch stays opaque to Svelte:
+`EffectThumb` uses `$state.raw` so a reduced-motion draw cannot react to its own internal writes.
+
+The shared Stage serialization boundary is now `packages/protocol/src/model-serialization.ts`
+(agent-selected seam supporting Trent's approved Blender Stage, 2026-09-14). Server `serializeModel` re-exports
+`serializePixelModel`; offline `trigger-lab/kit.ts` calls it directly. Optional `SerializedDrum.stage`
+adds world-mm midpoint/radius/hoop spacing/counts and physical drum-local unit axes recovered from
+PixelModel; axes include rotation/world mirror/flip, but exclude LED angular phase/reverse.
+Legacy arrays, identities and bounds are copied unchanged; unsupported geometry has no Stage
+metadata. This serialization seam requires no core change. Asset metres/glTF Y-up conversion belongs to the Stage consumer,
+not this wire seam. Details: `../patterns/stage-serialization.md`.
+
+Local track devices use versioned **JSON/UDP**, not OSC wire format, on IPv4 loopback `4322`.
+Protocol → `LocalDatagramInput` → `TrackInputRegistry` → `createTrackInputSink` → voice host owns
+validation, bounded identity/ordering/lease, shared MIDI-channel admission and note release.
+The saved ID names `/tracks/<id>/...`; the runtime nonce/peer is collision identity, not auth.
+Audio/gate/CC/macros are core `oscValue` modulation, never triggers/resets/global controls.
+Named note presses are OSC triggers; host-only `oscRelease` completes global held controls without
+retriggering. Echo ownership and `modulationOnly` keep browser mirrors bounded and Learn honest.
+One explicit `inputMap.trackAudioInput` supplies Audio nodes; omission is browser/WS capture.
+Registration never selects it automatically. Device source/packaging limits: `integrations/ableton/README.md`.
+
+`FrameTiming` observes host ticks/timer callbacks in bounded rings; `stats.timing` is optional and
+computed/sent only at 1 Hz. No scheduling change or hardware-latency claim. Reproduction/safety:
+`scripts/perf-dev/README.md`. Unreal remains researched, not an installed engine dependency.
 
 ## Spatial/audio input additions (2026-09-07, GH #214)
 
@@ -187,4 +235,4 @@ Composition/Kit, sending mutations back over WS.
 - No native MIDI/serial node addons — MIDI is browser WebMIDI only (cross-platform, no node-gyp).
 - No cloud/database backend — projects are local JSON files; the app runs entirely on the operator's machine/LAN.
 - No SSR/Next — the web app is a static SPA served by the Node server; `core` has zero framework coupling.
-- No physics-accurate light simulation — the visualizer is a faithful pixel preview, not a renderer of real-world light spill.
+- No physics-accurate light simulation — Pixels is faithful RGB; optional Stage optics are illustrative, not calibrated.

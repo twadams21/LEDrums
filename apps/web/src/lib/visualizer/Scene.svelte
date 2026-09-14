@@ -1,127 +1,62 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
   import { Canvas, T } from '@threlte/core';
-  import { OrbitControls, Grid } from '@threlte/extras';
+  import { Grid } from '@threlte/extras';
   import Pixels from './Pixels.svelte';
+  import Stage from './Stage.svelte';
+  import PreviewCamera from './PreviewCamera.svelte';
   import type { SerializedModel } from '../ws/protocol-types';
+  import { buildStageLayout, SCENE_SCALE } from './stage-geometry';
+  import type { CameraPreset, PreviewPresentation } from './stage-camera';
+  import { stageDpr, type StageQuality } from './stage-resources';
+  import { STAGE_LOADING, type StageStatus } from './stage-view.svelte';
 
-  interface Props {
-    model: SerializedModel | null;
-    frame: Uint8Array | null;
-    dim?: boolean;
+  let stageStatus = $state<StageStatus>(STAGE_LOADING);
+
+  let { model, frame, dim = false, presentation = 'pixels', camera = 'overview', quality = 'eco', reset = 0 }: {
+    model: SerializedModel | null; frame: Uint8Array | null; dim?: boolean;
+    presentation?: PreviewPresentation; camera?: CameraPreset; quality?: StageQuality; reset?: number;
+  } = $props();
+
+  let lastModel: SerializedModel | null | undefined;
+  let lastLayout: ReturnType<typeof buildStageLayout>;
+  function geometry(m: SerializedModel | null) {
+    if (m !== lastModel) { lastModel = m; lastLayout = buildStageLayout(m); }
+    return lastLayout;
   }
-
-  let { model, frame, dim = false }: Props = $props();
-
-  // mm → scene units. 100mm = 1 unit keeps the kit roughly a few units across.
-  const SCALE = 100;
-
-  const sceneSize = $derived(model ? model.bounds.size / SCALE : 10);
-  const center = $derived<[number, number, number]>(
-    model
-      ? [
-          model.bounds.center[0] / SCALE,
-          model.bounds.center[2] / SCALE,
-          model.bounds.center[1] / SCALE,
-        ]
-      : [0, 0, 0],
-  );
-  // Camera distance frames the whole kit with headroom.
-  const camDist = $derived(Math.max(6, sceneSize * 1.6));
-
-  const drumOrigins = $derived(
-    model
-      ? model.drums.map((d) => {
-          const start = d.pixelStart * 3;
-          // Approximate a drum gizmo at its first pixel position.
-          const px = model.positions[start] ?? 0;
-          const py = model.positions[start + 1] ?? 0;
-          const pz = model.positions[start + 2] ?? 0;
-          return {
-            id: d.id,
-            color: d.color,
-            pos: [px / SCALE, pz / SCALE, py / SCALE] as [number, number, number],
-          };
-        })
-      : [],
-  );
-
-  // A value-stable framing key — it only changes when the kit's center/size
-  // actually change (kit swap / resize). Because it's a primitive, Svelte's
-  // $derived short-circuits when it's unchanged, so the pose below does NOT
-  // recompute on the spurious per-hit re-runs of `center`/`camDist`.
-  const framingKey = $derived(
-    model ? `${center[0]},${center[1]},${center[2]},${camDist}` : 'none',
-  );
-  // Camera pose + controls target, recomputed only when `framingKey` changes.
-  // Binding the camera position + OrbitControls target straight to `center`/
-  // `camDist` made every pad hit re-apply the pose and clobber the user's
-  // orbit/zoom: a hit invalidates the model-derived chain, handing Threlte fresh
-  // [x,y,z] arrays even when the values are identical, so it re-ran
-  // camera.position.set()/controls.target.set(). Reading center/camDist via
-  // untrack keeps `framingKey` the ONLY reactive dependency, so identical-value
-  // churn leaves the camera exactly where the user put it. Only the pixel
-  // COLORS update per frame.
-  const framing = $derived.by(() => {
-    void framingKey;
-    return untrack((): { pos: [number, number, number]; target: [number, number, number] } => {
-      if (!model) return { pos: [16, 11.2, 16], target: [0, 0, 0] };
-      const [cx, cy, cz] = center;
-      const d = camDist;
-      return { pos: [cx + d, cy + d * 0.7, cz + d], target: [cx, cy, cz] };
-    });
-  });
+  const layout = $derived(geometry(model));
+  const stage = $derived(presentation === 'stage');
 </script>
 
-<div class="viz" class:dim>
-  <Canvas>
-    <T.PerspectiveCamera
-      makeDefault
-      position={framing.pos}
-      fov={45}
-      near={0.1}
-      far={1000}
-    >
-      <OrbitControls
-        enableDamping
-        target={framing.target}
-      />
-    </T.PerspectiveCamera>
+<div class="viz" class:dim data-presentation={presentation} data-shot="stage-preview-canvas">
+  <Canvas dpr={stage ? stageDpr(quality) : 1} shadows={false}>
+    <T.Color attach="background" args={[stage ? '#040609' : '#050609']} />
+    <PreviewCamera center={layout.center} size={layout.size} halfExtents={layout.halfExtents} preset={camera} {reset} />
 
-    <T.AmbientLight intensity={0.6} />
-    <T.DirectionalLight position={[10, 20, 10]} intensity={0.4} />
-
-    <Grid
-      position={[center[0], center[1] - sceneSize, center[2]]}
-      cellColor="#1c2230"
-      sectionColor="#2a3344"
-      sectionSize={5}
-      cellSize={1}
-      fadeDistance={camDist * 4}
-      infiniteGrid
-    />
-
-    {#if model}
-      <Pixels {model} {frame} scale={SCALE} />
+    {#if stage}
+      <T.HemisphereLight args={['#ceddf1', '#11151d', 1.5]} />
+      <T.DirectionalLight position={[layout.center[0] - 10, layout.center[1] + 18, layout.center[2] + 12]} color="#dfebff" intensity={2.5} />
+      <T.DirectionalLight position={[layout.center[0] + 8, layout.center[1] + 6, layout.center[2] - 10]} color="#889ec2" intensity={1.8} />
+      {#if model && model.count}<Stage {model} {frame} {quality} onStatus={(status) => stageStatus = status} />{/if}
+    {:else}
+      <Grid position={[layout.center[0], layout.floorY, layout.center[2]]} cellColor="#1c2230" sectionColor="#2a3344" sectionSize={5} cellSize={1} fadeDistance={layout.size * 8} infiniteGrid />
+      {#if model}<Pixels {model} {frame} scale={SCENE_SCALE} />{/if}
     {/if}
-
-    {#each drumOrigins as origin (origin.id)}
-      <T.Mesh position={origin.pos}>
-        <T.SphereGeometry args={[0.12, 12, 12]} />
-        <T.MeshBasicMaterial color={origin.color} toneMapped={false} />
-      </T.Mesh>
-    {/each}
   </Canvas>
+  {#if !model || model.count === 0}
+    <div class="empty" role="status">
+      <span>{model ? 'No pixels in this kit' : 'Waiting for kit geometry'}</span>
+      <small>{model ? 'Add drums and hoops in Settings to preview them.' : 'The preview appears when a kit is available.'}</small>
+    </div>
+  {:else if stage && stageStatus.kind !== 'ready'}
+    <p class="stage-status" role="status" aria-live="polite">{stageStatus.message}</p>
+  {/if}
 </div>
 
 <style>
-  .viz {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    transition: filter 0.2s ease;
-  }
-  .viz.dim {
-    filter: brightness(0.35) saturate(0.4);
-  }
+  .viz { position: absolute; inset: 0; z-index: var(--z-base); transition: filter var(--dur-220) var(--ease-control); }
+  .viz.dim { filter: brightness(0.35) saturate(0.4); }
+  .empty { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--space-2); padding: var(--space-4); pointer-events: none; color: var(--text); text-align: center; }
+  .empty small, .stage-status { color: var(--text-muted); font-size: var(--text-xs); text-wrap: pretty; }
+  .stage-status { position: absolute; bottom: var(--space-2); left: var(--space-2); right: var(--space-2); margin: 0; padding: var(--space-2); background: var(--surface); max-height: 35%; overflow: auto; line-height: var(--leading-snug); }
+  @media (prefers-reduced-motion: reduce) { .viz { transition: none; } }
 </style>

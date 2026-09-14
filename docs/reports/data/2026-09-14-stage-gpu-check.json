@@ -1,0 +1,320 @@
+{
+  "gpu": {
+    "samples": 1280,
+    "maxChannelError": 0,
+    "cases": [
+      {
+        "variant": "default",
+        "quality": "eco",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "phase-reverse-flip-mirror-x",
+        "quality": "eco",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "phase-reverse-flip-mirror-x",
+        "quality": "detail",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "phase-reverse-flip-mirror-y",
+        "quality": "eco",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "phase-reverse-flip-mirror-y",
+        "quality": "detail",
+        "pixels": 2192,
+        "litSamples": 112
+      },
+      {
+        "variant": "heterogeneous-counts",
+        "quality": "eco",
+        "pixels": 1676,
+        "litSamples": 112
+      },
+      {
+        "variant": "heterogeneous-counts",
+        "quality": "detail",
+        "pixels": 1676,
+        "litSamples": 112
+      }
+    ],
+    "physicalSeamSamples": [
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "kick",
+        "hoop": 1,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "kick",
+        "hoop": 2,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "kick",
+        "hoop": 3,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "kick",
+        "hoop": 4,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "snare",
+        "hoop": 1,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "snare",
+        "hoop": 2,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "snare",
+        "hoop": 3,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "snare",
+        "hoop": 4,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom1",
+        "hoop": 1,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom1",
+        "hoop": 2,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom1",
+        "hoop": 3,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom1",
+        "hoop": 4,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom2",
+        "hoop": 1,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom2",
+        "hoop": 2,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom2",
+        "hoop": 3,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "eco",
+        "drum": "tom2",
+        "hoop": 4,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "kick",
+        "hoop": 1,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "kick",
+        "hoop": 2,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "kick",
+        "hoop": 3,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "kick",
+        "hoop": 4,
+        "requested": 99,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "snare",
+        "hoop": 1,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "snare",
+        "hoop": 2,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "snare",
+        "hoop": 3,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "snare",
+        "hoop": 4,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom1",
+        "hoop": 1,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom1",
+        "hoop": 2,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom1",
+        "hoop": 3,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom1",
+        "hoop": 4,
+        "requested": 55,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom2",
+        "hoop": 1,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom2",
+        "hoop": 2,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom2",
+        "hoop": 3,
+        "requested": 69,
+        "visible": 1
+      },
+      {
+        "variant": "default",
+        "quality": "detail",
+        "drum": "tom2",
+        "hoop": 4,
+        "requested": 69,
+        "visible": 1
+      }
+    ],
+    "mismatchedDrumFallsBack": true,
+    "interpretation": "Actual GLB tape geometry + production shader/atlas; linear render-target readback at known pixel centres and both sides of the CAD seam. A ray through the documented source gap is checked against the nearest pixel on the actual visible opposite surface. Other surfaces hidden to isolate strip mapping; no hole-filling or optical calibration."
+  },
+  "visibleUnavailableFallback": true,
+  "browser": "152.0.7977.84",
+  "interceptedMidiRequests": 1,
+  "ok": true
+}

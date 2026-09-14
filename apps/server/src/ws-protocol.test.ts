@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildPixelModel, parseKit } from '@ledrums/core';
+import { buildPixelModel, parseKit, projectSchema } from '@ledrums/core';
+import { serializePixelModel, serverMessageSchema } from '@ledrums/protocol';
 import {
   decodeClient,
   effectSpecs,
+  encodeServer,
   frameToRgbBytes,
   serializeModel,
   type ClientMessage,
+  type ServerMessage,
 } from './ws-protocol';
 
 const samples: ClientMessage[] = [
@@ -48,6 +51,10 @@ describe('ws-protocol', () => {
     expect(() => decodeClient(JSON.stringify({ t: 'tunnel', action: 'nope' }))).toThrow(/Invalid tunnel/);
   });
 
+  it('keeps serializeModel as the exact shared serializer export', () => {
+    expect(serializeModel).toBe(serializePixelModel);
+  });
+
   it('serializes the model with positions = count * 3', () => {
     const model = buildPixelModel(
       parseKit({ global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 }, drums: [{ id: 'd', diameterIn: 8, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }] }),
@@ -56,6 +63,27 @@ describe('ws-protocol', () => {
     expect(ser.count).toBe(model.pixelCount);
     expect(ser.positions).toHaveLength(model.pixelCount * 3);
     expect(ser.drums[0]!.id).toBe('d');
+  });
+
+  it('preserves optional Stage metadata through state encoding and schema decoding', () => {
+    const project = projectSchema.parse({ name: 'Stage', kit: {
+      global: { mirror: 'x' },
+      drums: [{ id: 'd', label: 'Body', color: '#abcdef', diameterIn: 8, hoopSpacingMm: 50,
+        hoops: [{ pixelCount: 3, reverse: true }, { pixelCount: 7 }, { pixelCount: 2 }],
+        origin: { x: 120, y: -80, z: 230 }, rotation: { x: 23, y: -31, z: 47 }, flip: true,
+        startAngleDeg: 73, localSpinDeg: -19 }],
+    } });
+    const model = serializeModel(buildPixelModel(project.kit));
+    expect(model.drums[0]!.stage?.hoopPixelCounts).toEqual([3, 7, 2]);
+    const state: ServerMessage = {
+      t: 'state', project, model, effects: [], projects: [],
+      output: { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 },
+      showLibrary: null, songLibrary: null, tunnel: null,
+      osc: { status: 'listening', port: 9000, hosts: [] },
+      showRevision: 0, activeSongId: null, activeSectionId: null, recallSequence: 0, sessionId: 'serialization-test',
+    };
+    const encoded = encodeServer(state);
+    expect(serverMessageSchema.parse(JSON.parse(encoded))).toStrictEqual(JSON.parse(encoded));
   });
 
   it('quantizes a frame to RGB bytes of the right length', () => {

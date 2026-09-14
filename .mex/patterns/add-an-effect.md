@@ -1,3 +1,7 @@
+---
+last_updated: 2026-09-14
+---
+
 # Pattern: Add a lighting effect
 
 Effects are the main extension point. Each is a pure `EffectGenerator` registered in one place; the UI picks it up automatically (effect specs flow to the client over WS at runtime — only a **server restart** is needed, no web rebuild).
@@ -12,6 +16,12 @@ Effects are the main extension point. Each is a pure `EffectGenerator` registere
    - **2D / texture:** use `renderUvField(ctx, fb, mode, (u,v,tSec) => [r,g,b] | null)` (`mode`: `cylindrical` wraps each drum, `planar-*` spans the kit).
    - **Trigger-reactive:** read `ctx.triggers` (`{seq, drumId, velocity, ageMs}`); use `model.drumById.get(id)` and `effectOriginWorld` for spatial origin.
    - **Stateful:** add `createState(model)`; process new hits via `trig.seq > state.lastSeq`; decay by `ctx.dt`. The engine owns/resets state on clip change.
+   - **UI consumers:** mutable generator scratch is opaque, not UI state. `EffectThumb` uses
+     `$state.raw` so replacing a state remains reactive without tracking its render-time writes.
+     A reduced-motion static draw inside `$effect` otherwise subscribes to itself and can freeze
+     authoring. See `EffectThumb.state.test.ts`: provide a working canvas context and exercise the
+     real renderer; a null jsdom `getContext` mount does not test this path. Source: the mounted
+     red/green regression and bounded CDP reproduction during the 2026-09-14 integration.
 3. **Register** in `packages/core/src/effects/registry.ts` (import + add to `ALL`).
 4. **Test** — add a case (finite & in-range channels; lights >0 pixels under the right conditions). The `effects.test.ts` NaN/range sweep covers every registered effect automatically.
 5. **Verify** `pnpm --filter @ledrums/core test` + `typecheck`. Restart the server to see it in the UI.

@@ -19,6 +19,7 @@
   import OscInputPanel from '../../chrome/OscInputPanel.svelte';
   import MidiClockPanel from '../../chrome/MidiClockPanel.svelte';
   import AudioInputPanel from '../../chrome/AudioInputPanel.svelte';
+  import TrackInputsPanel from '../../chrome/TrackInputsPanel.svelte';
   import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();
@@ -74,7 +75,15 @@
   <OscInputPanel {store} />
 
   <Separator />
-  <AudioInputPanel {store} />
+  <TrackInputsPanel status={store.trackInputs} selected={store.project?.inputMap.trackAudioInput} canEdit={store.canEdit && !!store.project}
+    onSelect={(id) => store.setTrackAudioInput(id)} />
+
+  <Separator />
+  {#if store.project?.inputMap.trackAudioInput}
+    <p class="empty">Audio nodes are listening to the selected track. Choose Browser / loopback capture above to use a local audio device instead.</p>
+  {:else}
+    <AudioInputPanel {store} />
+  {/if}
 </div>
 
 <style>

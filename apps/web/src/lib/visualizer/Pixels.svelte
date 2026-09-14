@@ -4,16 +4,19 @@
   import * as THREE from 'three';
   import type { SerializedModel } from '../ws/protocol-types';
   import { DARK_PIXEL_RGB } from './dark-pixel';
-  import { createPixelResources } from './pixel-resources';
+  import { createPixelResources, writePixelColors } from './pixel-resources';
+  import { visiblePixelIndices } from './pixel-visibility';
 
   interface Props {
     model: SerializedModel;
     frame: Uint8Array | null;
     /** mm → scene-unit divisor. */
     scale: number;
+    /** Stage may replace these drums with the actual asset. No effect in diagnostic Pixels. */
+    excludeDrums?: ReadonlySet<string>;
   }
 
-  let { model, frame, scale }: Props = $props();
+  let { model, frame, scale, excludeDrums }: Props = $props();
 
   // Cross-section of the lit ring (mm): BAND_MM radial (inner→outer radius, in
   // the hoop's plane) × THICK_MM axial (depth along the hoop axis). The axial
@@ -164,7 +167,7 @@
 
   // Cold path: build the merged arc-segment geometry. Returns the pixel count it
   // laid out (so the hot colour path knows how many segments exist).
-  function buildGeometry(m: SerializedModel, s: number): number {
+  function buildGeometry(m: SerializedModel, s: number, exclude?: ReadonlySet<string>): number {
     const count = m.count;
     if (!count) {
       resources.replace(new Float32Array(), new Float32Array(), new Uint32Array());
@@ -255,7 +258,7 @@
       }
     }
 
-    resources.replace(positions, colors, index);
+    resources.replace(positions, colors, visiblePixelIndices(index, m, IPP, exclude));
     return count;
   }
 
@@ -265,13 +268,16 @@
   let builtCount = 0;
   let builtRef: SerializedModel | null = null;
   let builtScale: number | null = null;
+  let builtExclude: ReadonlySet<string> | undefined;
   $effect(() => {
     const m = model;
     const s = scale;
-    if (m === builtRef && s === builtScale) return;
+    const exclude = excludeDrums;
+    if (m === builtRef && s === builtScale && exclude === builtExclude) return;
     builtRef = m;
     builtScale = s;
-    builtCount = untrack(() => buildGeometry(m, s));
+    builtExclude = exclude;
+    builtCount = untrack(() => buildGeometry(m, s, exclude));
   });
 
   // Hot path: push the latest frame's RGB triples onto the per-vertex colours.
@@ -279,23 +285,10 @@
   useTask(() => {
     const f = frame;
     const colAttr = geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-    if (!f || !colAttr || !builtCount) return;
-    const colors = colAttr.array as Float32Array;
-    const max = Math.min(builtCount, Math.floor(f.length / 3));
-    for (let i = 0; i < max; i++) {
-      const r = f[i * 3]! / 255;
-      const g = f[i * 3 + 1]! / 255;
-      const b = f[i * 3 + 2]! / 255;
-      const base = i * VPP * 3;
-      for (let k = 0; k < VPP; k++) {
-        const o = base + k * 3;
-        colors[o] = r;
-        colors[o + 1] = g;
-        colors[o + 2] = b;
-      }
-    }
+    if (!colAttr || !builtCount) return;
+    writePixelColors(colAttr.array as Float32Array, f, builtCount, VPP);
     colAttr.needsUpdate = true;
   });
 </script>
 
-<T.Mesh geometry={geometry} material={material} frustumCulled={false} />
+<T.Mesh geometry={geometry} material={material} frustumCulled={false} dispose={false} />

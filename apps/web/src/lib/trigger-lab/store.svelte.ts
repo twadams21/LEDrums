@@ -46,6 +46,7 @@ import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
 import { graphFireKeyOf } from '@ledrums/protocol';
 import { WSClient, type ConnectionState, type InputEcho } from '../ws/client';
+import { TRACK_INPUT_LIMIT, trackInputIdSchema, type TrackInputsStatus } from '@ledrums/protocol';
 import { type MidiClockEvent, type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
 import type { BackupSnapshotMeta, ClientMessage, ControllerStatus, ControllerTestPattern, DiscoveredController, MidiClockStatus, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus, SerializedModel, TunnelInfo, VoiceStat } from '../ws/protocol-types';
 import { LocalMidiClock, parseClockInputValue, readStoredClockDevice, resolveClockStatus, shouldForwardClock, writeStoredClockDevice } from './store/midi-clock';
@@ -167,6 +168,9 @@ import {
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
+// Defensive per-device echo ceiling from the wire vocabulary: channel × note/gate/CC, bands,
+// and eight macros. The registry's held-note limit is tighter; ordinary OSC is not capped here.
+const TRACK_OSC_KEY_LIMIT = 16 * 128 * 3 + voice.AUDIO_BANDS.length + 8;
 
 /** One shared empty buffer, so a drum with no hits yet reads a stable identity. */
 const EMPTY_HITS: readonly CurveHit[] = [];
@@ -1042,6 +1046,76 @@ export class TriggerLab {
     }),
   );
 
+  // Named track status is transient server truth, not authored show content.
+  trackInputs = $state<TrackInputsStatus | null>(null);
+  private trackInputSessionId: string | null = null;
+  /** Only explicit echo metadata owns keys — a regular OSC /tracks/... address is ordinary
+      OSC. Empty sets are removed, and both dimensions are bounded even between snapshots. */
+  private readonly trackOscKeys = new Map<string, Set<string>>();
+
+  private forgetTrackOscOwnership(address: string): void {
+    for (const [id, keys] of this.trackOscKeys) {
+      if (!keys.delete(address)) continue;
+      if (keys.size === 0) this.trackOscKeys.delete(id);
+      return;
+    }
+  }
+
+  private clearOscMirror(address: string): void {
+    this.sim.oscTable.delete(address);
+    this.inputActivity.delete(activityKey({ kind: 'osc', address }));
+    if (this.lastOscHeard?.address === address) this.lastOscHeard = null;
+  }
+
+  private clearTrackOscKey(id: string, address: string): void {
+    const keys = this.trackOscKeys.get(id);
+    if (!keys?.delete(address)) return;
+    this.clearOscMirror(address);
+    if (keys.size === 0) this.trackOscKeys.delete(id);
+  }
+
+  private clearTrackOscInput(id: string): void {
+    const keys = this.trackOscKeys.get(id);
+    if (keys) for (const address of keys) this.clearTrackOscKey(id, address);
+  }
+
+  private ownTrackOscKey(id: string, address: string): void {
+    if (this.trackOscKeys.get(id)?.has(address)) return;
+    this.forgetTrackOscOwnership(address);
+    let keys = this.trackOscKeys.get(id);
+    if (!keys) {
+      // Echoes can precede their low-rate registry snapshot. Retire the oldest mirror rather
+      // than retaining unbounded IDs if cleanup/status packets have not arrived yet.
+      if (this.trackOscKeys.size >= TRACK_INPUT_LIMIT) {
+        const oldest = this.trackOscKeys.keys().next().value;
+        if (oldest !== undefined) this.clearTrackOscInput(oldest);
+      }
+      keys = new Set();
+      this.trackOscKeys.set(id, keys);
+    }
+    if (keys.size >= TRACK_OSC_KEY_LIMIT) {
+      const oldest = keys.values().next().value;
+      if (oldest !== undefined) this.clearTrackOscKey(id, oldest);
+    }
+    keys.add(address);
+  }
+
+  private clearTrackInputs(): void {
+    for (const id of this.trackOscKeys.keys()) this.clearTrackOscInput(id);
+    this.trackInputs = null;
+    this.trackInputSessionId = null;
+    if (this.project?.inputMap.trackAudioInput) this.sim.setAudio(voice.ZERO_AUDIO_FRAME);
+  }
+
+  setTrackAudioInput(id: string | undefined): void {
+    if (!this.project || !this.canEdit || (id !== undefined && !trackInputIdSchema.safeParse(id).success)) return;
+    const { trackAudioInput: previous, ...inputMap } = this.project.inputMap;
+    if (previous === id) return;
+    this.setInputMap(id === undefined ? inputMap : { ...inputMap, trackAudioInput: id });
+    this.sim.setAudio(voice.ZERO_AUDIO_FRAME);
+    if (id !== undefined) this.audio.stop();
+  }
+
   // --- audio input (GH #214) -----------------------------------------------
   get audioStatus(): AudioCaptureStatus {
     return this.audio.status;
@@ -1082,6 +1156,7 @@ export class TriggerLab {
   }
   /** Explicit user start — the only path that ever opens an input. Viewers are refused. */
   startAudio(): Promise<void> {
+    if (this.project?.inputMap.trackAudioInput) return Promise.resolve();
     return this.audio.start();
   }
   stopAudio(): void {
@@ -1105,6 +1180,7 @@ export class TriggerLab {
       and, when the link is open, ONE `audioFeatures` message so the server drives the visible
       kit. `send` drops while the socket is closed, so a reconnect never replays stale frames. */
   private forwardAudio(frame: voice.AudioFeatureFrame): void {
+    if (this.project?.inputMap.trackAudioInput) return;
     this.sim.setAudio(frame);
     if (this.link === 'open') this.client.send({ t: 'audioFeatures', level: frame.level, bass: frame.bass, mids: frame.mids, highs: frame.highs });
   }
@@ -1342,6 +1418,7 @@ export class TriggerLab {
     this.raf = 0;
     this.midi.release();
     this.audio.dispose();
+    this.clearTrackInputs();
     this.errorCaptureUninstall?.();
     this.errorCaptureUninstall = null;
     this.client.close();
@@ -1744,10 +1821,17 @@ export class TriggerLab {
   private wireClient(): void {
     this.client.on({
       onState: (project, model, _effects, _projects, output, showLibrary, songLibrary, tunnel, osc, showRevision = 0, activeSongId, activeSectionId, recallSequence = 0, sessionId = 'legacy') => {
+        // Input lifetime follows the server boot, independently of recall/library adoption.
+        if (this.trackInputSessionId !== sessionId) {
+          this.clearTrackInputs();
+          this.trackInputSessionId = sessionId;
+        }
         // adopt the authoritative Project (routing/geometry/IO) AND the engine's real
         // kit model so its frames map 1:1 in the preview (the server runs its own kit
         // geometry/pixel count, not the lab kit).
+        if (this.project?.inputMap.trackAudioInput !== project.inputMap.trackAudioInput) this.sim.setAudio(voice.ZERO_AUDIO_FRAME);
         this.project = project;
+        if (project.inputMap.trackAudioInput) this.audio.stop();
         this.serverModel = model;
         // adopt the server's output truth (arming/packets/error) so the OutputPill AND the S03
         // output status panel are honest from the first handshake, before the first stats tick lands.
@@ -1771,6 +1855,15 @@ export class TriggerLab {
         // Owned by {@link ShowsController} (R23).
         this.showsCtl.reconcileOnState(showLibrary, songLibrary);
         this.tryApplyPendingRecall();
+      },
+      onTrackInputs: (status) => {
+        const active = status.status === 'listening' ? status.inputs.filter((input) => input.connected) : [];
+        for (const id of this.trackOscKeys.keys()) {
+          if (!active.some((input) => input.id === id)) this.clearTrackOscInput(id);
+        }
+        this.trackInputs = status;
+        const id = this.project?.inputMap.trackAudioInput;
+        if (id) this.sim.setAudio(active.find((input) => input.id === id && input.kind === 'audio')?.audio ?? voice.ZERO_AUDIO_FRAME);
       },
       onRecalled: (songId, sectionId, showRevision, recallSequence, sessionId = 'legacy') => {
         this.receiveAuthoritativeRecall({ sessionId, showRevision, recallSequence, songId, sectionId }, 'recalled');
@@ -1815,6 +1908,7 @@ export class TriggerLab {
         this.authRequired = true;
         this.authFailCount += 1;
         this.link = 'offline';
+        this.clearTrackInputs();
       },
       onConnection: (state: ConnectionState) => {
         // map the client's 'closed' to the lab's 'offline'; others pass through
@@ -1851,6 +1945,7 @@ export class TriggerLab {
           // A dropped link cannot confirm the server's clock: forget it (offline the panel
           // reads the local reducer, or shows waiting for a native selection).
           this.serverClock = null;
+          this.clearTrackInputs();
         }
       },
       onStats: (_stats, latencyMs, fps, output, voice) => {
@@ -1908,7 +2003,7 @@ export class TriggerLab {
       re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
       rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
       the timeline intact. */
-  private receiveInputEcho({ kind, label, value, note, channel, drumId }: InputEcho): void {
+  private receiveInputEcho({ kind, label, value, note, channel, drumId, modulationOnly, trackInputId }: InputEcho): void {
     const time = Date.now();
     // The echo's `value` is the RAW input, before the drum's sensitivity curve — exactly the
     // x a velocity-curve editor plots. Connected, this is the ONLY place hits are recorded
@@ -1921,11 +2016,25 @@ export class TriggerLab {
         this.midi.applyNoteLearn(note);
       }
     } else if (kind === 'osc') {
-      // For OSC the wire `label` carries the address (see server broadcastJson).
+      // For OSC the wire `label` carries the address (see server broadcastJson). Named zero
+      // values retire BOTH the signal and badge, rather than leaving zero-valued tombstones.
+      if (trackInputId !== undefined) {
+        if (value === 0) {
+          // This is a new zero-valued event, not a local ownership sweep. Match the server's
+          // last-event-wins table even if ordinary OSC last wrote this exact address.
+          this.forgetTrackOscOwnership(label);
+          this.clearOscMirror(label);
+          return;
+        }
+        this.ownTrackOscKey(trackInputId, label);
+      } else {
+        // The most recent ordinary input owns its value, even at a formerly named address.
+        this.forgetTrackOscOwnership(label);
+      }
       this.recordInputActivity({ kind: 'osc', address: label, value, time });
-      // The server echo is the ONLY OSC feed the browser has (no browser OSC transport),
-      // so this is where an armed OSC learn binds.
-      this.osc.apply(label);
+      // Dedicated value/release echoes cannot author trigger bindings. Ordinary OSC keeps its
+      // existing Learn contract, including a fader first heard at zero.
+      if (!modulationOnly) this.osc.apply(label);
       // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
       // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
       this.sim.setOsc(label, value);

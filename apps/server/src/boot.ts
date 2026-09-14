@@ -18,6 +18,8 @@ export interface BootDeps {
   oscInput: OscInput;
   /** PixLite controller monitor (S47) — its poll loop is stopped on shutdown. */
   controllerMonitor?: { stop(): void | Promise<void> };
+  /** Loopback track-device adapter; closes leases and its status timer. */
+  trackInputs?: { close(): void };
   port: number;
   oscPort: number;
   voiceMode: boolean;
@@ -107,7 +109,7 @@ export function boot(deps: BootDeps): void {
   process.on('SIGTERM', () => void shutdown());
 }
 
-type ShutdownDeps = Pick<BootDeps, 'statsTimer' | 'snapshotTimer' | 'controllerMonitor' | 'beginShutdown' | 'drainOperations'
+type ShutdownDeps = Pick<BootDeps, 'statsTimer' | 'snapshotTimer' | 'controllerMonitor' | 'trackInputs' | 'beginShutdown' | 'drainOperations'
   | 'autosaver' | 'showLibraryAutosaver' | 'songLibraryAutosaver' | 'tunnelControl'> & {
     host: Pick<EngineHost, 'stop'>;
     voiceHost: Pick<VoiceEngineHost, 'stop'> | null;
@@ -129,6 +131,7 @@ export function createShutdown(deps: ShutdownDeps, exit: (code: number) => void 
     deps.tunnelControl.stop();
     const outputStopped = (deps.voiceHost ?? deps.host).stop();
     deps.oscInput.close();
+    deps.trackInputs?.close();
     // Stop new connections now, but keep accepted clients (and their editor identity)
     // alive until the authoring queue drains. WebSocketServer.close does not close clients.
     deps.wss.close();

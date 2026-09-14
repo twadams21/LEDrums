@@ -1,7 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPixelResources } from './pixel-resources';
+import { createPixelResources, writePixelColors } from './pixel-resources';
+import { DARK_PIXEL_RGB } from './dark-pixel';
 
 describe('pixel resource ownership', () => {
+  it('uploads exact RGB to every vertex, without modifying the transmitted frame', () => {
+    const frame = new Uint8Array([255, 127, 9, 0, 0, 255]);
+    const original = frame.slice();
+    const colors = new Float32Array(2 * 12 * 3);
+    writePixelColors(colors, frame, 2, 12);
+    for (let i = 0; i < 2; i++) for (let v = 0; v < 12; v++) for (let c = 0; c < 3; c++) {
+      expect(colors[(i * 12 + v) * 3 + c]).toBeCloseTo(frame[i * 3 + c]! / 255, 7);
+    }
+    expect(frame).toEqual(original);
+    writePixelColors(colors, frame.subarray(0, 3), 2, 12);
+    expect([...colors.subarray(36)]).toEqual(Array(36).fill(0));
+    writePixelColors(colors, null, 2, 12);
+    for (let i = 0; i < colors.length; i++) expect(colors[i]).toBeCloseTo(DARK_PIXEL_RGB[i % 3]!, 7);
+  });
   it('retires each uploaded attribute set before replacing it, including an empty model', () => {
     const resources = createPixelResources();
     const retired: unknown[][] = [];

@@ -45,7 +45,9 @@
   const GLOW_SCALE = 2.6;
 
   let canvas = $state<HTMLCanvasElement>();
-  let genState = $state<unknown>(null);
+  // Core owns mutable per-render scratch. Deep-proxying it makes a reduced-motion draw
+  // subscribe to its own writes and render forever; only state REPLACEMENT is reactive.
+  let genState = $state.raw<unknown>(null);
   let genStateId = $state<string | null>(null); // Track which generatorId the state belongs to
   let isVisible = $state(true); // starts visible; observer only pauses after confirmed visible
   let prefersReduced = $state(false); // prefers-reduced-motion

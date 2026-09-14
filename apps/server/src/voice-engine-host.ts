@@ -1,3 +1,4 @@
+import { arch, cpus, platform, release } from 'node:os';
 import {
   advanceMidiClock,
   advanceTransport,
@@ -48,6 +49,7 @@ import {
 import { graphFiredMonitorLabel, graphMonitorDestination, type MidiClockStatus } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { TickRate } from './tick-rate';
+import { FrameTiming, type FrameTimingSnapshot } from './frame-timing';
 import { zoneForNote, zoneForOsc } from './input-router';
 import { frameToRgbBytes, type OutputStatus } from './ws-protocol';
 import type { MonitorDraft } from './monitor';
@@ -62,6 +64,8 @@ export type VoicePartialInput =
   | { kind: 'noteOn'; note: number; velocity: number; channel?: number }
   | { kind: 'noteOff'; note: number; channel?: number }
   | { kind: 'osc'; address: string; value: number }
+  | { kind: 'oscValue'; address: string; value: number }
+  | { kind: 'oscRelease'; address: string }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number; viewerOnly?: boolean }
   | { kind: 'recallSection'; songId?: string | null; sectionId: string | null }
@@ -123,6 +127,10 @@ export class VoiceEngineHost {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private lastWall = 0;
   private accumulator = 0;
+  /** Observation only: requested timer deadline, not a new scheduling policy. */
+  private requestedDueWall = 0;
+  private readonly frameTiming = new FrameTiming({ targetHz: 1000 / TICK_MS });
+  private readonly timingHost = frameTimingHostInfo();
 
   /** Time owed before the next output transmit (1000/output.fps). */
   private transmitAccum = 0;
@@ -193,6 +201,7 @@ export class VoiceEngineHost {
     this.model = buildPixelModel(this.kit);
     this.dmxMap = this.buildMapSafe(this.kit);
     this.engine.setModel(this.model);
+    this.frameTiming.reset(nowWall());
   }
 
   /** Stage a fresh runtime; never call setModel/setShow on the live engine mid-transaction. */
@@ -229,6 +238,7 @@ export class VoiceEngineHost {
         this.clock = createMidiClockState(project.composition.transport.bpm);
         this.lastWall = nowWall();
         this.tickRate.reset(this.lastWall);
+        this.frameTiming.reset(this.lastWall);
         this.onShowChanged?.();
       },
     };
@@ -411,6 +421,7 @@ export class VoiceEngineHost {
     this.currentShow = show;
     this.showRevision++;
     this.engine.setShow({ ...show, canvasScenes: undefined });
+    this.frameTiming.reset(nowWall());
     this.onShowChanged?.();
   }
 
@@ -458,7 +469,7 @@ export class VoiceEngineHost {
   applyInput(partial: VoicePartialInput): void {
     // Audio frames arrive continuously (≤30 Hz) and are not a hit: they must not restart the
     // input→frame latency measurement that a real trigger owns.
-    if (partial.kind !== 'audioFeatures') this.pendingInputWall = nowWall();
+    if (partial.kind !== 'audioFeatures' && partial.kind !== 'oscValue') this.pendingInputWall = nowWall();
     const ev = this.toInputEvent(partial);
     if (!ev) return;
     // Two global controls are the HOST's, not the engine's: bpm lives on this project's
@@ -550,6 +561,16 @@ export class VoiceEngineHost {
   private toInputEvent(partial: VoicePartialInput): voice.InputEvent | null {
     const timeMs = this.engineTimeMs;
     switch (partial.kind) {
+      case 'oscValue':
+        return { kind: 'oscValue', address: partial.address, value: partial.value, timeMs };
+      case 'oscRelease': {
+        // A track note's release completes a held global gesture, but is NEVER another OSC
+        // trigger/reset/recall. Continuous controls also receive their genuine zero value.
+        const action = globalControlForOsc(this.project.inputMap.globalControls, partial.address);
+        if (action && isMomentaryGlobalControl(action)) return { kind: 'globalControl', action, pressed: false, timeMs };
+        if (action && globalControlDef(action).kind === 'continuous') return { kind: 'globalControl', action, value: 0, timeMs };
+        return { kind: 'oscValue', address: partial.address, value: 0, timeMs };
+      }
       case 'recallSection':
         return {
           kind: 'recallSection',
@@ -729,6 +750,7 @@ export class VoiceEngineHost {
     this.reloadOutputSettings();
     this.lastWall = nowWall();
     this.tickRate.reset(this.lastWall);
+    this.frameTiming.reset(this.lastWall);
     this.accumulator = 0;
     this.scheduleNext();
   }
@@ -742,6 +764,7 @@ export class VoiceEngineHost {
   }
 
   private scheduleNext(): void {
+    this.requestedDueWall = nowWall() + TICK_MS;
     this.timer = setTimeout(() => {
       this.loop();
       if (this.timer) this.scheduleNext();
@@ -751,7 +774,8 @@ export class VoiceEngineHost {
   /** One wall-clock loop iteration: catch the accumulator up in fixed steps. */
   private loop(): void {
     const now = nowWall();
-    let elapsed = now - this.lastWall;
+    const rawElapsed = now - this.lastWall;
+    let elapsed = rawElapsed;
     this.lastWall = now;
     if (elapsed > MAX_DT_MS) elapsed = MAX_DT_MS; // clamp to survive long pauses
     this.accumulator += elapsed;
@@ -764,7 +788,10 @@ export class VoiceEngineHost {
       this.accumulator -= TICK_MS;
       steps++;
     }
+    const discardedBacklog = this.accumulator >= TICK_MS ? this.accumulator : 0;
     if (this.accumulator >= TICK_MS) this.accumulator = 0; // drop backlog; never spiral
+    this.frameTiming.recordLoop(now, rawElapsed, this.requestedDueWall,
+      rawElapsed - elapsed, discardedBacklog, steps);
   }
 
   // --- MIDI clock ----------------------------------------------------------
@@ -857,9 +884,12 @@ export class VoiceEngineHost {
   step(dt: number): void {
     this.engineTimeMs += dt;
     const transport = this.transport(dt);
+    const tickStartWall = nowWall();
     this.engine.tick(this.engineTimeMs, dt, transport);
+    const tickEndWall = nowWall();
 
-    this.tickRate.tick(nowWall());
+    this.tickRate.tick(tickEndWall);
+    this.frameTiming.recordTick(tickStartWall, tickEndWall);
 
     let emittedFrame = false;
 
@@ -905,6 +935,12 @@ export class VoiceEngineHost {
       fps: this.tickRate.rate,
       output: this.output.status(),
     };
+  }
+
+  /** Snapshot-only quantiles. Main should cache at ~1Hz rather than sort on every 10ms stats
+   * broadcast. Existing getStats/latency fields retain their previous meaning and cadence. */
+  getFrameTiming(): FrameTimingSnapshot & { host: ReturnType<typeof frameTimingHostInfo> } {
+    return { ...this.frameTiming.snapshot(nowWall()), host: this.timingHost };
   }
 
   getOutputStatus(): OutputStatus {
@@ -1025,6 +1061,15 @@ function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
   if (input.sectionId !== undefined) parts.push(`section=${input.sectionId}`);
   if (input.graphKey !== undefined) parts.push(`graph=${input.graphKey}`);
   return parts.join('; ');
+}
+
+/** Cold-path machine identity, not sampled in the render loop. */
+function frameTimingHostInfo() {
+  const processors = cpus();
+  return {
+    os: platform(), osRelease: release(), arch: arch(), node: process.version,
+    cpu: processors[0]?.model ?? 'unknown', logicalCpuCount: processors.length,
+  };
 }
 
 /** Wall clock (ms). Indirected so the host has no direct `performance` coupling. */

@@ -1,0 +1,629 @@
+{
+  "sourceSha256": "8715c5423ff8efe96966d7a448f617888034fd1f149c7ac2d7ee84a84b22acbc",
+  "sourceUnchanged": true,
+  "blenderVersion": "4.5.13 LTS",
+  "rendered": false,
+  "meshCount": 68,
+  "triangles": 286416,
+  "bytes": 16330624,
+  "assetSha256": "03c900d0a323af111bc2c419d37bd1741be70b46b24b79e43385d10432c0a5bf",
+  "meshes": [
+    {
+      "id": "tom2",
+      "role": "acrylic",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 16640,
+      "triangles": 15000,
+      "vertices": 7436
+    },
+    {
+      "id": "tom2",
+      "role": "diffuser-body",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "tom2",
+      "role": "diffuser-body",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "tom2",
+      "role": "diffuser-body",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "tom2",
+      "role": "diffuser-body",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "tom2",
+      "role": "gasket",
+      "hoop": null,
+      "sourceObjects": 47,
+      "beforeTriangles": 52682,
+      "triangles": 4500,
+      "vertices": 96438
+    },
+    {
+      "id": "tom2",
+      "role": "head",
+      "hoop": null,
+      "sourceObjects": 2,
+      "beforeTriangles": 9504,
+      "triangles": 4000,
+      "vertices": 2720
+    },
+    {
+      "id": "tom2",
+      "role": "led-lens",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 79720,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom2",
+      "role": "led-lens",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 79720,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom2",
+      "role": "led-lens",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 79720,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom2",
+      "role": "led-lens",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 79720,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom2",
+      "role": "led-tape",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom2",
+      "role": "led-tape",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom2",
+      "role": "led-tape",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom2",
+      "role": "led-tape",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom2",
+      "role": "metal",
+      "hoop": null,
+      "sourceObjects": 277,
+      "beforeTriangles": 150288,
+      "triangles": 18000,
+      "vertices": 29319
+    },
+    {
+      "id": "tom2",
+      "role": "pcb",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 2732,
+      "triangles": 1500,
+      "vertices": 6964
+    },
+    {
+      "id": "kick",
+      "role": "acrylic",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 20064,
+      "triangles": 15000,
+      "vertices": 7420
+    },
+    {
+      "id": "kick",
+      "role": "diffuser-body",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "kick",
+      "role": "diffuser-body",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "kick",
+      "role": "diffuser-body",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "kick",
+      "role": "diffuser-body",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 204396,
+      "triangles": 4000,
+      "vertices": 2002
+    },
+    {
+      "id": "kick",
+      "role": "gasket",
+      "hoop": null,
+      "sourceObjects": 51,
+      "beforeTriangles": 53834,
+      "triangles": 4500,
+      "vertices": 95137
+    },
+    {
+      "id": "kick",
+      "role": "head",
+      "hoop": null,
+      "sourceObjects": 2,
+      "beforeTriangles": 9552,
+      "triangles": 4000,
+      "vertices": 2840
+    },
+    {
+      "id": "kick",
+      "role": "led-lens",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 79724,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "kick",
+      "role": "led-lens",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 79724,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "kick",
+      "role": "led-lens",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 79724,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "kick",
+      "role": "led-lens",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 79724,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "kick",
+      "role": "led-tape",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "kick",
+      "role": "led-tape",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "kick",
+      "role": "led-tape",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "kick",
+      "role": "led-tape",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 4084,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "kick",
+      "role": "metal",
+      "hoop": null,
+      "sourceObjects": 341,
+      "beforeTriangles": 182520,
+      "triangles": 18000,
+      "vertices": 32286
+    },
+    {
+      "id": "kick",
+      "role": "pcb",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 2744,
+      "triangles": 1500,
+      "vertices": 6988
+    },
+    {
+      "id": "snare",
+      "role": "acrylic",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 8976,
+      "triangles": 8976,
+      "vertices": 4464
+    },
+    {
+      "id": "snare",
+      "role": "diffuser-body",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "snare",
+      "role": "diffuser-body",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "snare",
+      "role": "diffuser-body",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "snare",
+      "role": "diffuser-body",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "snare",
+      "role": "gasket",
+      "hoop": null,
+      "sourceObjects": 37,
+      "beforeTriangles": 46812,
+      "triangles": 4500,
+      "vertices": 93043
+    },
+    {
+      "id": "snare",
+      "role": "head",
+      "hoop": null,
+      "sourceObjects": 2,
+      "beforeTriangles": 9472,
+      "triangles": 4000,
+      "vertices": 2640
+    },
+    {
+      "id": "snare",
+      "role": "led-lens",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "snare",
+      "role": "led-lens",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "snare",
+      "role": "led-lens",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "snare",
+      "role": "led-lens",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "snare",
+      "role": "led-tape",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "snare",
+      "role": "led-tape",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "snare",
+      "role": "led-tape",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "snare",
+      "role": "led-tape",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "snare",
+      "role": "metal",
+      "hoop": null,
+      "sourceObjects": 129,
+      "beforeTriangles": 82572,
+      "triangles": 18000,
+      "vertices": 20852
+    },
+    {
+      "id": "snare",
+      "role": "pcb",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 2736,
+      "triangles": 1500,
+      "vertices": 6972
+    },
+    {
+      "id": "tom1",
+      "role": "acrylic",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 13856,
+      "triangles": 13856,
+      "vertices": 6880
+    },
+    {
+      "id": "tom1",
+      "role": "diffuser-body",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "tom1",
+      "role": "diffuser-body",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "tom1",
+      "role": "diffuser-body",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "tom1",
+      "role": "diffuser-body",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 203596,
+      "triangles": 3998,
+      "vertices": 2001
+    },
+    {
+      "id": "tom1",
+      "role": "gasket",
+      "hoop": null,
+      "sourceObjects": 43,
+      "beforeTriangles": 51130,
+      "triangles": 4500,
+      "vertices": 96782
+    },
+    {
+      "id": "tom1",
+      "role": "head",
+      "hoop": null,
+      "sourceObjects": 2,
+      "beforeTriangles": 9472,
+      "triangles": 4000,
+      "vertices": 2640
+    },
+    {
+      "id": "tom1",
+      "role": "led-lens",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom1",
+      "role": "led-lens",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom1",
+      "role": "led-lens",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom1",
+      "role": "led-lens",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 79408,
+      "triangles": 2400,
+      "vertices": 1200
+    },
+    {
+      "id": "tom1",
+      "role": "led-tape",
+      "hoop": 1,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom1",
+      "role": "led-tape",
+      "hoop": 2,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom1",
+      "role": "led-tape",
+      "hoop": 3,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom1",
+      "role": "led-tape",
+      "hoop": 4,
+      "sourceObjects": 1,
+      "beforeTriangles": 4068,
+      "triangles": 1200,
+      "vertices": 602
+    },
+    {
+      "id": "tom1",
+      "role": "metal",
+      "hoop": null,
+      "sourceObjects": 213,
+      "beforeTriangles": 118554,
+      "triangles": 18000,
+      "vertices": 26379
+    },
+    {
+      "id": "tom1",
+      "role": "pcb",
+      "hoop": null,
+      "sourceObjects": 1,
+      "beforeTriangles": 2736,
+      "triangles": 1500,
+      "vertices": 6972
+    }
+  ],
+  "limits": [
+    "Photo-informed model, not fabrication certification",
+    "Reduced actual geometry; small hardware/profile details simplified",
+    "Runtime materials/light are illustrative, not Cycles equivalence"
+  ]
+}

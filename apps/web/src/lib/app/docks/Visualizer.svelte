@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* Kit preview — 3D stage ⇄ 2D pixel map, off one SegmentedControl. Shows the
+  /* Kit preview — 3D Pixels/actual acrylic Stage ⇄ 2D pixel map. Shows the
      REAL server LED output when the engine link is open (and a frame has arrived),
      else the local sim composite, so offline === local preview. Reused by the
      Author right-dock (pinned) and the Perform split.
@@ -12,6 +12,9 @@
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import Scene from '../../visualizer/Scene.svelte';
   import Pixels2D from '../../visualizer/Pixels2D.svelte';
+  import StagePreviewControls from '../../visualizer/StagePreviewControls.svelte';
+  import type { CameraPreset, PreviewPresentation } from '../../visualizer/stage-camera';
+  import type { StageQuality } from '../../visualizer/stage-resources';
   import SegmentedControl from '../../ui/SegmentedControl.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
@@ -24,12 +27,18 @@
     showToggle = true,
     variant = 'overlay',
   }: {
-    store: TriggerLab;
+    store: Pick<TriggerLab, 'model' | 'previewFrame'>;
     mode?: '3d' | '2d';
     label?: string;
     showToggle?: boolean;
     variant?: 'panel' | 'overlay';
   } = $props();
+
+  // Presentation is local view state, never authored or sent to the engine.
+  let presentation = $state<PreviewPresentation>('pixels');
+  let camera = $state<CameraPreset>('overview');
+  let quality = $state<StageQuality>('eco');
+  let reset = $state(0);
 
   // store.previewFrame + store.model swap together (server when connected, else
   // local) so the frame always matches the model it's painted on.
@@ -47,25 +56,33 @@
       {/if}
     </PanelHeader>
   {:else}
-    {#if label}<Eyebrow icon={Box} class="viz-label">{label}</Eyebrow>{/if}
-    {#if showToggle}
-      <span class="viz-toggle">
+    <div class="viz-head">
+      {#if label}<Eyebrow icon={Box}>{label}</Eyebrow>{/if}
+      {#if showToggle}
         <SegmentedControl value={mode} options={PREVIEW_OPTS} onChange={(v) => (mode = v as '3d' | '2d')} ariaLabel="Preview mode" />
-      </span>
-    {/if}
+      {/if}
+    </div>
   {/if}
-  <div class="viz-stage">
+  <div class="viz-stage" class:three={mode === '3d'}>
     {#if mode === '3d'}
-      <Scene model={store.model} frame={store.previewFrame} />
-    {:else}
-      <Pixels2D model={store.model} frame={store.previewFrame} />
+      <StagePreviewControls bind:presentation bind:camera bind:quality onReset={() => reset++} empty={!store.model?.count} />
     {/if}
+    <div class="canvas">
+      {#if mode === '3d'}
+        <Scene model={store.model} frame={store.previewFrame} {presentation} {camera} {quality} {reset} />
+      {:else}
+        <Pixels2D model={store.model} frame={store.previewFrame} />
+      {/if}
+    </div>
   </div>
 </div>
 
 <style>
   .viz {
     position: relative;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
     min-height: 0;
     height: 100%;
     overflow: hidden;
@@ -80,26 +97,23 @@
     background: var(--surface);
   }
   .viz-stage {
-    position: relative;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    min-width: 0;
     min-height: 0;
-    height: 100%;
     overflow: hidden;
   }
+  .viz-stage.three { grid-template-rows: auto minmax(0, 1fr); }
+  .canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
   .viz.panel .viz-stage {
     background: var(--bg-perform);
   }
-  .viz :global(.viz-label) {
-    position: absolute;
-    top: var(--space-2);
-    left: var(--space-3);
-    z-index: 1;
-    pointer-events: none;
-    color: var(--text-faint);
-  }
-  .viz-toggle {
-    position: absolute;
-    top: var(--space-2);
-    right: var(--space-2);
-    z-index: 1;
+  .viz-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
   }
 </style>

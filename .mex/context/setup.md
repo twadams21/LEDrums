@@ -13,7 +13,7 @@ edges:
     condition: when specific technology versions or library details are needed
   - target: context/architecture.md
     condition: when understanding how components connect during setup
-last_updated: 2026-06-20
+last_updated: 2026-09-14
 ---
 
 # Setup
@@ -31,13 +31,19 @@ last_updated: 2026-06-20
 ## Environment Variables
 - `PORT` (optional) — server HTTP/WS port, default `4321`.
 - `OSC_PORT` (optional) — OSC UDP listen port, default `9000`.
+- `LEDRUMS_TRACK_PORT` — local JSON/UDP track-device port, default `4322` (IPv4 loopback only).
+- `LEDRUMS_TRACK_INPUTS=off` — disable named-track ingress; enabled by default in voice mode.
+- Isolated verification: disposable `LEDRUMS_PROJECTS_DIR`, non-default HTTP/WS/OSC/track ports,
+  `LEDRUMS_TELEMETRY=off`, `LEDRUMS_TUNNEL=off`; confirm output reports `disabled` before inputs.
+  `scripts/perf-dev/README.md` and `integrations/ableton/README.md` own synthetic procedures.
 - No secrets; the app runs entirely on the operator's machine/LAN.
 
 ## Common Commands
 - `pnpm dev` — server + web dev server with HMR.
 - `pnpm build` — build the web app to `apps/web/dist`.
 - `pnpm start` — run the server, serving the built app + engine.
-- `pnpm test` — all Vitest suites (core 113, io 12, server 27, web 24 = 176).
+- `pnpm test` — workspace suites plus Node-only device/performance integration tests.
+- `pnpm perf:dev -- …` — opt-in, output-disabled dev-server measurements; never a correctness/SLA gate.
 - `pnpm typecheck` — typecheck every package (core/io/server via `tsc`, web via `svelte-check`).
 - `pnpm clean` — remove `dist`/`.svelte-kit`/Vite caches across packages.
 

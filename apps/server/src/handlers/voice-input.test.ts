@@ -348,6 +348,22 @@ describe('handleVoiceInput — audioFeatures', () => {
     expect(broadcast).not.toHaveBeenCalled();
   });
 
+  it('selecting a track prevents browser frames overwriting it; returning to browser restores capture', () => {
+    const { host, broadcast, frame } = litHost();
+    host.setInputMap({ ...host.getInputMap(), trackAudioInput: 'audio-track' });
+    handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast });
+    run(host, 100);
+    expect(lit(frame())).toBe(0);
+    host.applyInput({ kind: 'audioFeatures', level: 0.8, bass: 0, mids: 0, highs: 0 });
+    run(host, 100);
+    expect(lit(frame())).toBeGreaterThan(0);
+    const { trackAudioInput: _selected, ...inputMap } = host.getInputMap();
+    host.setInputMap(inputMap);
+    handleVoiceInput({ t: 'audioFeatures', level: 0, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast });
+    run(host, 100);
+    expect(lit(frame())).toBe(0);
+  });
+
   it("a viewer's frame is dropped: the engine never sees it", () => {
     const { host, broadcast, frame } = litHost();
     const handled = handleVoiceInput({ t: 'audioFeatures', level: 1, bass: 0, mids: 0, highs: 0 }, { voiceHost: host, broadcastJson: broadcast, viewer: true });

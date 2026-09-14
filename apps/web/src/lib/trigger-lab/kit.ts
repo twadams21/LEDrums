@@ -13,7 +13,7 @@ import {
   type PixelModel,
   type Vec3,
 } from '@ledrums/core';
-import type { SerializedModel } from '../ws/protocol-types';
+import { serializePixelModel, type SerializedModel } from '@ledrums/protocol';
 
 export interface LabModel {
   model: SerializedModel;
@@ -29,38 +29,7 @@ export function buildLabModel(): LabModel {
   // geometry can never drift from the engine's (the prior `tom` vs `tom1` bug class).
   const pm = buildPixelModel(DEFAULT_KIT);
 
-  const positions: number[] = [];
-  const tangents: number[] = [];
-  const normals: number[] = [];
-  const segmentLengths: number[] = [];
-
-  for (const p of pm.pixels) {
-    positions.push(p.world.x, p.world.y, p.world.z);
-    tangents.push(p.tangent.x, p.tangent.y, p.tangent.z);
-    normals.push(p.normal.x, p.normal.y, p.normal.z);
-    segmentLengths.push(p.segmentLengthMm);
-  }
-
-  const model: SerializedModel = {
-    count: pm.pixelCount,
-    positions,
-    tangents,
-    normals,
-    segmentLengths,
-    drums: pm.drums.map((d) => ({
-      id: d.drumId,
-      label: d.label,
-      color: d.color,
-      pixelStart: d.pixelStart,
-      pixelCount: d.pixelCount,
-    })),
-    bounds: {
-      center: [pm.bounds.center.x, pm.bounds.center.y, pm.bounds.center.z],
-      size: pm.bounds.size,
-    },
-  };
-
-  return { model, pm };
+  return { model: serializePixelModel(pm), pm };
 }
 
 // ---- Thumbnail PixelModel (26×13 synthetic drum) ----------------------------

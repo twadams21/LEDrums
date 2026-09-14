@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-11
+last_updated: 2026-09-14
 ---
 
 # Session Bootstrap
@@ -35,6 +35,72 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Shared Stage serialization seam (2026-09-14):** agent-selected implementation
+supporting Trent's approved Blender-backed Stage on Trent’s MacBook Pro, not a separately
+requested API or user design decision. Protocol now owns the pure
+`serializePixelModel(PixelModel)` used by server `serializeModel` (alias) and offline web
+`trigger-lab/kit.ts`. Optional `SerializedDrum.stage` carries world-mm midpoint, physical unit
+XYZ axes, radius, recovered hoop spacing and authoritative per-hoop counts. Rotation/mirror/flip
+follow the body; LED phase/reverse do not. Old pixel arrays/identities/bounds stay exact; invalid
+or single-hoop geometry omits Stage. Focused 55 tests and protocol schema locks pass. This slice
+changed no core/default, store, visualizer or CAD code and ran no app/server, git or full sweep.
+Consumer rules and focused checks: `patterns/stage-serialization.md`. Subsequent browser integration
+is recorded in the implementation report below; this is not a shipping claim.
+
+**Stage / Spatial / Ableton build — verified locally, PR next (2026-09-14,
+`feat/stage-spatial-ableton`, uncommitted/unmerged):** Trent approved the four workstreams in
+this session on Trent’s MacBook Pro (machine identity checked). Work and evidence are in
+`../docs/plans/2026-09-14-stage-spatial-ableton.md`. Default-compatible richer Spatial Field,
+bounded timing instrumentation/driver, and local named MIDI/audio/macro bridge are implemented.
+Full workspace tests/typecheck, post-relocation targeted/integration checks, seeded source scan,
+production build and regenerated design system pass. The ordinary local dead-code gate encounters existing
+untracked CAD scratch; a temporary CAD-only exclusion passed the real seeded-probe and clean
+scan without editing those files or repository ignores. `max-api` is host-provided, explicitly
+external in `knip.json`. First equivalent-work measurements found a ~20% warm-hit regression;
+neutral-path specialization and fused cold cache filling corrected it. Three final matched runs
+show 16–20% less warm render time and 2.9–6.0% less cold time versus the frozen renderer, with
+exact Float32 parity. The repeated eight-lane whole-server stress still clamps elapsed time on
+this older host; no sustained-120-Hz or hardware-latency claim. Before/after data is retained in
+`../docs/reports/data/`. Method/results/UI evidence:
+`../docs/reports/2026-09-14-stage-spatial-implementation.md`.
+Synthetic isolated-server proof: named Audio and macro input produce actual RGB, stale Audio
+and departure return it to zero, and bounded sender departure/reopen succeeds. Real Max/Live,
+physical devices/output, and hardware latency are NOT verified. No PR/release/deployment yet.
+
+**Latest user requirement, not an assumption:** Trent stopped verification because the generic
+Stage preview is the wrong look: clear acrylic drums with LED strips **inside**, not opaque
+emissive shells and invented stands. Use the latest Blender renders and real-kit photos; he
+prefers reusing the accurate Blender model itself. References inspected:
+`docs/cad/drum-kit/.cache/blender/realism/raised-rim-v1-beauty.png`, external/section renders,
+`photos/IMG_2147.jpeg`, `IMG_2150.jpeg`, and `photos3/` hardware close-ups. Preferred source
+`blender/realism/raised-rim-v1.blend` is ~251 MB. Existing CAD/photos are user-owned references:
+read-only, never cleanup targets. **Trent subsequently approved headless export only**, with no
+GUI/render/source save, and requested matching app kit dimensions. New default tape-centre
+radii/spacing match the CAD while old post-migration centres/rotations, IDs, counts and wiring
+stay intact; saved kits are not auto-rewritten. Geometry sampling changes intentionally with
+this correction; optical Stage changes still never alter lighting generation. Source hash
+stayed unchanged through the Blender 4.5.13 export: **68 meshes, 286,416 triangles, ~16.3 MB**,
+no baked RGB/images/stands. Derivative: `apps/web/public/models/acrylic-kit/`; exporter/CI checks:
+`scripts/preview-kit/`. Runtime rig binding/materials are integrated; no user visual acceptance
+claimed. Browser inspection caught head membranes sharing the shell's source material; semantic
+head grouping and a real-GLB surface-area test corrected it. Tight camera fit is verified against
+actual hardware bounds across four presets/aspects. Strict geometry/live-RGB captures and the
+guarded Detail/camera/remount/narrow/source-selection batch pass, including stable WebGL handle
+counts across three warm toggles and unchanged kit geometry. This caught a reduced-motion
+thumbnail freeze: core scratch had become deep Svelte state. `$state.raw` preserves reactive
+replacement but not internal writes; the mounted real-render test and original browser sequence
+now pass. See `patterns/add-an-effect.md`. Repeated final captures use empty synthetic MIDI
+ports and block media/audio-device access. Actual GPU readback passed 1,280 samples with zero
+channel error across qualities/transforms/counts/zero/short frames; visible fallback also passes.
+It caught reciprocal-based GLSL modulo reading short-row padding; bounded index wrapping fixes
+it. The source's real 8 mm seam is preserved, not filled. Reproduce: `pnpm verify:stage-gpu`
+with a non-default isolated Vite URL; `scripts/preview-kit/README.md`. Not optical calibration.
+Old Stage captures are not approval of the new direction. Disk was ~1.4 GiB at inspection
+(~3.0 GiB at final checks); no installs/heavy renders. Task-owned browsers/servers are stopped.
+Final gate caught one test borrowing server `tsx`; moved its canonical-dimension assertion to
+existing web Vitest instead of hiding the dependency. Master hash remains unchanged. Next:
+task-scoped PR and clean-checkout ordinary CI. No release.
 
 **Keyboard graph firing restored to authoring views (2026-09-11, branch
 `fix/keyboard-fire-in-authoring-views`):** Requested by Trent on Trent's MacBook Pro, sourced from

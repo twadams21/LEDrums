@@ -1,7 +1,9 @@
-import type { PixelModel } from '@ledrums/core';
 import { listEffects } from '@ledrums/core';
 import { clientMessageSchema, clientMessageTypes } from '@ledrums/protocol';
-import type { ClientMessage, EffectSpec, ServerMessage, SerializedModel } from '@ledrums/protocol';
+import type { ClientMessage, EffectSpec, ServerMessage } from '@ledrums/protocol';
+
+// Preserve callers while sharing the exact serializer with the offline web preview.
+export { serializePixelModel as serializeModel } from '@ledrums/protocol';
 
 // The WS wire contract is defined once in `@ledrums/protocol` (app-shared, NOT pure
 // `@ledrums/core`) and imported by both the server and the web client. Re-export the
@@ -65,36 +67,6 @@ export function decodeClient(raw: string): ClientMessage {
 
 export function encodeServer(msg: ServerMessage): string {
   return JSON.stringify(msg);
-}
-
-/** Serialize the pixel model for the visualizer (sent once per connection / rebuild). */
-export function serializeModel(model: PixelModel): SerializedModel {
-  const positions: number[] = new Array(model.pixelCount * 3);
-  const tangents: number[] = new Array(model.pixelCount * 3);
-  const normals: number[] = new Array(model.pixelCount * 3);
-  const segmentLengths: number[] = new Array(model.pixelCount);
-  for (let i = 0; i < model.pixelCount; i++) {
-    const p = model.pixels[i]!;
-    positions[i * 3] = p.world.x;
-    positions[i * 3 + 1] = p.world.y;
-    positions[i * 3 + 2] = p.world.z;
-    tangents[i * 3] = p.tangent.x;
-    tangents[i * 3 + 1] = p.tangent.y;
-    tangents[i * 3 + 2] = p.tangent.z;
-    normals[i * 3] = p.normal.x;
-    normals[i * 3 + 1] = p.normal.y;
-    normals[i * 3 + 2] = p.normal.z;
-    segmentLengths[i] = p.segmentLengthMm;
-  }
-  return {
-    count: model.pixelCount,
-    positions,
-    tangents,
-    normals,
-    segmentLengths,
-    drums: model.drums.map((d) => ({ id: d.drumId, label: d.label, color: d.color, pixelStart: d.pixelStart, pixelCount: d.pixelCount })),
-    bounds: { center: [model.bounds.center.x, model.bounds.center.y, model.bounds.center.z], size: model.bounds.size },
-  };
 }
 
 export function effectSpecs(): EffectSpec[] {

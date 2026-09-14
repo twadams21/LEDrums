@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-07
+last_updated: 2026-09-14
 ---
 
 # Pattern Index
@@ -8,7 +8,8 @@ Lookup table for all pattern files in this directory. Check here before starting
 
 | Pattern | Use when |
 |---------|----------|
-| [audio-midi-inputs.md](audio-midi-inputs.md) | Verifying explicit audio capture, reactive modulation and selected-port MIDI Clock without real inputs/output |
+| [stage-serialization.md](stage-serialization.md) | Serializing or consuming physical Stage drum frames without changing LED geometry |
+| [audio-midi-inputs.md](audio-midi-inputs.md) | Verifying audio, named-track UDP inputs, MIDI Clock and dev timing without real inputs/output |
 | [codebase-health-audit.md](codebase-health-audit.md) | Auditing performance, reliability, dead code and duplicated runtime logic |
 | [add-an-effect.md](add-an-effect.md) | Adding a new lighting effect to the registry (3D, 2D-UV texture, particle, or trigger) |
 | [add-a-modifier.md](add-a-modifier.md) | Adding a pure framebuffer modifier to the Gen3 trigger graph Modify flow |

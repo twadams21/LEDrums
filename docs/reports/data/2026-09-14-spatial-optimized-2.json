@@ -1,0 +1,110 @@
+[
+  {
+    "node": "v25.8.2",
+    "platform": "darwin",
+    "arch": "x64",
+    "pixels": 2300,
+    "warmup": 80,
+    "samples": 300,
+    "dtMs": 0,
+    "units": "ms/batch",
+    "referenceCommit": "efbf269230ba23c77e1adbc243b059c0b59835e4",
+    "scenario": {
+      "name": "warm-base",
+      "voices": 1,
+      "waves": false,
+      "cold": false
+    },
+    "baseline": {
+      "mean": 1.1979428899999924,
+      "p50": 1.1623399999998583,
+      "p95": 1.5053579999998874
+    },
+    "candidate": {
+      "mean": 0.943921530000005,
+      "p50": 0.9346989999999096,
+      "p95": 1.167846999999938
+    }
+  },
+  {
+    "node": "v25.8.2",
+    "platform": "darwin",
+    "arch": "x64",
+    "pixels": 2300,
+    "warmup": 80,
+    "samples": 300,
+    "dtMs": 0,
+    "units": "ms/batch",
+    "referenceCommit": "efbf269230ba23c77e1adbc243b059c0b59835e4",
+    "scenario": {
+      "name": "warm-own-hit",
+      "voices": 1,
+      "waves": true,
+      "cold": false
+    },
+    "baseline": {
+      "mean": 1.1661215799999922,
+      "p50": 1.1643710000000738,
+      "p95": 1.3776330000000598
+    },
+    "candidate": {
+      "mean": 0.9755000999999978,
+      "p50": 0.9787380000002486,
+      "p95": 1.1589309999999386
+    }
+  },
+  {
+    "node": "v25.8.2",
+    "platform": "darwin",
+    "arch": "x64",
+    "pixels": 2300,
+    "warmup": 80,
+    "samples": 300,
+    "dtMs": 0,
+    "units": "ms/batch",
+    "referenceCommit": "efbf269230ba23c77e1adbc243b059c0b59835e4",
+    "scenario": {
+      "name": "warm-eight-voices",
+      "voices": 8,
+      "waves": true,
+      "cold": false
+    },
+    "baseline": {
+      "mean": 7.97282835666664,
+      "p50": 9.040179999999964,
+      "p95": 9.819566000000123
+    },
+    "candidate": {
+      "mean": 6.666193096666652,
+      "p50": 7.591303000000153,
+      "p95": 8.119338999999854
+    }
+  },
+  {
+    "node": "v25.8.2",
+    "platform": "darwin",
+    "arch": "x64",
+    "pixels": 2300,
+    "warmup": 80,
+    "samples": 300,
+    "dtMs": 0,
+    "units": "ms/batch",
+    "referenceCommit": "efbf269230ba23c77e1adbc243b059c0b59835e4",
+    "scenario": {
+      "name": "cold-own-hit-including-state",
+      "voices": 1,
+      "waves": true,
+      "cold": true
+    },
+    "baseline": {
+      "mean": 0.6722241966666782,
+      "p50": 0.5679979999995339,
+      "p95": 1.2086999999992258
+    },
+    "candidate": {
+      "mean": 0.6500592533333505,
+      "p50": 0.5516549999993003,
+      "p95": 1.1722499999996217
+    }
+  }
+]

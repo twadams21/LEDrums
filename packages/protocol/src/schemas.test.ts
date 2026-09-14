@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildPixelModel,
   clipSchema,
   inputMapSchema,
   layerSchema,
@@ -17,7 +18,7 @@ import {
   showLibraryBlobSchema,
   showSchema,
 } from './schemas';
-import type { ClientMessage, OutputStatus, ServerMessage } from './index';
+import { serializePixelModel, type ClientMessage, type OutputStatus, type ServerMessage } from './index';
 
 // Canonical (default-complete) core payloads so an encode→decode round-trip is byte-stable: the
 // reused core schemas apply defaults, so we seed from them and assert decode is idempotent.
@@ -196,6 +197,53 @@ describe('serverMessageSchema', () => {
       expect(decoded).toEqual(sample);
     }
     expect(seen.size).toBe(serverSamples.length);
+  });
+
+  it('accepts mixed Stage counts beside single-hoop and legacy drums without metadata', () => {
+    const state = serverSamples.find((sample) => sample.t === 'state')!;
+    const stagedProject = projectSchema.parse({ name: 'Stage', kit: {
+      global: { mirror: 'y' },
+      drums: [
+        { ...minimalKit.drums[0], hoops: [{ pixelCount: 3 }, { pixelCount: 7, reverse: true }, { pixelCount: 2 }], flip: true },
+        { ...minimalKit.drums[0], id: 'single', hoops: [{ pixelCount: 5 }] },
+      ],
+    } });
+    const model = serializePixelModel(buildPixelModel(stagedProject.kit));
+    expect(model.drums[0]!.stage?.hoopPixelCounts).toEqual([3, 7, 2]);
+    expect(model.drums[1]).not.toHaveProperty('stage');
+    const wire = JSON.parse(JSON.stringify({ ...state, project: stagedProject, model }));
+    expect(serverMessageSchema.parse(wire)).toStrictEqual(wire);
+    expect(serverMessageSchema.parse(state)).toStrictEqual(state); // old multi-hoop payloads need no stage
+  });
+
+  it('validates optional Stage tuples, finite positive dimensions, unit axes and hoop counts', () => {
+    const state = serverSamples.find((sample) => sample.t === 'state')!;
+    const model = serializePixelModel(buildPixelModel(project.kit));
+    const drum = model.drums[0]!;
+    expect(drum.stage).toBeDefined();
+    const acceptsStage = (stage: unknown) => serverMessageSchema.safeParse({
+      ...state, model: { ...model, drums: [{ ...drum, stage }] },
+    }).success;
+    expect(acceptsStage(drum.stage)).toBe(true);
+    expect(acceptsStage(undefined)).toBe(true);
+    for (const invalid of [
+      null,
+      {},
+      { ...drum.stage, origin: [0, 0] },
+      { ...drum.stage, origin: [0, Infinity, 0] },
+      { ...drum.stage, xAxis: [2, 0, 0] },
+      { ...drum.stage, yAxis: [0, 0, 0] },
+      { ...drum.stage, zAxis: [0, 0, NaN] },
+      { ...drum.stage, zAxis: [0, 0, 1, 0] },
+      { ...drum.stage, radiusMm: 0 },
+      { ...drum.stage, radiusMm: Infinity },
+      { ...drum.stage, hoopSpacingMm: -1 },
+      { ...drum.stage, hoopSpacingMm: Infinity },
+      { ...drum.stage, hoopPixelCounts: [3] },
+      { ...drum.stage, hoopPixelCounts: [3, 0] },
+      { ...drum.stage, hoopPixelCounts: [3, 1.5] },
+      { ...drum.stage, hoopPixelCounts: [3, '5'] },
+    ]) expect(acceptsStage(invalid)).toBe(false);
   });
 
   it('rejects unknown t, missing fields, and wrong types', () => {

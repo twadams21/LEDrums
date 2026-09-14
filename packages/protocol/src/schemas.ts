@@ -9,6 +9,8 @@
 // types. Deliberately-opaque payloads (the versioned show/song library blobs) and the authored
 // voice Show pass through structurally validated but never deep-inspected or key-stripped.
 import { z } from 'zod';
+import { trackInputsStatusSchema, trackInputIdSchema } from './track-input';
+import { frameTimingSchema } from './frame-timing';
 import {
   BLEND_MODES,
   clipSchema,
@@ -44,6 +46,7 @@ import type {
   NetworkAdapter,
   OscListenInfo,
   OutputStatus,
+  SerializedDrum,
   SerializedModel,
   ShowLibraryBlob,
   SongLibraryBlob,
@@ -262,12 +265,28 @@ const backupSnapshotMetaSchema = z.object({
   reason: z.enum(['boot', 'cadence', 'pre-risk']),
 });
 
+const stageVectorSchema = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
+const stageAxisSchema = stageVectorSchema.refine(
+  (axis) => Math.abs(Math.hypot(...axis) - 1) <= 1e-6,
+  'Stage axes must be unit vectors',
+);
+const serializedDrumStageSchema = z.object({
+  origin: stageVectorSchema,
+  xAxis: stageAxisSchema,
+  yAxis: stageAxisSchema,
+  zAxis: stageAxisSchema,
+  radiusMm: z.number().finite().positive(),
+  hoopSpacingMm: z.number().finite().positive(),
+  hoopPixelCounts: z.array(z.number().int().positive()).min(2),
+});
+
 const serializedDrumSchema = z.object({
   id: z.string(),
   label: z.string(),
   color: z.string(),
   pixelStart: z.number(),
   pixelCount: z.number(),
+  stage: serializedDrumStageSchema.optional(),
 });
 
 const serializedModelSchema = z.object({
@@ -428,6 +447,7 @@ const controllerStatusSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const serverMessageSchema = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('trackInputs'), ...trackInputsStatusSchema.shape }).strict(),
   z.object({
     t: z.literal('state'),
     project: projectSchema,
@@ -452,10 +472,15 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
     fps: z.number(),
     output: outputStatusSchema,
     voice: voiceStatsSchema.optional(),
+    timing: frameTimingSchema.optional(),
   }).strict(),
   z.object({
     t: z.literal('input'),
     kind: z.enum(['midi', 'osc']),
+    // Local named signals have owned lifetimes. Modulation/release echoes are not OSC Learn
+    // candidates for trigger/global bindings, even though they still update live meters.
+    modulationOnly: z.boolean().optional(),
+    trackInputId: trackInputIdSchema.optional(),
     label: z.string(),
     /** The input's normalised 0..1 value, BEFORE the drum's sensitivity curve —
         the raw hit, which is what a velocity-curve editor plots on its x axis. */
@@ -508,6 +533,8 @@ type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y
 type Assert<T extends true> = T;
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
+type _LockSerializedDrum = Assert<Equals<z.infer<typeof serializedDrumSchema>, SerializedDrum>>;
+type _LockSerializedDrumStage = Assert<Equals<z.infer<typeof serializedDrumStageSchema>, NonNullable<SerializedDrum['stage']>>>;
 type _LockSerializedModel = Assert<Equals<z.infer<typeof serializedModelSchema>, SerializedModel>>;
 type _LockEffectSpec = Assert<Equals<z.infer<typeof effectSpecSchema>, EffectSpec>>;
 type _LockOutputStatus = Assert<Equals<z.infer<typeof outputStatusSchema>, OutputStatus>>;

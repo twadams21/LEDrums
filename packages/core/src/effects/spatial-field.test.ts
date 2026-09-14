@@ -8,6 +8,7 @@ import { spatialField, type SpatialFieldState } from './impl/spatial-field';
 import { tryGetEffect } from './registry';
 import { collectionOf } from './vocabulary';
 import { resolveVoiceSustainMs } from './voice-life';
+import { spatialFieldReference } from './spatial-field-reference';
 
 /** Four sparse drums in a row — the kit shape the defaults must read on. */
 function model(drums = 4, hoopCount = 3, spacingMm = 600): PixelModel {
@@ -118,7 +119,11 @@ describe('spatial-field', () => {
     expect(e.timebase).toBe('absolute');
     expect(e.tags).toEqual(expect.arrayContaining(['3d', 'kit-wide', 'texture']));
     expect(collectionOf(e.tags)).toBe('textures');
-    expect(e.paramSpec.length).toBeLessThanOrEqual(11);
+    expect(e.paramSpec.length).toBe(18);
+    for (const original of spatialFieldReference.paramSpec) {
+      expect(e.paramSpec.find((s) => s.key === original.key)).toEqual(original);
+    }
+    expect(defaultParams(e.paramSpec)).toMatchObject({ warp: 0, advection: 0, detail: 0 });
     for (const s of e.paramSpec) {
       if (s.type === 'number') {
         expect(Number.isFinite(s.default as number), s.key).toBe(true);
@@ -157,12 +162,11 @@ describe('spatial-field', () => {
     expect(diff(f0, f1)).toBe(0);
   });
 
-  it('samples one continuous world field: moving a drum changes its pixels, not the others', () => {
+  it('renormalises the world field when drum spacing changes the kit bounds', () => {
     const near = model(2, 3, 600);
     const far = model(2, 3, 1200);
-    // d0 sits at the same world position in both kits; only the bounds (and so the
-    // normalisation) differ, so compare d0 pixel-for-pixel under an identical scale in mm by
-    // holding kit size constant: use scale relative to a fixed extent instead.
+    // Kit-relative bounds are part of the field: changing the kit extent can also change
+    // an unmoved drum. The contract suite separately pins bounds to isolate one drum move.
     const a = render(near, ctx(near, { timeMs: 300 }));
     const b = render(far, ctx(far, { timeMs: 300 }));
     // Both kits render finite and lit; d1 differs between them (different world position).
@@ -254,6 +258,10 @@ describe('spatial-field', () => {
       { scale: 6, twist: 8, speed: 0, disturbance: 0, waveSpeed: 100, waveWidth: 1000, lifeMs: 6000, hueSpread: 0 },
       { scale: 0, twist: 0, speed: -5, disturbance: 5, waveSpeed: 0, waveWidth: 0, lifeMs: 0, brightness: 2, saturation: -1 },
       { scale: Number.NaN, twist: Number.POSITIVE_INFINITY, hue: Number.NaN, brightness: Number.NaN },
+      { warp: 1, warpMode: 'swirl', warpScale: 6, advection: 1, detail: 1, detailMode: 'ridges', detailScale: 8 },
+      { warp: 1, warpMode: 'ripple', warpScale: 0.25, advection: 1, detail: 1, detailScale: 1 },
+      { warp: Number.NaN, warpScale: Number.POSITIVE_INFINITY, detail: 100, detailScale: -100, advection: -1, warpMode: 'unknown' },
+      { warp: 1, detail: 1, scale: Number.MAX_VALUE, speed: Number.MAX_VALUE, hue: Number.MAX_VALUE, hueSpread: Number.MAX_VALUE },
     ];
     for (const params of extremes) {
       const state = spatialField.createState!(m);

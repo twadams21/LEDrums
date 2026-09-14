@@ -1,0 +1,299 @@
+{
+  "screenshots": [
+    ".ui-shots/acrylic-detail-reduced-motion.png",
+    ".ui-shots/acrylic-authoring-narrow.png",
+    ".ui-shots/acrylic-track-source-narrow.png"
+  ],
+  "resourceCycles": [
+    {
+      "pixels": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 7,
+          "Texture": 5,
+          "Program": 3,
+          "Framebuffer": 4,
+          "Renderbuffer": 3
+        }
+      ],
+      "stage": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 199,
+          "Texture": 7,
+          "Program": 12,
+          "Framebuffer": 5,
+          "Renderbuffer": 4
+        }
+      ]
+    },
+    {
+      "pixels": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 7,
+          "Texture": 5,
+          "Program": 3,
+          "Framebuffer": 4,
+          "Renderbuffer": 3
+        }
+      ],
+      "stage": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 199,
+          "Texture": 7,
+          "Program": 12,
+          "Framebuffer": 5,
+          "Renderbuffer": 4
+        }
+      ]
+    },
+    {
+      "pixels": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 7,
+          "Texture": 5,
+          "Program": 3,
+          "Framebuffer": 4,
+          "Renderbuffer": 3
+        }
+      ],
+      "stage": [
+        {
+          "Buffer": 0,
+          "Texture": 4,
+          "Program": 0,
+          "Framebuffer": 2,
+          "Renderbuffer": 0
+        },
+        {
+          "Buffer": 199,
+          "Texture": 7,
+          "Program": 12,
+          "Framebuffer": 5,
+          "Renderbuffer": 4
+        }
+      ]
+    }
+  ],
+  "deviceFixture": {
+    "midiRequests": 1,
+    "captureRequests": 0
+  },
+  "initialPixelsResources": [
+    {
+      "Buffer": 7,
+      "Texture": 4,
+      "Program": 3,
+      "Framebuffer": 2,
+      "Renderbuffer": 0
+    }
+  ],
+  "initialModel": {
+    "count": 2192,
+    "drums": [
+      {
+        "id": "kick",
+        "label": "Kick",
+        "color": "#5bbcff",
+        "pixelStart": 0,
+        "pixelCount": 784,
+        "stage": {
+          "origin": [
+            0,
+            340,
+            330
+          ],
+          "xAxis": [
+            -1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            6.123233995736766e-17,
+            1
+          ],
+          "zAxis": [
+            0,
+            -1,
+            0
+          ],
+          "radiusMm": 256.75,
+          "hoopSpacingMm": 94,
+          "hoopPixelCounts": [
+            196,
+            196,
+            196,
+            196
+          ]
+        }
+      },
+      {
+        "id": "snare",
+        "label": "Snare",
+        "color": "#72d572",
+        "pixelStart": 784,
+        "pixelCount": 432,
+        "stage": {
+          "origin": [
+            230,
+            0,
+            740
+          ],
+          "xAxis": [
+            -1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ],
+          "zAxis": [
+            0,
+            0,
+            1
+          ],
+          "radiusMm": 139.25,
+          "hoopSpacingMm": 60.666666666666664,
+          "hoopPixelCounts": [
+            108,
+            108,
+            108,
+            108
+          ]
+        }
+      },
+      {
+        "id": "tom1",
+        "label": "Tom 1",
+        "color": "#ff8e72",
+        "pixelStart": 1216,
+        "pixelCount": 432,
+        "stage": {
+          "origin": [
+            120,
+            272.18847050625476,
+            925.5950864665638
+          ],
+          "xAxis": [
+            -0.9975640502598243,
+            0.06634234890812217,
+            0.021555935854604538
+          ],
+          "yAxis": [
+            0.0697564737441253,
+            0.9487397904213919,
+            0.30826424450778983
+          ],
+          "zAxis": [
+            0,
+            -0.3090169943749476,
+            0.9510565162951536
+          ],
+          "radiusMm": 139.25,
+          "hoopSpacingMm": 60.66666666666665,
+          "hoopPixelCounts": [
+            108,
+            108,
+            108,
+            108
+          ]
+        }
+      },
+      {
+        "id": "tom2",
+        "label": "Tom 2",
+        "color": "#d69cff",
+        "pixelStart": 1648,
+        "pixelCount": 544,
+        "stage": {
+          "origin": [
+            -360,
+            40,
+            710
+          ],
+          "xAxis": [
+            -1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ],
+          "zAxis": [
+            0,
+            0,
+            1
+          ],
+          "radiusMm": 179.25,
+          "hoopSpacingMm": 107.33333333333333,
+          "hoopPixelCounts": [
+            136,
+            136,
+            136,
+            136
+          ]
+        }
+      }
+    ],
+    "global": {
+      "ledDensityPxPerM": 30,
+      "hoopCount": 4,
+      "defaultHoopSpacingMm": 60,
+      "maxPixelsPerOutput": 4096,
+      "mirror": "x",
+      "expanded": false
+    }
+  },
+  "authoringCanvas": {
+    "x": 465,
+    "y": 261,
+    "width": 558,
+    "height": 480
+  },
+  "ok": true,
+  "errors": [],
+  "assetsRequested": 14,
+  "maxRgbSum": 452852,
+  "reducedMotion": true,
+  "cameraPresets": 4,
+  "resetPerPreset": true,
+  "trackSourceSelection": true
+}

@@ -12,6 +12,7 @@
       "entry": ["shell/main.js"]
     }
   },
+  "ignoreDependencies": ["max-api"],
   "ignore": [
     "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
     "apps/web/src/lib/app/views/PatchDiffDialog.svelte",

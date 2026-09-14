@@ -135,7 +135,7 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
       // GH #214: only the editor's capture is authoritative. A viewer's frame is dropped here (the
       // editor gate already refuses it upstream — this is the belt to that brace). No input echo
       // and no monitor event: a 30 Hz stream must not spam the timeline or the badges.
-      if (!deps.viewer) voiceHost.applyInput({ kind: 'audioFeatures', level: msg.level, bass: msg.bass, mids: msg.mids, highs: msg.highs });
+      if (!deps.viewer && !voiceHost.getInputMap().trackAudioInput) voiceHost.applyInput({ kind: 'audioFeatures', level: msg.level, bass: msg.bass, mids: msg.mids, highs: msg.highs });
       return true;
     }
     if (msg.t === 'osc') {

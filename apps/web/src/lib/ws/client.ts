@@ -1,5 +1,5 @@
 import { WS_PATH } from '@ledrums/core';
-import { WS_CLOSE_INVALID_PIN } from '@ledrums/protocol';
+import { WS_CLOSE_INVALID_PIN, type TrackInputsStatus } from '@ledrums/protocol';
 import {
   decodeServer,
   type BackupSnapshotMeta,
@@ -65,6 +65,7 @@ export interface WSCallbacks {
   onFrame?: (frame: Uint8Array) => void;
   onStats?: (stats: EngineStats, latencyMs: number, fps: number, output: OutputStatus, voice?: VoiceStats) => void;
   onInput?: (input: InputEcho) => void;
+  onTrackInputs?: (status: TrackInputsStatus) => void;
   onRecalled?: (songId: string | null, sectionId: string | null, showRevision: number, recallSequence: number, sessionId?: string) => void;
   onMonitor?: (event: MonitorEvent) => void;
   onSend?: (msg: ClientMessage) => void;
@@ -274,6 +275,11 @@ export class WSClient {
           msg.sessionId,
         );
         break;
+      case 'trackInputs': {
+        const { t: _t, ...status } = msg;
+        this.cb.onTrackInputs?.(status);
+        break;
+      }
       case 'stats':
         this.cb.onStats?.(msg.stats, msg.latencyMs, msg.fps, msg.output, msg.voice);
         break;

@@ -14,6 +14,9 @@ import { HttpPixliteClient, OscInput, OSC_DEFAULT_PORT, probe as probeController
 import { WebSocketServer, type WebSocket } from 'ws';
 import { EngineHost } from './engine-host';
 import { VoiceEngineHost } from './voice-engine-host';
+import { TRACK_INPUT_PORT } from '@ledrums/protocol';
+import { createTrackInputBridge } from './track-input-bridge';
+import { createTrackInputSink } from './track-input-sink';
 import {
   oscToEvent,
   parseSectionRecallAddress,
@@ -552,6 +555,7 @@ async function main(): Promise<void> {
     monitor({ type: 'system', direction: 'local', source: 'server', destination: 'ws', label: 'WebSocket client accepted' });
     broadcastPresence();
     ws.send(encodeServer(stateMessage()));
+    ws.send(encodeServer({ t: 'trackInputs', ...trackInputs.snapshot() }));
     monitorBus.replay((msg) => ws.send(encodeServer(msg)));
 
     ws.on('message', async (raw, isBinary) => {
@@ -760,6 +764,16 @@ async function main(): Promise<void> {
     currentVersion: process.env.LEDRUMS_APP_VERSION ?? null,
   });
 
+  // Track devices are trusted-local input producers, not editor clients. The transport binds
+  // ONLY IPv4 loopback; no bridge packet can edit files, projects, output or editor presence.
+  const trackInputs = createTrackInputBridge({
+    port: Number(process.env.LEDRUMS_TRACK_PORT ?? TRACK_INPUT_PORT),
+    enabled: VOICE_MODE && process.env.LEDRUMS_TRACK_INPUTS !== 'off',
+    publish: (status) => broadcastJson({ t: 'trackInputs', ...status }),
+    sink: voiceHost ? createTrackInputSink(voiceHost, broadcastJson, () => !shuttingDown)
+      : { midi: () => {}, cc: () => {}, osc: () => {}, audio: () => {} },
+  });
+
   // --- OSC input --------------------------------------------------------------
 
   // Raw OSC inputs are engine inputs (not authoring), so they bypass the editor gate entirely —
@@ -818,9 +832,14 @@ async function main(): Promise<void> {
 
   // --- periodic stats ---------------------------------------------------------
 
+  let frameTimingAt = -Infinity;
   const statsTimer = setInterval(() => {
     if (voiceHost) {
       const s = voiceHost.getStats();
+      // Quantile sorting and the extra payload occur at 1 Hz, never the 100 Hz stats rate.
+      const timingNow = performance.now();
+      const timing = timingNow - frameTimingAt >= 1000 ? voiceHost.getFrameTiming() : undefined;
+      if (timing) frameTimingAt = timingNow;
       // Adapt the voice engine's stats onto the legacy `stats` shape, plus the additive
       // `voice` extension carrying voiceCount + per-bus levels.
       broadcastJson({
@@ -837,6 +856,7 @@ async function main(): Promise<void> {
         fps: s.fps,
         output: s.output,
         voice: { voiceCount: s.engine.voiceCount, busLevels: s.engine.busLevels, voices: s.engine.voices, clock: voiceHost.getClockStatus() },
+        ...(timing ? { timing } : {}),
       });
       return;
     }
@@ -858,6 +878,7 @@ async function main(): Promise<void> {
     voiceHost,
     oscInput,
     controllerMonitor,
+    trackInputs,
     port,
     oscPort,
     voiceMode: VOICE_MODE,
