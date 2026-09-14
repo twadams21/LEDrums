@@ -11,7 +11,8 @@
    It ran no tests, benchmarks, browsers, servers or external apps and edited no files.
 3. **Parent verification:** actual GPU readback, guarded UI captures and paired measurements are
    recorded in [the implementation report](2026-09-14-stage-spatial-implementation.md). Local
-   verification is complete; clean-checkout CI remains. Neither reviews nor readback establishes Live/Max,
+   verification is complete; ordinary CI is tracked on [PR #218](https://github.com/twadams21/LEDrums/pull/218).
+   Neither reviews nor readback establishes Live/Max,
    packaged desktop, physical latency, optical calibration or user visual acceptance.
 
 ## Historical initial review — before the Blender correction

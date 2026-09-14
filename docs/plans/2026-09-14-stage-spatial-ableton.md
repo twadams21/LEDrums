@@ -1,6 +1,6 @@
 # Stage, spatial fields, performance and Ableton inputs
 
-Status: sourced Stage, GPU readback, measured default-path correction and local verification complete on `feat/stage-spatial-ableton`; clean-checkout CI/PR delivery next. Not merged or released.
+Status: sourced Stage, GPU readback, measured default-path correction and local verification complete. Delivery/ordinary CI: [PR #218](https://github.com/twadams21/LEDrums/pull/218). No release.
 
 ## Requirements and provenance
 

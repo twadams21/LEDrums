@@ -2,9 +2,9 @@
 
 Date: 2026-09-14. Source: Trent's approved four-workstream build, then his explicit request to
 use the actual clear-acrylic Blender kit and match its dimensions. Work is on
-`feat/stage-spatial-ableton`; **not released or deployed**. Local verification is complete;
-clean-checkout CI and PR delivery are next. The measured default-path and GPU wrap regressions
-are corrected. This report does not assert
+[PR #218](https://github.com/twadams21/LEDrums/pull/218); **not released or deployed**. Local
+verification is complete; the PR records ordinary clean-checkout CI and delivery status.
+The measured default-path and GPU wrap regressions are corrected. This report does not assert
 user visual acceptance.
 
 ## Actual kit, not surrogate shells
@@ -205,8 +205,8 @@ renderer work, not the whole compositor/checkpoint/output/preview pipeline.
 
 - Packaged desktop webview asset delivery remains unverified. GPU addressing/readback is not
   optical calibration or absolute VRAM verification.
-- Clean-checkout ordinary CI and PR delivery remain pending; the local CAD-only obstruction is
-  reported separately, not called a passing ordinary gate.
+- Ordinary clean-checkout CI and delivery status are tracked on PR #218; the local CAD-only
+  obstruction is reported separately, not called a passing ordinary gate.
 - Original CAD/cache/photos remain read-only and untracked references, not cleanup targets.
 - Ableton/Max host loading, `.amxd` packaging, pass-through/DSP fidelity, saved persistence and
   automation are unverified. Names are manually editable, not Live-API track-name observers.

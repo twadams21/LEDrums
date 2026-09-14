@@ -48,8 +48,8 @@ changed no core/default, store, visualizer or CAD code and ran no app/server, gi
 Consumer rules and focused checks: `patterns/stage-serialization.md`. Subsequent browser integration
 is recorded in the implementation report below; this is not a shipping claim.
 
-**Stage / Spatial / Ableton build — verified locally, PR next (2026-09-14,
-`feat/stage-spatial-ableton`, uncommitted/unmerged):** Trent approved the four workstreams in
+**Stage / Spatial / Ableton build — verified implementation (2026-09-14,
+[PR #218](https://github.com/twadams21/LEDrums/pull/218)):** Trent approved the four workstreams in
 this session on Trent’s MacBook Pro (machine identity checked). Work and evidence are in
 `../docs/plans/2026-09-14-stage-spatial-ableton.md`. Default-compatible richer Spatial Field,
 bounded timing instrumentation/driver, and local named MIDI/audio/macro bridge are implemented.
@@ -66,7 +66,8 @@ this older host; no sustained-120-Hz or hardware-latency claim. Before/after dat
 `../docs/reports/2026-09-14-stage-spatial-implementation.md`.
 Synthetic isolated-server proof: named Audio and macro input produce actual RGB, stale Audio
 and departure return it to zero, and bounded sender departure/reopen succeeds. Real Max/Live,
-physical devices/output, and hardware latency are NOT verified. No PR/release/deployment yet.
+physical devices/output, and hardware latency are NOT verified. Ordinary clean-checkout CI and
+merge status are recorded on PR #218; no release/deployment.
 
 **Latest user requirement, not an assumption:** Trent stopped verification because the generic
 Stage preview is the wrong look: clear acrylic drums with LED strips **inside**, not opaque
@@ -99,8 +100,9 @@ with a non-default isolated Vite URL; `scripts/preview-kit/README.md`. Not optic
 Old Stage captures are not approval of the new direction. Disk was ~1.4 GiB at inspection
 (~3.0 GiB at final checks); no installs/heavy renders. Task-owned browsers/servers are stopped.
 Final gate caught one test borrowing server `tsx`; moved its canonical-dimension assertion to
-existing web Vitest instead of hiding the dependency. Master hash remains unchanged. Next:
-task-scoped PR and clean-checkout ordinary CI. No release.
+existing web Vitest instead of hiding the dependency. Master hash remains unchanged. Delivery:
+PR #218. Remaining product validation is visual acceptance and separately authorized Live/desktop/
+hardware checks; local software verification is not that approval. No release.
 
 **Keyboard graph firing restored to authoring views (2026-09-11, branch
 `fix/keyboard-fire-in-authoring-views`):** Requested by Trent on Trent's MacBook Pro, sourced from
