@@ -12,7 +12,6 @@
     "default_fontname": "Arial",
     "openinpresentation": 1,
     "devicewidth": 1040,
-    "is_mpe": 1,
     "boxes": [
       {
         "box": {
@@ -2204,6 +2203,45 @@
         "implicit": 1
       }
     ],
-    "autosave": 0
+    "autosave": 0,
+    "latency": 0,
+    "is_mpe": 1,
+    "external_mpe_tuning_enabled": 0,
+    "minimum_live_version": "",
+    "minimum_max_version": "",
+    "platform_compatibility": 0,
+    "project": {
+      "version": 1,
+      "creationdate": 3872707200,
+      "modificationdate": 3872707200,
+      "viewrect": [
+        0,
+        0,
+        300,
+        500
+      ],
+      "autoorganize": 1,
+      "hideprojectwindow": 1,
+      "showdependencies": 1,
+      "autolocalize": 0,
+      "contents": {
+        "patchers": {}
+      },
+      "layout": {},
+      "searchpath": {},
+      "detailsvisible": 0,
+      "amxdtype": 1835887981,
+      "readonly": 0,
+      "devpathtype": 0,
+      "devpath": ".",
+      "sortmode": 0,
+      "viewmode": 0,
+      "includepackages": 0
+    },
+    "saved_attribute_attributes": {
+      "default_plcolor": {
+        "expression": ""
+      }
+    }
   }
 }

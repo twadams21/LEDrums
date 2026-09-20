@@ -2,8 +2,29 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { buildPatch, renderPatch, SCRIPT_FILES } = require('./generate.cjs');
+const { spawnSync } = require('node:child_process');
+const {
+  buildPatch, renderPatch, renderDevice, SCRIPT_FILES, DEVICE_FILES, PACK_FOLDER,
+  READ_ME, READ_ME_TEXT, BUILD_TAG, SOURCE_TAG, pack, packedNames,
+} = require('./generate.cjs');
+const { read } = require('./amxd.cjs');
+
+function scratch(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+// A throwaway copy of this folder, so --check staleness can be provoked without touching the repo.
+function sandbox() {
+  const dir = scratch('ledrums-amxd-');
+  for (const name of fs.readdirSync(__dirname)) {
+    if (fs.statSync(path.join(__dirname, name)).isFile()) fs.copyFileSync(path.join(__dirname, name), path.join(dir, name));
+  }
+  return dir;
+}
+const generator = (cwd, ...args) => spawnSync(process.execPath, [path.join(cwd, 'generate.cjs'), ...args], { cwd, encoding: 'utf8' });
 function inspect(kind) {
   const patch = buildPatch(kind).patcher;
   const boxes = new Map(patch.boxes.map(({ box }) => [box.id, box]));
@@ -131,8 +152,12 @@ test('stereo audio stays direct; independent crossover/RMS branches form one ord
 });
 
 test('every local runtime dependency is included in the dependency manifest, no npm installs', () => {
-  const dependencies = inspect('midi').patch.dependency_cache.map((entry) => entry.name);
-  assert.deepEqual(dependencies, SCRIPT_FILES);
+  for (const kind of ['midi', 'audio']) {
+    const dependencies = inspect(kind).patch.dependency_cache.map((entry) => entry.name);
+    assert.deepEqual(dependencies, SCRIPT_FILES, `${kind} dependency_cache`);
+    // The hand-off folder must carry exactly what both devices declare, and every file must exist.
+    for (const name of dependencies) assert.ok(fs.existsSync(path.join(__dirname, name)), name);
+  }
   for (const file of SCRIPT_FILES) {
     const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
     for (const match of source.matchAll(/require\('([^']+)'\)/g)) {
@@ -141,4 +166,105 @@ test('every local runtime dependency is included in the dependency manifest, no 
       else assert.ok(target.startsWith('node:') || target === 'max-api', `unexpected external ${target}`);
     }
   }
+});
+
+for (const kind of ['midi', 'audio']) {
+  test(`${kind} .amxd on disk is the deterministic container and carries the Live device fields`, () => {
+    const disk = fs.readFileSync(path.join(__dirname, DEVICE_FILES[kind]));
+    assert.ok(disk.equals(renderDevice(kind)), 'committed device bytes are stale');
+    const device = read(disk);
+    assert.equal(device.kind, kind);
+    assert.deepEqual(device.patcher, buildPatch(kind, { target: 'amxd' }));
+    assert.equal(device.json, renderPatch(kind, { target: 'amxd' }));
+
+    const patch = device.patcher.patcher;
+    assert.equal(patch.openinpresentation, 1);
+    assert.equal(patch.devicewidth, 1040);
+    assert.equal(patch.is_mpe, kind === 'midi' ? 1 : 0);
+    assert.equal(patch.external_mpe_tuning_enabled, 0);
+    assert.equal(patch.platform_compatibility, 0);
+    assert.equal(patch.latency, 0);
+    assert.equal(patch.minimum_live_version, '');
+    assert.equal(patch.minimum_max_version, '');
+    assert.deepEqual(patch.saved_attribute_attributes, { default_plcolor: { expression: '' } });
+    // amxdtype is the device fourcc read as a uint32; a real Max MIDI device stores 1835887981.
+    assert.equal(patch.project.amxdtype, Buffer.from(device.type, 'latin1').readUInt32BE(0));
+    assert.equal(patch.project.amxdtype, kind === 'midi' ? 1835887981 : 1633771873);
+    assert.deepEqual(patch.project.contents, { patchers: {} });
+    assert.equal(patch.project.devpath, '.');
+    assert.equal(patch.project.version, 1);
+    assert.equal(patch.project.creationdate, patch.project.modificationdate, 'fixed date, not a wall clock');
+    assert.ok(Number.isInteger(patch.project.creationdate));
+    assert.deepEqual(patch.dependency_cache.map((entry) => entry.name), SCRIPT_FILES);
+  });
+}
+
+test('the device label is the build tag; only the loose .maxpat keeps the source warning', () => {
+  const labelOf = (patch) => patch.patcher.boxes.find(({ box }) => box.id === 'source-only').box.text;
+  for (const kind of ['midi', 'audio']) {
+    assert.equal(labelOf(buildPatch(kind, { target: 'amxd' })), BUILD_TAG);
+    assert.equal(labelOf(buildPatch(kind)), SOURCE_TAG);
+    assert.doesNotMatch(read(fs.readFileSync(path.join(__dirname, DEVICE_FILES[kind]))).json, /not packaged or verified in Live/);
+  }
+});
+
+test('--check passes on the committed tree, generation repeats byte-identically, and staleness fails', () => {
+  const dir = sandbox();
+  assert.equal(generator(dir, '--check').status, 0, 'committed .maxpat/.amxd must already be current');
+  const digest = () => [...Object.values(DEVICE_FILES), 'ledrums-midi.maxpat', 'ledrums-audio.maxpat']
+    .map((name) => fs.readFileSync(path.join(dir, name)).toString('base64'));
+  const first = digest();
+  assert.equal(generator(dir).status, 0);
+  assert.deepEqual(digest(), first, 'two generator runs must produce identical bytes');
+
+  const stale = path.join(dir, DEVICE_FILES.midi);
+  const bytes = fs.readFileSync(stale);
+  fs.writeFileSync(stale, bytes.subarray(0, bytes.length - 1));
+  const failed = generator(dir, '--check');
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /Regenerate LEDrums MIDI\.amxd/);
+  assert.equal(generator(dir).status, 0, 'regenerating repairs it');
+  assert.equal(generator(dir, '--check').status, 0);
+});
+
+test('--pack writes exactly the hand-off set and refuses a folder that already holds anything', () => {
+  const dir = scratch('ledrums-pack-');
+  const folder = pack(dir);
+  assert.equal(folder, path.join(dir, PACK_FOLDER));
+  assert.deepEqual(fs.readdirSync(folder).sort(), packedNames());
+  assert.deepEqual(packedNames(), [...Object.values(DEVICE_FILES), ...SCRIPT_FILES, READ_ME].sort());
+  // No tests, CLI, generator or .maxpat may travel with the devices.
+  for (const name of fs.readdirSync(folder)) {
+    assert.doesNotMatch(name, /\.test\.cjs$|\.maxpat$|^generate\.cjs$|^synthetic-sender\.cjs$|^test-helpers\.cjs$|^amxd\.cjs$|^README\.md$/, name);
+  }
+  for (const kind of ['midi', 'audio']) {
+    const packed = fs.readFileSync(path.join(folder, DEVICE_FILES[kind]));
+    assert.ok(packed.equals(fs.readFileSync(path.join(__dirname, DEVICE_FILES[kind]))), `${kind} packed bytes differ from the committed device`);
+  }
+  for (const name of SCRIPT_FILES) {
+    assert.ok(fs.readFileSync(path.join(folder, name)).equals(fs.readFileSync(path.join(__dirname, name))), name);
+  }
+  const before = fs.readdirSync(folder).sort();
+  assert.throws(() => pack(dir), /--pack never deletes/);
+  assert.deepEqual(fs.readdirSync(folder).sort(), before, 'a refused pack must not delete or change anything');
+  assert.throws(() => pack(), /--pack needs a destination folder/);
+  // An empty pre-made folder is fine; only content is refused.
+  const second = scratch('ledrums-pack2-');
+  fs.mkdirSync(path.join(second, PACK_FOLDER));
+  assert.deepEqual(fs.readdirSync(pack(second)).sort(), packedNames());
+});
+
+test('READ ME FIRST stays short, numbered and truthful about the status strings it promises', () => {
+  const lines = READ_ME_TEXT.replace(/\n$/, '').split('\n');
+  assert.ok(lines.length <= 25, `READ ME FIRST is ${lines.length} lines`);
+  assert.equal(lines.filter((line) => /^\s*\d+\. /.test(line)).length, 10, 'ten numbered steps');
+  const runtime = fs.readFileSync(path.join(__dirname, 'device-runtime.cjs'), 'utf8');
+  for (const quoted of READ_ME_TEXT.matchAll(/"([^"]+)"/g)) {
+    const text = quoted[1];
+    if (text.startsWith('LEDrums MIDI') || text.startsWith('LEDrums Audio') || text.startsWith('LEDrums-Node')) continue;
+    assert.ok(runtime.includes(text), `READ ME FIRST promises a status the device never prints: ${text}`);
+  }
+  assert.match(READ_ME_TEXT, /FIRST TEST BUILD/);
+  assert.match(READ_ME_TEXT, /0\.3\.2/);
+  assert.match(READ_ME_TEXT, /Max for Live/);
 });

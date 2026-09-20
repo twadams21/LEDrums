@@ -3,16 +3,88 @@
 **Regenerate and run the pure checks before handing these sources to Max.**
 
 ```sh
-node integrations/ableton/generate.cjs
-node integrations/ableton/generate.cjs --check
+node integrations/ableton/generate.cjs                       # write the .maxpat and .amxd files
+node integrations/ableton/generate.cjs --check               # fail if any generated file is stale
+node integrations/ableton/generate.cjs --pack ~/Desktop      # hand-off folder for a tester
 node --test --test-concurrency=1 integrations/ableton/*.test.cjs
 ```
 
-**Status · 2026-09-14: Max for Live patch source — not yet packaged or verified in Live.**
-These commands only write/check JSON and test JavaScript with synthetic values and injected
-sockets. They do not open a UDP socket, launch any application, install anything, or access
-real audio/MIDI. No `.amxd` binary is provided. A structurally valid `.maxpat` is **not** evidence
-that Max instantiates it, Live loads it, or its stored parameters/audio behave correctly in-host.
+**Status · 2026-09-20: generated, unfrozen Max for Live devices — never opened in Max or Live.**
+`LEDrums MIDI.amxd` and `LEDrums Audio.amxd` are now real containers, not renamed JSON: the
+generator writes the `ampf`/`meta`/`ptch` device wrapper described below, and `--check` fails when
+the committed bytes drift from the generator. That is the only thing the change buys. These
+commands still only write/check bytes and test JavaScript with synthetic values and injected
+sockets. They do not open a UDP socket, launch any application, install anything, or access real
+audio/MIDI. **A structurally valid container is not evidence that Max instantiates the device, that
+Live loads it, or that its stored parameters/audio behave correctly in-host.** Nothing here has
+been load-tested; treat the first Live open as the experiment it is.
+
+## `.amxd` container format
+
+A `.amxd` is a flat sequence of chunks. Each chunk is a **4-byte ASCII tag**, a **little-endian
+`uint32` byte length**, and that many payload bytes. Lengths are bytes, never characters — the
+generated patches contain `—`, `·` and `≤`, which are 2–3 UTF-8 bytes each.
+
+| Tag | Length | Payload |
+| --- | --- | --- |
+| `ampf` | `4` | device type fourcc: `aaaa` audio effect, `mmmm` MIDI effect, `iiii` instrument |
+| `meta` | `4` | little-endian `uint32`; see the unknown below |
+| `ptch` | patcher byte size | patcher JSON as UTF-8, terminated with a single NUL byte |
+
+An unfrozen device stores the patcher JSON directly. A **frozen** device stores an `mx@c` block
+(patcher + `dlst` directory of bundled files) in the same `ptch` chunk, and an encrypted one adds a
+`ciph` chunk; `amxd.cjs` refuses both by name rather than mis-parsing them.
+
+Sources, cross-checked before relying on any of this:
+
+- [`Ableton/maxdevtools` · `maxdiff/amxd_textconv.py`](https://github.com/Ableton/maxdevtools/blob/main/maxdiff/amxd_textconv.py)
+  — Ableton's own reader, and the authority here: the chunk loop, the little-endian size, the
+  `ampf` size of 4, the device-type table (plus `nagg`/`natt` MIDI tools), the `mx@c` frozen test,
+  and the rule that a final NUL byte is stripped before the JSON is parsed.
+- [`ktamas77/js2max` · `src/amxd/writer.ts`](https://github.com/ktamas77/js2max/blob/main/src/amxd/writer.ts)
+  — same three chunks and fourcc table, written rather than read.
+- [`Provokke/tether-m4l` · `tools/amxd.mjs`](https://github.com/Provokke/tether-m4l/blob/main/tools/amxd.mjs)
+  — the same 32-byte `ampf`/`meta`/`ptch` header with an **unfrozen** JSON body.
+- [`shakfu/py2max` · `docs/notes/amxd.md`](https://github.com/shakfu/py2max/blob/master/docs/notes/amxd.md)
+  — derived byte-by-byte from two real Max-exported devices and verified by byte-for-byte re-pack:
+  "NUL-terminated UTF-8 patcher JSON", and the `project` block Max requires.
+
+**Unknown — the `meta` value.** Public writers disagree: `7` (js2max), `1`
+(tether-m4l, [audiocontrol-org/audiocontrol](https://github.com/audiocontrol-org/audiocontrol/blob/main/modules/live-max-cc-router/scripts/create-amxd-binary.cjs)),
+`0` ([pnomolos/live-wire](https://github.com/pnomolos/live-wire)). Ableton's own reader ignores the
+payload entirely, and py2max's byte-exact fixtures carry **no `meta` chunk at all**. We write `1`
+and accept any value, or a missing chunk, when reading. Only a real Live load can settle it.
+
+### Patcher fields a device carries beyond a plain `.maxpat`
+
+`buildPatch` adds `latency`, `is_mpe`, `external_mpe_tuning_enabled`, `minimum_live_version`,
+`minimum_max_version`, `platform_compatibility`, `saved_attribute_attributes.default_plcolor` and a
+`project` block, alongside the existing `openinpresentation` / `devicewidth`. The `project` block is
+the load-bearing one — py2max reports that Max refuses a device without it ("a project without a
+name is like a day without sunshine. fatal."). Its shape was confirmed field-for-field against a
+real Max 9 MIDI-effect device
+([`nathanturczan/Scale-Awareness-Bridge`](https://github.com/nathanturczan/Scale-Awareness-Bridge))
+and matches py2max and live-wire exactly. `project.amxdtype` is the device fourcc read as a
+`uint32`: that real MIDI device stores `1835887981` = `mmmm`; our audio device stores `1633771873` =
+`aaaa`. Byte order is unobservable because all four bytes of every fourcc are identical.
+`project.creationdate` / `modificationdate` are seconds since **1904-01-01 UTC** (classic Mac
+epoch); the generator pins them to a fixed authoring date so the output stays byte-deterministic.
+
+**Unknown:** the generated patchers carry no `appversion` block. Max stamps one into every file it
+writes; inventing a version number would be a claim about a Max we have never run.
+
+### Unfrozen devices depend on the files beside them
+
+These devices are **not frozen**. `node.script` resolves `max-bridge.cjs` and its CommonJS
+dependencies from the folder the `.amxd` sits in, so:
+
+- moving or copying an `.amxd` on its own **breaks the script link** until the seven `SCRIPT_FILES`
+  travel with it — which is what `--pack` exists for;
+- Max's **Collect All and Save** collects patcher dependencies, not this JS set, and does not make
+  the device self-contained;
+- only a freeze pass inside Max bundles the transitive CJS files into the `mx@c` block. Until that
+  pass, and until it is proved on a machine without this checkout, the devices are hand-off builds
+  for a known tester, not a distributable.
 
 The root `pnpm test` includes these Node tests. There is no new workspace dependency:
 `max-api` is supplied by Max's `node.script` host and is explicitly external in `knip.json`,
@@ -68,14 +140,16 @@ UDP, but the performance data is synthetic—not audio capture or a physical lat
 | Files | Responsibility |
 | --- | --- |
 | `generate.cjs`, `ledrums-midi.maxpat`, `ledrums-audio.maxpat` | Reproducible patch graphs, stored parameters and native Max controls. Change the generator, not generated JSON. |
+| `amxd.cjs`, `LEDrums MIDI.amxd`, `LEDrums Audio.amxd` | Pure container writer/reader and the generated unfrozen devices. Change the generator, not the binaries. The `.amxd` variant's header label is the build tag; the loose `.maxpat` keeps the source warning. |
 | `packets.cjs`, `session.cjs`, `midi.cjs`, `audio.cjs` | Exact bounded packet construction; injected-clock/send policy; byte-stream parser; stereo normalization/smoothing. No `max-api` or workspace dependencies. |
 | `udp.cjs`, `device-runtime.cjs`, `max-bridge.cjs` | Loopback socket owner; injectable Max control bridge; tiny `node.script` entrypoint. Only the entrypoint imports Max-provided `max-api`. |
 | `synthetic-sender.cjs`, `*.test.cjs`, `test-helpers.cjs` | Dev-only CLI and Node built-in tests with fake sockets/clocks/process/Max. Test helpers are not device runtime dependencies. |
 
 Every runtime `.cjs` file is listed in both patches' dependency caches, using relative filenames
-only. The later packaging step must still prove Max freezes **transitive `require()` dependencies**;
-a source manifest does not certify a frozen archive. Do not include the tests, CLI or generator in
-the device's runtime dependency set. The CJS runtime targets Node 18+; pure checks here ran on
+only, and `--pack` copies exactly that set beside the devices. The later packaging step must still
+prove Max freezes **transitive `require()` dependencies**; a source manifest does not certify a
+frozen archive. Do not include the tests, CLI, container writer or generator in the device's
+runtime dependency set — `--pack` refuses to ship them. The CJS runtime targets Node 18+; pure checks here ran on
 Node 25.8.2. Max's bundled Node version/extension loading must be confirmed during packaging.
 
 ## Source topology and controls
@@ -273,22 +347,31 @@ External `process.exit()`, SIGKILL and crashes cannot await cleanup—the `exit`
 only. The parent still owns actual isolated-server departure/reopen verification; these tests
 prove local lifetime/order only, not Live/Max or network behavior.
 
-## Later, human-authorized `.amxd` packaging — NOT performed here
+## Later, human-authorized packaging and load test — NOT performed here
 
 **Do not launch Live/Max now.** When separately authorized on a machine with Live Suite or
 Standard + the licensed Max for Live add-on:
 
-1. Create the matching **Max MIDI Effect** or **Max Audio Effect** template in Live. Edit it in
-   Max and transfer the corresponding generated patch's objects/connections/parameters; verify
-   the template's device type, presentation width and MIDI/MPE settings. Keep both direct
-   pass-through paths. Do not merely rename `.maxpat` to `.amxd`.
+1. Hand off with `node integrations/ableton/generate.cjs --pack <folder>`. It writes
+   `<folder>/LEDrums Ableton Devices/` holding exactly the two generated `.amxd` devices, the seven
+   `SCRIPT_FILES` runtime files and `READ ME FIRST.txt` — no tests, CLI, generator or `.maxpat`. It
+   creates and writes only; it refuses a folder that already holds anything and never deletes.
+   Drag `LEDrums MIDI` onto a MIDI track ahead of the instrument, `LEDrums Audio` onto an audio
+   track, and record what Max's Console actually says. If Max rejects the container or the patcher,
+   the generator is wrong and the fix belongs in `amxd.cjs` / `buildPatch` — **not** in a renamed
+   `.maxpat`, and not by hand-editing a binary. The fallback remains building the matching **Max
+   MIDI Effect** / **Max Audio Effect** template in Live and transferring the generated patch's
+   objects, connections and parameters into it; verify device type, presentation width, MIDI/MPE
+   settings and both direct pass-through paths either way.
 2. Keep all seven `SCRIPT_FILES` runtime files beside the working patch. Confirm `node.script`
    resolves `max-bridge.cjs`, CommonJS dependencies and Max-provided `max-api` using the bundled
    Node runtime. **No npm install is needed.** Verify each object's inlet/outlet and attribute
    semantics, RMS-size updates and the low-rate snapshot ordering inside Max.
-3. Save as a real `.amxd` using Max's device workflow; manage/freeze dependencies, explicitly
-   checking the transitive CJS files were included. Keep the distributable identity Blob **blank**.
-   Test a separate copy so the distributed template is not saved with the tester's identity.
+3. Re-save from Max's device workflow and **freeze**; manage dependencies, explicitly checking the
+   transitive CJS files were included. Generation here is unfrozen by design — a frozen device is
+   made in Max, not by this generator, and a frozen file must then be regenerated by hand whenever
+   the runtime changes. Keep the distributable identity Blob **blank**. Test a separate copy so the
+   distributed template is not saved with the tester's identity.
 4. On an authorized test setup, check load/save/reopen, presets/Undo, duplicate rejection + New
    identity, nested racks, node restart, naming/port persistence, automation, device bypass/removal,
    DSP stop/sample-rate changes, and server late startup/restart. Confirm channel/release/MPE
@@ -310,11 +393,19 @@ Primary documentation supporting the source/packaging distinction:
 
 ## Verification boundary
 
-Pure checks cover exact generated JSON, unique graph IDs and declared connection ranges, direct
+Pure checks cover exact generated JSON, exact container bytes (header per device kind, UTF-8 byte
+lengths, nothing past the declared payload, round trip, refusal of truncated/bad-magic/overrun/
+frozen/encrypted files), `--check` staleness, two-run byte determinism, the `--pack` contents and
+its refusal to touch a non-empty folder, unique graph IDs and declared connection ranges, direct
 musical topology, dependency closure, parameter storage/blank identity, byte parsing, normalized
 stereo math, packet fields/limits, monotonic ordering, collision quarantine, restored identity,
 bounded/coalesced publication, deferred local sends, missing send/close callbacks, bind-pending and
 reentrant disposal, signal/explicit-exit drain joins and CLI safety. They do **not** exercise
-Max's object parser, actual host parameter persistence, Max scheduling, loaded `.amxd` packaging,
-real sockets against LEDrums, real MIDI/audio/controllers, or any desktop app. The parent runs the
-real dev-server synthetic registration/render/expiry checks and captures serially.
+Max's object parser, actual host parameter persistence, Max scheduling, real sockets against
+LEDrums, real MIDI/audio/controllers, or any desktop app.
+
+**The devices have never been loaded.** Nothing in this repository proves Max accepts the
+container, that the `meta` value is right, that the `project` block is complete, that a missing
+`appversion` is tolerated, or that `node.script` resolves the runtime files beside an unfrozen
+device on Tim's machine. Those are open questions for the first real Live open, not claims. The
+parent runs the real dev-server synthetic registration/render/expiry checks and captures serially.
