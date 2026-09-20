@@ -32,6 +32,7 @@
   import Pencil from '@lucide/svelte/icons/pencil';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
   import Link2 from '@lucide/svelte/icons/link-2';
+  import Unlink2 from '@lucide/svelte/icons/unlink-2';
   import ListMinus from '@lucide/svelte/icons/list-minus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
 
@@ -79,6 +80,16 @@
     return [
       { label: canArrange ? 'Rename' : `Rename — ${blockedReason}`, icon: Pencil, disabled: !canArrange, onSelect: () => startRename(key) },
       { label: canArrange ? 'Duplicate into section' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => duplicateInto(key) },
+      // Same action + label as the Sections view's row menu; only a linked placement in one of
+      // this show's own songs can be split off (a library song's placements are canonical).
+      ...(store.activeSongIsLocal && placements(key) > 1
+        ? [{
+            label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`,
+            icon: Unlink2,
+            disabled: !canArrange,
+            onSelect: () => section && store.unlinkGraphPlacement(store.activeSongId, section.id, key),
+          }]
+        : []),
       {
         label: canArrange ? 'Remove from section' : `Remove — ${blockedReason}`,
         icon: ListMinus,

@@ -447,6 +447,7 @@ export class TriggerLab {
       this.sim.recallSection(look);
       this.snapshot();
     },
+    activeSectionChanged: () => this.followActiveSection(),
   } satisfies SectionsControllerHost);
 
   // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
@@ -591,7 +592,12 @@ export class TriggerLab {
       this.saveStatusCtl.saving();
       this.flushSave();
     },
-    setActiveSectionId: (id) => (this.activeSectionId = id),
+    setActiveSectionId: (id) => {
+      this.activeSectionId = id;
+      // Section ids are only unique within a song, so a song switch can land on an id equal to
+      // the outgoing one — which the change-only accessor hook would not see.
+      this.followActiveSection();
+    },
     reconcileActiveSection: () => this.sectionsCtl.reconcileActiveSection(),
     isViewer: () => this.isViewer,
     linkOpen: () => this.link === 'open',
@@ -1247,6 +1253,7 @@ export class TriggerLab {
     // so applyAuthored fills any absent field. loadShowLibrary never throws: a valid library wins;
     // else a legacy single blob migrates to one "Default Show"; else a fresh "Untitled Show" seeds.
     this.applyAuthored(this.showsCtl.hydrateFromStorage());
+    this.rehomeLoadedSelection();
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
     // restored, idempotent, authored graphs left unset.
@@ -1543,6 +1550,7 @@ export class TriggerLab {
     if (source === 'loaded') {
       this.resetAuthoredToSeed();
       this.applyAuthored($state.snapshot(show.authored));
+      this.rehomeLoadedSelection();
       this.normalizeGraphs();
     }
     this.galleryBlock = null;
@@ -1620,9 +1628,12 @@ export class TriggerLab {
     // Always assigned (even when absent) so switching from a scene-heavy show to a
     // scene-less show clears prior scenes — no cross-show bleed.
     this.canvasScenes = a.canvasScenes ?? [];
-    if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
     if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
+    // After the section pointers: re-pointing the section re-homes the open graph
+    // (followActiveSection), and the restored selection — which may be an unplaced Objects
+    // graph — must win over that.
+    if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
@@ -2502,6 +2513,31 @@ export class TriggerLab {
   }
 
   /**
+   * Keep the open graph inside the section on show. Runs whenever the active section is
+   * re-pointed (chip, arrows, recall, song switch, section add/paste/remove): a graph the new
+   * section also places stays open (a linked placement); otherwise the section's first graph
+   * opens, or nothing for an empty / absent section. Without this the Trigger view's rail lists
+   * the new section while the canvas still edits a graph from the old one.
+   */
+  private followActiveSection(): void {
+    const graphs = this.activeSection?.graphs ?? [];
+    if (this.selectedPadKey !== null && graphs.includes(this.selectedPadKey)) return;
+    this.selectedPadKey = graphs.find((key) => this.resolvedView.graphs[key]) ?? null;
+  }
+
+  /**
+   * A loaded document can carry an open graph its active section does not place — builds before
+   * {@link followActiveSection} let the two drift, and the drift was saved. Re-home it on load,
+   * but leave a deliberately open unplaced graph (an Objects entry in no section) alone. Undo
+   * does not run this: it restores the exact snapshot.
+   */
+  private rehomeLoadedSelection(): void {
+    const key = this.selectedPadKey;
+    if (key !== null && this.graphs[key] && setlist.graphPlacementCount(this.songs, key) === 0) return;
+    this.followActiveSection();
+  }
+
+  /**
    * Select a graph within a section: make that section active (above) and open the graph in
    * the canvas (highlighted via `selectedPadKey`). The Sections view and the Trigger view's
    * section list both call this for select → activate + open + highlight. No-op-safe if the
@@ -2951,11 +2987,23 @@ export class TriggerLab {
     targetSectionId: string,
     targetGraphKey: string,
   ): void {
+    const wasOpen = this.activeSectionId === targetSectionId && this.selectedPadKey === targetGraphKey;
     this.sectionsCtl.linkGraphPlacement(sourceSongId, sourceSectionId, sourceGraphKey, targetSongId, targetSectionId, targetGraphKey);
+    // The target placement now holds the source graph; if it was the one open, follow it rather
+    // than leaving the canvas on the replaced graph, which this section no longer places.
+    if (wasOpen && this.activeSection?.graphs.includes(sourceGraphKey)) this.selectedPadKey = sourceGraphKey;
   }
-  /** Make one linked placement an independent deep copy. */
+  /** Make one linked placement an independent deep copy. When that placement is the graph open
+      in the canvas, the canvas moves to the copy — the placement you were editing — rather than
+      staying on the shared original, which this section no longer places. */
   unlinkGraphPlacement(songId: string, sectionId: string, graphKey: string): void {
+    const section = this.songs.find((song) => song.id === songId)?.sections.find((s) => s.id === sectionId);
+    const index = section?.graphs.indexOf(graphKey) ?? -1;
+    const wasOpen = this.activeSectionId === sectionId && this.selectedPadKey === graphKey;
     this.sectionsCtl.unlinkGraphPlacement(songId, sectionId, graphKey);
+    if (!wasOpen || index < 0) return;
+    const copy = this.songs.find((song) => song.id === songId)?.sections.find((s) => s.id === sectionId)?.graphs[index];
+    if (copy && copy !== graphKey) this.selectedPadKey = copy;
   }
   /** Remove a graph reference from a section's flat list. */
   removeGraphFromSection(sectionId: string, graphKey: string): void {

@@ -109,6 +109,76 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
     expect(store.selectedPadKey).not.toBe('no-such-graph');
   });
 
+  it('changing section re-points the open graph at the new section (rail and canvas agree)', () => {
+    const store = new TriggerLab(fakeClient);
+    const [first, second] = store.activeSong!.sections;
+    store.selectGraphInSection(first!.id, first!.graphs[2]!);
+    store.setActiveSection(second!.id);
+    expect(store.selectedPadKey).toBe(second!.graphs[0]); // not the old section's graph
+    expect(second!.graphs).toContain(store.selectedPadKey);
+  });
+
+  it('keeps the open graph across a section change when the new section also places it (linked)', () => {
+    const store = new TriggerLab(fakeClient);
+    const [first, second] = store.activeSong!.sections;
+    const shared = first!.graphs[1]!;
+    store.addGraphToSection(second!.id, shared);
+    store.selectGraphInSection(first!.id, shared);
+    store.setActiveSection(second!.id);
+    expect(store.selectedPadKey).toBe(shared);
+  });
+
+  it('opens nothing when the new section is empty', () => {
+    const store = new TriggerLab(fakeClient);
+    store.addSongSection('Empty'); // activates the new, graph-less section
+    expect(store.activeSection!.graphs).toEqual([]);
+    expect(store.selectedPadKey).toBeNull();
+  });
+
+  it('follows every re-point path: arrow stepping and removing the active section', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    store.setActiveSection(sections[0]!.id);
+    expect(store.stepSetlist('section', 1)).toBe(true);
+    expect(store.activeSectionId).toBe(sections[1]!.id);
+    expect(sections[1]!.graphs).toContain(store.selectedPadKey);
+
+    store.removeSection(sections[1]!.id);
+    expect(store.activeSection!.graphs).toContain(store.selectedPadKey);
+  });
+
+  it('a graph opened outside any section survives until the section actually changes', () => {
+    const store = new TriggerLab(fakeClient);
+    const unplaced = store.createGraph('Unplaced'); // Objects-style: selected, in no section
+    expect(store.selectedPadKey).toBe(unplaced);
+    store.setActiveSection(store.activeSectionId!); // same section: not a change
+    expect(store.selectedPadKey).toBe(unplaced);
+  });
+
+  it('re-homes a saved open graph that the saved active section does not place', () => {
+    // Same real-autosave harness as the reload test below: a no-op RAF, stop() flushes.
+    const raf = globalThis.requestAnimationFrame;
+    const caf = globalThis.cancelAnimationFrame;
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
+    globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
+    try {
+      const first = new TriggerLab(fakeClient);
+      first.start();
+      const sections = first.activeSong!.sections;
+      // The drift older builds saved: section B active, a graph from section A open.
+      first.selectGraphInSection(sections[1]!.id, sections[1]!.graphs[0]!);
+      first.selectedPadKey = sections[0]!.graphs[2]!;
+      first.stop(); // flush authored → localStorage
+
+      const reloaded = new TriggerLab(fakeClient);
+      expect(reloaded.activeSectionId).toBe(sections[1]!.id);
+      expect(reloaded.activeSection!.graphs).toContain(reloaded.selectedPadKey);
+    } finally {
+      globalThis.requestAnimationFrame = raf;
+      globalThis.cancelAnimationFrame = caf;
+    }
+  });
+
   it('ignores an invalid section activation and keeps the current section', () => {
     const store = new TriggerLab(fakeClient);
     const current = store.activeSectionId;
@@ -418,6 +488,39 @@ describe('copy / paste section (clipboard)', () => {
     expect(store.undo()).toBe(true);
     expect(store.activeSong!.sections[1]!.graphs[0]).toBe(sourceKey);
     expect(store.graphs[sourceKey]).toBeDefined();
+  });
+
+  it('linking over the open placement moves the canvas to the linked graph', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const sourceKey = sections[0]!.graphs[0]!;
+    const targetKey = sections[1]!.graphs[0]!;
+    store.selectGraphInSection(sections[1]!.id, targetKey);
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKey);
+    expect(store.selectedPadKey).toBe(sourceKey); // not the replaced graph the section dropped
+  });
+
+  it('unlinking the open placement moves the canvas to the independent copy', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const sourceKey = sections[0]!.graphs[0]!;
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, sections[1]!.graphs[0]!);
+    store.selectGraphInSection(sections[1]!.id, sourceKey);
+    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
+
+    const independentKey = store.activeSong!.sections[1]!.graphs[0]!;
+    expect(independentKey).not.toBe(sourceKey);
+    expect(store.selectedPadKey).toBe(independentKey); // still editing this section's placement
+  });
+
+  it('unlinking a placement that is not open leaves the canvas alone', () => {
+    const store = new TriggerLab(fakeClient);
+    const sections = store.activeSong!.sections;
+    const sourceKey = sections[0]!.graphs[0]!;
+    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, sections[1]!.graphs[0]!);
+    store.selectGraphInSection(sections[0]!.id, sourceKey);
+    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
+    expect(store.selectedPadKey).toBe(sourceKey);
   });
 
   it('undoing a section duplicate removes its cloned graph closure too', () => {

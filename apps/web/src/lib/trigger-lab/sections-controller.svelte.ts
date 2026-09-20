@@ -69,14 +69,27 @@ export interface SectionsControllerHost {
   /** Re-morph the offline sim to a freshly-edited active-section look (sim.recallSection +
       snapshot) — the store owns the sim play surface. */
   recallSectionLook(look: Section): void;
+  /** The active section id just changed (any path). The store owns the open-graph selection, so
+      it re-points the canvas at a graph of the new section instead of leaving the old one open. */
+  activeSectionChanged(): void;
 }
 
 export class SectionsController {
   /** The ONE active section (U4 merged the old `activeSectionId` look-recall + `arrangeSectionId`
       arrange focus): the section you're playing IS the one you're editing. Drives hit-resolution
       (its graphs fire, in the store's play surface), the look-morph recall, and the
-      Sections / Trigger views' highlight. Defaults to the first fixture section. */
-  activeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
+      Sections / Trigger views' highlight. Defaults to the first fixture section. An accessor so
+      EVERY re-point (activate, step, recall, add/paste/remove section) tells the host, which keeps
+      the open graph inside the section on show — see {@link SectionsControllerHost.activeSectionChanged}. */
+  #activeSectionId = $state<string | null>(SECTIONS[0]?.id ?? null);
+  get activeSectionId(): string | null {
+    return this.#activeSectionId;
+  }
+  set activeSectionId(id: string | null) {
+    if (id === this.#activeSectionId) return;
+    this.#activeSectionId = id;
+    this.host.activeSectionChanged();
+  }
   /** Section copy/paste scratch — a deep copy of the last-copied section (id+name+graph list), or
       null when nothing is on the clipboard. Transient (NOT persisted): a fresh session starts with
       an empty clipboard. {@link pasteSection} clones this under a new id. */

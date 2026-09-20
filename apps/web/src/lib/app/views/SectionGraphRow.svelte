@@ -16,6 +16,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import X from '@lucide/svelte/icons/x';
   import Link2 from '@lucide/svelte/icons/link-2';
+  import Unlink2 from '@lucide/svelte/icons/unlink-2';
 
   let {
     store,
@@ -73,7 +74,7 @@
   const actions = $derived<ContextMenuAction[]>([
     { label: canArrange ? 'Duplicate' : `Duplicate — ${blockedReason}`, icon: CopyPlus, disabled: !canArrange, onSelect: () => store.copyGraphToSection(section.id, graphKey) },
     ...(localPlacement ? [{ label: store.canEdit ? 'Link to placement…' : 'Link — Another client is editing', icon: Link2, disabled: !store.canEdit, onSelect: () => onLink(song.id, section.id, graphKey) }] : []),
-    ...(localPlacement && reused ? [{ label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`, icon: Link2, disabled: !canArrange, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
+    ...(localPlacement && reused ? [{ label: canArrange ? 'Make independent' : `Make independent — ${blockedReason}`, icon: Unlink2, disabled: !canArrange, onSelect: () => store.unlinkGraphPlacement(song.id, section.id, graphKey) }] : []),
     { label: canArrange ? 'Remove from section' : `Remove from section — ${blockedReason}`, icon: X, disabled: !canArrange, onSelect: removeFromSection },
     { label: canArrange ? 'Delete graph' : `Delete graph — ${blockedReason}`, icon: Trash2, danger: true, disabled: !canArrange, onSelect: () => store.deleteGraph(graphKey) },
   ]);

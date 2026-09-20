@@ -185,6 +185,9 @@ export interface ShotSeam {
   previewGlobalControlLearn(which?: 'midi' | 'osc'): void;
   /** Seed a linked placement group for the Sections viewer shot. */
   previewLinkedPlacement(): void;
+  /** Activate a section of the active song by 1-based position or name (`section:2`) — the same
+      `setActiveSection` a Sections-bar chip fires, so a shot can prove what follows the switch. */
+  setSection(positionOrName: string): void;
   /** Leave one graph unplaced so the Add Graph drawer shows default Copy and explicit Link. */
   previewGraphPicker(): void;
   /** Switch the active song to a canonical library reference for the read-only shot. */
@@ -715,6 +718,14 @@ class ShotSeamImpl implements ShotSeam {
     this.shell.setView('sections');
   }
 
+  setSection(positionOrName: string): void {
+    const sections = this.store.activeSong?.sections ?? [];
+    const section = /^\d+$/.test(positionOrName)
+      ? sections[Number(positionOrName) - 1]
+      : sections.find((candidate) => candidate.name.toLowerCase() === positionOrName.toLowerCase());
+    if (section) this.store.setActiveSection(section.id);
+  }
+
   previewGraphPicker(): void {
     const section = this.store.activeSong?.sections[0];
     const key = section?.graphs.at(-1);
@@ -945,6 +956,9 @@ class ShotSeamImpl implements ShotSeam {
         break;
       case 'linked-placement':
         this.previewLinkedPlacement();
+        break;
+      case 'section':
+        if (arg) this.setSection(arg);
         break;
       case 'graph-picker':
         this.previewGraphPicker();

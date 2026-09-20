@@ -44,6 +44,7 @@ pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
 | op          | effect |
 | ----------- | ------ |
 | `view:<v>`  | switch workspace view (`perform` · `objects` · `sections` · `trigger` · `patch` · `monitor`) |
+| `section:<s>`| activate a section of the active song by 1-based position or name (`section:2`) — the same recall a Sections-bar chip fires |
 | `graph:<g>` | open a trigger graph by key / key-prefix (`snare`) / label; bare `graph` keeps the pre-selected pad |
 | `new-graph` | author a fresh empty graph and select it — a clean slate for `add`/`select` free of authored-graph id clashes |
 | `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |

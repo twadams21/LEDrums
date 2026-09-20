@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-14
+last_updated: 2026-09-20
 ---
 
 # Session Bootstrap
@@ -35,6 +35,29 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Open graph follows the active section + unlink in the Trigger rail (2026-09-20, branch
+`fix/graph-view-follows-section`):** Session on Trent's MacBook Pro (machine identity checked).
+Source: a bug report Trent pasted into this session — its author is not stated in the paste — whose
+scope Trent then confirmed ("through merge"). Two asks: (1) in the Trigger view, changing section
+left the canvas on a graph from the OLD section while the rail listed the new one; (2) the rail's
+card menu lacked the Sections view's unlink. Root cause of (1): `setActiveSection` (and every other
+re-point: arrows, server recall, song switch, section add/paste/remove) wrote `activeSectionId`
+without touching `selectedPadKey`; only `selectGraphInSection` set both. Fix: `SectionsController.
+activeSectionId` is now an accessor whose change tells the host, and the store's
+`followActiveSection()` keeps a graph the new section also places (linked), else opens the
+section's first graph, else nothing. Agent-chosen details, NOT user decisions: a song switch
+calls the follow explicitly (section ids are only unique per song); `applyAuthored` restores the
+selection AFTER the section pointers so undo keeps an exact snapshot; a document LOAD re-homes a
+saved mismatched selection (older builds persisted the drift) but leaves a deliberately open
+unplaced Objects graph alone; `linkGraphPlacement` / `unlinkGraphPlacement` move the canvas with
+the placement when it was the open one (found while capturing: linking over the open graph
+orphaned the canvas the same way). (2): "Make independent" (same label/handler as
+`SectionGraphRow`) on linked local placements, with `unlink-2` as the icon in both menus. New
+ui-shot state op `section:<n|name>`. Not changed: "Remove from section" on the open graph still
+leaves it on the canvas. Verified: targeted store tests (incl. a reload test proven to fail without
+the repair), typecheck, strict ui-shot captures, and a real-browser click of the menu item and a
+Sections-bar chip with a clean console. Merge/release status: see the PR.
 
 **Shared Stage serialization seam (2026-09-14):** agent-selected implementation
 supporting Trent's approved Blender-backed Stage on Trent’s MacBook Pro, not a separately
