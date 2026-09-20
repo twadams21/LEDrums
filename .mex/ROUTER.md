@@ -71,6 +71,27 @@ changed no core/default, store, visualizer or CAD code and ran no app/server, gi
 Consumer rules and focused checks: `patterns/stage-serialization.md`. Subsequent browser integration
 is recorded in the implementation report below; this is not a shipping claim.
 
+**Generated Ableton `.amxd` devices — built, NEVER loaded in Live (2026-09-20,
+[PR #221](https://github.com/twadams21/LEDrums/pull/221)):** Requested by **Trent** on Trent’s
+MacBook Pro (machine identity checked), sourced from this session: "Let's build the .amxds" — he
+wants a file Tim can drag onto a track. `integrations/ableton/generate.cjs` now also writes
+`LEDrums MIDI.amxd` / `LEDrums Audio.amxd` (unfrozen `ampf`/`meta`/`ptch` container, new pure
+`amxd.cjs` reader/writer, format cited from Ableton's own `maxdevtools` parser plus four other
+public implementations) and `--pack <dir>` builds Tim's hand-off folder (devices + seven runtime
+`.cjs` + `READ ME FIRST.txt`). 87 Node tests, `--check` byte-determinism, CI green. This machine
+has no Live or Max: **nothing has been opened in Max/Live.** Unknowns only a real load settles:
+the `meta` value (sources disagree: 0/1/7/absent; we write 1), the missing `appversion`, whether
+`node.script` finds the `.cjs` files beside an unfrozen device, and all in-host behaviour. That
+Tim's Live edition includes Max for Live is **assumed** by Trent, not confirmed. The server half
+is live in v0.3.2 (desktop shell sets `LEDRUMS_ENGINE=voice`, which enables the loopback bridge
+on 4322) — read from code, not observed on a packaged app. **Open direction, Trent's call:**
+Tim may run the show from Sensory Percussion 2 alone. Researched 2026-09-20: SP2 hosts no
+plugins and has no scripting API; it RECEIVES Program Change to switch sets (release notes
+2.1.8) and sends OSC (an undocumented, unstable "All" mode), with no documented kit-changed
+broadcast. Proposed, not decided: one external controller sending Program Change to both SP2 and
+LEDrums (LEDrums already recalls song *n* on PC *n*). An Ableton "Link" device (follow
+locators/scenes, surface Set structure) is designed in conversation only — not started.
+
 **Stage / Spatial / Ableton build — verified implementation (2026-09-14,
 [PR #218](https://github.com/twadams21/LEDrums/pull/218)):** Trent approved the four workstreams in
 this session on Trent’s MacBook Pro (machine identity checked). Work and evidence are in
