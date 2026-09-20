@@ -60,12 +60,16 @@ describe('TriggerLab hydration (restore on reload)', () => {
   });
 
   it('restores persisted scalar fields on construction', () => {
-    seed({ bpm: 97, velocity: 0.42, beatsPerBar: 3, selectedPadKey: 'kick:1' });
+    // A real graph the (default-active) intro section places, and not the seed's own default
+    // selection — a load re-homes a selection its active section does not place.
+    const open = 'graph:seed:intro:kick:3';
+    seed({ bpm: 97, velocity: 0.42, beatsPerBar: 3, selectedPadKey: open });
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(97);
     expect(store.velocity).toBeCloseTo(0.42);
     expect(store.beatsPerBar).toBe(3);
-    expect(store.selectedPadKey).toBe('kick:1');
+    expect(store.activeSection!.graphs).toContain(open);
+    expect(store.selectedPadKey).toBe(open);
   });
 
   it('restores an authored graph + its label, surfaced in graphLibrary', () => {
