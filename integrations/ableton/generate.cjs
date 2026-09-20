@@ -276,8 +276,8 @@ These have never been opened in Max or Live. Expect problems and tell Trent abou
  2. You need LEDrums 0.3.2 or newer running on the same Mac. Start LEDrums first.
  3. Keep this whole folder together and in one place. The devices read the .cjs files
     sitting next to them; moving a device on its own breaks it.
- 4. Drag "LEDrums MIDI" onto a MIDI track, and drop it ABOVE your instrument so the
-    instrument still gets the notes.
+ 4. Drag "LEDrums MIDI" onto a MIDI track. It must sit to the LEFT of the instrument in
+    the device strip (Live puts it there for you); the instrument still gets every note.
  5. Drag "LEDrums Audio" onto an audio track.
  6. In LEDrums, open Settings → Input → Track inputs. Each device should appear there.
  7. On the device, the status line should read "Connected to LEDrums". Before LEDrums is
@@ -288,8 +288,8 @@ These have never been opened in Max or Live. Expect problems and tell Trent abou
  9. Save the Live Set after any name, port or identity change.
 10. If it will not work, send Trent two things:
     • the exact words on the device status line, and
-    • every line starting with "LEDrums-Node" in the Max Console
-      (Live menu: View → Max Console).
+    • every line starting with "LEDrums-Node" in the Max window
+      (right-click the device's title bar → Open Max Window).
 `;
 
 function outputs() {
