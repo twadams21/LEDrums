@@ -329,14 +329,15 @@ export class ShowsController {
   // runes/history/runtime via the host's replaceDocument. Replacements reset connected playback;
   // ordinary authored edits continue through the debounced autosave path.
 
-  /** Create a blank show (seed content) and switch to it. Name defaults to the first unused "Untitled
-      Show [N]". The previous show's edits are flushed to its slot first. Returns the new id. */
-  newShow(name?: string): string {
+  /** Create a show and switch to it — from `authored` (a new-show template), else the seed
+      content. Name defaults to the first unused "Untitled Show [N]". The previous show's edits are
+      flushed to its slot first. Returns the new id. */
+  newShow(name?: string, authored: AuthoredState = seedAuthored()): string {
     if (this.host.isViewer()) return this.activeShowId; // read-only viewer (S2): authoring no-op
     this.flushActiveToLibrary();
     const id = this.freshShowId();
     const label = name?.trim() || showsLib.nextShowName(this.showLibrary);
-    const show = { id, name: label, authored: seedAuthored() };
+    const show = { id, name: label, authored };
     this.showLibrary = showsLib.withShow(this.showLibrary, show);
     this.activateDocument(show);
     return id;

@@ -68,6 +68,10 @@ export interface AuthoredState {
   /** User-authored canvas scene documents (U5). Additive + tolerated when absent so older
       blobs still load; travels in the show doc so `canvas:<sceneId>` resolves everywhere. */
   canvasScenes?: CanvasScene[];
+  /** Every new section (and a new song's first section) gets one empty graph per drum zone the
+      kit declares — set by the "From my trigger zones" new-show template, or in Settings › Drum
+      trigger zones. Tolerated when absent (off). */
+  autoZoneGraphs?: boolean;
 }
 
 /** Versioned envelope written to storage. */
@@ -133,6 +137,7 @@ export function coerceAuthored(data: unknown): Partial<AuthoredState> {
   if (isObject(data.paneSizes)) out.paneSizes = data.paneSizes as Record<string, number>;
   if (isObject(data.patchLabels)) out.patchLabels = data.patchLabels as Record<string, string>;
   if (Array.isArray(data.canvasScenes)) out.canvasScenes = data.canvasScenes as CanvasScene[];
+  if (typeof data.autoZoneGraphs === 'boolean') out.autoZoneGraphs = data.autoZoneGraphs;
 
   sanitizeAuthoredGraphReferences(out);
 

@@ -10,6 +10,7 @@
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
+  import NewShowDialog from './NewShowDialog.svelte';
   import ListMusic from '@lucide/svelte/icons/list-music';
   import FilePlus from '@lucide/svelte/icons/file-plus';
   import Save from '@lucide/svelte/icons/save';
@@ -19,6 +20,8 @@
 
   let { store, open, onClose }: { store: TriggerLab; open: boolean; onClose: () => void } = $props();
 
+  // New asks what the show starts with (blank or the kit's zones) before creating it.
+  let choosingNew = $state(false);
   // Save As… swaps its button for an inline name field in the action bar.
   let savingAs = $state(false);
   // Transient "Saved ✓" confirmation on the Save button.
@@ -31,6 +34,7 @@
   // each EditableRow, so they reset on unmount when the dialog closes.
   function dismiss(): void {
     savingAs = false;
+    choosingNew = false;
     saved = false;
     if (savedTimer) clearTimeout(savedTimer);
     onClose();
@@ -39,8 +43,7 @@
   // Navigation verbs (anything that changes which show is active) dismiss the browser so
   // you land back in the workspace on the chosen show. Save / Delete stay open.
   function createShow(): void {
-    store.newShow();
-    dismiss();
+    choosingNew = true;
   }
   function save(): void {
     store.saveShow();
@@ -110,6 +113,8 @@
     {/each}
   </ul>
 </Dialog>
+
+<NewShowDialog {store} open={open && choosingNew} onClose={() => (choosingNew = false)} onCreated={dismiss} />
 
 <style>
   :global(.dlg-shows) {

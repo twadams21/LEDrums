@@ -77,5 +77,6 @@ export function seedAuthored(): AuthoredState {
     beatsPerBar: 4,
     paneSizes: {},
     patchLabels: {},
+    autoZoneGraphs: false,
   };
 }

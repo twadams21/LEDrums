@@ -44,6 +44,8 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     drums: [{ id: 'stale', label: 'Stale Fixture' }],
     patchLabels: {},
     canEdit: true,
+    drumZones: [],
+    autoZoneGraphs: false,
     midiLearnTarget: null,
     oscLearnTarget: null,
     inputBadge: () => null,

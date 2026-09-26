@@ -46,7 +46,8 @@ Target resolution (bare string walks the chain; prefix forces a resolver):
 
 Options: --full (full page), --strict (exit 1 on any console/page error), --viewport WxH,
          --settle MS (extra wait before capture — for animated canvases: visualizer, patch, gallery),
-         --click TARGET / --rightclick TARGET (open it first, then capture — dialogs, context menus)
+         --click TARGET / --rightclick TARGET (open it first, then capture — dialogs, context menus;
+                 chain several with "A >> B")
 Output: .ui-shots/<name>.png (gitignored); --discover also writes .ui-shots/discover-<view>.html`);
 }
 
@@ -363,11 +364,9 @@ for (const shot of shots) {
     await applyState(page, shot.state);
     // Surfaces with no store state to summon them (a dialog behind a button, a right-click
     // menu) are opened the way a user opens them, then captured.
-    for (const [target, button] of [
-      [shot.click, 'left'],
-      [shot.rightclick, 'right'],
-    ]) {
-      if (!target) continue;
+    // `A >> B` chains clicks for a surface two gestures deep (Shows → New → the chooser).
+    const chain = (targets, button) => (targets ? targets.split(' >> ').map((target) => [target.trim(), button]) : []);
+    for (const [target, button] of [...chain(shot.click, 'left'), ...chain(shot.rightclick, 'right')]) {
       const hit = await resolveTarget(page, target);
       if (!hit) throw new Error(`${button}-click target not found: ${target}`);
       await hit.locator.click({ button });

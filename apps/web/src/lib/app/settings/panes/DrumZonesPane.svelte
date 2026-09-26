@@ -11,12 +11,23 @@
   import { patchLabel } from '../../docks/inspectors/forms';
   import { drumZoneId } from '../../patch-zones';
   import PaneHeader from '../PaneHeader.svelte';
+  import Toggle from '../../../ui/Toggle.svelte';
+  import { pushToast } from '../../../ui/toast.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
   /* Zone lists follow the AUTHORITATIVE kit (project.kit.drums) — same truth source as the
      sibling Drums & Hoops pane — falling back to the build-time fixture only offline. */
   const drums = $derived(store.project?.kit.drums ?? store.drums);
+
+  /** One-off: bring the show's existing sections up to the zone set new sections get. */
+  function fillExisting(): void {
+    const added = store.fillAllSectionsWithZoneGraphs();
+    pushToast(
+      added > 0 ? `Added ${added} zone ${added === 1 ? 'graph' : 'graphs'} to your sections.` : 'Every section already has a graph for each zone.',
+      { tone: added > 0 ? 'success' : 'info' },
+    );
+  }
 </script>
 
 <div class="pane-body">
@@ -26,6 +37,23 @@
     trigger graph on that drum. Each drum also carries one velocity sensitivity curve, shared
     by all of its zones.
   </p>
+  <!-- Per SHOW (it travels with the show, not the kit): new sections and songs start with one
+       empty graph per zone listed below, so the zones never have to be rebuilt by hand. -->
+  <div class="zonegraphs">
+    <div class="zg-text">
+      <span class="zg-title">A graph per zone in every new section</span>
+      <span class="zg-sub">This show. New sections and songs start with an empty graph for each zone below, ready to fill.</span>
+    </div>
+    <div class="zg-actions">
+      <Toggle
+        pressed={store.autoZoneGraphs}
+        disabled={!store.canEdit}
+        onChange={(on) => store.setAutoZoneGraphs(on)}
+        ariaLabel="A graph per zone in every new section"
+      />
+      <button type="button" disabled={!store.canEdit || store.drumZones.length === 0} onclick={fillExisting}>Add to existing sections</button>
+    </div>
+  </div>
   <fieldset class="drums" disabled={!store.canEdit}>
     {#each drums as drum (drum.id)}
       {@const label = patchLabel(store, drumZoneId(drum.id), drum.label || drum.id)}
@@ -44,6 +72,38 @@
     flex-direction: column;
     gap: var(--space-3);
     min-width: 0;
+  }
+  .zonegraphs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-2);
+  }
+  .zg-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 240px;
+    min-width: 0;
+  }
+  .zg-title {
+    font-size: var(--text-sm);
+    color: var(--ink);
+  }
+  .zg-sub {
+    font-size: var(--text-xs);
+    line-height: var(--leading-normal);
+    color: var(--text-muted);
+    text-wrap: pretty;
+  }
+  .zg-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
   }
   .zhint {
     margin: 0;

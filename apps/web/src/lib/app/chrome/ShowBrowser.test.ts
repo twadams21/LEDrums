@@ -15,6 +15,7 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     ],
     activeShowId: 'sh1',
     activeShow: { id: 'sh1', name: 'Show A' },
+    drumZones: [{ drumId: 'kick', slot: 0, title: 'Kick · center' }],
     newShow: vi.fn(),
     saveShow: vi.fn(),
     saveShowAs: vi.fn(),
@@ -33,12 +34,14 @@ describe('ShowBrowser', () => {
     expect(screen.getByText('Show B')).toBeTruthy();
   });
 
-  it('creates a new show and dismisses the browser', async () => {
+  it('New asks what the show starts with, then creates it and dismisses the browser', async () => {
     const store = mockStore();
     const onClose = vi.fn();
     render(ShowBrowser, { props: { store, open: true, onClose } });
     await fireEvent.click(await screen.findByText('New'));
-    expect(store.newShow).toHaveBeenCalledTimes(1);
+    expect(store.newShow).not.toHaveBeenCalled();
+    await fireEvent.click(await screen.findByText('Blank'));
+    expect(store.newShow).toHaveBeenCalledWith(undefined, 'blank');
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

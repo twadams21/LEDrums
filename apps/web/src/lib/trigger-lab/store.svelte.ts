@@ -155,6 +155,7 @@ import {
   type RemapResult,
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
+import { templateAuthored, zoneGraph, type ShowTemplate } from './store/templates';
 import { openTextFile, safeFileName, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
@@ -523,6 +524,9 @@ export class TriggerLab {
       Project — so it persists via the authored-state autosave, not over WS. Empty until a
       node is renamed. */
   patchLabels = $state<Record<string, string>>({});
+  /** This show gives every new section one empty graph per declared drum zone (see
+      {@link AuthoredState.autoZoneGraphs}). */
+  autoZoneGraphs = $state(false);
 
   // Shows / setlist / song-library state (showLibrary, activeShowId, songs, songRefs, activeSongId,
   // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link showsCtl} (R23, store split
@@ -709,8 +713,11 @@ export class TriggerLab {
   }
 
   // --- shows / setlist / song-library forwarders (R23) — thin, API-preserving ------------------
-  newShow(name?: string): string {
-    return this.showsCtl.newShow(name);
+  /** Create a show and switch to it. With a `template`, it starts blank (one empty section) or
+      from the kit's drum zones (a graph per zone, and every later new section gets its own set);
+      without one, from the demo seed. */
+  newShow(name?: string, template?: ShowTemplate): string {
+    return this.showsCtl.newShow(name, template ? templateAuthored(template, this.drumZones) : undefined);
   }
   openShow(id: string): void {
     this.showsCtl.openShow(id);
@@ -780,7 +787,13 @@ export class TriggerLab {
     return true;
   }
   createSong(name?: string): string {
-    return this.showsCtl.createSong(name);
+    const before = this.activeSongId;
+    const id = this.showsCtl.createSong(name);
+    // A zone show's new song starts with its zone graphs. Creating a song takes no undo checkpoint
+    // of its own, so the fill takes one: undo empties the new section rather than a prior edit.
+    const section = this.activeSectionId;
+    if (this.autoZoneGraphs && id !== before && section) this.fillZoneGraphs([{ songId: id, sectionId: section }]);
+    return id;
   }
   renameSong(id: string, name: string): void {
     this.showsCtl.renameSong(id, name);
@@ -1633,6 +1646,7 @@ export class TriggerLab {
       beatsPerBar: this.beatsPerBar,
       paneSizes: this.paneSizes,
       patchLabels: this.patchLabels,
+      autoZoneGraphs: this.autoZoneGraphs,
     };
   }
 
@@ -1672,6 +1686,8 @@ export class TriggerLab {
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
     if (a.paneSizes) this.paneSizes = a.paneSizes;
     if (a.patchLabels) this.patchLabels = a.patchLabels;
+    // Always assigned, like canvasScenes: a show that never set it must not inherit it on a swap.
+    this.autoZoneGraphs = a.autoZoneGraphs === true;
   }
 
   private pushUndoSnapshot(): void {
@@ -3102,35 +3118,60 @@ export class TriggerLab {
   }
 
   addMissingDrumZoneGraphs(sectionId: string): void {
-    if (!this.canEditActiveSong || !this.project) return;
-    const song = this.activeLocalSong;
-    const section = song?.sections.find((section) => section.id === sectionId);
-    if (!song || !section) return;
-    const missing = this.project.kit.drums.flatMap((drum) =>
-      zoneSlotsForDrum(this.project!.inputMap, drum.id).flatMap((slot) => {
-        const source: TriggerSource = { kind: 'drum', drumId: drum.id, zone: String(slot) };
-        return section.graphs.some((key) => sourceMatchesPad(this.triggerSource(key), drum.id, String(slot))) ? [] : [source];
-      }),
-    );
-    if (!missing.length) return;
+    if (!this.canEditActiveSong) return;
+    this.fillZoneGraphs([{ songId: this.activeSongId, sectionId }]);
+  }
+
+  /** Turn the show's "a graph per zone in every new section" on or off — one undo step. */
+  setAutoZoneGraphs(on: boolean): void {
+    if (this.isViewer || this.autoZoneGraphs === on) return;
     this.pushUndoSnapshot();
+    this.autoZoneGraphs = on;
+  }
+
+  /** Give every section of every song in this show the zone graphs it lacks — one undo step.
+      Returns how many graphs were added. */
+  fillAllSectionsWithZoneGraphs(): number {
+    return this.fillZoneGraphs(this.songs.flatMap((song) => song.sections.map((section) => ({ songId: song.id, sectionId: section.id }))));
+  }
+
+  /** Add an empty zone graph to each target section for every declared zone none of its graphs
+      fires from, as one undo checkpoint. Only this show's own songs are touched. */
+  private fillZoneGraphs(targets: ReadonlyArray<{ songId: string; sectionId: string }>): number {
+    if (this.isViewer) return 0;
+    const zones = this.drumZones;
+    if (zones.length === 0 || targets.length === 0) return 0;
+    const wanted = new Set(targets.map((t) => `${t.songId}\u0000${t.sectionId}`));
     const graphs = { ...this.graphs };
     const names = { ...this.graphNames };
-    const keys = [...section.graphs];
-    for (const source of missing) {
-      const key = freshId('graph', (candidate) => candidate in graphs);
-      const graph = graphsLib.buildEmptyGraph();
-      const trigger = graph.nodes.find((node) => node.kind === 'trigger');
-      if (trigger) trigger.source = source;
-      graphs[key] = graph;
-      names[key] = this.drumZoneGraphName(source) ?? 'New graph';
-      keys.push(key);
-    }
+    const sourceOf = (key: string): TriggerSource | undefined =>
+      graphs[key]?.nodes.find((node) => node.kind === 'trigger')?.source ?? this.triggerSource(key) ?? undefined;
+    let added = 0;
+    const songs = this.songs.map((song) => {
+      let changed = false;
+      const sections = song.sections.map((section) => {
+        if (!wanted.has(`${song.id}\u0000${section.id}`)) return section;
+        const missing = zones.filter((zone) => !section.graphs.some((key) => sourceMatchesPad(sourceOf(key), zone.drumId, String(zone.slot))));
+        if (missing.length === 0) return section;
+        const keys = [...section.graphs];
+        for (const zone of missing) {
+          const key = freshId('graph', (candidate) => candidate in graphs);
+          graphs[key] = zoneGraph(zone);
+          names[key] = zone.title;
+          keys.push(key);
+        }
+        added += missing.length;
+        changed = true;
+        return { ...section, graphs: keys };
+      });
+      return changed ? { ...song, sections } : song;
+    });
+    if (added === 0) return 0;
+    this.pushUndoSnapshot();
     this.graphs = graphs;
     this.graphNames = names;
-    this.songs = this.songs.map((candidate) => candidate.id === song.id
-      ? { ...candidate, sections: candidate.sections.map((item) => item.id === sectionId ? { ...item, graphs: keys } : item) }
-      : candidate);
+    this.songs = songs;
+    return added;
   }
 
   /** Clone a graph and place the clone in one local section as one undoable transaction. */
@@ -3201,7 +3242,12 @@ export class TriggerLab {
     this.sectionsCtl.setLook(sectionId, busId, effectId);
   }
   addSongSection(name: string): void {
+    const before = this.activeSectionId;
     this.sectionsCtl.addSongSection(name);
+    const added = this.activeSectionId;
+    if (!this.autoZoneGraphs || !added || added === before) return;
+    // Folds into the checkpoint the new section just took: one undo removes section AND graphs.
+    this.batchIntoCurrentUndo(() => this.fillZoneGraphs([{ songId: this.activeSongId, sectionId: added }]));
   }
   /** Rename a section of the active song (no-op-safe on an unknown id). */
   renameSection(sectionId: string, name: string): void {

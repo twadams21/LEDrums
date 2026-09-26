@@ -320,5 +320,19 @@
     "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger,splice-through",
     "target": "Inspector",
     "viewport": "1600x3000"
+  },
+  "new-show": {
+    "state": "configured-zones",
+    "click": "button:Shows >> button:New",
+    "target": "dialog:New show"
+  },
+  "settings-zone-graphs": {
+    "state": "configured-zones,settings:zones",
+    "target": "dialog:Settings"
+  },
+  "add-graph-zones": {
+    "state": "configured-zones,view:trigger",
+    "click": "button:Add graph",
+    "target": "dialog:Add graph"
   }
 }

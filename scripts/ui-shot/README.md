@@ -92,6 +92,12 @@ pnpm ui-shot --state "view:trigger" --rightclick ".gcard" --target ".lab-ctx-con
 Both take the same target syntax as `--target`, and both are also preset fields (`click`,
 `rightclick`). `--click` runs before `--rightclick` when both are given.
 
+A surface two gestures deep takes a chain, clicked left to right:
+
+```bash
+pnpm ui-shot --click "button:Shows >> button:New" --target "dialog:New show" --name new-show
+```
+
 ## Presets (`shots.json`)
 
 Presets are **for CI/sweep stability and locked baselines only** — not a registry you must feed for every new component. Each is a record:
