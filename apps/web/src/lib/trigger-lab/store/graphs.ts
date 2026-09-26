@@ -216,3 +216,44 @@ export function removeGraphEverywhere(
   );
   return { graphs: nextGraphs, graphNames: nextNames, songs: nextSongs };
 }
+
+// ---- exact duplicates ---------------------------------------------------------------------------
+// Duplicating songs, pasting and the old pad seeding each minted a fresh KEY for a graph without
+// changing a single node, so a show collects graphs that are the same graph under another key —
+// Tim's show had 40 of them (2026-09-27). "Duplicate" here means EXACTLY the same nodes and wires,
+// positions included: anything looser would call two graphs the same when an edit tells them apart.
+
+/** A string that is equal for two graphs exactly when their nodes and wires are. Object keys are
+    sorted so property order (which a clone or a reload can shuffle) never splits a pair. */
+export function graphContentKey(graph: TriggerGraph): string {
+  return JSON.stringify({ nodes: graph.nodes, edges: graph.edges }, (_key, value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : value,
+  );
+}
+
+/** Groups of two or more keys holding the same graph, each group in the map's key order. */
+export function duplicateGraphGroups(graphs: Record<string, TriggerGraph>): string[][] {
+  const byContent = new Map<string, string[]>();
+  for (const [key, graph] of Object.entries(graphs)) {
+    const content = graphContentKey(graph);
+    byContent.set(content, [...(byContent.get(content) ?? []), key]);
+  }
+  return [...byContent.values()].filter((keys) => keys.length > 1);
+}
+
+/**
+ * The duplicates that can go without losing anything: from each group of identical graphs, every
+ * copy that NO section uses. When no copy is used at all, the first one stays so the graph itself
+ * survives. A copy a section plays is never listed, even when two sections play two copies.
+ */
+export function redundantDuplicateKeys(graphs: Record<string, TriggerGraph>, placements: (key: string) => number): string[] {
+  const out: string[] = [];
+  for (const keys of duplicateGraphGroups(graphs)) {
+    const used = keys.filter((key) => placements(key) > 0);
+    const keep = new Set(used.length > 0 ? used : keys.slice(0, 1));
+    out.push(...keys.filter((key) => !keep.has(key)));
+  }
+  return out;
+}

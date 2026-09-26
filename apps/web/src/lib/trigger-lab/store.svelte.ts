@@ -3051,6 +3051,56 @@ export class TriggerLab {
     this.selectedPadKey = key;
     return key;
   }
+  /** Every drum zone the kit declares (Settings › Drum trigger zones), in kit order then slot
+      order, with the name a graph for it gets. The Add-graph list groups graphs under these, so a
+      zone with no graph yet still shows up — and can be given one. Empty offline (no input map). */
+  get drumZones(): Array<{ drumId: string; slot: number; title: string }> {
+    const map = this.project?.inputMap;
+    if (!map) return [];
+    return (this.project?.kit.drums ?? this.drums).flatMap((drum) =>
+      zoneSlotsForDrum(map, drum.id).map((slot) => ({
+        drumId: drum.id,
+        slot,
+        title: this.drumZoneGraphName({ kind: 'drum', drumId: drum.id, zone: String(slot) }) ?? `${drum.id} · ${slot}`,
+      })),
+    );
+  }
+
+  /** Create a graph that fires from one drum zone, named after it, and place it in a local
+      section — one undo step. Returns the new key, or null when the section can't be edited. */
+  createZoneGraphInSection(sectionId: string, drumId: string, slot: number): string | null {
+    const source: TriggerSource = { kind: 'drum', drumId, zone: String(slot) };
+    const key = this.createGraphInSection(sectionId, this.drumZoneGraphName(source) ?? undefined);
+    const trigger = key ? this.graphs[key]?.nodes.find((node) => node.kind === 'trigger') : undefined;
+    if (trigger) trigger.source = source; // inside createGraphInSection's undo step: no new snapshot
+    return key;
+  }
+
+  /** Keys of graphs that are an exact copy of another graph (same nodes and wires). Lazy: only
+      computed while something reads it (the Add-graph list). */
+  duplicateGraphKeys = $derived(new Set(graphsLib.duplicateGraphGroups(this.graphs).flat()));
+
+  /** The exact duplicates no section uses — what {@link removeDuplicateGraphs} deletes. */
+  get redundantDuplicateGraphs(): string[] {
+    return graphsLib.redundantDuplicateKeys(this.graphs, (key) => setlist.graphPlacementCount(this.songs, key));
+  }
+
+  /** Delete every exact duplicate graph that no section uses, keeping one copy of each graph
+      (see `redundantDuplicateKeys`) — one undo step. Returns how many went. */
+  removeDuplicateGraphs(): number {
+    if (this.isViewer) return 0;
+    const doomed = this.redundantDuplicateGraphs;
+    if (doomed.length === 0) return 0;
+    this.pushUndoSnapshot();
+    let next = { graphs: this.graphs, graphNames: this.graphNames, songs: this.songs as Song[] };
+    for (const key of doomed) next = graphsLib.removeGraphEverywhere(next.graphs, next.graphNames, next.songs, key);
+    this.graphs = next.graphs;
+    this.graphNames = next.graphNames;
+    this.songs = next.songs;
+    if (this.selectedPadKey && doomed.includes(this.selectedPadKey)) this.selectedPadKey = null;
+    return doomed.length;
+  }
+
   addMissingDrumZoneGraphs(sectionId: string): void {
     if (!this.canEditActiveSong || !this.project) return;
     const song = this.activeLocalSong;
