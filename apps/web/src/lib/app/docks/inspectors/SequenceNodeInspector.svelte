@@ -7,11 +7,11 @@
      node header (kind selector + remove) lives in the parent Inspector. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode, TriggerSource } from '../../../trigger-lab/sim';
-  import { describeTriggerSource, zoneLabel } from '../../trigger-source-label';
-  import Radio from '@lucide/svelte/icons/radio';
+  import { describeTriggerSource } from '../../trigger-source-label';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-  import { ZONE_LABELS } from '../../../trigger-lab/fixtures';
   import { SOURCE_OPTS } from '../../views/node-options';
+  import { zoneOptions } from '../patch-inspector';
+  import LearnButton from '../../../ui/LearnButton.svelte';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
   import Field from '../../../ui/Field.svelte';
@@ -33,19 +33,18 @@
     store.midiLearnTarget?.kind === 'sequence-reset' && store.midiLearnTarget.nodeId === node.id,
   );
 
-  const DRUM_OPTS = $derived(store.drums.map((d) => ({ value: d.id, label: d.label })));
+  /* The kit's drums and each drum's zones as declared in Settings › Drum trigger zones — the same
+     lists the Trigger node offers. These used to come from the build-time demo pads, so a drum
+     offered only the zones the demo kit had, different per drum, never the user's own. */
+  const drums = $derived(store.project?.kit.drums ?? store.drums);
+  const DRUM_OPTS = $derived(drums.map((d) => ({ value: d.id, label: d.label || d.id })));
+  const zoneOptsFor = (drumId: string) => zoneOptions(store.project?.inputMap, drumId);
 
-  /** Zone <Select> options for a drum — same shape as the trigger source editor's. */
-  function zoneOptsFor(drumId: string, current: string): Array<{ value: string; label: string }> {
-    const ids: string[] = [];
-    const add = (z: string): void => {
-      if (z && !ids.includes(z)) ids.push(z);
-    };
-    for (const p of store.pads) if (p.drumId === drumId) add(String(p.zone));
-    add(current);
-    ids.sort((a, b) => Number(a) - Number(b));
-    const list = ids.length ? ids : ZONE_LABELS.map((_, i) => String(i));
-    return list.map((z) => ({ value: z, label: zoneLabel(z) }));
+  /** Switch drum, keeping the zone when the new drum has it, else its first zone. */
+  function selectDrum(drumId: string, current: string): void {
+    const options = zoneOptsFor(drumId);
+    const zone = options.find((option) => option.value === current)?.value ?? options[0]?.value ?? '';
+    store.setSequenceResetSource(node, { kind: 'drum', drumId, zone });
   }
 
   /** Switch the reset binding to a new kind, carrying compatible fields and filling the same
@@ -57,8 +56,12 @@
       return;
     }
     let next: TriggerSource;
-    if (kind === 'drum') next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId: store.drums[0]?.id ?? '', zone: '0' };
-    else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: 60 };
+    if (kind === 'drum') {
+      const drumId = drums[0]?.id ?? '';
+      next = cur?.kind === 'drum' ? cur : { kind: 'drum', drumId, zone: zoneOptsFor(drumId)[0]?.value ?? '' };
+    }
+    // Start on a note nothing else uses: a zone's note would be refused and leave the reset off.
+    else if (kind === 'midi') next = cur?.kind === 'midi' ? cur : { kind: 'midi', note: store.freeResetNote(node) ?? 60 };
     else next = cur?.kind === 'osc' ? cur : { kind: 'osc', address: '' };
     store.setSequenceResetSource(node, next);
   }
@@ -80,18 +83,16 @@
     </Field>
 
     {#if src?.kind === 'drum'}
+      <!-- Dropdowns, not segments: four drums as segments ran off the dock's edge. -->
       <Field layout="row" label="Drum">
-        <Select
-          value={src.drumId}
-          options={DRUM_OPTS}
-          onChange={(v) => store.setSequenceResetSource(node, { kind: 'drum', drumId: v, zone: src.zone })}
-          ariaLabel="Reset drum"
-        />
+        <Select value={src.drumId} options={DRUM_OPTS} segment={false} onChange={(v) => selectDrum(v, src.zone)} ariaLabel="Reset drum" />
       </Field>
       <Field layout="row" label="Zone">
         <Select
           value={src.zone}
-          options={zoneOptsFor(src.drumId, src.zone)}
+          options={zoneOptsFor(src.drumId)}
+          segment={false}
+          placeholder="Select a configured zone"
           onChange={(v) => store.setSequenceResetSource(node, { kind: 'drum', drumId: src.drumId, zone: v })}
           ariaLabel="Reset zone"
         />
@@ -107,18 +108,11 @@
             ariaLabel="Reset MIDI note"
             onCommit={(v) => commitResetNote(v)}
           />
-          <button
-            type="button"
-            class="learn"
-            class:active={learning}
-            onclick={(e) => {
-              e.preventDefault();
-              learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'sequence-reset', nodeId: node.id });
-            }}
-          >
-            <Radio size={13} aria-hidden="true" />
-            {learning ? 'Listening' : 'Learn'}
-          </button>
+          <LearnButton
+            armed={learning}
+            ariaLabel="Learn reset MIDI note"
+            onclick={() => (learning ? store.cancelMidiLearn() : store.startMidiLearn({ kind: 'sequence-reset', nodeId: node.id }))}
+          />
         </div>
       </Field>
       {#if learning}
@@ -127,7 +121,7 @@
       {#if heard}
         <div class="heard"><InputActivityBadge {...heard} /></div>
       {/if}
-      <p class="hint">Channel filter is in Settings.</p>
+      <p class="hint">Any note no drum zone or trigger uses. Channel filter is in Settings.</p>
     {:else if src?.kind === 'osc'}
       <Field layout="row" label="Address" hint="e.g. /reset">
         <CommitInput
@@ -190,32 +184,6 @@
     gap: var(--space-2);
     align-items: center;
   }
-  .learn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    height: 29px;
-    padding: 0 var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-2);
-    background: var(--surface-inset);
-    color: var(--text-muted);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    white-space: nowrap;
-    transition:
-      color var(--dur-150) ease,
-      border-color var(--dur-150) ease;
-  }
-  .learn:hover,
-  .learn.active {
-    border-color: var(--accent);
-    color: var(--ink);
-  }
-  .learn:active {
-    scale: 0.96;
-  }
   /* Last-heard confirmation, tucked just under its field. */
   .heard {
     margin-top: calc(-1 * var(--space-1));
@@ -232,10 +200,5 @@
   .resethint :global(svg) {
     color: var(--accent);
     flex: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .learn {
-      transition: none;
-    }
   }
 </style>

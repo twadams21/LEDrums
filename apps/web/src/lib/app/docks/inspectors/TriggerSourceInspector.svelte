@@ -21,7 +21,7 @@
   import { isReservedCc, RESERVED_CC } from '../../recall';
   import Link2 from '@lucide/svelte/icons/link-2';
   import CopyPlus from '@lucide/svelte/icons/copy-plus';
-  import { zoneLabel, zoneSlotsForDrum } from '../patch-inspector';
+  import { zoneOptions } from '../patch-inspector';
   import { SOURCE_OPTS, MIDI_OPTS } from '../../views/node-options';
   import SegmentedControl from '../../../ui/SegmentedControl.svelte';
   import Select from '../../../ui/Select.svelte';
@@ -52,12 +52,7 @@
 
   const DRUM_OPTS = $derived((store.project?.kit.drums ?? store.drums).map((d) => ({ value: d.id, label: d.label })));
 
-  function zoneOptsFor(drumId: string): Array<{ value: string; label: string }> {
-    const map = store.project?.inputMap;
-    return map ? zoneSlotsForDrum(map, drumId).map((slot) => ({
-      value: String(slot), label: zoneLabel(map, drumId, slot),
-    })) : [];
-  }
+  const zoneOptsFor = (drumId: string) => zoneOptions(store.project?.inputMap, drumId);
 
   function selectDrum(drumId: string, current: string): void {
     if (!gkey) return;

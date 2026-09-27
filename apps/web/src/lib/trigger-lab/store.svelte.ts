@@ -4427,6 +4427,24 @@ export class TriggerLab {
       the node's OWN reset source (issue #159), independent of what fires its graph. Contained in
       the node: no cross-graph target exists, so song/section copies carry their binding verbatim
       and can never reset the original. Persists via the authored autosave like every node edit. */
+  /** The MIDI note a sequence reset can take without colliding with a drum zone, a trigger or a
+      global control: C4 (60) when free, else the nearest free note (above first). Picking MIDI
+      used to propose 60 unconditionally, and on a kit whose zones sit on 60+ the guard refused
+      it — the Note field never appeared, so no note could be chosen (Tim, 2026-09-27). Null when
+      every note is taken. */
+  freeResetNote(node: GraphNode): number | null {
+    const scope = this.bindingScope;
+    if (!scope) return 60;
+    const self: voice.BindingClaim = { group: 'sequence-reset', kind: 'reset', graphKey: this.graphKeyForNode(node.id) ?? '', nodeId: node.id };
+    const free = (note: number): boolean => voice.sourceBindingRejections(scope, { kind: 'midi', note }, self).length === 0;
+    for (let step = 0; step <= 127; step++) {
+      for (const note of step === 0 ? [60] : [60 + step, 60 - step]) {
+        if (note >= 0 && note <= 127 && free(note)) return note;
+      }
+    }
+    return null;
+  }
+
   setSequenceResetSource(node: GraphNode, source: TriggerSource | null): boolean {
     if (!this.canEditSelectedGraph) return false;
     if (node.kind !== 'sequence') return false;

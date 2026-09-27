@@ -270,6 +270,12 @@ export function zoneSlotsForDrum(map: InputMap, drumId: string): number[] {
   return [...slots].sort((a, b) => a - b);
 }
 
+/** A drum's zones as picker options (slot → its name in Settings), in slot order — what every
+    "Drum zone" source picker lists, so the trigger and the sequence reset can't disagree. */
+export function zoneOptions(map: InputMap | undefined, drumId: string): Array<{ value: string; label: string }> {
+  return map ? zoneSlotsForDrum(map, drumId).map((slot) => ({ value: String(slot), label: zoneLabel(map, drumId, slot) })) : [];
+}
+
 /** Declare a zone slot on a drum (immutably) — persists an added zone before it carries any MIDI/OSC
     binding. Idempotent: a slot already declared (or already bound, hence already a zone) is a no-op. */
 export function addDeclaredZone(map: InputMap, drumId: string, slot: number, label = ''): InputMap {
