@@ -156,6 +156,7 @@ import {
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
 import { templateAuthored, zoneGraph, type ShowTemplate } from './store/templates';
+import { moveToGap } from '../ui/order-list';
 import { openTextFile, safeFileName, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
@@ -4409,6 +4410,24 @@ export class TriggerLab {
     this.pushUndoSnapshot();
     node.splices = [...rows, rows.length ? { ...rows[rows.length - 1]! } : {}];
     node.spliceCount = node.splices.length;
+  }
+
+  /** Move one splice row — its colour, effect and mute together — into `gap` of the current rows
+      (0 = first, `count` = last), one undo step. Rows past the authored ones (showing a CYCLED
+      colour) are made real first, so the order on screen is exactly the order that plays. Tim,
+      2026-09-28: reordering used to mean re-dialling every colour by hand. */
+  moveSplice(node: GraphNode, from: number, gap: number): void {
+    if (!this.canEditSelectedGraph) return;
+    if (!voice.isSpliceLike(node.kind)) return;
+    const count = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT));
+    const authored = node.splices ?? [];
+    // Snapshot per row: a cycled row must become its OWN copy (params included), not an alias.
+    const rows = Array.from({ length: count }, (_, i): voice.SpliceDef => ($state.snapshot(voice.spliceDefAt(authored, i)) as voice.SpliceDef | undefined) ?? {});
+    const next = moveToGap(rows, from, gap);
+    if (!next) return;
+    this.pushUndoSnapshot();
+    node.splices = next;
+    node.spliceCount = count;
   }
 
   /** Remove a splice, keeping the band count in step. The last row cannot be removed — a splice

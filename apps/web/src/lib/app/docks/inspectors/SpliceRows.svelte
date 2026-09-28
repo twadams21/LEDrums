@@ -1,7 +1,14 @@
 <script lang="ts">
   /* The content rows, shared by the Splice and Slice inspectors: one row per splice or slice — a
      colour, an effect, or both (the colour then tints the effect), or neither (it stays blank).
-     Lifted verbatim from the Splice inspector; only the noun is a prop. */
+     Lifted verbatim from the Splice inspector; only the noun is a prop.
+
+     Rows reorder by their grip (Tim, 2026-09-28: re-ordering a set of colours used to mean
+     dialling every colour again): drag it to a new place, or focus it and press ↑ / ↓. A row
+     moves whole — colour, effect and mute — through one store action, one undo step. The drop
+     gap comes from the pointer against every row's midpoint (the Sections list's rule), so the
+     spaces BETWEEN rows are valid drop targets too. */
+  import { tick } from 'svelte';
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import type { GraphNode } from '../../../trigger-lab/sim';
   import Field from '../../../ui/Field.svelte';
@@ -12,6 +19,8 @@
   import Toggle from '../../../ui/Toggle.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import GripVertical from '@lucide/svelte/icons/grip-vertical';
+  import { gapIndexAt } from '../../views/sections-dnd';
   import { SPLICE_NO_EFFECT, describeSpliceRow, spliceEffectOptions, spliceRows } from '../../views/splice-options';
 
   let { store, node, noun = 'Splice' }: { store: TriggerLab; node: GraphNode; noun?: 'Splice' | 'Slice' } = $props();
@@ -21,6 +30,40 @@
   const tint = $derived(node.spliceTint ?? 1);
   const anyTinted = $derived(rows.some((r) => r.color && r.effectId && !r.muted));
   const effectName = (id: string) => store.effects.find((e) => e.id === id)?.name ?? id;
+  /** Private drag type: a splice row can't be dropped anywhere else, nor anything dropped here. */
+  const DRAG_TYPE = 'application/x-ledrums-splice';
+  let dragFrom = $state<number | null>(null);
+  let dropGap = $state<number | null>(null);
+  let list: HTMLUListElement | undefined = $state();
+
+  function gapAt(clientY: number): number {
+    const items = list?.querySelectorAll<HTMLElement>(':scope > li') ?? [];
+    return gapIndexAt(Array.from(items, (item) => item.getBoundingClientRect()), clientY);
+  }
+  function endDrag(): void {
+    dragFrom = null;
+    dropGap = null;
+  }
+  /** Move a row, then (keyboard) keep focus on its grip at the row's NEW place so ↑ / ↓ can be
+      pressed again without hunting for it — rows are keyed by position, so the old grip now
+      belongs to a different row. */
+  async function move(from: number, gap: number, refocus: boolean): Promise<void> {
+    store.moveSplice(node, from, gap);
+    if (!refocus) return;
+    await tick();
+    const landed = gap > from ? gap - 1 : gap;
+    list?.querySelector<HTMLButtonElement>(`button[data-grip="${landed}"]`)?.focus();
+  }
+  function onGripKey(event: KeyboardEvent, index: number): void {
+    if (event.key === 'ArrowUp' && index > 0) {
+      event.preventDefault();
+      void move(index, index - 1, true);
+    } else if (event.key === 'ArrowDown' && index < rows.length - 1) {
+      event.preventDefault();
+      void move(index, index + 2, true);
+    }
+  }
+
   const TINT_INFO = $derived(`How strongly a ${noun.toLowerCase()}'s colour recolours the effect inside it. A ${noun.toLowerCase()} with no colour is never tinted.`);
 </script>
 
@@ -36,10 +79,57 @@
     />
   </div>
 
-  <ul class="rows">
+  <ul
+    class="rows"
+    bind:this={list}
+    aria-label="{noun}s, in order"
+    ondragover={(e) => {
+      if (dragFrom === null) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      dropGap = gapAt(e.clientY);
+    }}
+    ondrop={(e) => {
+      e.preventDefault();
+      if (dragFrom !== null) void move(dragFrom, gapAt(e.clientY), false);
+      endDrag();
+    }}
+    ondragleave={(e) => {
+      if (!(e.relatedTarget instanceof Node && list?.contains(e.relatedTarget))) dropGap = null;
+    }}
+  >
     {#each rows as row (row.index)}
-      <li class="row" class:blank={row.blank}>
+      <li
+        class="row"
+        class:blank={row.blank}
+        class:dragging={dragFrom === row.index}
+        class:drop-before={dragFrom !== null && dropGap === row.index}
+        class:drop-after={dragFrom !== null && dropGap === rows.length && row.index === rows.length - 1}
+      >
         <div class="rowhead">
+          {#if rows.length > 1}
+            <button
+              type="button"
+              class="grip"
+              data-grip={row.index}
+              draggable="true"
+              aria-label="Move {noun.toLowerCase()} {row.index + 1} — drag, or press up and down"
+              title="Drag to reorder (or ↑ / ↓)"
+              onkeydown={(e) => onGripKey(e, row.index)}
+              ondragstart={(e) => {
+                dragFrom = row.index;
+                if (!e.dataTransfer) return;
+                e.dataTransfer.setData(DRAG_TYPE, String(row.index));
+                e.dataTransfer.effectAllowed = 'move';
+                // Carry the whole row, not the little grip, so it reads as "this row moves".
+                const item = (e.currentTarget as HTMLElement).closest('li');
+                if (item) e.dataTransfer.setDragImage(item, 16, 16);
+              }}
+              ondragend={endDrag}
+            >
+              <GripVertical size={14} aria-hidden="true" />
+            </button>
+          {/if}
           <span class="idx">{row.index + 1}</span>
           <span class="rowdesc">{describeSpliceRow(row, effectName)}</span>
           <span class="rowactions">
@@ -134,6 +224,7 @@
     list-style: none;
   }
   .row {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -146,6 +237,58 @@
   .row.blank .rowdesc {
     opacity: 0.6;
     font-style: italic;
+  }
+  /* The row being carried fades, so the accent bar reads as where it will land. */
+  .row.dragging {
+    opacity: 0.4;
+  }
+  /* Landing marker: an accent bar in the gap above (or, for the end, below) the target row. */
+  .row.drop-before::before,
+  .row.drop-after::after {
+    content: '';
+    position: absolute;
+    left: var(--space-1);
+    right: var(--space-1);
+    height: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+    pointer-events: none;
+  }
+  .row.drop-before::before {
+    top: calc(-1 * var(--space-1) - 1px);
+  }
+  .row.drop-after::after {
+    bottom: calc(-1 * var(--space-1) - 1px);
+  }
+  .grip {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 24px;
+    margin-left: calc(-1 * var(--space-1));
+    padding: 0;
+    color: var(--text-faint);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-1);
+    cursor: grab;
+    transition-property: color, background-color;
+    transition-duration: var(--dur-120);
+    transition-timing-function: ease;
+  }
+  .grip:hover {
+    color: var(--text);
+    background: var(--surface-2);
+  }
+  .grip:active {
+    cursor: grabbing;
+  }
+  .grip:focus-visible {
+    outline: none;
+    color: var(--text);
+    box-shadow: 0 0 0 2px var(--accent-soft);
   }
   .rowhead {
     display: flex;
