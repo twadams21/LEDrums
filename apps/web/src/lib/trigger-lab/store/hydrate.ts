@@ -24,6 +24,7 @@ import { voice, resolveEffectAlias, playTypeForEffect } from '@ledrums/core';
 import { EFFECTS, PRESETS, type Pad } from '../fixtures';
 import { freshId } from './ids';
 import { padKey, padLabel } from './seed';
+import { widenEmptyGraphs } from './graphs';
 
 /** Union built-in effects with persisted USER-CREATED ones. Hydration must never
     drop new built-ins: a user's blob saved before the 41 generator effects existed
@@ -499,6 +500,8 @@ export function normalizeGraphs(
   next = migrateGen3Graphs(next);
   next = splitModulationSources(next);
   next = sanitizeGraphsIntegrity(next);
+  // Empty graphs made before the wider default get it too (only the untouched pair moves).
+  next = widenEmptyGraphs(next);
   const names = hydratePadNames(next, graphNames, pads);
   return { graphs: next, graphNames: names, actions };
 }

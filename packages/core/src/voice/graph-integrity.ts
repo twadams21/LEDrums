@@ -157,7 +157,9 @@ export function normalizeTriggerGraphToGen3(graph: TriggerGraph): TriggerGraphIn
   const anchorSource = legacy ? legacyOutputs[0] : canonicalOutputs[0];
   const maxX = nodes.reduce((m, n) => Math.max(m, n.x), trigger.x);
   addNode({
-    ...anchorNode('output', Math.max(maxX + NODE_W + H_GAP, 420), anchorSource?.y ?? trigger.y),
+    // At least two slots right of the Trigger, so an Effect fits between them (matches the web
+    // app's empty-graph default).
+    ...anchorNode('output', Math.max(maxX + NODE_W + H_GAP, 2 * (NODE_W + H_GAP)), anchorSource?.y ?? trigger.y),
     id: OUTPUT_ANCHOR_ID,
   });
 

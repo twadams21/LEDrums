@@ -15,6 +15,30 @@ import { padKey, padLabel } from './seed';
     so the graph CRUD slice stays small and dependency-free. */
 export const OUTPUT_ANCHOR_ID = 'output';
 
+/** Where a new graph's Output sits: one full node slot (220 wide + a 90 gap either side) right of
+    the Trigger, so the first Effect dropped between them has room for its wires. It used to be
+    420 — less than a node's width of daylight — and an Effect squeezed in overlapped both
+    anchors (Tim, 2026-09-28). */
+export const EMPTY_GRAPH_OUTPUT_X = 620;
+/** The old spot, recognised by {@link widenEmptyGraphs}. */
+const OLD_EMPTY_GRAPH_OUTPUT_X = 420;
+
+/** Move the Output of every still-EMPTY graph from the old spot to the new one — only a graph that
+    is exactly the untouched trigger-at-origin + output-at-420 pair, so nothing anyone arranged by
+    hand moves. Returns the same map when there's nothing to do. */
+export function widenEmptyGraphs(graphs: Record<string, TriggerGraph>): Record<string, TriggerGraph> {
+  let out: Record<string, TriggerGraph> | null = null;
+  for (const [key, graph] of Object.entries(graphs)) {
+    if (graph.nodes.length !== 2) continue;
+    const trigger = graph.nodes.find((node) => node.kind === 'trigger');
+    const output = graph.nodes.find((node) => node.kind === 'output');
+    if (!trigger || !output || trigger.x !== 0 || trigger.y !== 0 || output.x !== OLD_EMPTY_GRAPH_OUTPUT_X || output.y !== 0) continue;
+    out ??= { ...graphs };
+    out[key] = { ...graph, nodes: graph.nodes.map((node) => (node === output ? { ...node, x: EMPTY_GRAPH_OUTPUT_X } : node)) };
+  }
+  return out ?? graphs;
+}
+
 /** A brand-new authored graph is Gen3 from birth: one explicit trigger source anchor and one
     visible Output terminal. Without this, createGraph() briefly produced an unversioned Gen2
     graph where leaf effects fired without reaching Output until the next hydrate pass. */
@@ -23,7 +47,7 @@ export function buildEmptyGraph(): TriggerGraph {
     version: 3,
     nodes: [
       makeNode('trigger', 'trigger', 0, 0),
-      makeNode('output', OUTPUT_ANCHOR_ID, 420, 0, { scope: 'kit', targetId: undefined }),
+      makeNode('output', OUTPUT_ANCHOR_ID, EMPTY_GRAPH_OUTPUT_X, 0, { scope: 'kit', targetId: undefined }),
     ],
     edges: [],
   };
