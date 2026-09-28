@@ -34,6 +34,17 @@ describe('performanceKeyTarget — DOM ownership adapter', () => {
     expect(performanceKeyTarget(child).isEditableTarget).toBe(true);
   });
 
+  it('does not treat a checkbox / range / button input as text entry — they keep no digits', () => {
+    for (const type of ['checkbox', 'radio', 'range', 'button']) {
+      const input = document.body.appendChild(document.createElement('input'));
+      input.type = type;
+      expect(performanceKeyTarget(input).isEditableTarget, type).toBe(false);
+    }
+    const number = document.body.appendChild(document.createElement('input'));
+    number.type = 'number';
+    expect(performanceKeyTarget(number).isEditableTarget).toBe(true);
+  });
+
   it('recognises the open Bits Select trigger and its portaled listbox', async () => {
     const { container } = render(Select, { props: { value: 'o0', options: OPTIONS, ariaLabel: 'Division' } });
     const trigger = container.querySelector('[data-keyboard-owner="select"]')!;

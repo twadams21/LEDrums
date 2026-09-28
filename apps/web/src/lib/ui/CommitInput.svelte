@@ -29,7 +29,7 @@
          ariaLabel="MIDI note" onCommit={(v) => onNum(v, apply)} /> */
   import { untrack } from 'svelte';
   import { resolveCommit, type CommitInputType } from './commit-input';
-  import { wheelStep } from './wheel-step';
+  import { wheelAdjusts, wheelStep } from './wheel-step';
 
   type Props = {
     value: string | number;
@@ -108,7 +108,8 @@
     } else onCancel?.();
   }
 
-  /* Wheel-adjust (number mode): one step per tick while the pointer is over the field.
+  /* Wheel-adjust (number mode): with ⌥ held, one step per tick while the pointer is over the
+     field (a plain scroll scrolls the panel — see `wheelAdjusts`).
      The draft moves on every tick but the COMMIT is debounced to the end of the gesture —
      each commit is a store mutation with an undo snapshot and a server write, and a ten-tick
      scroll must not be ten of those. Blur/unmount flush whatever is pending, so a scrolled
@@ -135,7 +136,7 @@
   }
 
   function onWheel(e: WheelEvent): void {
-    if (disabled || type !== 'number') return;
+    if (disabled || type !== 'number' || !wheelAdjusts(e)) return;
     const next = wheelStep({ value: draft, deltaY: e.deltaY, min, max, step });
     if (next === null) return;
     e.preventDefault();

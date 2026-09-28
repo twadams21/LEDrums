@@ -50,9 +50,12 @@ export function dispatchAppKeyboard({
   // platform editing chords inside a dialog or popover in the browser's native path.
   if (target.isEditableTarget) return;
 
-  // A marked control gets first refusal for the Perform keys that would otherwise be claimed by
-  // the app. This check must precede modal/popup suppression: a slider/select/segmented/radio/
-  // toggle may be portalled inside one of those surfaces and still needs its own arrow or digit.
+  // A marked control gets first refusal for the ARROWS the app would otherwise claim — a slider/
+  // select/segmented/radio/toggle moves by them. This check must precede modal/popup suppression:
+  // the control may be portalled inside one of those surfaces and still needs its arrows.
+  // Digits are NOT the control's: none of these uses one, and clicking a control leaves it
+  // focused, so yielding digits left the 1–9,0 graph bank dead until you clicked away
+  // (Tim, 2026-09-28). A digit falls through to the graph bank below.
   if (target.inKeyboardControl) {
     const performance = decidePerformanceKey({
       key: event.key,
@@ -68,7 +71,9 @@ export function dispatchAppKeyboard({
       inKeyboardControl: false,
       inFlowCanvas: target.inFlowCanvas,
     });
-    if (performance.claim) return;
+    // Inside a dialog or an open list nothing fires behind it, so there the control keeps the
+    // digit too, exactly as before.
+    if (performance.sectionStep !== undefined || (performance.claim && (modalOpen || target.inOpenPopup))) return;
   }
 
   const backgroundSurface = modalOpen || target.inOpenPopup || target.inKeyboardControl;
@@ -87,6 +92,15 @@ export function dispatchAppKeyboard({
       inKeyboardControl: false,
       inFlowCanvas: false,
     });
+    // A focused control on the workspace itself (no dialog, no open list over it) passes the
+    // graph digits through: they fire the graph and never reach the control. Delete and the
+    // registered chords stay suppressed below — Backspace on a focused slider must not delete
+    // the node it edits.
+    if (target.inKeyboardControl && !modalOpen && !target.inOpenPopup && performance.fireGraphIndex !== undefined) {
+      claimPerformanceKey(event, performance);
+      store.fireSectionGraph(performance.fireGraphIndex);
+      return;
+    }
     // Non-editable modal/popup chrome still owns the app shortcut boundary, before later
     // SectionsView/xyflow/window listeners can act on the hidden surface. A marked control only
     // bypasses this guard for its relevant Perform key; Backspace/Delete and registered chords

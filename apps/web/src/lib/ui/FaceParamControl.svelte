@@ -24,7 +24,7 @@
      `modulated` reflects the ColorSwatch precedent: a driven param still shows and edits its
      BASE value — the wire animates around it — with a badge so a static-looking number is
      never mistaken for the whole story. */
-  import { wheelStep } from './wheel-step';
+  import { wheelAdjusts, wheelStep } from './wheel-step';
   import { dragNumber, railValue, railFraction } from './drag-number';
   import Spline from '@lucide/svelte/icons/spline';
 
@@ -134,7 +134,8 @@
   }
 
   function onWheel(e: WheelEvent): void {
-    if (disabled) return;
+    // Plain scroll never edits a node-face param; ⌥-scroll does (see `wheelAdjusts`).
+    if (disabled || !wheelAdjusts(e)) return;
     const next = wheelStep({ value: numeric, deltaY: e.deltaY, min, max, step });
     if (next === null) return;
     e.preventDefault();

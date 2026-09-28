@@ -224,7 +224,9 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(laterWindow).not.toHaveBeenCalled();
   });
 
-  it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {
+  it('outside a modal, a focused control keeps its arrows but a digit fires the graph', () => {
+    // Clicking a slider / segmented / dropdown leaves it focused; the 1–9,0 bank must still work
+    // (Tim, 2026-09-28). None of those controls uses a digit.
     const { store } = fixture();
     const control = document.body.appendChild(document.createElement('button'));
     control.setAttribute('data-keyboard-owner', 'slider');
@@ -234,10 +236,18 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const arrow = key(control, 'ArrowRight');
     const digit = key(control, '1');
 
-    expect(received).toHaveBeenCalledTimes(2);
+    expect(received).toHaveBeenCalledTimes(1); // the arrow only
     expect(arrow.defaultPrevented).toBe(false);
-    expect(digit.defaultPrevented).toBe(false);
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(digit.defaultPrevented).toBe(true);
+    expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
+  });
+
+  it('outside a modal, Backspace on a focused control still never deletes the node', () => {
+    const { store } = fixture();
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'roving');
+    key(control, 'Backspace');
+    expect(store.removeNode).not.toHaveBeenCalled();
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits inside a modal and popup', () => {
