@@ -1,8 +1,13 @@
 import type { GeneratorDef } from './types';
 
-/** Meter Generator — Styles filled by effect-chains wave 2. */
+/** Meter Generator — level displays up the hoops, from a set level or built up by hits. */
 export const meterGenerator: GeneratorDef = {
   id: 'meter',
   label: 'Meter',
-  styles: [],
+  description: 'A level meter up the hoops, from a set level or built up by hits.',
+  icon: 'audio-lines',
+  styles: [
+    { id: 'eq', label: 'EQ', effectId: 'meter-eq' },
+    { id: 'swing', label: 'Swing', effectId: 'swing' },
+  ],
 };
