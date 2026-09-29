@@ -1,5 +1,7 @@
 /* Production offline adapter. The browser owns relative time, input tables, authored
- * section recall and delayed graph scheduling. Core owns graph evaluation, capped voice
+ * section recall and delayed graph scheduling. Effect-chain shows ({@link Sim.setEffectShow})
+ * are not evaluated here at all: they play through a private core `createVoiceBusEngine`
+ * instance, so offline Effect playback matches the server engine by construction. Core owns graph evaluation, capped voice
  * allocation/retirement, envelopes, splice motion and all float rendering. This is not a
  * second renderer: render.ts only quantizes this Sim's final frame for the preview.
  * Adjacent modules retain the authoring/tree compatibility exports used by the store. */
@@ -178,6 +180,24 @@ export type VoicePhase = 'attack' | 'sustain' | 'release';
 type PoolFields = 'active' | 'liveParams' | 'specs' | 'generatorId' | 'genState';
 export type Voice = Omit<voice.Voice, PoolFields> & Partial<Pick<voice.Voice, PoolFields>>;
 
+/** One offline input on the Effect path — the facets core `matchSectionEffects` reads. A drum
+    hit carries `drumId` / `zone`; a MIDI Cue `note`; an OSC Cue `address` (+ `value`). */
+export interface EffectHit {
+  drumId?: string;
+  zone?: string;
+  note?: number;
+  address?: string;
+  value?: number;
+  /** 0..1 hit velocity (drum / note). */
+  velocity?: number;
+}
+
+/** The song / section an Effect show recall names (a null song resolves against the active one). */
+export interface EffectSelection {
+  songId: string | null;
+  sectionId: string | null;
+}
+
 export interface LogEntry {
   t: number;
   pad: string;
@@ -300,6 +320,106 @@ export class Sim {
     this.model = model;
     this.prunePresentation();
     this.framebuffer = null;
+    if (model && this.effectEngine) this.effectEngine.setModel(model);
+  }
+
+  // ---- Effect path (effect chains) ------------------------------------------------------
+  // An Effect show plays through a PRIVATE core engine instance — the same class the server
+  // runs — rather than a second evaluator here. The Sim only owns the clock: it stamps inputs
+  // with its own `timeMs`, and `tick` advances the engine to that time, so an input sent
+  // between ticks lands on the next tick exactly as on the server (and as a graph hit's new
+  // voice first shows on the next tick). The graph path below is untouched.
+
+  private effectEngine: voice.RenderEngine | null = null;
+  private effectNames = new Map<string, string>();
+  private readonly effectFires = new Map<string, number>();
+
+  /** True while an Effect show is loaded: tick / render / inputs route to the core engine. */
+  get effectPath(): boolean {
+    return this.effectEngine !== null;
+  }
+
+  /**
+   * Load a runtime Show built from an Effect library (core `buildRuntimeShow`), or `null` to
+   * return to the graph path. Loading replaces live Effect voices (core `setShow` semantics),
+   * then recalls `selection` — or the engine's preserved / first song + section — so the
+   * section's Always Effects and Master chain keep playing across an edit.
+   */
+  setEffectShow(show: voice.Show | null, selection?: EffectSelection): void {
+    if (!show) {
+      this.effectEngine = null;
+      this.effectNames.clear();
+      this.effectFires.clear();
+      return;
+    }
+    if (!this.effectEngine) {
+      this.effectEngine = voice.createVoiceBusEngine({ onDiagnostic: (d) => this.onEffectDiagnostic(d) });
+      if (this.model) this.effectEngine.setModel(this.model);
+    }
+    this.effectNames.clear();
+    for (const song of show.songs ?? []) {
+      for (const section of song.sections) for (const e of section.effects ?? []) this.effectNames.set(e.id, e.name);
+    }
+    this.effectEngine.setShow(show);
+    const target = selection ?? this.toSelection(this.effectEngine.getActiveSelection());
+    this.sendEffect({ kind: 'recallSection', songId: target.songId, sectionId: target.sectionId });
+  }
+
+  /** The engine's active song / section (null ids before an Effect show is loaded). */
+  get effectSelection(): EffectSelection {
+    return this.toSelection(this.effectEngine?.getActiveSelection() ?? { activeSongId: null, activeSectionId: null });
+  }
+
+  /** Audition one Effect of the active section by id (keyboard audition, MIDI-map). */
+  fireEffect(effectId: string, velocity = 1): void {
+    this.sendEffect({ kind: 'fireEffect', effectId, velocity });
+  }
+
+  /** A drum hit / MIDI note / OSC message on the Effect path: fires every matching Effect. */
+  hitEffects(hit: EffectHit): void {
+    const kind = hit.address !== undefined ? 'osc' : hit.note !== undefined ? 'noteOn' : 'key';
+    this.sendEffect({ kind, ...hit });
+  }
+
+  /** A MIDI note-off on the Effect path: releases the `hold` Effects its note / zone fired.
+      Core releases holds only on a note-off, so the note is required. */
+  releaseEffects(hit: Pick<EffectHit, 'drumId' | 'zone'> & { note: number }): void {
+    this.sendEffect({ kind: 'noteOff', ...hit });
+  }
+
+  /** Sim time (ms) an Effect last spawned a voice (0 = never) — the fire-flash source. */
+  effectFiredAt(effectId: string): number {
+    return this.effectFires.get(effectId) ?? 0;
+  }
+
+  /** Live Effect-path voices for the Layers dock (allocates: call at telemetry cadence). */
+  effectVoiceStats(): voice.VoiceStat[] {
+    return this.effectEngine?.stats().voices ?? [];
+  }
+
+  private toSelection(s: { activeSongId: string | null; activeSectionId: string | null }): EffectSelection {
+    return { songId: s.activeSongId, sectionId: s.activeSectionId };
+  }
+
+  private sendEffect(ev: Omit<voice.InputEvent, 'timeMs'>): void {
+    this.effectEngine?.applyInput({ ...ev, timeMs: this.timeMs } as voice.InputEvent);
+  }
+
+  private onEffectDiagnostic(d: voice.VoiceDiagnostic): void {
+    if (d.kind === 'effect-fired') {
+      this.effectFires.set(d.effectId, this.timeMs);
+      this.pushLog(d.input, [`▶ ${this.effectNames.get(d.effectId) ?? d.effectId}  (${d.trigger})`], d.trigger);
+    } else if (d.kind === 'effect-skipped') {
+      this.pushLog(d.input, [`— skipped ${this.effectNames.get(d.effectId) ?? d.effectId} (${d.reason})`]);
+    } else if (d.kind === 'effect-missed') {
+      this.pushLog(d.input, ['— nothing (no Effect matches)']);
+    }
+  }
+
+  private pushLog(input: voice.VoiceInputDescriptor | null, resolved: string[], fallback = 'effect'): void {
+    const pad = input ? [input.drumId, input.zone].filter((x) => x !== undefined).join(':') || input.kind : fallback;
+    this.log.unshift({ t: this.timeMs, pad, resolved });
+    if (this.log.length > 60) this.log.length = 60;
   }
 
   /** Connected preview still ticks while skipping local paint. Ownership must follow
@@ -477,6 +597,7 @@ export class Sim {
     for (const v of this.voices) if (v.busId === busId) this.release(v);
   }
   stopAll(): void {
+    this.sendEffect({ kind: 'releaseBus' });
     for (const v of this.voices) this.release(v);
     this.clearPendingFires();
     this.mixMemberSnapshots.clear();
@@ -497,18 +618,23 @@ export class Sim {
     const v = voice.ccValue01(value);
     this.ccTable.set(voice.ccKey(controller, channel), v);
     this.ccTable.set(voice.ccKey(controller, null), v);
+    // Effect path: the engine keeps its own CC table and fires CC Cues on the rising edge.
+    this.sendEffect({ kind: 'cc', controller, value, ...(channel !== null ? { channel } : {}) });
   }
 
   /** Update the OSC table from a raw OSC value at `address` (clamped to 0..1), mirroring the
       core engine's `processEvent` OSC-table write so an `osc` modulation source previews live. */
   setOsc(address: string, value: number): void {
     this.oscTable.set(address, voice.oscValue01(value));
+    // Modulation only on the Effect path; an OSC Cue fires through `hitEffects({ address })`.
+    this.sendEffect({ kind: 'oscValue', address, value });
   }
 
   /** Replace the audio table with `frame` stamped at the sim clock — mirrors the core engine's
       `audioFeatures` drain, so offline preview and real output share one freshness rule. */
   setAudio(frame: voice.AudioFeatureFrame): void {
     this.audioTable = { frame: voice.normalizeAudioFrame(frame), atMs: this.timeMs };
+    this.sendEffect({ kind: 'audioFeatures', audio: frame });
   }
 
   setNote(note: number, velocity: number, channel: number | null, on: boolean): void {
@@ -566,6 +692,11 @@ export class Sim {
     voice.advanceLatchedSpliceMotion(this.pool.pool, this.spliceMotionMs, dtMs);
     this.activeVoices = this.pool.pool.filter((v) => v.active);
     this.prunePresentation();
+    if (this.effectEngine) {
+      const bar = Math.floor(this.beat / this.beatsPerBar);
+      this.effectEngine.tick(this.timeMs, dtMs, { timeMs: this.timeMs, beat: this.beat, bar,
+        beatInBar: this.beat - bar * this.beatsPerBar, bpm: this.bpm, beatsPerBar: this.beatsPerBar, playing: true });
+    }
   }
 
   /** 0..1 progress through a voice's life — drives param envelopes. */
@@ -583,6 +714,9 @@ export class Sim {
    * Newly spawned voices start at level zero and become visible on the next tick. */
   render(model: PixelModel): Readonly<Float32Array> {
     this.pixelModel = model;
+    // Effect path: the engine composited (voices + Master chain) at its last tick. A paused
+    // repaint returns that frame unchanged; it does not re-sample live input tables.
+    if (this.effectEngine) return this.effectEngine.frame();
     // These adapter inputs are public, so setter-only revision counters are insufficient.
     // Do not serialize voices/opaque render state: only small presentation input tables.
     const presentation = JSON.stringify([this.timeMs, this.beat, this.bpm, this.beatsPerBar,
@@ -623,8 +757,14 @@ export class Sim {
   }
 
   /** Recall a section as a timed morph — releases the old look loops and spawns
-      the new ones, riding the bus crossfade/voice-stealing (no hard cut). */
-  recallSection(section: Section): void {
+      the new ones, riding the bus crossfade/voice-stealing (no hard cut). On the Effect path
+      this is a core `recallSection` instead (Always Effects replace looks); `songId` names the
+      song, null resolving against the engine's active one. */
+  recallSection(section: Section, songId: string | null = null): void {
+    if (this.effectEngine) {
+      this.sendEffect({ kind: 'recallSection', songId, sectionId: section.id });
+      return;
+    }
     for (const bus of this.buses) {
       const effectId = section.looks[bus.id] ?? null;
       for (const v of this.voices) {

@@ -33,6 +33,9 @@
     section: 'a section',
     song: 'a song',
     patch: 'a patch',
+    effect: 'an Effect',
+    cell: 'a cell',
+    device: 'a device',
   };
 
   async function copy(): Promise<void> {

@@ -31,7 +31,7 @@
 import type { EffectDef, Preset, TriggerGraph, GraphNode } from './sim';
 import { makeSection, type SetlistSection, type Song } from '../app/setlist';
 import type { Project, CanvasScene } from '@ledrums/core';
-import { canvasEffectId, canvasSceneIdOf } from '@ledrums/core';
+import { canvasEffectId, canvasSceneIdOf, effectChain } from '@ledrums/core';
 import { extractSongClosure, songNamespace, type ClosureSources } from './store/song-library';
 import { migrateGraphHoopTargets, migrateGraphsHoopTargets } from './persistence';
 import { freshEffectId } from './store/objects';
@@ -49,7 +49,7 @@ export const CLIPDOC_VERSION = 2;
     targetIds in place (0-based → 1-based) rather than rejecting it as unsupported. */
 export const CLIPDOC_PRIOR_VERSION = 1;
 
-export type ClipDocKind = 'graph' | 'node' | 'section' | 'song' | 'patch';
+export type ClipDocKind = 'graph' | 'node' | 'section' | 'song' | 'patch' | 'effect' | 'cell' | 'device';
 
 /** Provenance stamped on export — advisory only (never gates parse/remap). */
 export interface ClipDocMeta {
@@ -169,7 +169,47 @@ export interface PatchClipDoc {
   meta: ClipDocMeta;
 }
 
-export type ClipDoc = GraphClipDoc | NodeClipDoc | SectionClipDoc | SongClipDoc | PatchClipDoc;
+/** One authored Effect (effect chains) and the canvas scenes its Generators play. */
+export interface EffectClipDoc {
+  app: typeof CLIPDOC_APP;
+  v: typeof CLIPDOC_VERSION;
+  kind: 'effect';
+  payload: { effect: effectChain.Effect };
+  deps: ClipDocDeps;
+  meta: ClipDocMeta;
+}
+
+/** A cell's whole stack, in stack order, and the scenes it plays. `cell` is where it was saved
+    from — advisory: a load places the stack into whichever cell the user picked. */
+export interface CellClipDoc {
+  app: typeof CLIPDOC_APP;
+  v: typeof CLIPDOC_VERSION;
+  kind: 'cell';
+  payload: { cell: effectChain.EffectCell; effects: effectChain.Effect[] };
+  deps: ClipDocDeps;
+  meta: ClipDocMeta;
+}
+
+/** A single device of an Effect chain. */
+export type EffectDevicePayload =
+  | { device: 'generator'; generator: effectChain.GeneratorDevice }
+  | { device: 'modifier'; modifier: effectChain.ModifierDevice }
+  | { device: 'control'; control: effectChain.ControlDevice };
+
+export interface DeviceClipDoc {
+  app: typeof CLIPDOC_APP;
+  v: typeof CLIPDOC_VERSION;
+  kind: 'device';
+  payload: EffectDevicePayload;
+  deps: ClipDocDeps;
+  meta: ClipDocMeta;
+}
+
+/** The effect-chain kinds: they carry only canvas scenes as deps and go through
+    {@link remapEffectsClipDoc}, not {@link remapClipDoc}. */
+export type EffectsClipDoc = EffectClipDoc | CellClipDoc | DeviceClipDoc;
+
+export type ClipDoc = GraphClipDoc | NodeClipDoc | SectionClipDoc | SongClipDoc | PatchClipDoc | EffectsClipDoc;
 /** The authored kinds that carry a dependency closure and go through {@link remapClipDoc}. */
 export type AuthoredClipDoc = GraphClipDoc | NodeClipDoc | SectionClipDoc | SongClipDoc;
 
@@ -380,6 +420,12 @@ function coerceKind(kind: unknown, payload: Record<string, unknown>, deps: unkno
       return coerceSongDoc(payload, deps, m);
     case 'patch':
       return coercePatchDoc(payload, m);
+    case 'effect':
+      return coerceEffectDoc(payload, deps, m);
+    case 'cell':
+      return coerceCellDoc(payload, deps, m);
+    case 'device':
+      return coerceDeviceDoc(payload, deps, m);
     default:
       return err('unknown-kind', `Unknown ClipDoc kind: ${String(kind)}.`);
   }
@@ -390,7 +436,8 @@ function coerceKind(kind: unknown, payload: Record<string, unknown>, deps: unkno
     nodes); a patch doc carries no trigger graphs. Reuses the persistence-layer graph walker so the
     show-schema and clipboard migrations can never drift. */
 function migrateClipDocHoopTargets(doc: ClipDoc): ClipDoc {
-  if (doc.kind === 'patch') return doc;
+  // Effect-chain kinds post-date v2 and carry 1-based hoop numbers by schema; nothing to shift.
+  if (doc.kind === 'patch' || isEffectsClipDoc(doc)) return doc;
   const deps: ClipDocDeps = doc.deps.graphs
     ? { ...doc.deps, graphs: migrateGraphsHoopTargets(doc.deps.graphs) }
     : doc.deps;
@@ -586,6 +633,7 @@ export interface RemapResult {
  */
 export function remapClipDoc(doc: ClipDoc, ctx: RemapContext): RemapResult | ClipParseError {
   if (doc.kind === 'patch') return err('unknown-kind', 'Patch ClipDocs are applied wholesale, not remapped.');
+  if (isEffectsClipDoc(doc)) return err('unknown-kind', 'Effect-chain ClipDocs are remapped by remapEffectsClipDoc.');
   const mint = ctx.mint ?? makeDefaultMint(ctx);
 
   const out: RemapResult = { kind: doc.kind, graphs: {}, graphNames: {}, effects: [], presets: [], canvasScenes: [] };
@@ -777,4 +825,193 @@ function contentEqual(a: unknown, b: unknown): boolean {
     return ak.every((k) => contentEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
   }
   return false;
+}
+
+// ---- effect-chain kinds (effect / cell / device) ------------------------------
+//
+// An Effect chain is self-contained: its only reusable dependency is the canvas scene a Scene
+// Generator plays (`params.sceneId`, also inside Splice / Slice slot Generators). So these kinds
+// carry just `deps.canvasScenes`, and their remap only reconciles scenes — the same reuse-or-mint
+// policy as the graph kinds. Effect ids and device uids are section-scoped, so minting them is
+// the placing caller's job (`effects-files.ts`), not this module's.
+
+/** True for the effect-chain ClipDoc kinds. */
+export function isEffectsClipDoc(doc: ClipDoc): doc is EffectsClipDoc {
+  return doc.kind === 'effect' || doc.kind === 'cell' || doc.kind === 'device';
+}
+
+const SCENE_PARAM = 'sceneId';
+
+/** Scene ids a Generator (and its Splice / Slice slot Generators) plays. */
+function generatorSceneRefs(generator: effectChain.GeneratorDevice, out: Set<string>): void {
+  const picked = generator.params[SCENE_PARAM];
+  if (generator.kind === 'scene' && typeof picked === 'string' && picked) out.add(picked);
+  for (const slot of generator.slots ?? []) if (slot.generator) generatorSceneRefs(slot.generator, out);
+}
+
+/** The authored scenes the given Generators play, deep-copied. A scene not in `scenes` (a
+    built-in, or a dangling ref) is not carried: a built-in exists in every show. */
+function scenesForGenerators(generators: readonly effectChain.GeneratorDevice[], scenes: readonly CanvasScene[] | undefined): CanvasScene[] {
+  const wanted = new Set<string>();
+  for (const generator of generators) generatorSceneRefs(generator, wanted);
+  if (wanted.size === 0) return [];
+  return (scenes ?? []).filter((scene) => wanted.has(scene.id)).map((scene) => structuredClone(scene));
+}
+
+/** What an effect-chain ClipDoc build reads from the show: its authored canvas scenes. */
+export interface EffectsClipSources {
+  canvasScenes?: readonly CanvasScene[];
+}
+
+/** Build an Effect ClipDoc: the Effect is the payload, the scenes it plays the deps. */
+export function buildEffectClipDoc(effect: effectChain.Effect, sources: EffectsClipSources, over?: Partial<ClipDocMeta>): EffectClipDoc {
+  const payload = { effect: structuredClone(effect) };
+  return {
+    app: CLIPDOC_APP,
+    v: CLIPDOC_VERSION,
+    kind: 'effect',
+    payload,
+    deps: { canvasScenes: scenesForGenerators([payload.effect.generator], sources.canvasScenes) },
+    meta: meta(over),
+  };
+}
+
+/** Build a cell ClipDoc from a cell's stack (in stack order). */
+export function buildCellClipDoc(
+  cell: effectChain.EffectCell,
+  effects: readonly effectChain.Effect[],
+  sources: EffectsClipSources,
+  over?: Partial<ClipDocMeta>,
+): CellClipDoc {
+  const payload = { cell: structuredClone(cell), effects: effects.map((effect) => structuredClone(effect)) };
+  return {
+    app: CLIPDOC_APP,
+    v: CLIPDOC_VERSION,
+    kind: 'cell',
+    payload,
+    deps: { canvasScenes: scenesForGenerators(payload.effects.map((effect) => effect.generator), sources.canvasScenes) },
+    meta: meta(over),
+  };
+}
+
+/** Build a device ClipDoc. A control's mappings name devices of the Effect it came from; they
+    travel as-is and the loading side keeps only the ones that still resolve. */
+export function buildDeviceClipDoc(device: EffectDevicePayload, sources: EffectsClipSources, over?: Partial<ClipDocMeta>): DeviceClipDoc {
+  const payload = structuredClone(device);
+  const generators = payload.device === 'generator' ? [payload.generator] : [];
+  return {
+    app: CLIPDOC_APP,
+    v: CLIPDOC_VERSION,
+    kind: 'device',
+    payload,
+    deps: { canvasScenes: scenesForGenerators(generators, sources.canvasScenes) },
+    meta: meta(over),
+  };
+}
+
+/** Only the scenes survive as deps of an effect-chain doc; graph-model deps are meaningless here. */
+function coerceSceneDeps(raw: unknown): ClipDocDeps {
+  const scenes = coerceDeps(raw).canvasScenes;
+  if (!scenes) return {};
+  return { canvasScenes: scenes.filter((scene) => isObject(scene) && typeof scene.id === 'string' && scene.id !== '') };
+}
+
+function coerceEffectDoc(payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): EffectClipDoc | ClipParseError {
+  const parsed = effectChain.effectSchema.safeParse(payload.effect);
+  if (!parsed.success) return err('malformed', 'Effect payload malformed.');
+  return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'effect', payload: { effect: parsed.data }, deps: coerceSceneDeps(deps), meta: m };
+}
+
+/** A cell doc keeps every Effect that validates on its own (like the library builder: one bad
+    Effect never sinks the rest). A stack with Effects but none valid is malformed. */
+function coerceCellDoc(payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): CellClipDoc | ClipParseError {
+  const cell = effectChain.effectCellSchema.safeParse(payload.cell);
+  if (!cell.success || !Array.isArray(payload.effects)) return err('malformed', 'Cell payload malformed.');
+  const effects: effectChain.Effect[] = [];
+  for (const raw of payload.effects) {
+    const parsed = effectChain.effectSchema.safeParse(raw);
+    if (parsed.success) effects.push(parsed.data);
+  }
+  if (payload.effects.length > 0 && effects.length === 0) return err('malformed', 'Cell payload holds no readable Effect.');
+  return { app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'cell', payload: { cell: cell.data, effects }, deps: coerceSceneDeps(deps), meta: m };
+}
+
+function coerceDeviceDoc(payload: Record<string, unknown>, deps: unknown, m: ClipDocMeta): DeviceClipDoc | ClipParseError {
+  const doc = (device: EffectDevicePayload): DeviceClipDoc => ({ app: CLIPDOC_APP, v: CLIPDOC_VERSION, kind: 'device', payload: device, deps: coerceSceneDeps(deps), meta: m });
+  switch (payload.device) {
+    case 'generator': {
+      const parsed = effectChain.generatorDeviceSchema.safeParse(payload.generator);
+      return parsed.success ? doc({ device: 'generator', generator: parsed.data }) : err('malformed', 'Generator payload malformed.');
+    }
+    case 'modifier': {
+      const parsed = effectChain.modifierDeviceSchema.safeParse(payload.modifier);
+      return parsed.success ? doc({ device: 'modifier', modifier: parsed.data }) : err('malformed', 'Modifier payload malformed.');
+    }
+    case 'control': {
+      const parsed = effectChain.controlDeviceSchema.safeParse(payload.control);
+      return parsed.success ? doc({ device: 'control', control: parsed.data }) : err('malformed', 'Control payload malformed.');
+    }
+    default:
+      return err('malformed', `Unknown device: ${String(payload.device)}.`);
+  }
+}
+
+/** The local show state an effect-chain load reconciles its scenes against. */
+export interface EffectsRemapContext {
+  canvasScenes?: readonly CanvasScene[];
+  /** Fresh scene-id minter; defaults to the reservation-safe {@link makeDefaultMint} one. */
+  mintScene?: () => string;
+}
+
+export interface EffectsRemapResult<D extends EffectsClipDoc = EffectsClipDoc> {
+  /** The doc with every scene ref rewritten to its local id. */
+  doc: D;
+  /** Fresh (non-reused) scenes to add to the show. */
+  canvasScenes: CanvasScene[];
+}
+
+/**
+ * Reconcile an effect-chain doc's scenes with the local show: a carried scene whose content
+ * matches a local one reuses its id (so A→B→A and double loads add no duplicate), otherwise it
+ * gets a fresh id. Every Scene Generator in the payload (incl. slot Generators) is rewritten
+ * through that map; a ref to a scene the doc did not carry (a built-in) stays verbatim.
+ */
+export function remapEffectsClipDoc<D extends EffectsClipDoc>(doc: D, ctx: EffectsRemapContext): EffectsRemapResult<D> {
+  const local = ctx.canvasScenes ?? [];
+  const mintScene = ctx.mintScene ?? makeDefaultMint({ graphs: {}, effects: [], presets: [], canvasScenes: local }).scene;
+  const sceneMap = new Map<string, string>();
+  const canvasScenes: CanvasScene[] = [];
+  for (const scene of doc.deps.canvasScenes ?? []) {
+    if (sceneMap.has(scene.id)) continue;
+    const reuse = local.find((l) => contentEqual(withId(l, ''), withId(scene, '')));
+    if (reuse) {
+      sceneMap.set(scene.id, reuse.id);
+      continue;
+    }
+    const id = mintScene();
+    sceneMap.set(scene.id, id);
+    canvasScenes.push({ ...structuredClone(scene), id });
+  }
+  const remapGenerator = (generator: effectChain.GeneratorDevice): effectChain.GeneratorDevice => {
+    const next: effectChain.GeneratorDevice = { ...structuredClone(generator) };
+    const picked = generator.params[SCENE_PARAM];
+    if (generator.kind === 'scene' && typeof picked === 'string') {
+      const local = sceneMap.get(picked);
+      if (local) next.params[SCENE_PARAM] = local;
+    }
+    if (generator.slots) next.slots = generator.slots.map((slot) => (slot.generator ? { ...slot, generator: remapGenerator(slot.generator) } : { ...slot }));
+    return next;
+  };
+  const remapEffect = (effect: effectChain.Effect): effectChain.Effect => ({ ...structuredClone(effect), generator: remapGenerator(effect.generator) });
+
+  let out: EffectsClipDoc;
+  if (doc.kind === 'effect') out = { ...doc, payload: { effect: remapEffect(doc.payload.effect) } };
+  else if (doc.kind === 'cell') out = { ...doc, payload: { cell: { ...doc.payload.cell }, effects: doc.payload.effects.map(remapEffect) } };
+  else {
+    const payload: EffectDevicePayload = doc.payload.device === 'generator'
+      ? { device: 'generator', generator: remapGenerator(doc.payload.generator) }
+      : structuredClone(doc.payload);
+    out = { ...doc, payload };
+  }
+  return { doc: out as D, canvasScenes };
 }
