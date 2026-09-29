@@ -256,46 +256,72 @@ const WAVE_DEF: EffectDef = { ...chainEffectDef('chase-bands')!, id: 'wave-fx', 
 /**
  * Compare an Effect render against its graph oracle when one slot hosts a nested Wave.
  *
- * Pixels outside the Wave's band must be identical at every sample. Inside it the ONE
- * documented delta applies: on the Effect path the amp envelope owns the level (S01 — the
- * resolver always emits a life curve, which the compositor hands to every splice member), so
- * a nested generator's own natural decay is off, while the graph member still decays by
- * itself. So the Wave band is never dimmer on the Effect path, and it is identical until the
- * nested generator has decayed visibly.
+ * `waveBandLit` is the graph oracle with the Wave slot swapped for solid green. No other slot
+ * carries green, so a pixel is in the Wave's band at a sample exactly when its G channel is
+ * non-zero there (the framebuffer is RGBA). Every channel of every pixel outside the band must be
+ * identical at every sample. Inside it the ONE documented delta applies: on the Effect path
+ * the amp envelope owns the level (S01 — the resolver always emits a life curve, which the
+ * compositor hands to every splice member), so a nested generator's own natural decay is off,
+ * while the graph member still decays by itself. So the Wave band is never dimmer on the
+ * Effect path, and it is identical until the nested generator has decayed visibly.
  */
-function expectSameExceptNestedDecay(effect: number[][], graph: number[][], waveBandDark: number[][]): void {
+const RGBA = 4;
+
+function expectSameExceptNestedDecay(effect: number[][], graph: number[][], waveBandLit: number[][]): void {
   expect(lit(graph)).toBeGreaterThan(0);
+  expect(effect).toHaveLength(graph.length);
+  let bandPixels = 0;
+  let outsidePixels = 0;
+  let waveLit = 0;
   effect.forEach((frame, s) => {
-    frame.forEach((v, i) => {
-      const label = `sample ${SAMPLES[s]}ms channel ${i}`;
-      const inWaveBand = waveBandDark[s]![i] === 0;
-      if (inWaveBand) expect(v, label).toBeGreaterThanOrEqual(graph[s]![i]!);
-      else expect(v, label).toBe(graph[s]![i]);
-    });
+    const band = waveBandLit[s]!;
+    expect(frame).toHaveLength(graph[s]!.length);
+    expect(band).toHaveLength(frame.length);
+    for (let px = 0; px * RGBA < frame.length; px++) {
+      const at = px * RGBA;
+      const inWaveBand = band[at + 1]! > 0;
+      if (inWaveBand) {
+        bandPixels++;
+        waveLit += graph[s]![at]! + graph[s]![at + 1]! + graph[s]![at + 2]!;
+      } else outsidePixels++;
+      for (let c = 0; c < RGBA; c++) {
+        const i = at + c;
+        const label = `sample ${SAMPLES[s]}ms pixel ${px} channel ${c}`;
+        if (inWaveBand) expect(frame[i], label).toBeGreaterThanOrEqual(graph[s]![i]!);
+        else expect(frame[i], label).toBe(graph[s]![i]);
+      }
+    }
   });
+  // The mask must actually split the kit, or one branch is never exercised.
+  expect(bandPixels).toBeGreaterThan(0);
+  expect(outsidePixels).toBeGreaterThan(0);
+  // And the nested Wave must actually render inside its band on the graph oracle.
+  expect(waveLit).toBeGreaterThan(0);
 }
 
 describe('Splice Effect renders like the graph splice node', () => {
   it('two colour slots and a nested Wave, held still', () => {
     const over: Partial<GraphNode> = { spliceCount: 3, splicePartition: 'hoop' };
     const graph = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { effectId: 'wave-fx', params: { speed: 2 } }], over, [WAVE_DEF]);
-    const waveBandDark = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, {}], over);
+    const waveBandLit = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], over);
     const effect = effectFrames(device('splice', { count: 3, partition: 'hoop' }, [
       { color: '#ff0000' }, { color: '#0000ff' }, { generator: { kind: 'wave', style: 'chase', params: { speed: 2 } } },
     ]));
-    expectSameExceptNestedDecay(effect, graph, waveBandDark);
+    expectSameExceptNestedDecay(effect, graph, waveBandLit);
     // Through the attack and hold, before the nested chase has decayed visibly: bit-identical.
     expect(effect.slice(0, 3)).toEqual(graph.slice(0, 3));
   });
 
   it('MOVE AROUND — a stepping chase, with a nested Wave', () => {
     const over: Partial<GraphNode> = { spliceCount: 3, spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100 };
-    const graph = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { effectId: 'wave-fx' }], over, [WAVE_DEF]);
-    const waveBandDark = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, {}], over);
+    const graph = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { effectId: 'wave-fx', params: { speed: 2 } }], over, [WAVE_DEF]);
+    const waveBandLit = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], over);
     const effect = effectFrames(device('splice', { count: 3, chase: 'step', rateMode: 'time', rateMs: 100 }, [
-      { color: '#ff0000' }, { color: '#0000ff' }, { generator: { kind: 'wave', style: 'chase', params: {} } },
+      { color: '#ff0000' }, { color: '#0000ff' }, { generator: { kind: 'wave', style: 'chase', params: { speed: 2 } } },
     ]));
-    expectSameExceptNestedDecay(effect, graph, waveBandDark);
+    expectSameExceptNestedDecay(effect, graph, waveBandLit);
+    // Every step up to 520ms, before the nested chase has decayed visibly: bit-identical.
+    expect(effect.slice(0, 6)).toEqual(graph.slice(0, 6));
   });
 
   it('MOVE AROUND — a smooth, rotated chase of colour slots is bit-identical', () => {
