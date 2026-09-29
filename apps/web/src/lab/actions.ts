@@ -326,7 +326,7 @@ registerAction({
     const drumId = pickDrumId(pad);
     ctx.particles.emit({
       origin: ctx.drumCenter(drumId),
-      count: 6000,
+      count: Math.round(ctx.particles.count * 0.06), // 6% of the pool, so bursts scale with ?n=
       speed: 3.2,
       spread: 1,
       color: ctx.drumColor(drumId),

@@ -32,7 +32,7 @@
  *                        sizeMin, sizeMax, burstSize, ambientBrightness, ambientColorA/B ([r,g,b]), spawnScale
  *                        (fraction of kit.domainHalfExtent that ambient respawns fill)
  *  registerParticlePanel(folder)
- *  getParticleCount(): number   reads ?n= from the URL (default 100_000, clamped 1k..2M)
+ *  getParticleCount(): number   reads ?n= from the URL (default 20_000, clamped 1k..2M)
  *  MAX_BURSTS_PER_FRAME
  *
  * SIM RULES (per particle per step): age += dt; if burst-target -> respawn at origin; else if expired or far outside
@@ -94,8 +94,8 @@ export interface ParticleSystem {
 
 export function getParticleCount(): number {
   const raw = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('n') : null;
-  const n = raw ? Math.floor(Number(raw)) : 100_000;
-  return Number.isFinite(n) && n > 0 ? Math.min(2_000_000, Math.max(1_000, n)) : 100_000;
+  const n = raw ? Math.floor(Number(raw)) : 20_000;
+  return Number.isFinite(n) && n > 0 ? Math.min(2_000_000, Math.max(1_000, n)) : 20_000;
 }
 
 export function createParticles({ renderer, count }: { renderer: WebGPURenderer; count: number }): ParticleSystem {

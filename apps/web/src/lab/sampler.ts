@@ -51,6 +51,11 @@ export interface Sampler {
 export function createSampler({ renderer, particles }: { renderer: WebGPURenderer; particles: ParticleSystem }): Sampler {
   const nLed = kit.ledCount;
   const nPart = particles.count;
+  // Defaults were tuned at 100k particles: keep LED brightness and per-LED sample count roughly
+  // constant for any ?n= by scaling gain with density and visiting every particle when the pool is small.
+  const density = 100_000 / nPart;
+  samplerParams.stride = Math.max(1, Math.round(samplerParams.stride / density));
+  samplerParams.gain *= density;
 
   const ledPosition = instancedArray(nLed, 'vec4');
   const ledColor = instancedArray(nLed, 'vec4');
@@ -142,7 +147,7 @@ export function createSampler({ renderer, particles }: { renderer: WebGPURendere
 
 export function registerSamplerPanel(folder: GUI): void {
   folder.add(samplerParams, 'radius', 0.02, 1, 0.005);
-  folder.add(samplerParams, 'gain', 0, 0.05, 0.0005);
+  folder.add(samplerParams, 'gain', 0, 0.3, 0.0005);
   folder.add(samplerParams, 'stride', 1, 16, 1);
   folder.add(samplerParams, 'decay', 0, 0.99, 0.005);
   folder.add(samplerParams, 'ledSize', 0.005, 0.08, 0.001);
