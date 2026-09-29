@@ -126,6 +126,19 @@ export function defaultEffectName(kind: GeneratorKind, style?: string): string {
   return picked?.label ?? def.label;
 }
 
+/**
+ * Whether `style` names a Style the runtime can resolve for `kind`. An empty Style (the
+ * Generator's first) and Generators that resolve themselves or carry no Styles (Splice / Slice /
+ * Scene) always pass; otherwise the id must be one of the def's Styles. The Effect schema accepts
+ * any string here, so without this an unknown Style would persist and core would skip the Effect.
+ */
+function validStyle(kind: GeneratorKind, style: string | undefined): boolean {
+  const def = effectChain.getGeneratorDef(kind);
+  if (!def) return false;
+  if (!style || def.resolve || def.styles.length === 0) return true;
+  return def.styles.some((s) => s.id === style);
+}
+
 // ---- Effects ----------------------------------------------------------------------------
 
 /** Append a new Effect to `cell` (on top of the cell's stack; last in composition order). */
@@ -135,7 +148,7 @@ export function addEffect<S extends EffectsSection>(
   generator: GeneratorKind,
   style?: string,
 ): Minted<S> {
-  if (!effectChain.getGeneratorDef(generator)) return { section, id: null };
+  if (!validStyle(generator, style)) return { section, id: null };
   const id = freshEffectId(section);
   const effect = validEffect({
     id,
@@ -262,7 +275,7 @@ const SLOTTED: ReadonlySet<GeneratorKind> = new Set(['splice', 'slice']);
  * new one); Splice / Slice slots survive a Splice ↔ Slice swap only.
  */
 export function setGenerator<S extends EffectsSection>(section: S, effectId: string, kind: GeneratorKind, style?: string): S {
-  if (!effectChain.getGeneratorDef(kind)) return section;
+  if (!validStyle(kind, style)) return section;
   const nextStyle = style ?? '';
   return updateEffect(section, effectId, (e) => {
     if (e.generator.kind === kind && e.generator.style === nextStyle) return null;

@@ -57,6 +57,12 @@ describe('effects-doc: Effects', () => {
     expect(refused).toEqual({ section: start, id: null });
   });
 
+  it('addEffect refuses a Style the Generator does not have', () => {
+    const start = deepFreeze(section());
+    expect(doc.addEffect(start, kickHead, 'wave', 'bogus')).toEqual({ section: start, id: null });
+    expect(doc.addEffect(start, kickHead, 'wave', 'bogus').section).toBe(start);
+  });
+
   it('addEffect mints ids that never collide with the section', () => {
     let s: EffectsSection = section();
     const minted = new Set<string>();
@@ -180,6 +186,11 @@ describe('effects-doc: Generator', () => {
     expect(next.controls).toEqual(before.controls);
     expect(next.target).toEqual({ kind: 'hitDrum' });
     expect(doc.setGenerator(start, 'a', 'solid', '')).toBe(start);
+  });
+
+  it('setGenerator refuses a Style the Generator does not have', () => {
+    const start = deepFreeze(rich());
+    expect(doc.setGenerator(start, 'a', 'wave', 'bogus')).toBe(start);
   });
 
   it('setGenerator keeps slots only across Splice / Slice', () => {
