@@ -68,6 +68,10 @@ export type VoicePartialInput =
   | { kind: 'oscRelease'; address: string }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
   | { kind: 'fireGraph'; graphKey: string; velocity?: number; viewerOnly?: boolean }
+  /** Effect-chains audition: fire one Effect of the ACTIVE section by id (keyboard audition /
+      MIDI-map). The engine only ever resolves the active section, so a viewer and an editor
+      are held to the same active-section rule. */
+  | { kind: 'fireEffect'; effectId: string; velocity?: number }
   | { kind: 'recallSection'; songId?: string | null; sectionId: string | null }
   | { kind: 'recallSongIndex'; songIndex: number }
   | { kind: 'recallSectionIndex'; songIndex?: number; sectionIndex: number }
@@ -610,6 +614,10 @@ export class VoiceEngineHost {
           ...(partial.viewerOnly ? { fireGraphPolicy: 'active-section' as const } : {}),
           timeMs,
         };
+      case 'fireEffect':
+        // Authoritative Effect intent, routed like fireGraph: no input re-resolution, full
+        // velocity by default (no drum sensitivity curve — nothing was struck).
+        return { kind: 'fireEffect', effectId: partial.effectId, velocity: partial.velocity ?? 1, timeMs };
       case 'releaseBus':
         // The dock's stop button: release the bus's voices (absent busId = all buses).
         return { kind: 'releaseBus', busId: partial.busId, timeMs };

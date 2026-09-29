@@ -170,8 +170,8 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
     const h = await harness(mode);
     const engine = h.active.engine;
     const files = { project: project('unsupported', 2), showLibrary: library(), songLibrary: { version: 1, data: { songs: {} } } };
-    // v1 shows used 0-based hoop ids; v2 songs are unknown. Never reinterpret either as current.
-    Object.assign(files[slot], { version: slot === 'showLibrary' ? 1 : 2 });
+    // v1 shows used 0-based hoop ids; v3 songs are unknown. Never reinterpret either as current.
+    Object.assign(files[slot], { version: slot === 'showLibrary' ? 1 : 3 });
     try {
       await expect(h.replacement.restore(files)).rejects.toThrow(/Unsupported .* library version/);
       expect(h.safety).not.toHaveBeenCalled();
