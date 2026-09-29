@@ -277,6 +277,24 @@ describe('Effect path — amp envelope', () => {
     expect(at()).toBe(0);
   });
 
+  it('the amp envelope owns the level at every sustain level: generator natural decay stays off', () => {
+    // `simple` hosts whole-drum, which fades on its own decay unless an authored curve is
+    // present. Sustain 1 and 0.999 must look the same mid-gate, not dark vs lit.
+    const levelAt = (sustainLevel: number): number => {
+      const fx = parseEffect({
+        id: `s${sustainLevel}`, cell: { row: 'kick', column: { kind: 'zone', slot: 0 } },
+        generator: { kind: 'solid', style: 'simple' },
+        amp: { attackMs: 0, decayMs: 0, sustainLevel, length: { ms: 2000 }, releaseMs: 100 },
+      });
+      const h = harness(showOf(section('s', [fx])));
+      h.send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 }, 1500);
+      return drumLevel(h, 'kick');
+    };
+    const full = levelAt(1);
+    expect(full).toBeGreaterThan(0.5);
+    expect(levelAt(0.999)).toBeCloseTo(full, 2);
+  });
+
   it('a `hold` Effect stays up until its note-off, then releases', () => {
     const fx = parseEffect({
       id: 'hold', cell: { row: 'kit', column: { kind: 'cue' } }, trigger: { kind: 'cue', source: { midiNote: 5 } },

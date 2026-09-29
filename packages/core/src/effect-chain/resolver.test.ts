@@ -124,7 +124,8 @@ describe('effectPlayAction', () => {
     expect(at({ attackMs: 0, length: { beats: 2 } })).toMatchObject({ sustainMs: 1000 });
     expect(at({ length: 'hold' }).mode).toBe('hold');
     expect(at({ length: 'loop' }).mode).toBe('loop');
-    expect(at({}).lifeEnvelope).toBeUndefined(); // sustain level 1 → no gain curve
+    // sustain level 1 → a flat curve at 1, so the amp envelope still owns the level
+    expect(at({})).toMatchObject({ lifeEnvelope: { h0: { x: 0, y: 1 }, h1: { x: 1, y: 1 } } });
     expect(at({ attackMs: 100, decayMs: 100, sustainLevel: 0.5 })).toMatchObject({
       lifeSpanMs: 200, lifeEnvelope: { h0: { x: 0.5, y: 1 }, h1: { x: 1, y: 0.5 } },
     });

@@ -131,8 +131,10 @@ const MS_PER_MINUTE = 60000;
  * - **Controls** → `Mapping[]` on the generator params and per-modifier `modulations`; a
  *   mapping's range defaults to the target param spec range. Mappings naming a device that is
  *   not in this Effect are dropped.
- * - **Amp envelope** → attack / sustain / release, the play mode, and — when there is a decay
- *   to a sustain level below 1 — an amplitude-over-life curve.
+ * - **Amp envelope** → attack / sustain / release, the play mode, and always an
+ *   amplitude-over-life curve (flat at 1 when the sustain level is 1). Emitting the curve
+ *   unconditionally makes the amp envelope the sole owner of the level: a hosted generator's
+ *   own decay is always off on this path, whatever the sustain level.
  * - **Target** → scope / targetId, or an explicit `targets` list for chosen drums and hoops.
  */
 export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction | null {
@@ -198,11 +200,9 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     layerOrder: ctx.layerOrder,
     via: `Effect: ${effect.name || effect.id}`,
     latchKey: null,
+    lifeEnvelope: shape.curve,
+    lifeSpanMs: shape.spanMs,
   };
-  if (shape) {
-    action.lifeEnvelope = shape.curve;
-    action.lifeSpanMs = shape.spanMs;
-  }
   return action;
 }
 
@@ -230,13 +230,16 @@ function targetFields(effect: Effect, sourceDrumId: string | null): { scope: Sco
 }
 
 /**
- * The decay-to-sustain part of the amp envelope as an amplitude-over-life curve, or `null`
- * when there is nothing to shape (sustain level 1 — the voice's own attack/sustain/release
- * already is the envelope). The curve holds 1 through the attack, falls linearly to the
- * sustain level over the decay, then stays flat; its x axis spans `attack + decay` ms.
+ * The decay-to-sustain part of the amp envelope as an amplitude-over-life curve. The curve
+ * holds 1 through the attack, falls linearly to the sustain level over the decay, then stays
+ * flat; its x axis spans `attack + decay` ms. At sustain level 1 it is flat at 1 — still
+ * emitted, because a present curve is what switches the hosted generator's natural decay off
+ * (`authoredDecay`), so the look does not jump between sustain 1 and 0.999.
  */
-function ampShape(attackMs: number, decayMs: number, sustainLevel: number): { curve: CurveValue; spanMs: number } | null {
-  if (sustainLevel >= 1) return null;
+function ampShape(attackMs: number, decayMs: number, sustainLevel: number): { curve: CurveValue; spanMs: number } {
+  if (sustainLevel >= 1) {
+    return { curve: { h0: { x: 0, y: 1 }, h1: { x: 1, y: 1 }, profile: 'bend', strength: 0 }, spanMs: Math.max(1, attackMs + decayMs) };
+  }
   const decay = Math.max(1, decayMs);
   const spanMs = attackMs + decay;
   return {
