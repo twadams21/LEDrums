@@ -95,17 +95,31 @@ export interface ResolvedModifier {
   params: ResolvedParams;
   bypass?: boolean;
   modulations?: Mapping[];
-  /** Dry/wet 0..1 over this link's range (effect chains). Absent = 1 = today's behaviour.
-      Carried by the resolver; the chain runner applies it from S02. */
+  /** Dry/wet 0..1 over this link's range (effect chains): `out = dry + (wet − dry) × mix`,
+      clamped to 0..1. Absent or 1 (with no envelope) = today's exact path. */
   mix?: number;
-  /** Optional envelope over the voice's life that multiplies {@link mix} (effect chains, S02). */
+  /** Optional envelope over the voice's life that multiplies {@link mix} (effect chains). */
   envelope?: ModifierEnvelope;
 }
 
-/** An ADSR over the host voice's life, in ms, shaping a modifier link's mix. */
+/**
+ * An ADSR over the host voice's life, in ms, shaping a modifier link's mix (S02). The clock is
+ * the voice-local age ({@link ModifierContext.timeMs}), so the curve restarts with the voice:
+ *
+ *   0 → attackMs                 ramp 0 → 1
+ *   → attackMs + decayMs         fall 1 → sustainLevel
+ *   → lengthMs (if set)          hold at sustainLevel
+ *   → lengthMs + releaseMs       fall from the level reached at lengthMs → 0, then stay 0
+ *
+ * `lengthMs` is the gate length from voice birth, like the amp envelope's gate (a release can
+ * cut into the attack or decay). Absent, the envelope holds at sustain for the voice's life.
+ * Evaluated by {@link modifierEnvelopeGain}.
+ */
 export interface ModifierEnvelope {
   attackMs: number;
   decayMs: number;
   sustainLevel: number;
   releaseMs: number;
+  /** Gate length (ms from voice birth) after which the release starts. Absent = hold forever. */
+  lengthMs?: number;
 }
