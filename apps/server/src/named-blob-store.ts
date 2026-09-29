@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { link, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PROJECTS_DIR } from './projects';
 import { writeFileAtomic, writeFileAtomicSync } from './atomic-file';
@@ -78,4 +79,36 @@ export function createNamedBlobStore<B extends VersionedBlob>(file: string): Nam
       await writeFileAtomic(path(dir), JSON.stringify(blob, null, 2));
     },
   };
+}
+
+/** The one-time archive filename for a `version` of the blob `file`:
+    `default.shows.local.json` + 2 → `default.shows.v2.local.json`. */
+function archiveFileName(file: string, version: number): string {
+  const stem = file.endsWith('.local.json') ? file.slice(0, -'.local.json'.length) : file.replace(/\.json$/, '');
+  return `${stem}.v${version}.local.json`;
+}
+
+let archiveSeq = 0;
+
+/**
+ * Write `blob` to `dir/archiveFileName(file, version)` ONLY if no archive exists there yet.
+ * Returns whether this call wrote it. An existing archive is never overwritten — the first copy
+ * of an old format is the one kept. The write is atomic AND no-clobber: the content goes to a
+ * unique temp file that is then hard-linked into place (`link` fails with EEXIST rather than
+ * replacing), so a crash leaves either no archive or a complete one.
+ */
+export async function writeArchiveOnce(dir: string, file: string, version: number, blob: unknown): Promise<boolean> {
+  const final = join(dir, archiveFileName(file, version));
+  const tmp = `${final}.${process.pid}.${archiveSeq++}.tmp`;
+  await mkdir(dir, { recursive: true });
+  try {
+    await writeFile(tmp, JSON.stringify(blob, null, 2), 'utf8');
+    await link(tmp, final);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    await rm(tmp, { force: true }).catch(() => {});
+  }
 }

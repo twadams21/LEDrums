@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveGenerator } from './generators';
 import { alwaysEffects, clockEffectsCrossed, effectPlayAction, matchSectionEffects } from './resolver';
 import { CHAIN_BUS_ID, chainEffectDef, chainEffectDefId } from './runtime';
-import { parseEffect, type Effect } from './types';
+import { parseEffect, type Effect, type GeneratorDevice } from './types';
 
 const zone = (id: string, row: string, slot: number, over: Record<string, unknown> = {}): Effect =>
   parseEffect({ id, cell: { row, column: { kind: 'zone', slot } }, generator: { kind: 'solid' }, ...over });
@@ -94,7 +94,7 @@ describe('generator resolution', () => {
   });
 
   it('returns null for an unknown kind or style', () => {
-    expect(resolveGenerator({ kind: 'noise', style: '', params: {} })).toBeNull();
+    expect(resolveGenerator({ kind: 'no-such-kind' as GeneratorDevice['kind'], style: '', params: {} })).toBeNull();
     expect(resolveGenerator({ kind: 'wave', style: 'nope', params: {} })).toBeNull();
   });
 
@@ -178,6 +178,6 @@ describe('effectPlayAction', () => {
   });
 
   it('returns null for an unresolvable generator', () => {
-    expect(effectPlayAction(zone('u', 'kick', 0, { generator: { kind: 'pattern' } }), ctx)).toBeNull();
+    expect(effectPlayAction(zone('u', 'kick', 0, { generator: { kind: 'pattern', style: 'nope' } }), ctx)).toBeNull();
   });
 });

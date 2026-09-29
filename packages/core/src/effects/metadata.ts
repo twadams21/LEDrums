@@ -22,7 +22,7 @@ export interface EffectMetadata {
 export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   // --- Hits: per-strike events on the struck drum -----------------------------
   'whole-drum': {
-    description: 'A hit lights every pixel of the struck drum at once, then fades — the simplest, most legible way to make a single drum flash to the beat you play.',
+    description: 'A hit lights every pixel of the struck drum at once, then fades — the simplest, most legible way to make a single drum flash to the beat you play. Raise Hoop Delay and each hoop follows the one below, so the light climbs the drum.',
     tags: ['hit', 'per-drum'],
   },
   'whole-kit': {
@@ -79,7 +79,7 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
 
   // --- Waves & Ripples: travelling fronts and bands ---------------------------
   'radial-wash': {
-    description: 'An expanding wave of colour sweeps out from the hit (or collapses inward / bounces), washing the kit in a single travelling front — the classic reactive bloom.',
+    description: 'An expanding wave of colour sweeps out from the hit (or collapses inward / bounces), washing the kit in a single travelling front — the classic reactive bloom. Collapse mode starts wide, implodes onto the hit, then bursts back out.',
     tags: ['wave', 'wash', 'kit-wide', 'emission'],
   },
   'ripple-3d': {

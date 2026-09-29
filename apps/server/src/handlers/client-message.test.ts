@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject, getHoopPixelRange, voice } from '@ledrums/core';
+import { defaultProject, effectChain, getHoopPixelRange, voice } from '@ledrums/core';
 import { EngineHost } from '../engine-host';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { ClientRegistry, type CloseableSocket } from '../client-registry';
@@ -265,6 +265,8 @@ describe('requiresEditor — read-only gating policy (S2)', () => {
     for (const t of ['midi', 'osc', 'cc', 'programChange', 'key', 'recallSection', 'fireGraph', 'listProjects', 'takeover'] as const) {
       expect(requiresEditor(t)).toBe(false);
     }
+    // fireEffect (effect chains) joins the engine inputs; cast until the protocol union carries it.
+    expect(requiresEditor('fireEffect' as ClientMessage['t'])).toBe(false);
     // Authoring mutations are editor-only.
     for (const t of ['setShow', 'setShowLibrary', 'setKitTransform', 'setKitOutputs', 'setOutput', 'setInputMap', 'setProject', 'setActiveSection', 'addSong', 'removeSong', 'addSection', 'removeSection', 'setBinding', 'removeBinding', 'setSectionLayerClip', 'addLayer', 'removeLayer', 'addClip', 'removeClip', 'setParam', 'setLayer', 'setTransport', 'loadProject', 'saveProject'] as const) {
       expect(requiresEditor(t)).toBe(true);
@@ -1135,5 +1137,58 @@ describe('project backups (#123) — WS messages + pre-risk triggers at the hand
     const err = editor.sent.find((m) => m.t === 'error');
     expect(err).toMatchObject({ t: 'error', message: expect.stringContaining('Restore failed') });
     expect(host.engine.getProject()).toBe(before); // nothing applied
+  });
+});
+
+describe('fireEffect (effect chains) — an engine input held to the active-section rule', () => {
+  /** A cue-column Kit Effect per section: `a` is recalled active, `b` is not. */
+  function effectShow(): voice.Show {
+    const cue = (id: string) => effectChain.parseEffect({
+      id, cell: { row: 'kit', column: { kind: 'cue' } }, generator: { kind: 'solid' }, amp: { attackMs: 0, length: { ms: 1000 } },
+    });
+    return {
+      buses: [], graphs: {}, sections: [], effects: [], presets: [],
+      songs: [{ id: 'song', name: 'Song', sections: [
+        { id: 'a', name: 'A', slots: {}, effects: [cue('a-fx')], master: [] },
+        { id: 'b', name: 'B', slots: {}, effects: [cue('b-fx')], master: [] },
+      ] }],
+    };
+  }
+  const fire = (effectId: string) => ({ t: 'fireEffect', effectId }) as unknown as ClientMessage;
+
+  function setup() {
+    const h = voiceHarness();
+    const editor = h.join();
+    const viewer = h.join();
+    h.voiceHost.setShow(effectShow());
+    h.voiceHost.applyInput({ kind: 'recallSection', songId: 'song', sectionId: 'a' });
+    h.voiceHost.step(1000 / 120);
+    const voices = () => h.voiceHost.getStats().engine.voiceCount;
+    return { ...h, editor, viewer, voices };
+  }
+
+  it('fires an active-section Effect from the editor', () => {
+    const { handle, editor, voiceHost, voices } = setup();
+    expect(voices()).toBe(0);
+    handle(fire('a-fx'), editor);
+    voiceHost.step(1000 / 120);
+    expect(voices()).toBe(1);
+  });
+
+  it('fires an active-section Effect from a viewer, but never one from another section', () => {
+    const { handle, viewer, voiceHost, voices } = setup();
+    handle(fire('b-fx'), viewer);
+    voiceHost.step(1000 / 120);
+    expect(voices()).toBe(0);
+    handle(fire('a-fx'), viewer);
+    voiceHost.step(1000 / 120);
+    expect(voices()).toBe(1);
+  });
+
+  it('is a no-op in legacy mode and never reaches the legacy reducer', () => {
+    const { handle, join, host } = harness();
+    const before = structuredClone(host.engine.getProject());
+    expect(() => handle(fire('a-fx'), join())).not.toThrow();
+    expect(host.engine.getProject()).toEqual(before);
   });
 });

@@ -336,6 +336,36 @@ function targetPixelRanges(target: string, model: PixelModel): PixelRange[] {
   });
 }
 
+/** Does this voice need its own layer? Only a blend other than `add`, or an opacity other than
+    1, does — everything else (every graph voice, every default Effect) lands additively. */
+function needsLayer(v: Voice): boolean {
+  return (v.blend !== undefined && v.blend !== 'add') || (v.opacity !== undefined && v.opacity !== 1);
+}
+
+/** The layer opacity, clamped to 0..1; a non-finite value reads as fully opaque. */
+function layerOpacity(v: Voice): number {
+  const o = v.opacity;
+  if (o === undefined || !Number.isFinite(o)) return 1;
+  return o < 0 ? 0 : o > 1 ? 1 : o;
+}
+
+/** The monotonic spawn number in a pool voice id (`v<seq>`), parsed without allocating.
+    Pool slots are reused, so slab position is not spawn order — this is. */
+function spawnSeq(id: string): number {
+  let n = 0;
+  for (let i = 1; i < id.length; i++) {
+    const c = id.charCodeAt(i) - 48;
+    if (c < 0 || c > 9) return n;
+    n = n * 10 + c;
+  }
+  return n;
+}
+
+/** Ascending section composition order, stable by spawn order. */
+function compareLayerOrder(a: Voice, b: Voice): number {
+  return (a.layerOrder! - b.layerOrder!) || (spawnSeq(a.id) - spawnSeq(b.id));
+}
+
 /**
  * Per-frame context the host supplies to {@link Compositor.render}. `timeMs` drives the
  * pattern fast path; `dt` + `transport` additionally feed hosted generators (transport
@@ -381,6 +411,14 @@ export interface PresentationCompositor extends Compositor {
  * Drum-scoped voices touch only their drum's pixel range. Assumes each voice's
  * `liveParams` was refreshed (by the engine) for this frame.
  *
+ * Effect-path voices carry a `blend` + `opacity` (effect chains, S02). A voice at `add` /
+ * opacity 1 takes the additive path unchanged. Any other voice renders into its own layer at
+ * level 1, which is then composited into `dst` with {@link compositeInto} at
+ * `opacity × level` — splice and slice voices included, at their final landing. While any
+ * such voice is live, graph voices land first in pool order and Effect-path voices stack on
+ * top in ascending `layerOrder`, ties by spawn order; otherwise the frame is today's exact
+ * pool-order additive pass.
+ *
  * Owns one generator bridge for its lifetime; it keeps its own reused scratch, so the only
  * per-voice allocation is the bridge's merged params object (see `generator-bridge.ts`).
  * Generators run few voices (mono buses, level gating), so this stays well within budget.
@@ -390,6 +428,11 @@ export function createDefaultCompositor(): PresentationCompositor {
   const checkpoint = createRenderCheckpoint();
   let mixScratch: Framebuffer | null = null;
   let mixInputScratch: Framebuffer | null = null;
+  /** A blended voice's own layer (blend ≠ `add` or opacity ≠ 1), composited into `dst`. */
+  let layerScratch: Framebuffer | null = null;
+  /** Per-frame draw lists, reused (emptied after every frame so no voice is retained). */
+  const drawListScratch: Voice[] = [];
+  const layeredScratch: Voice[] = [];
   /** One synchronous member shell; state is copied back to its owning MixInput after render. */
   const compositeVoiceScratch = createMixInputVoice();
   /** One buffer per splice member, grown on demand and reused across voices + frames. */
@@ -410,7 +453,7 @@ export function createDefaultCompositor(): PresentationCompositor {
     sliceLayouts.clear();
     spliceLayoutModel = model;
     generators.reset();
-    mixScratch = mixInputScratch = null;
+    mixScratch = mixInputScratch = layerScratch = null;
     spliceBuffers = [];
   };
 
@@ -453,19 +496,17 @@ export function createDefaultCompositor(): PresentationCompositor {
         return spliceBuffers;
       };
 
-      for (const v of voices) {
-        if (!v.active) continue;
-        ensureGeometryState(v, model);
-        const level = v.level * v.deckGain;
-        if (level <= 0.003) continue;
-
+      /** Render one voice into `into`, scaled by `level` (envelope × deck gain). Every branch
+          ends in the same additive landing, so a caller that wants a blended composite hands
+          in a cleared layer at level 1 and composites that layer itself (see `landVoice`). */
+      const drawVoice = (v: Voice, into: Framebuffer, level: number): void => {
         // Splice: several members rendered whole, then shown through moving bands. Kept ahead
         // of the Mix branch because the two are mutually exclusive — a splice voice's content
         // is its own splices, never upstream branches.
         if (v.spliceInputs?.length && v.splice) {
           const cfg = v.splice;
           const ranges = pixelRangesFor(v, model);
-          if (!ranges.length) continue;
+          if (!ranges.length) return;
           const buffers = ensureSpliceBuffers(v.spliceInputs.length);
           // The cascade span is a frame/member invariant. Resolve it once and reuse it for
           // both the regeneration gate and looping pulse duration; the helper scans the model.
@@ -517,7 +558,7 @@ export function createDefaultCompositor(): PresentationCompositor {
                 const b = frameRgba[j + 2]!;
                 const a = frameRgba[j + 3]!;
                 if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
-                dst.add(i, r * level, g * level, b * level, a * level);
+                into.add(i, r * level, g * level, b * level, a * level);
               }
             }
           };
@@ -580,7 +621,7 @@ export function createDefaultCompositor(): PresentationCompositor {
               out[j + 3] = out[j + 3]! + a * w;
             });
             landComposite(mix, age);
-            continue;
+            return;
           }
 
           // 2. Cut the bands (cached — the cut never moves; only what shows in it does).
@@ -692,7 +733,7 @@ export function createDefaultCompositor(): PresentationCompositor {
           }
 
           landComposite(mix, age);
-          continue;
+          return;
         }
 
         if (v.mixInputs?.length) {
@@ -731,18 +772,79 @@ export function createDefaultCompositor(): PresentationCompositor {
               const b = mix.rgba[j + 2]!;
               const a = mix.rgba[j + 3]!;
               if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue;
-              dst.add(i, r * level, g * level, b * level, a * level);
+              into.add(i, r * level, g * level, b * level, a * level);
             }
           }
-          continue;
+          return;
         }
 
-        if (!v.generatorId) continue; // every selectable effect is generator-backed (U3)
+        if (!v.generatorId) return; // every selectable effect is generator-backed (U3)
 
         // One generation/temporal advance, followed by the canonical multi-range mask.
         const modCtx = writeModCtx(modCtxScratch, v, frameCtx);
-        generators.renderVoice(v, model, timeMs, level, pixelRangesFor(v, model), dst, modCtx);
+        generators.renderVoice(v, model, timeMs, level, pixelRangesFor(v, model), into, modCtx);
+      };
+
+      /** Land one voice in `dst`: today's additive path, or — for a blend ≠ `add` / opacity
+          ≠ 1 voice — a level-1 render into the layer scratch composited at opacity × level. */
+      const landVoice = (v: Voice, level: number): void => {
+        if (!needsLayer(v)) {
+          drawVoice(v, dst, level);
+          return;
+        }
+        if (!layerScratch || layerScratch.pixelCount !== model.pixelCount) layerScratch = new Framebuffer(model.pixelCount);
+        const layer = layerScratch;
+        layer.clear();
+        drawVoice(v, layer, 1);
+        // The envelope rides the layer's opacity, not its colour: a decaying `normal` voice
+        // fades back to what is beneath it instead of darkening it towards black.
+        const alpha = layerOpacity(v) * level;
+        const mode = v.blend ?? 'add';
+        const src = layer.rgba;
+        const out = dst.rgba;
+        for (const range of pixelRangesFor(v, model)) {
+          for (let i = range.start; i < range.end; i++) {
+            const j = i * 4;
+            const r = src[j]!;
+            const g = src[j + 1]!;
+            const b = src[j + 2]!;
+            const a = src[j + 3]!;
+            if (r <= 0 && g <= 0 && b <= 0 && a <= 0) continue; // untouched pixel: fully transparent
+            compositeInto(out, j, r, g, b, a, mode, alpha);
+          }
+        }
+      };
+
+      // Gate every voice in pool order (geometry binding and the level gate are unchanged).
+      // With no blended voice live, additive landing is order-independent, so the frame
+      // takes today's exact pool-order path — bit-identical, and no sort.
+      const drawList = drawListScratch;
+      drawList.length = 0;
+      let anyLayer = false;
+      for (const v of voices) {
+        if (!v.active) continue;
+        ensureGeometryState(v, model);
+        if (v.level * v.deckGain <= 0.003) continue;
+        drawList.push(v);
+        if (needsLayer(v)) anyLayer = true;
       }
+      if (!anyLayer) {
+        for (const v of drawList) drawVoice(v, dst, v.level * v.deckGain);
+      } else {
+        // Order matters once a voice blends. Graph voices (no `layerOrder`) keep pool order
+        // underneath; Effect-path voices then stack in ascending `layerOrder` (section
+        // composition order), ties broken by spawn order.
+        const layered = layeredScratch;
+        layered.length = 0;
+        for (const v of drawList) {
+          if (v.layerOrder === undefined) landVoice(v, v.level * v.deckGain);
+          else layered.push(v);
+        }
+        layered.sort(compareLayerOrder);
+        for (const v of layered) landVoice(v, v.level * v.deckGain);
+        layered.length = 0; // never retain voices across frames
+      }
+      drawList.length = 0;
     },
   };
 }

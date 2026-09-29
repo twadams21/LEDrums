@@ -13,12 +13,18 @@
  * `timeMs` is the host voice's local clock and `dt` the frame delta; both are supplied by
  * the caller (the compositor, which owns the voice clock) so modifier code never re-derives
  * time (group-G timebase contract).
+ *
+ * Per-link dry/wet (effect chains): a link with `mix` < 1 or an `envelope` snapshots its range
+ * before `apply`, then lerps `out = dry + (wet − dry) × clamp01(mix) × envGain(timeMs)`. The
+ * envelope clock is the same `timeMs`. Mix applies per range for range-local links and over
+ * the whole frame for full-output links; every other link runs exactly as before.
  */
 import type { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
+import { clamp01 } from '../math';
 import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';
-import type { ModifierContext, PixelRange, ResolvedModifier } from './types';
+import type { ModifierContext, ModifierEnvelope, PixelRange, ResolvedModifier } from './types';
 
 /**
  * Apply `chain` to `fb` over `range`, in order. `state` is the voice's per-modifier state
@@ -75,6 +81,8 @@ function runChain(
       params = { ...link.params };
       applyModulations(link.params, params, link.modulations, def.paramSpec, modCtx);
     }
+    // Dry/wet: only a link with mix < 1 or an envelope leaves today's exact path (-1 = none).
+    const mixEff = linkMix(link, timeMs);
     if (scoped && def.scopePolicy === 'range-local') {
       // Opaque to callers, like every other modifier-state slot.
       const byRange = (state[i] ??= new Map<string, unknown>()) as Map<string, unknown>;
@@ -84,12 +92,79 @@ function runChain(
       for (const range of ranges) {
         const key = `${range.start}:${range.end}`;
         if (!byRange.has(key)) byRange.set(key, def.createState?.(model, range));
+        if (mixEff >= 0) snapshotRange(fb, range);
         def.apply(ctx, params, fb, range, byRange.get(key));
+        if (mixEff >= 0) mixRange(fb, range, mixEff);
       }
     } else {
       const range = scoped ? { start: 0, end: model.pixelCount } : ranges[0]!;
       if (state[i] === undefined && def.createState) state[i] = def.createState(model, range);
+      if (mixEff >= 0) snapshotRange(fb, range);
       def.apply(ctx, params, fb, range, state[i]);
+      if (mixEff >= 0) mixRange(fb, range, mixEff);
     }
+  }
+}
+
+/**
+ * The link's effective wet amount `clamp01(mix) × envGain(age)`, or -1 when the link takes
+ * today's exact path (mix absent or ≥ 1, and no envelope). A wet amount of 0 still runs
+ * `apply` — stateful modifiers keep their clocks and buffers advancing — and then restores
+ * the dry input, so a later envelope stage fades in over a live (not stale) modifier.
+ */
+function linkMix(link: ResolvedModifier, ageMs: number): number {
+  const mix = link.mix;
+  if (!link.envelope && (mix === undefined || mix >= 1)) return -1;
+  const m = mix === undefined || Number.isNaN(mix) ? 1 : clamp01(mix);
+  return link.envelope ? m * envelopeGain(link.envelope, ageMs) : m;
+}
+
+/** ADSR gain 0..1 at voice age `t` (ms); see {@link ModifierEnvelope} for the stages. */
+function envelopeGain(env: ModifierEnvelope, t: number): number {
+  const sustain = clamp01(env.sustainLevel);
+  const length = env.lengthMs;
+  if (length === undefined || t < length) return adsGain(env, sustain, t);
+  const release = Math.max(0, env.releaseMs);
+  const since = t - length;
+  if (since >= release) return 0;
+  return adsGain(env, sustain, length) * (1 - since / release);
+}
+
+/** The attack → decay → sustain part of the envelope (no gate). */
+function adsGain(env: ModifierEnvelope, sustain: number, t: number): number {
+  const attack = Math.max(0, env.attackMs);
+  if (t < attack) return t <= 0 ? 0 : t / attack;
+  const decay = Math.max(0, env.decayMs);
+  const intoDecay = t - attack;
+  if (intoDecay < decay) return 1 - (1 - sustain) * (intoDecay / decay);
+  return sustain;
+}
+
+/** Preallocated dry snapshot, grown to the largest range seen; never shrinks. Shared by every
+ * chain run (the runner is synchronous and a snapshot lives only within one link), so the
+ * dry/wet path allocates nothing per frame after warm-up. */
+let dry = new Float32Array(0);
+
+function snapshotRange(fb: Framebuffer, range: PixelRange): void {
+  const from = range.start * 4;
+  const to = range.end * 4;
+  if (dry.length < to - from) dry = new Float32Array(to - from);
+  const px = fb.rgba;
+  for (let j = from, k = 0; j < to; j++, k++) dry[k] = px[j]!;
+}
+
+/** `fb = dry + (wet − dry) × t` over `range`, all four channels. t = 1 leaves the wet output. */
+function mixRange(fb: Framebuffer, range: PixelRange, t: number): void {
+  if (t >= 1) return;
+  const from = range.start * 4;
+  const to = range.end * 4;
+  const px = fb.rgba;
+  if (t <= 0) {
+    for (let j = from, k = 0; j < to; j++, k++) px[j] = dry[k]!;
+    return;
+  }
+  for (let j = from, k = 0; j < to; j++, k++) {
+    const d = dry[k]!;
+    px[j] = d + (px[j]! - d) * t;
   }
 }

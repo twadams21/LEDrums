@@ -168,7 +168,7 @@ for (const mode of ['voice', 'legacy']) describe(`real ${process.env.P11_SEA_BIN
     try {
       app = await start(dir, mode);
       app.send({ t: 'setShowLibrary', library: { version: 1, data: { shows: {} } } });
-      app.send({ t: 'setSongLibrary', library: { version: 2, data: { songs: {} } } });
+      app.send({ t: 'setSongLibrary', library: { version: 3, data: { songs: {} } } });
       await app.until(() => app!.messages.filter((message) => message.t === 'error').length >= 2);
       expect(app.messages.filter((message) => message.t === 'error').map((message) => message.message))
         .toEqual([expect.stringMatching(/Unsupported show library version/), expect.stringMatching(/Unsupported song library version/)]);

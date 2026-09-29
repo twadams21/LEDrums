@@ -1,5 +1,6 @@
-import { BUILTIN_CANVAS_SCENES, canvasVoiceEffectDef, canvasVoiceDefaultPreset, canvasEffectId,
-  SHOWS_VERSION, SONGS_VERSION, resolveEffectAlias, voice, type CanvasScene } from '@ledrums/core';
+import { BUILTIN_CANVAS_SCENES, canvasVoiceEffectDef, canvasVoiceDefaultPreset, canvasEffectId, effectChain,
+  SHOWS_VERSION, SHOWS_VERSION_EFFECTS, SONGS_VERSION, SONGS_VERSION_EFFECTS, resolveEffectAlias, voice,
+  type CanvasScene } from '@ledrums/core';
 import { showSchema } from '@ledrums/protocol';
 
 function object(value: unknown): Record<string, unknown> {
@@ -11,25 +12,68 @@ function array(value: unknown): unknown[] {
   return value;
 }
 
+/** The envelope versions the server can restore: the graph-model format and the effect-chains
+ * format (expand → contract: both until the graph model is retired). */
+const SUPPORTED_VERSIONS = {
+  show: [SHOWS_VERSION, SHOWS_VERSION_EFFECTS],
+  song: [SONGS_VERSION, SONGS_VERSION_EFFECTS],
+} as const;
+
+function versionOf(blob: unknown): unknown {
+  return typeof blob === 'object' && blob && 'version' in blob ? blob.version : undefined;
+}
+
 /** Fail closed rather than rendering pre-migration hoop ids on a different physical hoop.
  * Browser persistence owns migration. Recovery: migrate a COPY with that pipeline and re-save
- * at the current versions; never repair old data by changing only its version number. */
+ * at a supported version; never repair old data by changing only its version number.
+ * Each library is checked on its own: the web pushes them separately, so a show and song
+ * library at different formats is a valid (transitional) state, never a boot wedge. */
 export function validateLibraryVersions(showLibrary: unknown, songLibrary: unknown): void {
-  for (const [kind, blob, expected] of [['show', showLibrary, SHOWS_VERSION], ['song', songLibrary, SONGS_VERSION]] as const) {
+  for (const [kind, blob] of [['show', showLibrary], ['song', songLibrary]] as const) {
     if (blob === null) continue;
-    const version = typeof blob === 'object' && blob && 'version' in blob ? blob.version : undefined;
-    if (version !== expected) {
-      throw new Error(`Unsupported ${kind} library version ${String(version)}; expected ${expected}. Migrate a copy with browser persistence before restoring.`);
+    const version = versionOf(blob);
+    const expected: readonly unknown[] = SUPPORTED_VERSIONS[kind];
+    if (!expected.includes(version)) {
+      throw new Error(`Unsupported ${kind} library version ${String(version)}; expected ${expected.join(' or ')}. Migrate a copy with browser persistence before restoring.`);
     }
   }
 }
 
+/** Report sink for Effects / master modifiers a v3 restore dropped. Defaults to the server log. */
+type LibraryDiagnosticSink = (diagnostics: readonly effectChain.LibraryDiagnostic[]) => void;
+
+const logDiagnostics: LibraryDiagnosticSink = (diagnostics) => {
+  for (const d of diagnostics) {
+    console.warn(`[show restore] dropped ${d.kind} ${d.id ?? `#${d.index}`} in ${d.songId}/${d.sectionId}: ${d.message}`);
+  }
+};
+
 /** Restore boundary for the existing web-owned library envelope, not a second authoring model.
  * Keep unknown fields in the stored blob; project only the runtime Show through the SAME protocol
  * gate used by setShow. Older unsupported/corrupt shapes fail before any live mutation. */
-export function showFromLibraries(showLibrary: unknown, songLibrary: unknown): voice.Show | null {
+export function showFromLibraries(
+  showLibrary: unknown,
+  songLibrary: unknown,
+  onDiagnostics: LibraryDiagnosticSink = logDiagnostics,
+): voice.Show | null {
   validateLibraryVersions(showLibrary, songLibrary);
   if (showLibrary === null) return null;
+  if (versionOf(showLibrary) === SHOWS_VERSION_EFFECTS) return effectShowFromLibraries(showLibrary, songLibrary, onDiagnostics);
+  // The graph path reads only a graph-format song library; an effect-format one holds no graph
+  // closures, so its references resolve to nothing here (as a dangling ref does).
+  return graphShowFromLibraries(showLibrary, versionOf(songLibrary) === SONGS_VERSION ? songLibrary : null);
+}
+
+/** v3 (effect chains): the ONE core builder, then the same protocol gate as setShow. */
+function effectShowFromLibraries(showLibrary: unknown, songLibrary: unknown, onDiagnostics: LibraryDiagnosticSink): voice.Show | null {
+  const songs = versionOf(songLibrary) === SONGS_VERSION_EFFECTS ? effectChain.parseSongLibraryV2(songLibrary) : null;
+  const { show, diagnostics } = effectChain.buildRuntimeShow(effectChain.parseShowLibraryV3(showLibrary), songs);
+  if (diagnostics.length) onDiagnostics(diagnostics);
+  return show === null ? null : showSchema.parse(show);
+}
+
+/** v2 (graph model): unchanged restore path. */
+function graphShowFromLibraries(showLibrary: unknown, songLibrary: unknown): voice.Show | null {
   const data = object(object(showLibrary).data);
   const shows = object(data.shows);
   if (Object.keys(shows).length === 0) return null;

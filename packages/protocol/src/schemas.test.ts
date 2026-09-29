@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPixelModel,
+  effectChain,
   clipSchema,
   inputMapSchema,
   layerSchema,
@@ -80,6 +81,7 @@ const clientSamples: ClientMessage[] = [
   { t: 'setSongLibrary', library: { version: 2, data: [1, 2, 3] } },
   { t: 'key', drumId: 'kick', zone: 'center', velocity: 0.8 },
   { t: 'fireGraph', graphKey: 'kick:', velocity: 1 },
+  { t: 'fireEffect', effectId: 'fx-1' },
   { t: 'recallSection', songId: 's1', sectionId: 'sec1' },
   { t: 'takeover' },
   { t: 'tunnel', action: 'start' },
@@ -288,5 +290,103 @@ describe('opaque + authored passthrough', () => {
 
   it('rejects a Show missing its required containers', () => {
     expect(showSchema.safeParse({ buses: [] }).success).toBe(false);
+  });
+});
+
+describe('fireEffect client message', () => {
+  it('carries exactly a non-empty Effect id', () => {
+    expect(clientMessageSchema.safeParse({ t: 'fireEffect', effectId: 'fx-1' }).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ t: 'fireEffect' }).success).toBe(false); // missing id
+    expect(clientMessageSchema.safeParse({ t: 'fireEffect', effectId: '' }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'fireEffect', effectId: 7 }).success).toBe(false);
+    expect(clientMessageSchema.safeParse({ t: 'fireEffect', effectId: 'fx-1', sectionId: 's' }).success).toBe(false); // strict: the engine picks the ACTIVE section
+  });
+});
+
+describe('Show effect-chain sections (songs → sections → effects / master)', () => {
+  // Canonical (fully defaulted) Effects and master devices — what the core show builder emits.
+  const zoneEffect = effectChain.parseEffect({
+    id: 'fx-1',
+    cell: { row: 'kick', column: { kind: 'zone', slot: 0 } },
+    generator: { kind: 'solid', params: { color: '#ff0000' } },
+  });
+  const clockEffect = effectChain.parseEffect({
+    id: 'fx-2',
+    cell: { row: 'kit', column: { kind: 'clock' } },
+    generator: { kind: 'wave' },
+    modifiers: [{ uid: 'm1', modifierId: 'strobe' }],
+  });
+  const masterDevice = effectChain.modifierDeviceSchema.parse({ uid: 'mst-1', modifierId: 'strobe' });
+  const legacyContainers = { buses: [], graphs: {}, sections: [], effects: [], presets: [] };
+  const showWith = (section: Record<string, unknown>) => ({
+    ...legacyContainers,
+    songs: [{ id: 'song-1', name: 'Song', sections: [{ id: 'sec-1', name: 'Verse', slots: {}, ...section }] }],
+  });
+  const accepts = (show: unknown) => showSchema.safeParse(show).success;
+  const wire = (v: unknown) => JSON.parse(JSON.stringify(v));
+
+  it('accepts canonical effects + master and passes the Show through unchanged', () => {
+    const show = wire(showWith({ effects: [zoneEffect, clockEffect], master: [masterDevice] }));
+    expect(showSchema.parse(show)).toStrictEqual(show);
+    // Also on the setShow envelope.
+    const msg = { t: 'setShow', show };
+    expect(clientMessageSchema.parse(msg)).toStrictEqual(msg);
+  });
+
+  it('accepts an empty effect stack and graph-path sections that carry neither field', () => {
+    expect(accepts(showWith({ effects: [], master: [] }))).toBe(true);
+    expect(accepts(showWith({ slots: { 'kick:center': ['g1', null] } }))).toBe(true);
+    expect(accepts(legacyContainers)).toBe(true); // no songs at all
+  });
+
+  it('preserves unknown authored fields on an Effect (no key stripping)', () => {
+    const show = wire(showWith({ effects: [{ ...zoneEffect, futureField: 42 }] }));
+    const decoded = showSchema.parse(show) as unknown as { songs: Array<{ sections: Array<{ effects: Array<Record<string, unknown>> }> }> };
+    expect(decoded.songs[0]!.sections[0]!.effects[0]).toHaveProperty('futureField', 42);
+  });
+
+  it('rejects an Effect that fails the core Effect schema', () => {
+    const { generator: _generator, ...noGenerator } = zoneEffect;
+    expect(accepts(showWith({ effects: [noGenerator] }))).toBe(false);
+    // Trigger kind must match the cell column.
+    expect(accepts(showWith({ effects: [{ ...zoneEffect, trigger: { kind: 'always' } }] }))).toBe(false);
+    // The Kit row has no zone columns.
+    expect(accepts(showWith({ effects: [{ ...zoneEffect, cell: { row: 'kit', column: { kind: 'zone', slot: 0 } } }] }))).toBe(false);
+    expect(accepts(showWith({ effects: [{ ...zoneEffect, opacity: 2 }] }))).toBe(false);
+    expect(accepts(showWith({ effects: 'not-an-array' }))).toBe(false);
+  });
+
+  it('rejects a non-canonical Effect the schema would have defaulted (the gate never fills fields)', () => {
+    const { trigger: _trigger, ...noTrigger } = zoneEffect;
+    const { modifiers: _modifiers, ...noModifiers } = zoneEffect;
+    const { amp: _amp, ...noAmp } = zoneEffect;
+    expect(accepts(showWith({ effects: [noTrigger] }))).toBe(false);
+    expect(accepts(showWith({ effects: [noModifiers] }))).toBe(false);
+    expect(accepts(showWith({ effects: [noAmp] }))).toBe(false);
+    expect(accepts(showWith({ effects: [{ ...zoneEffect, amp: { attackMs: 5 } }] }))).toBe(false); // nested defaults missing
+  });
+
+  it('rejects duplicate Effect ids within one section, but not across sections', () => {
+    expect(accepts(showWith({ effects: [zoneEffect, { ...clockEffect, id: zoneEffect.id }] }))).toBe(false);
+    const twoSections = {
+      ...legacyContainers,
+      songs: [{ id: 'song-1', name: 'Song', sections: [
+        { id: 'a', name: 'A', slots: {}, effects: [zoneEffect] },
+        { id: 'b', name: 'B', slots: {}, effects: [zoneEffect] },
+      ] }],
+    };
+    expect(accepts(twoSections)).toBe(true);
+  });
+
+  it('rejects an invalid or non-canonical master device', () => {
+    expect(accepts(showWith({ master: [{ ...masterDevice, mix: 1.5 }] }))).toBe(false);
+    expect(accepts(showWith({ master: [{ uid: 'mst-1', modifierId: 'strobe' }] }))).toBe(false); // params / mix / bypass not defaulted
+    expect(accepts(showWith({ master: [{ ...masterDevice, uid: '' }] }))).toBe(false);
+  });
+
+  it('rejects songs / sections missing their ids or section list', () => {
+    expect(accepts({ ...legacyContainers, songs: [{ id: 'song-1', name: 'Song' }] })).toBe(false);
+    expect(accepts({ ...legacyContainers, songs: [{ id: 'song-1', sections: [{ name: 'no id', effects: [] }] }] })).toBe(false);
+    expect(accepts({ ...legacyContainers, songs: 'nope' })).toBe(false);
   });
 });
