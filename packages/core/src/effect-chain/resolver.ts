@@ -185,6 +185,7 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     kind: 'play',
     effectId: chainEffectDefId(hostedId),
     ...(gen.canvasScene ? { canvasScene: gen.canvasScene } : {}),
+    ...(gen.splice ? { splice: gen.splice, spliceInputs: gen.spliceInputs ?? [] } : {}),
     mode,
     ...targetFields(effect, ctx.sourceDrumId),
     busId: CHAIN_BUS_ID,
