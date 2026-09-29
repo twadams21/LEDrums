@@ -68,6 +68,7 @@ import {
   matchSectionEffects,
   type EffectInputEvent,
 } from '../effect-chain/resolver';
+import { applySectionMaster, createSectionMasterState, resetSectionMaster } from '../effect-chain/master';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
 import type { Effect } from '../effect-chain/types';
 import type { SongSection } from './types';
@@ -385,6 +386,10 @@ class VoiceBusEngine implements RenderEngine {
       Allocated once per model, never on the hot path. */
   private outFb: Float32Array | null = null;
 
+  /** The active section's Master chain state (effect chains, S02): its clock restarts and its
+      modifier state drops on section recall and on a model change. */
+  private readonly masterState = createSectionMasterState();
+
   // --- lifecycle ---------------------------------------------------------
 
   setModel(model: PixelModel): void {
@@ -392,6 +397,7 @@ class VoiceBusEngine implements RenderEngine {
     this.model = model;
     this.finalFb = new Fb(model.pixelCount);
     this.outFb = new Float32Array(model.pixelCount * 4);
+    resetSectionMaster(this.masterState);
   }
 
   /**
@@ -544,6 +550,7 @@ class VoiceBusEngine implements RenderEngine {
     if (!validSongRecall && !legacySection) return false;
     this.activeSongId = song?.id ?? null;
     this.activeSectionId = sectionId;
+    resetSectionMaster(this.masterState);
     this.onDiagnostic?.({
       kind: 'section-recalled',
       songId: this.activeSongId,
@@ -1287,6 +1294,10 @@ class VoiceBusEngine implements RenderEngine {
         { timeMs: this.timeMs, dt, transport, cc: this.ccTable, osc: this.oscTable, notes: this.noteTable, audio: this.audioTable },
         this.finalFb,
       );
+      // Section Master chain: over the whole composited frame, before the output stage
+      // (blackout / master brightness in `frame()`). Runs once per tick, never per read.
+      const master = this.activeEffectSection()?.master;
+      if (master?.length) applySectionMaster(this.finalFb, master, this.masterState, { model: this.model, timeMs: this.timeMs, dt });
     }
     this.perf = {
       ...emptyPerfStats(),
