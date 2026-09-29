@@ -104,6 +104,20 @@ export interface PlayAction {
    * voice and leave it unset, so genuine multiplicity (rapid re-fires, distinct effects) is
    * untouched. See {@link VoicePool.spawn}. */
   supersedePriorVoice?: boolean;
+  /**
+   * Real-time width of {@link lifeEnvelope}'s x axis, in ms. Absent → the pool derives it from
+   * the effect's declared life, as before. The Effect path sets it so an amp envelope's decay
+   * is timed in its own milliseconds rather than the hosted generator's life param.
+   */
+  lifeSpanMs?: number;
+  // ---- Effect-path fields (effect chains). All absent on graph actions. ----
+  /** The authored Effect id this action plays (see {@link Voice.chainEffectId}). */
+  chainEffectId?: string;
+  blend?: BlendMode;
+  opacity?: number;
+  layerOrder?: number;
+  /** Explicit multi-target list (see {@link Voice.targets}). */
+  targets?: string[];
   via: string;
   latchKey: string | null;
 }

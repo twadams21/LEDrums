@@ -99,6 +99,24 @@ export class VoicePool {
     return false;
   }
 
+  /** Is a live, non-releasing voice of this authored Effect playing? (Retrigger `ignore`.) */
+  hasLiveChainVoice(chainEffectId: string): boolean {
+    for (const v of this.pool) {
+      if (v.active && v.phase !== 'release' && v.chainEffectId === chainEffectId) return true;
+    }
+    return false;
+  }
+
+  /** Release every live voice of this authored Effect (retrigger `restart`, note-off of a
+      `hold`). `modes` narrows which play modes are released; absent releases all. */
+  releaseChainVoices(chainEffectId: string, timeMs: number, modes?: readonly Voice['mode'][]): void {
+    for (const v of this.pool) {
+      if (!v.active || v.phase === 'release' || v.chainEffectId !== chainEffectId) continue;
+      if (modes && !modes.includes(v.mode)) continue;
+      releaseVoice(v, timeMs);
+    }
+  }
+
   /**
    * Find a free pool slot; if the pool is saturated, steal the oldest releasing
    * voice, else the oldest voice overall (voice-capped, no GC churn).
@@ -264,7 +282,7 @@ export class VoicePool {
     const life = resolveVoiceLife(slot.generatorId, slot.params, deps.bpm, effect.sustainMs, a.lifeEnvelope);
     slot.sustainMs = a.sustainMs ?? life.sustainMs;
     slot.lifeEnvelope = life.envelope;
-    slot.lifeSpanMs = life.spanMs;
+    slot.lifeSpanMs = a.lifeSpanMs ?? life.spanMs;
     slot.releaseMs = a.releaseMs ?? effect.releaseMs;
     slot.phase = 'attack';
     slot.level = 0;
@@ -275,6 +293,12 @@ export class VoicePool {
     slot.deckGain = 1;
     slot.pad = deps.pad ?? '';
     slot.originNodeId = a.originNodeId;
+    // Effect-path fields — carried verbatim; all undefined for graph actions.
+    slot.chainEffectId = a.chainEffectId;
+    slot.blend = a.blend;
+    slot.opacity = a.opacity;
+    slot.layerOrder = a.layerOrder;
+    slot.targets = a.targets;
 
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;
@@ -324,6 +348,11 @@ function makeVoiceSlot(): Voice {
     spliceInputs: undefined,
     splice: undefined,
     spliceMotionMs: undefined,
+    chainEffectId: undefined,
+    blend: undefined,
+    opacity: undefined,
+    layerOrder: undefined,
+    targets: undefined,
   };
 }
 

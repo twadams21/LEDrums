@@ -34,7 +34,8 @@ export type ModSource =
   | { kind: 'osc'; address: string } // OSC modulation — a live 0..1 value at an OSC address
   | { kind: 'note'; note: number; channel: number | null; mode: NoteModMode; releaseMs: number }
   | { kind: 'audio'; band: AudioBand } // GH #214: one band of the latest live audio feature frame
-  | { kind: 'random'; value: number; distribution: RandomDistribution; steps: number }; // per-voice frozen random value, resolved at trigger time
+  | { kind: 'random'; value: number; distribution: RandomDistribution; steps: number } // per-voice frozen random value, resolved at trigger time
+  | { kind: 'velocity' }; // the host voice's spawn velocity 0..1 (effect chains' Velocity control)
 
 /** The source kinds the model knows. Widens with S36 (`'lfo'`) / S37 (`'cc'`). */
 export type ModSourceKind = ModSource['kind'];
@@ -206,6 +207,8 @@ export interface ModSampleCtx {
   /** Latest audio feature frame + its engine stamp — an `audio` source reads one band here,
       gated by freshness against `timeMs` (see `sampleAudio`). Optional ⇒ neutral. */
   audio?: AudioTable | null;
+  /** The host voice's spawn velocity 0..1 — a `velocity` source reads it. Optional ⇒ 0. */
+  velocity?: number;
 }
 
 const num = (v: number | boolean | string | undefined, d: number): number =>
@@ -248,6 +251,10 @@ export function sampleSource(src: ModSource, ctx: ModSampleCtx): number {
       return src.value;
     case 'audio': // GH #214 — latest frame's band while fresh, else 0
       return sampleAudio(ctx.audio, src.band, ctx.timeMs);
+    case 'velocity': {
+      const v = ctx.velocity ?? 0;
+      return v < 0 ? 0 : v > 1 ? 1 : v;
+    }
   }
 }
 

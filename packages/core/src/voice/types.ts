@@ -14,6 +14,7 @@ import type { CanvasScene } from '../canvas/types';
 import type { BlendMode } from '../color/blend';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
+import type { Effect, ModifierDevice } from '../effect-chain/types';
 
 export type { PlayType };
 
@@ -768,6 +769,14 @@ export interface SongSection {
   /** Exact ordered graph keys the performer can select with the computer keyboard. Older
       runtime shows omit this field; the engine then derives the set from {@link slots}. */
   performanceGraphKeys?: string[];
+  /**
+   * The section's authored Effect stack, in composition order (effect chains). When this is
+   * defined — even as an empty array — the engine runs the section on the Effect path and
+   * ignores {@link slots} for it; absent keeps the graph path exactly as before.
+   */
+  effects?: Effect[];
+  /** The section's master modifier chain (applied to the whole section's output; S02). */
+  master?: ModifierDevice[];
 }
 
 /**
@@ -934,6 +943,21 @@ export interface Voice extends GeometryState {
   params: ParamValues;
   /** Blend mode used when this voice represents a Mix node. */
   mixBlendMode?: BlendMode;
+  /** Effect-path voices only: the authored Effect id that spawned this voice. Retrigger
+      (restart / ignore) and note-off release scan by it. Absent on graph voices. */
+  chainEffectId?: string;
+  /** Effect-path voices only: the Effect's blend mode (compositing semantics land in S02). */
+  blend?: BlendMode;
+  /** Effect-path voices only: the Effect's opacity 0..1 (compositing semantics land in S02). */
+  opacity?: number;
+  /** Effect-path voices only: the Effect's index in its section stack (composition order). */
+  layerOrder?: number;
+  /**
+   * Explicit multi-target list: each entry is a drum id or a `"<drumId>#<h1>,<h2>"` hoop id.
+   * When present the voice renders over the UNION of those ranges, overriding `scope` /
+   * `targetId`; absent keeps today's scope resolution.
+   */
+  targets?: string[];
   /**
    * Per-frame effective params (envelopes + tempo-sync applied). A reused scratch
    * object owned by the pool slot — the engine refills it each tick before the

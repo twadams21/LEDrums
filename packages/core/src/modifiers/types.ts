@@ -95,4 +95,17 @@ export interface ResolvedModifier {
   params: ResolvedParams;
   bypass?: boolean;
   modulations?: Mapping[];
+  /** Dry/wet 0..1 over this link's range (effect chains). Absent = 1 = today's behaviour.
+      Carried by the resolver; the chain runner applies it from S02. */
+  mix?: number;
+  /** Optional envelope over the voice's life that multiplies {@link mix} (effect chains, S02). */
+  envelope?: ModifierEnvelope;
+}
+
+/** An ADSR over the host voice's life, in ms, shaping a modifier link's mix. */
+export interface ModifierEnvelope {
+  attackMs: number;
+  decayMs: number;
+  sustainLevel: number;
+  releaseMs: number;
 }
