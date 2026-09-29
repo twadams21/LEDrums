@@ -51,7 +51,7 @@ async function boot(): Promise<void> {
   const camLeft = new PerspectiveCamera(50, 1, 0.05, 200);
   camLeft.position.set(0.75, 0.5, 1.0).normalize().multiplyScalar(worldR * 2.1);
   const camRight = new PerspectiveCamera(40, 1, 0.02, 100);
-  camRight.position.set(0.7, 0.45, 1.0).normalize().multiplyScalar(kit.bounds.radius * 3.3);
+  camRight.position.set(0.7, 0.45, 1.0).normalize().multiplyScalar(kit.bounds.radius * 4.2);
 
   const look = createWorldLook({ renderer, scene: sceneLeft, camera: camLeft, particles });
 

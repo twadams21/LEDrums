@@ -33,7 +33,7 @@ type TNode = any;
 
 export const samplerParams = {
   radius: 0.2,
-  gain: 0.004,
+  gain: 0.012,
   stride: 4,
   decay: 0.85,
   ledSize: 0.024,
@@ -103,8 +103,9 @@ export function createSampler({ renderer, particles }: { renderer: WebGPURendere
   mat.scaleNode = ledSize;
   const dist = length(uv().sub(0.5)).mul(2);
   const soft = oneMinus(smoothstep(0.0, 1.0, dist));
-  const lit = lc.xyz.mul(previewGain).clamp(0, 1);
-  mat.colorNode = vec3(0.05, 0.08, 0.14).add(lit);
+  // Soft-knee tone curve so faint samples still read and hot ones don't clip flat.
+  const lit = float(1).sub(lc.xyz.mul(previewGain).mul(-3).exp());
+  mat.colorNode = vec3(0.015, 0.02, 0.035).add(lit);
   mat.opacityNode = soft.mul(soft).mul(float(0.35).add(lit.x.add(lit.y).add(lit.z).mul(0.4).clamp(0, 0.65)));
   const leds = new Sprite(mat);
   (leds as unknown as { count: number }).count = nLed;
