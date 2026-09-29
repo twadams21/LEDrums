@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>LED particle lab (spike)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #04060a; overflow: hidden; color: #9fb0c8;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      #gpu-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+      .pane { position: fixed; top: 0; bottom: 0; touch-action: none; cursor: grab; }
+      .pane:active { cursor: grabbing; }
+      #pane-left { left: 0; width: 50vw; }
+      #pane-right { right: 0; width: 50vw; border-left: 1px solid #1a2436; box-sizing: border-box; }
+      .tag { position: absolute; left: 10px; top: 8px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; pointer-events: none; }
+      #hud { position: fixed; left: 10px; bottom: 8px; opacity: .8; pointer-events: none; white-space: pre; }
+      #nogpu { display: none; position: fixed; inset: 0; align-items: center; justify-content: center; text-align: center;
+        padding: 24px; font-size: 16px; color: #ffb4a8; background: #04060a; z-index: 10; }
+    </style>
+  </head>
+  <body>
+    <canvas id="gpu-canvas"></canvas>
+    <div id="pane-left" class="pane"><div class="tag">World field</div></div>
+    <div id="pane-right" class="pane"><div class="tag">Kit preview (LEDs sampled from field)</div></div>
+    <div id="hud"></div>
+    <div id="nogpu">WebGPU is not available in this browser (navigator.gpu is missing).<br />Use a recent Chrome / Edge / Safari Technology Preview with WebGPU enabled.</div>
+    <script type="module" src="/src/lab/main.ts"></script>
+  </body>
+</html>
