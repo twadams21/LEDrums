@@ -37,3 +37,61 @@ orchestrator reconciles.
 
   `ui-strip-cards` must export exactly these. Until they land, `ui-strip-chain` may ship one-line
   placeholders at those paths; the orchestrator resolves them at merge.
+
+## Wave 4 — binding addendum (orchestrator, after the wave-3 merge)
+
+Base: `feat/effect-chains-s05-wave3`. Each piece works on `feat/effect-chains-w4-<piece>` and **pushes** it
+(this overrides the overview's "never push"). Commit trailer session: use the one from your harness
+attribution reminder.
+
+**Shared rules (all UI pieces)**
+
+- **The api seam.**
+  - Components take `api: EffectsAuthoringApi`; the S06 doc's `store={store}` wording is superseded.
+  - The store does not implement the contract until `store-wire` merges. At an app mount site, pass
+    the store through ONE cast, `store as unknown as EffectsAuthoringApi`, on a line ending
+    `// TODO(ec-w4): store-wire`. The orchestrator removes it at merge.
+- **Styleguide registration.**
+  - Do not commit edits to `styleguide/Styleguide.svelte`.
+  - To verify, register your section there locally, capture, then `git checkout -- apps/web/src/lib/styleguide/Styleguide.svelte`
+    before committing. The orchestrator registers every section at merge.
+- **Your dev port.** Run a web-only preview on a port of your own and point ui-shot at it.
+  - Ports: ui-grid 5191, ui-strip-chain 5192, ui-strip-cards 5193, ui-sections-import 5194, store-wire 5195.
+  - Start it with `LEDRUMS_WEB_PORT=<port> LEDRUMS_WEB_SHARE=1 pnpm --filter @ledrums/web dev`, run in the background. It binds 127.0.0.1 with a strict port.
+  - Capture with `UI_SHOT_BASE=http://127.0.0.1:<port> UI_SHOT_OFFLINE=1 pnpm ui-shot --route "?style" --target "<your section>" --name <piece>-…`.
+  - Read the PNGs. Kill YOUR server by its PID when done; never `pkill` by pattern.
+  - Never touch port 5173 (Trent's shared server).
+- **Dead code.** New files that are unreachable until the orchestrator registers or mounts them are
+  expected. List them in your report.
+
+**Piece-specific**
+
+- `ui-strip-chain` ships one-line placeholder cards at `strip/cards/{GeneratorCard,ModifierCard,ControlCard}.svelte`
+  with the exact props from the Wave 4 table. At merge, `ui-strip-cards`' real files win.
+- `ui-strip-cards` must not create or edit anything under `strip/` outside `strip/cards/`.
+- `ui-grid` mounts `EffectsView` in place of `TriggerGraphView`. `EffectsView` renders
+  `<DeviceStrip api={api} cell={api.selectedCell} />` from `strip/DeviceStrip.svelte`, with props
+  `{ api: EffectsAuthoringApi; cell: CellSelection | null }`. `ui-grid` may ship a one-line
+  placeholder there too (ui-strip-chain wins).
+- `ui-sections-import`: per-section summaries for sections other than the active one may need data
+  the api does not expose. Build a pure helper in your fence (over `EffectsSection` + `grid-model.ts`)
+  and report the gap. The import notice and dialog read `api.legacyImportAvailable`,
+  `api.legacyShowNames`, `api.importLegacyShows` and `api.dismissLegacyImport`.
+- `store-wire` inherits these wave-3 notes:
+  - **Ids.** `store/ids.ts` `GENERATED_ID_RE` does not reserve the Effect / device id prefixes that
+    `effects-doc.ts` and `effects-files.ts` mint (check the actual prefixes). Reserve them on reload.
+  - **Boot.** `bootEffectLibraries` returns `showsFromStorage` / `songsFromStorage` for the rule
+    that local data beats the server.
+  - **Files.** `effects-files.ts` apply results return `canvasScenes`. Add them to the show in the
+    same undo step. Wrap save and load with `file-io.ts`. Master loads go through
+    `applyDeviceFile(section, MASTER_CELL, …)`; the api has no `loadFileIntoMaster`, so leave the
+    contract unchanged.
+  - **Sim.** Use `effectVoiceStats()` for the Layers dock at telemetry rate (it allocates).
+    `releaseEffects` needs a note. `setNote` is not forwarded, so pass the note inside `hitEffects`
+    so the zone Effect and the Cue fire once each.
+  - **Host.** `EffectsControllerHost` needs `kit()` and `inputMap()`, and `files.*` must go through
+    `effects-files.ts`.
+  - **Tests.** Store tests that asserted replaced graph behaviour are rewritten or deleted, and each
+    one is listed in the report.
+  - **Previews.** The legacy graph editor may stop rendering sensibly once the store is on v3.
+    That is expected; S08 deletes it. Keep it compiling.
