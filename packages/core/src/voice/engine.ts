@@ -70,7 +70,6 @@ import {
 } from '../effect-chain/resolver';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
 import type { Effect } from '../effect-chain/types';
-import { tryGetEffect } from '../effects/registry';
 import type { SongSection } from './types';
 import type {
   EffectSkipReason,
