@@ -50,13 +50,24 @@ describe('atomic live-state envelope', () => {
       expect((await readJson(join(path, LIVE_STATE_FILE))).files).toEqual({ project: { n: 4 }, showLibrary: v3Shows, songLibrary: v2Songs });
     });
 
-    it('archives the blob found on disk after a restart, and never overwrites an existing archive', async () => {
+    it('archives the blob found on disk when a restarted process saves before reading', async () => {
+      const path = await dir();
+      await createProjectStorage(path).save({ project: {}, showLibrary: v2Shows, songLibrary: null });
+      expect(await readdir(path)).toEqual([LIVE_STATE_FILE]);
+
+      // A fresh process that writes without calling read() must still find the old blob on disk.
+      const restarted = createProjectStorage(path);
+      await restarted.save({ project: {}, showLibrary: v3Shows, songLibrary: null });
+      expect(await readJson(join(path, 'default.shows.v2.local.json'))).toEqual(v2Shows);
+      expect((await readJson(join(path, LIVE_STATE_FILE))).files.showLibrary).toEqual(v3Shows);
+    });
+
+    it('never overwrites an existing archive after a restart', async () => {
       const path = await dir();
       await createProjectStorage(path).save({ project: {}, showLibrary: v2Shows, songLibrary: null });
       const existing = { version: 2, data: { original: true } };
       await writeFile(join(path, 'default.shows.v2.local.json'), JSON.stringify(existing));
 
-      // A fresh process that writes before (or without) reading still sees what is on disk.
       const restarted = createProjectStorage(path);
       await restarted.save({ project: {}, showLibrary: v3Shows, songLibrary: null });
       expect(await readJson(join(path, 'default.shows.v2.local.json'))).toEqual(existing);
