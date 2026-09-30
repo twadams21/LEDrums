@@ -63,7 +63,7 @@
       <h3>Composition</h3>
       <ul>
         <li>Compose from <code>lib/ui</code> primitives and the composites above; new panel = existing vocabulary first.</li>
-        <li>Store-bound components read a narrow store surface — keep new ones presentational where possible (NodeCard pattern), with the store adapter at the view edge.</li>
+        <li>Store-bound components read a narrow store surface — keep new ones presentational where possible (the device-card pattern: <code>api</code> in, no store), with the store adapter at the view edge.</li>
         <li>Something new and reusable? Add it to <code>lib/ui</code>, demo it in the styleguide, regenerate this file (<code>pnpm design-system</code>) in the same change.</li>
       </ul>
     </div>
