@@ -9,7 +9,7 @@ export interface ReduceResult {
   monitor?: { kind: 'midi' | 'osc'; label: string; value: number };
 }
 
-/** A drum-zone pad resolved from the patch zone-map (the pad-bound graph it fires). */
+/** A drum-zone pad resolved from the patch zone-map (its zone Effects fire). */
 export interface ZonePad {
   drumId: string;
   zone: string;
@@ -18,17 +18,17 @@ export interface ZonePad {
 /**
  * Map a trigger slot index to its padKey zone form — the slot index AS A STRING.
  *
- * This is the zone identity the authored model uses everywhere: graphs are keyed
- * `padKey(drumId, String(slot))` (`"snare:0"`), a `drum` trigger source carries the same
- * numeric-string zone, and the web sends `zone: String(pad.zone)` on a `key` message.
+ * This is the zone identity the authored model uses everywhere: a zone Effect's cell names the
+ * numeric slot (`padKey(drumId, String(slot))`, `"snare:0"`), a `drum` trigger source carries
+ * the same numeric-string zone, and the web sends `zone: String(pad.zone)` on a `key` message.
  * Emitting a LABEL here instead (`"snare:center"`) meant a MIDI- or OSC-resolved pad could
- * never match an authored graph — every hit missed with `no-slot-graphs` while the web's own
- * pad clicks worked, because only this path converted. {@link SLOT_LABELS} is a DISPLAY
+ * never match authored content — every hit missed while the web's own pad clicks worked,
+ * because only this path converted. {@link SLOT_LABELS} is a DISPLAY
  * concern (see `describeVoiceInput`), never an identity.
  *
  * Only the floor is clamped. The old ceiling (8 slots) came off with the zone cap
  * (2026-08-14): clamping slot 9 to "7" would not have limited anything, it would have
- * silently fired a DIFFERENT zone's graph.
+ * silently fired a DIFFERENT zone's Effects.
  */
 function slotToZone(slot: number): string {
   return String(Math.max(0, Math.trunc(slot)));
@@ -37,9 +37,9 @@ function slotToZone(slot: number): string {
 /**
  * Zone-map resolution — PINNED precedence STEP 1. Resolve a raw MIDI note to its
  * `(drumId, zone)` pad via the patch {@link InputMap} (`midiNotes`, keyed `(drumId,
- * slot)` → numeric-string zone). A match fires the pad-bound graph (the padKey path) and the
- * caller STOPS; a miss (`null`) means the caller forwards the raw note so the engine can
- * fire a graph bound DIRECTLY to it by its trigger source (step 2) — never both.
+ * slot)` → numeric-string zone). A match attaches the pad (its zone Effects fire); a miss
+ * (`null`) means the caller forwards the raw note with no pad, so only a Cue bound DIRECTLY
+ * to it can fire (step 2).
  */
 export function zoneForNote(inputMap: InputMap, note: number): ZonePad | null {
   const m = inputMap.midiNotes.find((x) => x.note === note);

@@ -27,9 +27,8 @@ export interface SpawnDeps {
   /** Transport bpm at spawn — converts a `beats`-unit life declaration to ms, the same way
       the effect converts internally. See {@link resolveVoiceLife}. */
   bpm: number;
-  /** Eval state prefix (pad / slot key) the spawning action belongs to — tagged onto the
-      voice so origin-keyed liveness scans (R13 delay-overlap Mix) can be pad-scoped. `''`
-      for non-graph spawns (section looks). */
+  /** Spawn key the spawning action belongs to (`effect:<id>` on the Effect path) — tagged onto
+      the voice for attribution and pad-scoped liveness scans. `''` when none. */
   pad?: string;
 }
 
@@ -258,12 +257,12 @@ export class VoicePool {
     // The engine re-stamps this each frame from its own accumulator; clear it so a reused
     // pool slot never shows the previous voice's position for one frame.
     slot.spliceMotionMs = undefined;
-    // Resolved modifier chain (S29 populates `a.modifiers` from graph topology). Reset
+    // Resolved modifier chain (the resolver populates `a.modifiers`). Reset
     // per-voice modifier state on (re)spawn so a reused slot never inherits a previous
     // voice's accumulators — same lifecycle as `genState` (per-voice-state rule).
     slot.modifiers = a.modifiers;
     slot.modState = undefined;
-    // Resolved modulation mappings (S34 populates `a.modulations` from graph topology); no
+    // Resolved modulation mappings (the resolver populates `a.modulations`); no
     // per-voice state — envelopes sample the voice's own life phase, so a reused slot just
     // takes the new list (or undefined) with nothing to reset.
     slot.modulations = a.modulations;
@@ -293,7 +292,7 @@ export class VoicePool {
     slot.deckGain = 1;
     slot.pad = deps.pad ?? '';
     slot.originNodeId = a.originNodeId;
-    // Effect-path fields — carried verbatim; all undefined for graph actions.
+    // Effect-path fields — carried verbatim.
     slot.chainEffectId = a.chainEffectId;
     slot.blend = a.blend;
     slot.opacity = a.opacity;

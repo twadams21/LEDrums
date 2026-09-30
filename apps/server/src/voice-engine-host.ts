@@ -463,11 +463,10 @@ export class VoiceEngineHost {
   /**
    * Resolve a partial input to a {@link voice.InputEvent} and apply it. `key` is native
    * (drum + zone). `noteOn`/`osc` route through the PINNED precedence: the patch inputMap
-   * zone-map first ({@link zoneForNote}/{@link zoneForOsc} → a `(drumId, zone)` pad, the
-   * pad-bound graph path). On a zone-map MISS the raw note/address is forwarded WITHOUT a
-   * pad, so the engine fires any graph bound DIRECTLY to it by its trigger source (and an
-   * event never fires both — exactly one of the two paths runs). `noteOff` passes through
-   * (the engine decays voices on their own envelopes).
+   * zone-map first ({@link zoneForNote}/{@link zoneForOsc} → a `(drumId, zone)` pad, whose
+   * zone Effects fire). On a zone-map MISS the raw note/address is forwarded WITHOUT a pad, so
+   * only a Cue bound DIRECTLY to it fires. `noteOff` passes through (it releases `hold`
+   * Effects; other voices decay on their own envelopes).
    */
   applyInput(partial: VoicePartialInput): void {
     // Audio frames arrive continuously (≤30 Hz) and are not a hit: they must not restart the
@@ -619,7 +618,7 @@ export class VoiceEngineHost {
         };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
-        // action and never reaches the zone-map or a trigger-source graph (the same
+        // action and never reaches the zone-map or a Cue (the same
         // reservation CC #0 has for section recall). Doing this at the ONE seam every
         // input path funnels through (WS, native MIDI, raw OSC) is what keeps the
         // precedence from drifting between them.
@@ -633,7 +632,7 @@ export class VoiceEngineHost {
           note: partial.note,
           // Per-DRUM velocity sensitivity, applied at the ONE seam where the raw
           // velocity and the zone-map's drum first coexist. A note the map does not
-          // claim (direct-bound graph, modulation-only) has no drum and passes
+          // claim (a Cue, modulation-only) has no drum and passes
           // through untouched — see `applyDrumVelocity`'s header for the rule.
           velocity: applyDrumVelocity(this.project.inputMap, pad?.drumId, partial.velocity),
           channel: partial.channel,

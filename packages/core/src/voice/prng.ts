@@ -3,8 +3,8 @@
  * it produces the same sequence on every platform, so the render engine stays
  * replay-deterministic (no `Math.random` / `Date.now` anywhere in core).
  *
- * Usage: hold one `Prng` in engine state (seeded once at construction). Graph eval
- * (`random` / `chance` nodes) draws from it. Derive a fresh independent stream for a
+ * Usage: hold one `Prng` in engine state (seeded once at construction). The Effect resolver
+ * (`random` Control devices) draws from it. Derive a fresh independent stream for a
  * given trigger from a monotonic seq counter via {@link deriveSeed}.
  */
 export class Prng {

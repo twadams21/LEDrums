@@ -6,11 +6,9 @@
  * modifier, and the chain runner ({@link applyModifierChain}) is the only interface the
  * compositor sees.
  *
- * LOCKED model (doc 06 §C, 2026-07-02): modifiers are GRAPH NODES wired to a play node's
- * `mod` input; at voice spawn the graph resolves the play node's modifier closure into a
- * flat {@link ResolvedModifier}[] carried on the voice. The engine never sees graph topology
- * — the resolved chain is the interface. The graph layer arrives in S29; S28 builds the
- * engine seam (registry + chain runner + compositor hook + Trail) it hooks into.
+ * Model: an Effect's Modifier devices resolve (at fire time, `effect-chain/resolver.ts`)
+ * into a flat {@link ResolvedModifier}[] carried on the voice — the resolved chain is the
+ * interface the engine sees (registry + chain runner + compositor hook).
  *
  * Purity is a hard non-negotiable (AGENTS.md): `apply` is a pure, deterministic function of
  * (ctx, params, fb, range, state) — no IO, no wall-clock, no `Math.random`. Any per-instance
@@ -82,13 +80,13 @@ export interface ModifierDef<State = unknown> {
 }
 
 /**
- * One resolved link in a voice's modifier chain — the interface between graph resolution
- * (S29) and the engine. `params` are the node's authored values overlaid on the modifier
+ * One resolved link in a voice's modifier chain — the interface between the Effect resolver
+ * and the engine. `params` are the device's authored values overlaid on the modifier
  * defaults; `bypass` disables the link (identity) without dropping it from the chain.
  * `modulations` (doc 10, S33) drives this link's params from modulation sources — the same
  * {@link Mapping} model + sampler as a play voice's `Voice.modulations`, sampled per-frame by
  * the chain runner just before `apply` (empty/undefined → params pass through unmodulated).
- * The graph layer (S34) populates it; before that the chain runs on the authored params.
+ * The Effect resolver populates it from the Effect's Control devices.
  */
 export interface ResolvedModifier {
   modifierId: string;

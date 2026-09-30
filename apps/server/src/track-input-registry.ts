@@ -99,7 +99,7 @@ export class TrackInputRegistry {
           this.sink.midi({ note: packet.note, velocity: on ? packet.velocity : 0, on, channel: packet.channel });
         }
         // Explicit release edges let the host release momentary controls without firing
-        // graphs or sequence resets. Gates remain separate, modulation-only values.
+        // Effects. Gates remain separate, modulation-only values.
         this.sink.osc(address(`midi/${packet.channel}/note/${packet.note}`), on ? packet.velocity / 127 : 0, on ? 'press' : 'release');
         this.sink.osc(address(`midi/${packet.channel}/gate/${packet.note}`), on ? packet.velocity / 127 : 0);
         break;

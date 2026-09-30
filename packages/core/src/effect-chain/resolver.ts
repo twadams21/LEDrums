@@ -34,8 +34,7 @@ export interface EffectSectionLike {
  * One input, in the terms Effects match on. A single physical message can carry several
  * facets — a zone-mapped MIDI note has a `drumId`/`slot` AND a `midiNote` — and every facet
  * that matches fires: zone Effects and Cue Effects on the same note BOTH fire, in section
- * order. That is today's precedence for graphs (a zone-mapped note fires its pad graphs and
- * any direct note-sourced graph alike).
+ * order.
  */
 export interface EffectInputEvent {
   drumId?: string;
@@ -283,7 +282,7 @@ function controlSource(control: ControlDevice, rng: EffectFireCtx['rng']): ModSo
     case 'velocity':
       return { kind: 'velocity' };
     case 'random': {
-      // Frozen at the fire, like a graph Random source: each fire draws once per control.
+      // Frozen at the fire: each fire draws once per control.
       const { distribution, steps } = control.settings;
       const raw = rng ? sampleRandomDistribution(distribution, rng) : 0;
       const value = distribution === 'stepped' ? quantizeSteppedRandom(raw, steps) : raw;

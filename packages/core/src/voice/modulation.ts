@@ -3,8 +3,8 @@
  * time, generalizing the old env-only param sweep into summed-and-clamped modulation
  * contributions. ONE model, two carriers: play-voice effect params ({@link Voice.modulations})
  * and modifier-chain params ({@link import('../modifiers/types').ResolvedModifier.modulations}).
- * The graph layer (S34) resolves topology into these flat {@link Mapping} lists at voice
- * spawn; the engine never sees the graph.
+ * The Effect resolver turns an Effect's Control devices into these flat {@link Mapping} lists
+ * at fire time (`effect-chain/resolver.ts`).
  *
  * Pure + deterministic (AGENTS.md hard rule): no IO, no wall-clock, no `Math.random`. A
  * contribution is a pure function of the {@link Mapping} and a {@link ModSampleCtx} (the

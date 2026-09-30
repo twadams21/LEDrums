@@ -15,8 +15,8 @@
 /**
  * `Record<oldId, newId>`. Chains are resolved transitively by {@link resolveEffectAlias}.
  *
- * NOTE ON NAMESPACE: the consult points (web hydrate + `buildShow`) rewrite the `effectId`
- * a graph node carries, and those ids are the LAB's `EffectDef` ids — generator-backed
+ * NOTE ON NAMESPACE: the consult points (the web's legacy import) rewrite the `effectId` a
+ * retired graph-model node carried, and those ids are the LAB's `EffectDef` ids — generator-backed
  * effects are `gen:<coreId>`, the retired hand-rolled pattern effects are their bare lab
  * ids (`swirl`, `whole`, …). So every key/value below is a lab effect id, NOT a bare core
  * generator id. (U3 retires the whole pattern path onto generators; the pattern effects'
