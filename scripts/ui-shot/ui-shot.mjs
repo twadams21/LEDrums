@@ -35,7 +35,7 @@ function usage() {
   pnpm ui-shot --all                capture every named preset
   pnpm ui-shot --list               list named presets
   pnpm ui-shot --view trigger --target "Effects grid" [--name out]    semantic capture
-  pnpm ui-shot --state "view:trigger,cell:kick:0" --target "#device-strip" --name strip
+  pnpm ui-shot --state "view:trigger,cell:kick:0" --target "Device strip" --name strip
   pnpm ui-shot --route "?view=patch" --target "main.center" --name my-shot   ad-hoc (raw route)
   pnpm ui-shot --discover --view trigger        list capturable targets of a view
 
