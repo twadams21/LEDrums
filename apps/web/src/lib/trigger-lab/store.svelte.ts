@@ -219,6 +219,8 @@ export type AddNodeOptions = {
 export type { MidiLearnTarget };
 /** The Effect-chain authoring contract this store implements (effect chains S05). */
 export type { EffectsAuthoringApi } from './effects-api';
+/** The MIDI-map authoring contract the store implements (effect chains S07, wave 5b). */
+export type { MapModeApi } from './map-api';
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */

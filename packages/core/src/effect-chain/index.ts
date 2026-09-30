@@ -10,3 +10,4 @@ export * from './library';
 export * from './master';
 // The Splice / Slice card's param list (the web device cards read it; it has no Styles).
 export { spliceGeneratorParamSpec } from './resolve-splice';
+export * from './input-mappings';
