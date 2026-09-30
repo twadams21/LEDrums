@@ -10,6 +10,13 @@ const zoneEffect = (id: string, row: string, slot: number) =>
 const scene = (id: string, name = id) => ({ id, name, sampler: { kind: 'cylinder' }, lenses: [], elements: [] });
 
 /** Two songs: one owned by the show, one referenced from the song library. */
+const MAPPINGS = [
+  { id: 'm-note', source: { midiNote: 36 }, target: { kind: 'fireCell', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } } } },
+  { id: 'two-sources', source: { midiNote: 1, midiCc: 2 }, target: { kind: 'fireEffect', effectId: 'kick-hit' } },
+  { id: 'm-note', source: { midiNote: 37 }, target: { kind: 'fireEffect', effectId: 'kick-hit' } },
+  { id: 'm-cc', source: { midiCc: 21 }, target: { kind: 'opacity', effectId: 'wash' }, rangeMin: 0, rangeMax: 0.5 },
+];
+
 function fixture() {
   const showLibrary = {
     version: 3,
@@ -36,7 +43,7 @@ function fixture() {
             songRefs: ['shared', 'shared', 'missing'],
             canvasScenes: [scene('mine')],
             activeSongId: 'own', activeSectionId: 'verse', bpm: 120, beatsPerBar: 4,
-            mappings: { opaque: true },
+            mappings: MAPPINGS,
           },
         },
       },
@@ -100,7 +107,23 @@ describe('buildRuntimeShow (v3 library → runtime Show)', () => {
       { kind: 'invalid-effect', songId: 'own', sectionId: 'verse', index: 1, id: 'broken', message: expect.stringContaining('the Kit row has no zone columns') },
       { kind: 'duplicate-effect-id', songId: 'own', sectionId: 'verse', index: 3, id: 'kick-hit', message: expect.stringContaining("duplicate Effect id 'kick-hit'") },
       { kind: 'invalid-master-modifier', songId: 'own', sectionId: 'verse', index: 1, message: expect.stringContaining('uid') },
+      { kind: 'invalid-mapping', songId: '', sectionId: '', index: 1, id: 'two-sources', message: expect.any(String) },
+      { kind: 'invalid-mapping', songId: '', sectionId: '', index: 2, id: 'm-note', message: expect.stringContaining("duplicate mapping id 'm-note'") },
     ]);
+  });
+
+  it('carries the valid InputMappings on the runtime Show, in authored order', () => {
+    const { showLibrary, songLibrary } = fixture();
+    const { show } = buildRuntimeShow(parseShowLibraryV3(showLibrary), parseSongLibraryV2(songLibrary));
+    expect(show!.mappings).toEqual([MAPPINGS[0], MAPPINGS[3]]);
+  });
+
+  it('reports a mappings field that is not an array, and absent mappings as none', () => {
+    const lib = (mappings: unknown) => parseShowLibraryV3({ version: 3, data: { shows: { s: { authored: { mappings } } } } });
+    const bad = buildRuntimeShow(lib({ opaque: true }), null);
+    expect(bad.show!.mappings).toEqual([]);
+    expect(bad.diagnostics).toEqual([{ kind: 'invalid-mapping', songId: '', sectionId: '', index: -1, message: 'mappings is not an array' }]);
+    expect(buildRuntimeShow(lib(undefined), null)).toMatchObject({ show: { mappings: [] }, diagnostics: [] });
   });
 
   it('keeps unknown authored fields on the parsed library and never mutates its inputs', () => {
@@ -111,7 +134,8 @@ describe('buildRuntimeShow (v3 library → runtime Show)', () => {
     expect({ showLibrary, songLibrary }).toEqual(before);
     const section = parsed.data.shows.main!.authored.songs[0]!.sections[0]!;
     expect(section.futureField).toBe('kept');
-    expect(parsed.data.shows.main!.authored.mappings).toEqual({ opaque: true });
+    // Stored mappings are kept verbatim (invalid ones included); only the runtime Show filters.
+    expect(parsed.data.shows.main!.authored.mappings).toEqual(MAPPINGS);
   });
 
   it('falls back to the first show when the active id dangles, and builds without a song library', () => {
