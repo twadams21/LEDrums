@@ -8,6 +8,7 @@ import { createStandaloneEffectsApi } from '../../trigger-lab/effects-controller
 import type { ShellStore } from '../shell-store.svelte';
 import type { SetlistSection, Song } from '../setlist';
 import SectionColumn from './SectionColumn.svelte';
+import { mapRegistry } from '../map-mode/registry.svelte';
 
 /* A Sections-view column summarises ITS section's grid (not the api's active one): one row per
    occupied cell with its Effect names, plus the Master chain. Clicking a row activates the
@@ -91,5 +92,15 @@ describe('SectionColumn — Effect summary', () => {
     const bypassed = { ...fx('a', 'Pulse', kickHead), bypass: true };
     const { getByRole } = fixture({ effects: [bypassed], master: [] });
     expect(getByRole('button', { name: /Pulse, bypassed$/ })).toBeTruthy();
+  });
+});
+
+describe('SectionColumn in MIDI-map mode', () => {
+  it('registers its header as a recall of this section in its own song', () => {
+    const { container } = fixture({});
+    const mine = mapRegistry.entries.filter((e) => container.contains(e.node));
+    expect(mine.map((e) => [e.spec.target, e.spec.kind, e.spec.label])).toEqual([
+      [{ kind: 'recallSection', sectionId: 's2', songId: 'song' }, 'button', 'Section · Chorus'],
+    ]);
   });
 });
