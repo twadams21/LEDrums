@@ -10,7 +10,7 @@
   let { railWidth, railLabel = 'Object types' }: { railWidth?: string; railLabel?: string } =
     $props();
 
-  const options = ['songs', 'effects', 'graphs'];
+  const options = ['songs', 'effects', 'sections'];
   let selected = $state('songs');
 </script>
 

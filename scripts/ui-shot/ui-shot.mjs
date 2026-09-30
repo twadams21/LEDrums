@@ -7,10 +7,10 @@
    The interface is semantic, not maintenance-driven (see README.md):
      · --target   resolves an element by accessible name / role / text — no CSS
                   registration needed. `[data-shot]→[data-ui]→role/name→aria-label
-                  →text→title→CSS`; prefixes (role: dialog: text: node: button:)
+                  →text→title→CSS`; prefixes (role: dialog: text: button:)
                   pick a resolver explicitly.
      · --state    drives the app into a state via the dev-only window.__LEDRUMS_SHOT__
-                  seam ("view:trigger,add:scope,select:scope"), replacing click chains.
+                  seam ("view:trigger,cell:kick:0,add-effect:wave"), replacing click chains.
      · --discover lists the capturable targets of a view from the DOM / a11y tree.
      · shots.json holds named presets { state, target, name?, viewport? } for CI/sweeps.
 
@@ -34,15 +34,15 @@ function usage() {
   pnpm ui-shot <name...>            capture named preset(s) from shots.json
   pnpm ui-shot --all                capture every named preset
   pnpm ui-shot --list               list named presets
-  pnpm ui-shot --view trigger --target "Node editor" [--name out]     semantic capture
-  pnpm ui-shot --state "view:trigger,add:scope,select:scope" --target "Node editor" --name scope
+  pnpm ui-shot --view trigger --target "Effects grid" [--name out]    semantic capture
+  pnpm ui-shot --state "view:trigger,cell:kick:0" --target "#device-strip" --name strip
   pnpm ui-shot --route "?view=patch" --target "main.center" --name my-shot   ad-hoc (raw route)
   pnpm ui-shot --discover --view trigger        list capturable targets of a view
 
 Target resolution (bare string walks the chain; prefix forces a resolver):
   [data-shot] → [data-ui] → role+name → [aria-label] → visible text → [title] → CSS
-  role:region[name='Trigger graph canvas']   dialog:Change effect   text:Mix
-  node:controller   button:Add Scope
+  role:grid[name='Effects grid']   dialog:Settings   text:Kick
+  button:Add Modifier
 
 Options: --full (full page), --strict (exit 1 on any console/page error), --viewport WxH,
          --settle MS (extra wait before capture — for animated canvases: visualizer, patch, gallery),
@@ -210,8 +210,6 @@ async function resolveTarget(page, target) {
       ]);
     case 'text':
       return firstHit([{ locator: page.getByText(rest), how: 'text' }]);
-    case 'node':
-      return firstHit([{ locator: page.locator(`.svelte-flow__node:has-text(${JSON.stringify(rest)})`), how: 'node' }]);
     case 'button':
       return firstHit([{ locator: page.getByRole('button', { name: rest }), how: 'button' }]);
     default:
@@ -219,8 +217,8 @@ async function resolveTarget(page, target) {
   }
 
   // Bare string: walk the chain, accessibility first, CSS last. The role step matches
-  // the accessible name EXACTLY — substring matching would let "Node editor" latch onto
-  // a "Node editor tab" control before reaching the aria-labelled drawer itself.
+  // the accessible name EXACTLY — substring matching would let "Settings" latch onto
+  // a "Settings tab" control before reaching the aria-labelled surface itself.
   const chain = [
     { locator: page.locator(`[data-shot="${target}"]`), how: 'data-shot' },
     { locator: page.locator(`[data-ui="${target}"]`), how: 'data-ui' },
@@ -284,17 +282,11 @@ function discoverInPage() {
     const name = (el.getAttribute('aria-label') || el.textContent || '').trim();
     if (name && name.length <= 40) push('button', name, `button:${name}`, r);
   }
-  for (const el of document.querySelectorAll('.svelte-flow__node')) {
-    const r = visible(el);
-    if (!r) continue;
-    const name = (el.textContent || '').trim().split('\n')[0].trim();
-    if (name) push('node', name, `node:${name}`, r);
-  }
   return out;
 }
 
 function printDiscovery(entries) {
-  const order = { region: 0, dialog: 1, button: 2, node: 3, ui: 4, shot: 5 };
+  const order = { region: 0, dialog: 1, button: 2, ui: 3, shot: 4 };
   const rows = [...entries].sort((a, b) => (order[a.type] - order[b.type]) || a.name.localeCompare(b.name));
   if (rows.length === 0) {
     console.log('(no capturable targets found — is the view rendered?)');

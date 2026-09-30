@@ -29,7 +29,6 @@ A **bare** string walks the whole chain. A **prefix** forces one resolver:
 | `role:`    | `role:grid[name='Effects grid']`                    | `getByRole(role, { name })` |
 | `dialog:`  | `dialog:Settings`                                   | dialog by accessible title |
 | `text:`    | `text:Kick`                                         | visible text |
-| `node:`    | `node:controller`                                   | svelte-flow node containing that text (graph-era: no flow canvas remains, so it resolves nothing) |
 | `button:`  | `button:Add Modifier`                               | button by name |
 | _(none)_   | `main.center`, `.top`, `#device-strip`              | walk the chain (CSS if all else fails) |
 
@@ -76,7 +75,7 @@ The seam is a **thin adapter over the existing store API** (no logic duplication
 pnpm ui-shot --discover --view trigger
 ```
 
-Lists regions / dialogs / buttons / nodes from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,cell:kick:0,add-effect:wave"`).
+Lists regions / dialogs / buttons / data-ui / data-shot targets from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,cell:kick:0,add-effect:wave"`).
 
 ## `--click` / `--rightclick` — surfaces that only exist after a gesture
 

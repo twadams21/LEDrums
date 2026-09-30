@@ -628,7 +628,7 @@
       title="Disclosure"
       src="lib/ui/Disclosure"
       wide
-      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by the effect inspector to fold an effect's own params under its always-visible common section."
+      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by Track inputs to fold its track-specific mappings under the always-visible rows."
     >
       <div class="disc-demo">
         <Disclosure label="Comet Trails" count={4} open={discOpen} onToggle={(v) => (discOpen = v)}>
@@ -650,7 +650,7 @@
       note="THE panel-title treatment (accent icon + tracked uppercase label, trailing controls). Used on every docked panel, rail, and drawer — retired Eyebrow as a panel title (Eyebrow stays for small in-content labels)."
     >
       <div class="ph-demo">
-        <PanelHeader icon={Layers} title="Buses / Layers" />
+        <PanelHeader icon={Layers} title="Effects" />
       </div>
       <div class="ph-demo">
         <PanelHeader icon={ListMusic} title="Setlist">

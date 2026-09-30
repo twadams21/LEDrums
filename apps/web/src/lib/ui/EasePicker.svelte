@@ -2,8 +2,7 @@
   import type { EaseFn, EaseDir, EaseSpec } from '../trigger-lab/sim';
 
   /** The Resolume-familiar easing families, grouped for a compact selector.
-      Single-sourced so the EnvelopeEditor (S24) and the Envelope node inspector
-      (S34) label eases identically. */
+      Single-sourced so every envelope editor labels eases identically. */
   export const EASE_FAMILY_OPTIONS: { value: EaseFn; label: string }[] = [
     { value: 'linear', label: 'Linear' },
     { value: 'sine', label: 'Sine' },
@@ -31,8 +30,7 @@
      control. Family-grouped so the full 10×3 Resolume set stays legible. `linear`
      is identical in every direction, so the direction control is disabled (not
      hidden — no layout shift) when Linear is chosen. Pure props: pass `value` +
-     `onChange`; the caller owns the EaseSpec. Reused by the EnvelopeEditor and the
-     Envelope node inspector (S34). */
+     `onChange`; the caller owns the EaseSpec. Reused by the envelope editors. */
   import Select from './Select.svelte';
   import SegmentedControl from './SegmentedControl.svelte';
 

@@ -23,7 +23,7 @@ export interface DragNumberOptions {
   fine?: boolean;
 }
 
-/** Pixels of travel that sweep a ranged param end to end. Roughly a node card's width, so
+/** Pixels of travel that sweep a ranged param end to end. Roughly a device card's width, so
     the gesture reads as "drag across the row". */
 export const DRAG_TRAVEL_PX = 220;
 /** Pixels per step for a param with no declared range (nothing to normalize against). */

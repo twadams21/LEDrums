@@ -89,8 +89,7 @@
     <p>
       Each section as a grid: the Kit and each drum (rows) by the drums' zones, then Always · Clock ·
       Cue (columns). A cell is a stack of Effects; the Kit row starts with the Master cell (the
-      section's master modifier chain). The grid replaces the graph rail; the device strip below it
-      edits the selection.
+      section's master modifier chain). The device strip below it edits the selection.
     </p>
   </div>
 
