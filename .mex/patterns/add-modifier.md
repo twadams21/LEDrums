@@ -62,11 +62,11 @@ strobe fade, per-modifier envelopes). Terms: `CONTEXT.md` (Modifier, Master chai
    `full-output` modifier with state, consider `createCheckpoint` (see `ModifierCheckpoint` in
    `modifiers/types.ts`). Without it the runtime falls back to a full-state copy.
 5. Register it in `modifiers/registry.ts` (import + add to `ALL`, keeping the batch comments).
-6. Test at the chain runner seam (`applyModifierChain`), following `modifiers.s3x.test.ts`,
-   `strobe.test.ts` and `trail.test.ts`: the transform's math, its state across frames, and its
-   defaults. The registry-wide suites pick it up automatically: bypass identity and palette
-   grouping (`modifiers.s32.test.ts`), and scoped state across dirty presentations
-   (`voice/runtime-checkpoint.test.ts`).
+6. Test at the chain runner seam (`applyModifierChain`), following
+   `modifiers.s30.test.ts` / `modifiers.s31.test.ts`, `strobe.test.ts` and `trail.test.ts`: the
+   transform's math, its state across frames, and its defaults. The registry-wide suites pick it
+   up automatically: bypass identity and palette grouping (`modifiers.s32.test.ts`), and scoped
+   state across dirty presentations (`voice/runtime-checkpoint.test.ts`).
 
 ## Task: Extend an existing Modifier
 

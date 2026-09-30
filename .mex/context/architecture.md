@@ -62,7 +62,7 @@ voice pool → generator bridge → modifier chain (per-link mix + envelope) →
 - **Modifiers.** Unchanged registry in `packages/core/src/modifiers/`. The chain runner gained
   per-link `mix` and envelope; at `mix` = 1 with no envelope it is identical to before. Strobe
   gained an off state (black / dimmed input / second colour) and a fade; its defaults are identical to before.
-  Pattern: `../patterns/add-a-modifier.md`.
+  Pattern: `../patterns/add-modifier.md`.
 - **Always / Clock / Cue.** Always Effects spawn in `loop` mode on section recall and release on
   leave (this replaces section "looks"). Clock Effects fire inside the engine tick when the
   transport crosses their beat grid. Cue sources take part in the binding-claims guard.

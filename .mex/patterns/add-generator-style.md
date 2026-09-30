@@ -68,7 +68,7 @@ are Trent's, building on Tim's voice note relayed by Trent. Terms: `CONTEXT.md` 
 - **Merged looks are params, not Styles.** wave-collapse is radial-wash `mode: 'collapse'`;
   follow-hoop is whole-drum's `hoopDelayMs`. Both stay in `EXCLUDED` (spec "Merges Trent approved").
 - **Changing-light looks are not Styles.** Strobe, sparkle and similar belong to Modifiers
-  (`add-a-modifier.md`). Strobe and sidechain are deliberately excluded as generators.
+  (`add-modifier.md`). Strobe and sidechain are deliberately excluded as generators.
 - **A new Generator kind is a contract change.** `GENERATOR_KINDS` in `effect-chain/types.ts` is
   part of the authored schema, and the web keys icons by kind (`GENERATOR_ICONS` in
   `app/views/effects/grid/generator-icons.ts`, plus `strip/cards/device-icons.ts`), so the
