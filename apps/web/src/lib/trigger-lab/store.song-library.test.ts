@@ -86,9 +86,10 @@ describe('export → import → resolve', () => {
     expect(store.songRefs).toEqual([libId]);
     expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
 
-    // the resolved view is renderable: the referenced song's section graphs are all present
+    // the referenced song resolves with its sections namespaced under the library song
     const refSong = store.resolvedSongs.find((s) => s.id === libId)!;
-    for (const sec of refSong.sections) for (const key of sec.graphs) expect(store.resolvedView.graphs[key]).toBeDefined();
+    expect(refSong.sections.length).toBeGreaterThan(0);
+    for (const sec of refSong.sections) expect(sec.id.startsWith(`lib:${libId}/`)).toBe(true);
   });
 
   it('import is a no-op for an unknown library id or an already-referenced one', () => {

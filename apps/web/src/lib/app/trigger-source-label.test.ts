@@ -75,11 +75,6 @@ const MAP: InputMap = {
   oscMap: [{ address: '/kick', drumId: 'kick', slot: 0 }],
 };
 
-/** A one-node trigger graph carrying a source (enough for the reverse resolver). */
-function graph(source: TriggerSource | undefined): TriggerGraph {
-  return { nodes: [makeNode('trigger', 'trigger', 0, 0, { source })], edges: [] };
-}
-
 describe('zoneLinkForSource', () => {
   it('links a MIDI note source that is also a mapped zone', () => {
     expect(zoneLinkForSource(MAP, { kind: 'midi', note: 38 })).toEqual({ drumId: 'snare', zone: '0' });

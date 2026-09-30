@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { effectChain, type CanvasScene } from '@ledrums/core';
-import { buildGraphClipDoc, parse, serialize } from './clipdoc';
+import { parse } from './clipdoc';
 import { MASTER_CELL } from './effects-api';
 import {
   CELL_FILE_EXT,
@@ -173,7 +173,8 @@ describe('applyEffectFile — load an Effect into a cell', () => {
     const wrongKind = applyEffectFile(s, kickHead, cellText, ctx());
     expect(wrongKind.result).toEqual({ ok: false, reason: 'That file holds a cell, not an Effect.' });
 
-    const graphText = serialize(buildGraphClipDoc('g', { graphs: { g: { nodes: [], edges: [] } }, graphNames: {}, effects: [], presets: [] }));
+    // A graph file from the retired graph editor: its kind is no longer a ClipDoc kind.
+    const graphText = JSON.stringify({ app: 'ledrums', v: 2, kind: 'graph', payload: { key: 'g', graph: { nodes: [], edges: [] } }, deps: {}, meta: { exportedAt: '' } });
     const graph = applyEffectFile(s, kickHead, graphText, ctx());
     expect(graph.result.ok).toBe(false);
     expect(graph.section).toBe(s);

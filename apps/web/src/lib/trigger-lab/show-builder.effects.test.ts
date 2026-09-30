@@ -1,6 +1,6 @@
-/* show-builder, v3 (effect chains) path: a v3 authored source → the runtime Show through core
+/* show-builder: a v3 authored source → the runtime Show through core
    `effectChain.buildRuntimeShow` — the same builder the server's cold-start restore projects
-   from the persisted blob. The graph-era v2 path is covered by show-builder.test.ts. */
+   from the persisted blob. */
 import { describe, expect, it } from 'vitest';
 import {
   buildPixelModel,
@@ -12,7 +12,9 @@ import {
   voice,
   type CanvasScene,
 } from '@ledrums/core';
-import { buildEffectsShow, buildShow, type EffectsShowSource } from './show-builder';
+import { buildEffectsShow, type EffectsShowSource } from './show-builder';
+
+const buildShow = (src: EffectsShowSource): voice.Show => buildEffectsShow(src).show;
 
 const solid = (id: string, row: string, column: effectChain.EffectColumn, color = '#ffffff'): effectChain.Effect =>
   effectChain.parseEffect({
@@ -33,7 +35,6 @@ const scene = (id: string, name = id): CanvasScene => ({
 /** An own song (zone + Always Effects, a master Strobe), a referenced library song, and scenes. */
 function source(): EffectsShowSource {
   return {
-    format: 'effects',
     songs: [{
       id: 'own', name: 'Own',
       sections: [{
@@ -139,7 +140,6 @@ describe('buildShow — v3 effect-chain source', () => {
 
   it('the built Show plays in the voice engine: a kick zone-0 hit lights the kick', () => {
     const src: EffectsShowSource = {
-      format: 'effects',
       songs: [{ id: 'own', name: 'Own', sections: [{ id: 'verse', name: 'Verse', effects: [solid('kick-hit', 'kick', { kind: 'zone', slot: 0 })], master: [] }] }],
       songRefs: [],
       canvasScenes: [],

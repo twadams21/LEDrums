@@ -1,10 +1,10 @@
 /* Effect chains (S05 §3, piece "sim") — the offline Sim playing an Effect show through its
    private core engine: zone hits, Cues, audition, Always, Clock, the Master chain, panic, and
-   the return to the graph path. Asserted at the Sim's public surface (inputs in, frame out). */
+   the unloaded Sim. Asserted at the Sim's public surface (inputs in, frame out). */
 import { describe, expect, it } from 'vitest';
 import { effectChain, voice, type PixelModel } from '@ledrums/core';
-import { runtimeBus, runtimeEffect, runtimeModel } from '../../../../../packages/core/src/voice/runtime-test-fixtures';
-import { Sim, makeNode, type TriggerGraph } from './sim';
+import { runtimeModel } from '../../../../../packages/core/src/voice/runtime-test-fixtures';
+import { Sim } from './sim';
 
 type Effect = effectChain.Effect;
 
@@ -29,7 +29,7 @@ function showOf(...sections: voice.SongSection[]): voice.Show {
 
 function makeSim(show: voice.Show, sectionId?: string): { sim: Sim; model: PixelModel } {
   const model = runtimeModel([16, 16]);
-  const sim = new Sim([], [], []);
+  const sim = new Sim();
   sim.pixelModel = model;
   sim.setEffectShow(show, sectionId ? { songId: SONG, sectionId } : undefined);
   return { sim, model };
@@ -146,7 +146,7 @@ describe('Sim Effect path — section content', () => {
     const { sim, model } = makeSim(show, 'A');
     sim.tick(16);
     expect(lit(sim, model, 0)).toEqual(['d0', 'd1']);
-    sim.recallSection({ id: 'B', name: 'B', looks: {} }, SONG);
+    sim.recallSection('B', SONG);
     run(sim, 200);
     expect(lit(sim, model, 0)).toEqual([]);
     expect(lit(sim, model, 2)).toEqual(['d0', 'd1']);
@@ -192,35 +192,22 @@ describe('Sim Effect path — section content', () => {
   });
 });
 
-describe('Sim Effect path — graph path is unchanged', () => {
-  const graph: TriggerGraph = {
-    version: 3,
-    nodes: [
-      makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'drum', drumId: 'd0', zone: '0' } }),
-      makeNode('effect', 'fx', 200, 0, { effectId: 'fx', busId: 'b', mode: 'loop', scope: 'kit', params: {} }),
-      makeNode('output', 'output', 400, 0),
-    ],
-    edges: [{ id: 'e0', from: 'trigger', to: 'fx' }, { id: 'e1', from: 'fx', to: 'output' }],
-  };
-  const ctx = { velocity: 1, sourceDrumId: 'd0', sectionIndex: 0, sectionCount: 0, beatPhase: 0, bpm: 120 };
-
-  it('a Sim with no Effect show renders its graph voices; setEffectShow(null) returns to them', () => {
+describe('Sim — before and after an Effect show', () => {
+  it('renders a blank frame of the model size until a show loads, and again after setEffectShow(null)', () => {
     const model = runtimeModel([16, 16]);
-    const sim = new Sim([runtimeBus], [runtimeEffect('solid-colour')], []);
+    const sim = new Sim();
     sim.pixelModel = model;
-    expect(sim.effectPath).toBe(false);
-    sim.triggerGraph('g', graph, ctx, 'g');
     sim.tick(16);
-    const graphFrame = sim.render(model).slice();
-    expect(graphFrame.some((v, i) => i % 4 !== 3 && v > 0)).toBe(true);
+    const blank = (): boolean => [...sim.render(model)].every((v) => v === 0);
+    expect(sim.render(model).length).toBe(model.pixelCount * 4);
+    expect(blank()).toBe(true);
 
-    sim.setEffectShow(showOf(section('A', [])));
+    sim.setEffectShow(showOf(section('A', [solid({ id: 'a', cell: kit('always') })])));
     sim.tick(16);
-    expect(sim.effectPath).toBe(true);
-    expect([...sim.render(model)].filter((_, i) => i % 4 !== 3).every((v) => v === 0)).toBe(true);
+    expect(blank()).toBe(false);
 
     sim.setEffectShow(null);
-    expect(sim.effectPath).toBe(false);
-    expect(sim.render(model).some((v, i) => i % 4 !== 3 && v > 0)).toBe(true);
+    expect(blank()).toBe(true);
+    expect(sim.effectVoiceStats()).toEqual([]);
   });
 });

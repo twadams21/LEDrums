@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { effectChain } from '@ledrums/core';
+import { SHOWS_STORAGE_KEY, SONGS_STORAGE_KEY, STORAGE_KEY } from './legacy-import';
 import {
-  SHOWS_STORAGE_KEY,
   SHOWS_V3_STORAGE_KEY,
-  SONGS_STORAGE_KEY,
   SONGS_V2_STORAGE_KEY,
-  STORAGE_KEY,
   bootEffectLibraries,
   deserializeShowLibraryV3,
   deserializeSongLibraryV2,
@@ -102,7 +100,7 @@ describe('v3 show library persistence', () => {
   });
 
   it('rejects an old-version envelope instead of upgrading it', () => {
-    expect(deserializeShowLibraryV3(JSON.parse(OLD_KEYS[SHOWS_STORAGE_KEY]))).toBeNull();
+    expect(deserializeShowLibraryV3(JSON.parse(OLD_KEYS[SHOWS_STORAGE_KEY]!))).toBeNull();
     expect(deserializeShowLibraryV3({ version: 3, data: { shows: {} } })).toBeNull();
     expect(deserializeShowLibraryV3('nope')).toBeNull();
   });

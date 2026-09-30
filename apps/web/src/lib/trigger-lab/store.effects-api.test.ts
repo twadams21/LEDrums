@@ -8,12 +8,8 @@ import { defaultProject, effectChain } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import { MASTER_CELL, type EffectsAuthoringApi } from './effects-api';
 import { cellFile, deviceFile, effectFile } from './effects-files';
-import {
-  SHOWS_STORAGE_KEY,
-  serializeShowLibrary,
-  type AuthoredState,
-  type ShowLibrary,
-} from './persistence';
+import { SHOWS_VERSION } from '@ledrums/core';
+import { SHOWS_STORAGE_KEY } from './legacy-import';
 import type { WSClient, WSCallbacks, InputEcho } from '../ws/client';
 import type { ClientMessage, SerializedModel } from '../ws/protocol-types';
 import type { MidiEvent } from '../midi/webmidi';
@@ -439,23 +435,27 @@ describe('files (IO-free apply cores)', () => {
 });
 
 describe('legacy import (old v1 / v2 libraries)', () => {
+  /** An old-format (v2, graph-model) show library envelope, as the server or the old local key
+      holds it. */
   function legacyServerLibrary(): unknown {
-    const lib: ShowLibrary = {
-      activeShowId: 'old-show',
-      shows: {
-        'old-show': {
-          id: 'old-show',
-          name: 'Old Gig',
-          authored: {
-            songs: [{ id: 'old-song', name: 'Opener', sections: [{ id: 'old-sec', name: 'Verse', graphs: [], looks: {} }] }],
-            activeSongId: 'old-song',
-            activeSectionId: 'old-sec',
-            bpm: 133,
-          } as unknown as AuthoredState,
+    return {
+      version: SHOWS_VERSION,
+      data: {
+        activeShowId: 'old-show',
+        shows: {
+          'old-show': {
+            id: 'old-show',
+            name: 'Old Gig',
+            authored: {
+              songs: [{ id: 'old-song', name: 'Opener', sections: [{ id: 'old-sec', name: 'Verse', graphs: [], looks: {} }] }],
+              activeSongId: 'old-song',
+              activeSectionId: 'old-sec',
+              bpm: 133,
+            },
+          },
         },
       },
     };
-    return serializeShowLibrary(lib);
   }
 
   it('a server v2 blob on the first state is offered for import, never adopted; the server is seeded with v3', () => {

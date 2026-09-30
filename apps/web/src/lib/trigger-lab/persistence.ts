@@ -17,6 +17,12 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
 
 const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
+/** Write `key` as an OWN data property. Ids come from stored / server-relayed JSON, and a plain
+    assignment of `__proto__` would re-point the record's prototype instead of adding an entry. */
+function setOwn<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
 /** De-duplicate the string entries of an unknown array, preserving first-appearance order. */
 function dedupeStrings(values: readonly unknown[]): string[] {
   const seen = new Set<string>();
@@ -245,7 +251,7 @@ export function deserializeShowLibraryV3(raw: unknown): ShowLibraryV3 | null {
     // Partial-as-full cast: the store merges the slice over its seed defaults.
     const show: ShowV3 = { id: showId, name, authored: coerceAuthoredV3(rawShow.authored, usedSectionIds) as AuthoredStateV3 };
     if (typeof rawShow.importedFrom === 'string' && rawShow.importedFrom) show.importedFrom = rawShow.importedFrom;
-    shows[showId] = show;
+    setOwn(shows, showId, show);
   }
   if (Object.keys(shows).length === 0) return null;
   const activeShowId =
@@ -280,7 +286,7 @@ export function deserializeSongLibraryV2(raw: unknown): SongLibraryV2 | null {
       sections: coerceSections(rawSong.sections, usedSectionIds),
     };
     if (Array.isArray(rawSong.canvasScenes)) song.canvasScenes = rawSong.canvasScenes as CanvasScene[];
-    songs[song.id] = song;
+    setOwn(songs, song.id, song);
   }
   return { songs };
 }
