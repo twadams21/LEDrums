@@ -161,6 +161,10 @@ describe('referenced songs are navigable + playable but read-only (S42 consumpti
     const beforeLibrary = JSON.stringify(store.songLibrary.songs[libId]);
     const beforeSongs = JSON.stringify(store.songs);
     expect(store.canEditActiveSong).toBe(false);
+    // Contract gap (TODO(ec-w4) on TriggerLab.canEdit): the store's canEdit is viewer-only, so it
+    // still reads true here while every Effect mutator no-ops. Pinned so the orchestrator's fix
+    // (adapter or rename) has to flip this line; see the it.todo below.
+    expect(store.canEdit).toBe(true);
 
     expect(store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid')).toBeNull();
     store.setEffectOpacity(effect.id, 0.01);
@@ -175,6 +179,8 @@ describe('referenced songs are navigable + playable but read-only (S42 consumpti
     expect(store.undo()).toBe(false);
     expect(store.songRefs).toEqual([libId]);
   });
+
+  it.todo('the Effects API reports canEdit === false on a referenced song (pending the ec-w4 canEdit contract call)');
 
   it('allows a referenced cell only as a copy source that creates local content', () => {
     const store = new TriggerLab(fakeClient);

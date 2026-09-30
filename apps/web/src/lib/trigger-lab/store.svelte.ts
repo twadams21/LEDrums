@@ -1036,7 +1036,12 @@ export class TriggerLab implements EffectsAuthoringApi {
   /** Whether this client may AUTHOR (S2): the editor + the standalone single-user can edit;
       only a viewer is read-only. Authoring mutators no-op when false, and views bind their edit
       affordances' `disabled` to `!canEdit` so a viewer's UI is genuinely read-only (not just
-      ignored). View-only interactions (selecting/panning/switching, playing pads) stay enabled. */
+      ignored). View-only interactions (selecting/panning/switching, playing pads) stay enabled.
+      TODO(ec-w4): contract gap. `EffectsAuthoringApi.canEdit` means "the Effect mutators apply"
+      (false on a referenced library song or with no active section too), but this field stays
+      viewer-only for its app callers. Pending an orchestrator call: an adapter
+      (`effectsApi` whose canEdit reads the controller) or renaming this field. Pinned in
+      store.song-library.test.ts. */
   canEdit = $derived(!this.isViewer);
   /** Whether the active song is authored by this show. Referenced library songs are resolved for
       playback/navigation but their sections are canonical and read-only until detached. */
