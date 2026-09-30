@@ -33,7 +33,7 @@
 
   // The Effects view depends only on the authoring contract, which the store implements once
   // store-wire lands.
-  const effectsApi = $derived(store as unknown as EffectsAuthoringApi); // TODO(ec-w4): store-wire
+  const effectsApi = $derived(store.effectsApi);
 
   // Perform is a chrome-light view: the shell hides the right column and fills the
   // workspace row with PerformView.

@@ -35,7 +35,7 @@
 
   let {
     store,
-    api = store as unknown as EffectsAuthoringApi, // TODO(ec-w4): store-wire
+    api = store.effectsApi,
   }: { store: TriggerLab; api?: EffectsAuthoringApi } = $props();
 
   // ---- import from the previous version (effect chains S06c) --------------------------------

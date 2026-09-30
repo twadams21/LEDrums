@@ -25,7 +25,7 @@
   let {
     store,
     shell,
-    api = store as unknown as EffectsAuthoringApi, // TODO(ec-w4): store-wire
+    api = store.effectsApi,
   }: { store: TriggerLab; shell: ShellStore; api?: EffectsAuthoringApi } = $props();
 
   const song = $derived(store.activeSong);

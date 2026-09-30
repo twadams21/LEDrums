@@ -36,7 +36,7 @@ export function sectionActions(
   store: TriggerLab,
   sectionId: string,
   rename: () => void,
-  api: EffectsAuthoringApi = store as unknown as EffectsAuthoringApi, // TODO(ec-w4): store-wire
+  api: EffectsAuthoringApi = store.effectsApi,
 ): ContextMenuAction[] {
   const sections = store.activeSongById?.sections ?? [];
   const index = sections.findIndex((section) => section.id === sectionId);

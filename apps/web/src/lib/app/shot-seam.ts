@@ -863,7 +863,7 @@ class ShotSeamImpl implements ShotSeam {
 
   /** The store implements the Effects authoring contract once store-wire lands. */
   private get effects(): EffectsAuthoringApi {
-    return this.store as unknown as EffectsAuthoringApi; // TODO(ec-w4): store-wire
+    return this.store.effectsApi;
   }
 
   selectGridCell(spec: string): void {
