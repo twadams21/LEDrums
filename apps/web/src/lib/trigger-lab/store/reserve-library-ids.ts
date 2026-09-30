@@ -1,4 +1,4 @@
-import type { ShowLibrary, SongLibrary } from '../persistence';
+import type { EffectSection, ShowLibrary, ShowLibraryV3, SongLibrary, SongLibraryV2 } from '../persistence';
 import type { LibrarySong } from './song-library';
 
 /** Walk every persisted/generated authored id in a show library for id allocator reservation. */
@@ -42,4 +42,43 @@ export function* idsFromLibrarySong(song: LibrarySong): Iterable<string> {
     the pool ids — it also covers the closure-internal node/edge ids). */
 export function* idsFromSongLibrary(lib: SongLibrary): Iterable<string> {
   for (const song of Object.values(lib.songs)) yield* idsFromLibrarySong(song);
+}
+
+// ---- effect chains (v3 show library / v2 song library) ------------------------------------
+
+/** Every generated id inside one effect-chains section: its id, each Effect's id and every
+    device uid (Effect modifiers / controls and the master chain). */
+function* idsFromEffectSection(section: Pick<EffectSection, 'id' | 'effects' | 'master'>): Iterable<string> {
+  yield section.id;
+  for (const effect of section.effects ?? []) {
+    yield effect.id;
+    for (const modifier of effect.modifiers ?? []) yield modifier.uid;
+    for (const control of effect.controls ?? []) yield control.uid;
+  }
+  for (const modifier of section.master ?? []) yield modifier.uid;
+}
+
+/** Walk every generated id in a v3 show library (shows, songs, sections, Effects, device uids,
+    canvas scenes) for id allocator reservation — the v3 twin of {@link authoredIdsFromLibrary}. */
+export function* authoredIdsFromLibraryV3(lib: ShowLibraryV3): Iterable<string> {
+  for (const show of Object.values(lib.shows)) {
+    yield show.id;
+    const authored = show.authored;
+    for (const song of authored.songs ?? []) {
+      yield song.id;
+      for (const section of song.sections ?? []) yield* idsFromEffectSection(section);
+    }
+    for (const scene of authored.canvasScenes ?? []) yield scene.id;
+  }
+}
+
+/** Walk every generated id in a v2 (effect-chains) song library. Section ids travel namespaced
+    (`lib:<id>/…`, never a generated id); Effect ids and device uids travel raw, and a referenced
+    song's Effects stay editable through a detach, so they are reserved too. */
+export function* idsFromSongLibraryV2(lib: SongLibraryV2): Iterable<string> {
+  for (const song of Object.values(lib.songs)) {
+    yield song.id;
+    for (const section of song.sections ?? []) yield* idsFromEffectSection(section);
+    for (const scene of song.canvasScenes ?? []) yield scene.id;
+  }
 }

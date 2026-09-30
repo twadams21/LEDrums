@@ -7,7 +7,15 @@
    trigger-routing · shows · show-library-sync · transport) + the existing pure modules
    (persistence · save-status · setlist · show-builder). This class holds the runes +
    sim/client lifecycle and delegates each domain to its slice — mirroring
-   setlist.ts / shell-nav.ts. The public TriggerLab API is unchanged. */
+   setlist.ts / shell-nav.ts. The public TriggerLab API is unchanged.
+
+   EFFECT CHAINS (S05, wave-4 store-wire): the authored document is the v3 show library.
+   Sections carry `effects` / `master`; the store implements {@link EffectsAuthoringApi} by
+   delegating to {@link EffectsController} (pure ops in `effects-doc.ts`); the runtime Show is
+   core `buildRuntimeShow` (via `buildEffectsShow`), sent to the server and loaded into the
+   offline Sim's Effect path. The graph runes (graphs / buses / presets / effect defs) are a
+   TRANSIENT sandbox until S08 deletes them: seeded per document, kept in undo, never persisted,
+   never played. */
 
 import {
   Sim,
@@ -72,22 +80,38 @@ import type {
   PlayType,
   Project,
 } from '@ledrums/core';
-import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
+import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, defaultProject, effectChain, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
+import type { KitConfig } from '@ledrums/core';
 import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
-import { buildShow, type ShowSource } from './show-builder';
+import { buildEffectsShow, type EffectsShowSource } from './show-builder';
 import { compareRecallIdentity, type AuthoritativeRecall, type RecallIdentity } from './recall-order';
 import * as setlist from '../app/setlist';
 import type { SetlistSection, Song } from '../app/setlist';
 import { installErrorCapture } from '../app/error-capture';
 import {
-  serializeShowLibrary,
-  serializeSongLibrary,
-  type AuthoredState,
-  type Show,
-  type SongLibrary,
+  serializeShowLibraryV3,
+  serializeSongLibraryV2,
+  type AuthoredStateV3,
+  type ShowV3,
+  type SongLibraryV2,
 } from './persistence';
+import { seedAuthoredV3 } from './seed-effects';
+import { EffectsController, type EffectsControllerHost } from './effects-controller.svelte';
+import {
+  MASTER_CELL,
+  type ApplyResult,
+  type CellSelection,
+  type CellSummary,
+  type EffectsAuthoringApi,
+  type GridColumn,
+  type GridRow,
+} from './effects-api';
+import type { ChainOwner, EffectsSection } from './effects-doc';
+import * as effectsFiles from './effects-files';
+import { detectLegacyLibrary, importLegacyShows, pendingLegacyShowNames, type LegacyLibrary } from './legacy-import';
+import { extractEffectSong, toEffectSong, toStoreSong } from './store/effect-song-library';
 import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
 import { ControllerTest } from './controller-test.svelte';
@@ -98,6 +122,7 @@ import type { AudioAnalysisSettings } from '../audio/analysis';
 import { OscLearnController, type OscLearnTarget } from './osc-learn.svelte';
 import {
   ShowsController,
+  browserStorage,
   writeStoredLibrary,
   writeStoredSongLibrary,
   type ShowsControllerHost,
@@ -119,7 +144,7 @@ import { findFreePosition } from '../app/views/node-placement';
 import { padKey, seedGraphKey, seedGraphNames, seedGraphs, seedAuthored } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { announceSystemActions } from './store/system-toasts';
-import { idsFromLibrarySong } from './store/reserve-library-ids';
+import { idsFromSongLibraryV2 } from './store/reserve-library-ids';
 import * as graphsLib from './store/graphs';
 import {
   canSplice,
@@ -137,7 +162,7 @@ import * as fp from './store/face-params';
 import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
 import * as songRefsLib from './store/song-library-refs';
-import { extractSongClosure, type ClosureSources } from './store/song-library';
+import { type ClosureSources } from './store/song-library';
 import {
   buildGraphClipDoc,
   buildNodeClipDoc,
@@ -171,6 +196,8 @@ import {
 
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
+/** How often the offline Layers dock re-reads the Sim's Effect-path voices (it allocates). */
+const EFFECT_STATS_INTERVAL_MS = 100;
 // Defensive per-device echo ceiling from the wire vocabulary: channel × note/gate/CC, bands,
 // and eight macros. The registry's held-note limit is tighter; ordinary OSC is not capped here.
 const TRACK_OSC_KEY_LIMIT = 16 * 128 * 3 + voice.AUDIO_BANDS.length + 8;
@@ -409,15 +436,84 @@ function pasteSuccessMessage(res: RemapResult): string {
   }
 }
 
-/** One undo checkpoint: the authored show slice plus a separate snapshot of the authoritative
-    project slice (routing/geometry/IO), which is server-owned and NOT part of `AuthoredState`.
-    Keeping both in one stack entry preserves ordering across mixed trigger/patch edits. */
-interface UndoEntry {
-  authored: AuthoredState;
-  project: Project | null;
+/** The graph-era runes that are no longer part of the persisted document (effect chains S05):
+    a transient sandbox the legacy graph editor still edits until S08 deletes it. Kept in undo
+    checkpoints so graph edits stay undoable meanwhile; never persisted, never played. */
+interface LegacyGraphSlice {
+  graphs: Record<string, voice.TriggerGraph>;
+  graphNames: Record<string, string>;
+  buses: Bus[];
+  presets: Preset[];
+  effects: EffectDef[];
+  selectedPadKey: string | null;
+  autoZoneGraphs: boolean;
 }
 
-export class TriggerLab {
+/** One undo checkpoint: the authored show slice plus a separate snapshot of the authoritative
+    project slice (routing/geometry/IO), which is server-owned and NOT part of the authored
+    state. Keeping both in one stack entry preserves ordering across mixed trigger/patch edits. */
+interface UndoEntry {
+  authored: AuthoredStateV3;
+  project: Project | null;
+  legacy: LegacyGraphSlice;
+}
+
+/** The legacy sandbox a freshly loaded document starts from (the graph-era seed). */
+function seedLegacySlice(): LegacyGraphSlice {
+  const seed = seedAuthored();
+  return {
+    graphs: seed.graphs,
+    graphNames: seed.graphNames,
+    buses: seed.buses,
+    presets: seed.presets,
+    effects: seed.effects,
+    selectedPadKey: seed.selectedPadKey,
+    autoZoneGraphs: false,
+  };
+}
+
+const EMPTY_EFFECTS: readonly effectChain.Effect[] = [];
+const EMPTY_MASTER: readonly effectChain.ModifierDevice[] = [];
+const READ_ONLY: ApplyResult = { ok: false, reason: 'This section is read-only.' };
+/** Offline stand-in for the server Project's kit / input map (the grid needs rows + zones). */
+const OFFLINE_PROJECT = defaultProject();
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/** A new show from a template (effect chains): one song holding one empty section. */
+function blankAuthoredV3(): AuthoredStateV3 {
+  const song = toEffectSong(setlist.makeSong('song-1', 'Song 1', [setlist.makeSection('song-1-s1', 'Section 1')]));
+  return {
+    ...seedAuthoredV3(),
+    songs: [song],
+    selectedCell: null,
+    selectedEffectId: null,
+    activeSongId: song.id,
+    activeSectionId: song.sections[0]?.id ?? null,
+  };
+}
+
+/** A per-browser flag: the old-library import prompt was dismissed. A NEW key — the old library
+    keys are never written. Best-effort (private mode / SSR read as not dismissed). */
+const LEGACY_IMPORT_DISMISSED_KEY = 'ledrums:legacy-import:dismissed';
+function readLegacyDismissed(): boolean {
+  try {
+    return browserStorage()?.getItem(LEGACY_IMPORT_DISMISSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+function writeLegacyDismissed(): void {
+  try {
+    browserStorage()?.setItem(LEGACY_IMPORT_DISMISSED_KEY, '1');
+  } catch {
+    // best-effort
+  }
+}
+
+export class TriggerLab implements EffectsAuthoringApi {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
   pads = $state<Pad[]>(structuredClone(PADS));
@@ -618,12 +714,8 @@ export class TriggerLab {
     graphNames: () => this.graphNames,
     effects: () => this.effects,
     presets: () => this.presets,
-    mergeGraphModel: (patch) => {
-      if (patch.graphs) this.graphs = { ...this.graphs, ...patch.graphs };
-      if (patch.graphNames) this.graphNames = { ...this.graphNames, ...patch.graphNames };
-      if (patch.effects) this.effects = [...this.effects, ...patch.effects];
-      if (patch.presets) this.presets = [...this.presets, ...patch.presets];
-    },
+    canvasScenes: () => this.canvasScenes,
+    mergeCanvasScenes: (scenes) => this.unionCanvasScenes(scenes),
     recordUndo: () => this.pushUndoSnapshot(),
     toAuthored: () => this.toAuthored(),
     replaceDocument: (show, source) => this.replaceDocument(show, source),
@@ -675,10 +767,10 @@ export class TriggerLab {
     this.sectionsCtl.reconcileActiveSection();
   }
   /** The canonical song pool shows reference (S40) — a second server-authoritative library. */
-  get songLibrary(): SongLibrary {
+  get songLibrary(): SongLibraryV2 {
     return this.showsCtl.songLibrary;
   }
-  set songLibrary(v: SongLibrary) {
+  set songLibrary(v: SongLibraryV2) {
     this.showsCtl.songLibrary = v;
   }
   /** The show list for the browser UI — `{ id, name }` in insertion order. */
@@ -686,7 +778,7 @@ export class TriggerLab {
     return this.showsCtl.shows;
   }
   /** The active show (id + name + its cached authored). null only before construction completes. */
-  get activeShow(): Show | null {
+  get activeShow(): ShowV3 | null {
     return this.showsCtl.activeShow;
   }
   /** The active song over the RESOLVED song list (local + referenced) — falls back to the first. */
@@ -719,7 +811,10 @@ export class TriggerLab {
       from the kit's drum zones (a graph per zone, and every later new section gets its own set);
       without one, from the demo seed. */
   newShow(name?: string, template?: ShowTemplate): string {
-    return this.showsCtl.newShow(name, template ? templateAuthored(template, this.drumZones) : undefined);
+    // Effect chains: both templates start one song with one EMPTY section (the grid already lays
+    // out every declared zone, so the `zones` template needs no per-zone content). The graph-era
+    // `templateAuthored` stays for the legacy sandbox's zone-graph fill until S08.
+    return this.showsCtl.newShow(name, template ? blankAuthoredV3() : undefined);
   }
   openShow(id: string): void {
     this.showsCtl.openShow(id);
@@ -883,11 +978,16 @@ export class TriggerLab {
       voices offline. Pure source-selection lives in {@link selectDockVoices}. Gated on `link` (the
       firing/authority gate), not `useServer` (the stricter visualiser-frame gate): the dock owns no
       pixels, so it can adopt server voices the instant the link opens without waiting for a frame. */
+  /** Offline Effect-path voices for the Layers dock, refreshed at telemetry rate (the engine's
+      `stats()` allocates, so never per frame). */
+  effectVoices = $state.raw<VoiceStat[]>([]);
   dockVoices = $derived<DockVoice[]>(
+    // Effect chains: offline, the Sim plays through its private core engine, whose voices come
+    // back as the same `VoiceStat` wire shape the server streams ({@link effectVoices}).
     selectDockVoices({
-      connected: this.link === 'open',
-      simVoices: this.voices,
-      serverVoices: this.serverVoices,
+      connected: true,
+      simVoices: [],
+      serverVoices: this.link === 'open' ? this.serverVoices : this.effectVoices,
     }),
   );
 
@@ -1031,6 +1131,7 @@ export class TriggerLab {
     },
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
+    setCueMidiSource: (effectId, source) => this.setCueSource(effectId, source),
   });
   /** OSC learn — bind the next heard address (Settings → Global controls). A separate arm
       from {@link midi}'s so a control's MIDI and OSC Learn buttons don't disarm each other. */
@@ -1042,6 +1143,7 @@ export class TriggerLab {
       this.setInputMap(setZoneOscAddress(this.project.inputMap, drumId, slot, address));
       return true;
     },
+    setCueOscAddress: (effectId, address) => this.setCueSource(effectId, { oscAddress: address }),
   });
   /** Audio input capture (GH #214): lifecycle, meter and local preferences live on the
       controller; frames come back through {@link forwardAudio}. */
@@ -1310,6 +1412,10 @@ export class TriggerLab {
     // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
     this.sim = new Sim(this.buses, this.effects, this.presets);
     this.sim.pixelModel = this.labModel.pm;
+    // Effect chains: the offline Sim plays the v3 show through its private core engine.
+    this.ensureSimShow();
+    // An old-format library under the old local keys is offered for import (never migrated).
+    this.legacyLibrary = detectLegacyLibrary(browserStorage());
     this.client = makeClient();
   }
 
@@ -1406,6 +1512,494 @@ export class TriggerLab {
     return graphsLib.graphLabelOf(this.resolvedView.graphNames, key, this.pads);
   }
 
+  // --- effect chains authoring (S05): EffectsAuthoringApi over EffectsController -----------------
+  // The store implements the authoring contract by DELEGATING to {@link EffectsController}: every
+  // mutator runs one pure `effects-doc.ts` op against the active section, recorded as ONE undo
+  // checkpoint through the store's history (drags fold between beginGesture / endGesture), guarded
+  // by the viewer / read-only-library-song rule, and autosaved like every other authored edit.
+  // The controller owns selection + the cell clipboard; the store supplies the section, kit, input
+  // map, fire paths, files, cue learn and legacy import through the host below.
+
+  /** MIDI-map mappings — opaque until effect chains S07a gives them a shape; carried through
+      persistence so a v3 blob never loses them. */
+  private mappings: unknown = undefined;
+
+  private readonly effectsCtl: EffectsController = new EffectsController({
+    getSection: () => this.activeEffectsSection,
+    setSection: (next) => this.writeActiveEffectsSection(next),
+    activeSectionId: () => this.activeSectionId,
+    canEdit: () => this.canEditActiveSong && this.activeSection !== null,
+    kit: () => this.effectsKit,
+    inputMap: () => this.effectsInputMap,
+    undo: {
+      push: () => this.pushUndoSnapshot(),
+      beginGesture: () => this.beginGesture(),
+      endGesture: () => this.endGesture(),
+    },
+    fire: {
+      effect: (effectId) => this.auditionEffects([effectId], 'audition'),
+      cell: (cell) => this.auditionEffects(this.effectsCtl.cellEffects(cell).map((e) => e.id), 'cell'),
+      effectFireAt: (effectId) => this.effectFireStamps[effectId] ?? 0,
+      cellFireAt: (cell) => this.effectsCtl.cellEffects(cell).reduce((at, e) => Math.max(at, this.effectFireStamps[e.id] ?? 0), 0),
+    },
+    files: {
+      saveEffect: async (effect) => {
+        const file = effectsFiles.effectFile($state.snapshot(effect) as effectChain.Effect, this.effectsClipSources(), this.clipMeta());
+        await this.writeFile(file.text, file.fileName, `Saved “${effect.name || 'Effect'}”.`);
+      },
+      saveCell: async (cell, stack) => {
+        const file = effectsFiles.cellFile($state.snapshot(cell) as effectChain.EffectCell, $state.snapshot(stack) as effectChain.Effect[], this.effectsClipSources(), this.clipMeta());
+        await this.writeFile(file.text, file.fileName, 'Saved the cell.');
+      },
+      saveDevice: async (effect, device) => this.saveEffectsDevice(effect.id, device),
+      loadIntoCell: (cell) => this.readEffectsFile((text) => this.applyEffectsFileToCell(cell, text)),
+      loadIntoEffect: (effectId) => this.readEffectsFile((text) => this.applyEffectsFileToEffect(effectId, text)),
+    },
+    learn: {
+      start: (effectId, via) => {
+        this.cancelCueLearnArms();
+        if (via === 'midi') this.midi.startLearn({ kind: 'cue', effectId });
+        else this.osc.start({ kind: 'cue', effectId });
+      },
+      cancel: () => this.cancelCueLearnArms(),
+      effectId: () => {
+        const midi = this.midi.learnTarget;
+        if (midi?.kind === 'cue') return midi.effectId;
+        const osc = this.osc.target;
+        return osc?.kind === 'cue' ? osc.effectId : null;
+      },
+    },
+    legacyImport: {
+      available: () => this.legacyImportAvailable,
+      showNames: () => this.legacyShowNames,
+      run: () => this.runLegacyImport(),
+      dismiss: () => this.dismissLegacyImportPrompt(),
+    },
+  } satisfies EffectsControllerHost);
+
+  /** The kit the grid lays out: the server Project's, else the offline default kit. */
+  private get effectsKit(): KitConfig {
+    return this.project?.kit ?? OFFLINE_PROJECT.kit;
+  }
+  /** The input map the grid's zone columns come from (the server Project's, else the default). */
+  private get effectsInputMap(): InputMap {
+    return this.project?.inputMap ?? OFFLINE_PROJECT.inputMap;
+  }
+
+  /** The active section as the pure ops' {@link EffectsSection}. Graph-era sections (and ones a
+      setlist op made) carry no Effect fields yet; they read as an empty stack. */
+  private get activeEffectsSection(): (EffectsSection & SetlistSection) | null {
+    const section = this.activeSection;
+    if (!section) return null;
+    if (section.effects && section.master) return section as EffectsSection & SetlistSection;
+    return { ...section, effects: section.effects ?? [], master: section.master ?? [] };
+  }
+
+  /** Write an edited active section back into its (local) song — the one mutation surface of the
+      Effects API. Undo was recorded by the caller. */
+  private writeActiveEffectsSection(next: EffectsSection): void {
+    const sectionId = this.activeSectionId;
+    const songId = this.activeSongId;
+    if (sectionId === null) return;
+    this.songs = this.songs.map((song) =>
+      song.id !== songId
+        ? song
+        : {
+            ...song,
+            sections: song.sections.map((section) =>
+              section.id === sectionId ? { ...section, effects: next.effects, master: next.master } : section,
+            ),
+          },
+    );
+  }
+
+  // ---- read models --------------------------------------------------------------------------
+  get gridRows(): readonly GridRow[] {
+    return this.effectsCtl.gridRows;
+  }
+  get gridColumns(): readonly GridColumn[] {
+    return this.effectsCtl.gridColumns;
+  }
+  cellSummary(cell: effectChain.EffectCell): CellSummary {
+    return this.effectsCtl.cellSummary(cell);
+  }
+  cellEffects(cell: effectChain.EffectCell): readonly effectChain.Effect[] {
+    return this.effectsCtl.cellEffects(cell);
+  }
+  get masterChain(): readonly effectChain.ModifierDevice[] {
+    return this.effectsCtl.masterChain;
+  }
+  get selectedCell(): CellSelection | null {
+    return this.effectsCtl.selectedCell;
+  }
+  get selectedEffectId(): string | null {
+    return this.effectsCtl.selectedEffectId;
+  }
+  effectById(effectId: string): effectChain.Effect | undefined {
+    return this.effectsCtl.effectById(effectId);
+  }
+  cellFireAt(cell: effectChain.EffectCell): number {
+    return this.effectsCtl.cellFireAt(cell);
+  }
+  effectFireAt(effectId: string): number {
+    return this.effectsCtl.effectFireAt(effectId);
+  }
+
+  // ---- selection + audition ----------------------------------------------------------------
+  selectCell(cell: CellSelection | null): void {
+    this.effectsCtl.selectCell(cell);
+  }
+  selectEffect(effectId: string | null): void {
+    this.effectsCtl.selectEffect(effectId);
+  }
+  fireEffect(effectId: string): void {
+    this.effectsCtl.fireEffect(effectId);
+  }
+  fireEffectAt(index: number): void {
+    this.effectsCtl.fireEffectAt(index);
+  }
+  fireCell(cell: effectChain.EffectCell): void {
+    this.effectsCtl.fireCell(cell);
+  }
+
+  // ---- Effects --------------------------------------------------------------------------------
+  addEffect(cell: effectChain.EffectCell, generator: effectChain.GeneratorKind, style?: string): string | null {
+    return this.effectsCtl.addEffect(cell, generator, style);
+  }
+  removeEffect(effectId: string): void {
+    this.effectsCtl.removeEffect(effectId);
+  }
+  duplicateEffect(effectId: string): string | null {
+    return this.effectsCtl.duplicateEffect(effectId);
+  }
+  moveEffect(effectId: string, to: effectChain.EffectCell, index: number): void {
+    this.effectsCtl.moveEffect(effectId, to, index);
+  }
+  renameEffect(effectId: string, name: string): void {
+    this.effectsCtl.renameEffect(effectId, name);
+  }
+  setEffectBypass(effectId: string, bypass: boolean): void {
+    this.effectsCtl.setEffectBypass(effectId, bypass);
+  }
+  setEffectBlend(effectId: string, blend: effectChain.Effect['blend']): void {
+    this.effectsCtl.setEffectBlend(effectId, blend);
+  }
+  setEffectOpacity(effectId: string, opacity: number): void {
+    this.effectsCtl.setEffectOpacity(effectId, opacity);
+  }
+  setRetrigger(effectId: string, retrigger: effectChain.Retrigger): void {
+    this.effectsCtl.setRetrigger(effectId, retrigger);
+  }
+  setAmp(effectId: string, amp: Partial<effectChain.AmpEnvelope>): void {
+    this.effectsCtl.setAmp(effectId, amp);
+  }
+  setTrigger(effectId: string, trigger: effectChain.EffectTrigger): void {
+    this.effectsCtl.setTrigger(effectId, trigger);
+  }
+  setTarget(effectId: string, target: effectChain.EffectTarget): void {
+    this.effectsCtl.setTarget(effectId, target);
+  }
+
+  // ---- Generator ------------------------------------------------------------------------------
+  setGenerator(effectId: string, kind: effectChain.GeneratorKind, style?: string): void {
+    this.effectsCtl.setGenerator(effectId, kind, style);
+  }
+  setGeneratorParam(effectId: string, key: string, value: number | boolean | string): void {
+    this.effectsCtl.setGeneratorParam(effectId, key, value);
+  }
+  setSpliceSlots(effectId: string, slots: effectChain.SpliceSlot[]): void {
+    this.effectsCtl.setSpliceSlots(effectId, slots);
+  }
+
+  // ---- Modifiers (effectId = MASTER_CELL addresses the section master chain) -----------------
+  addModifier(owner: ChainOwner, modifierId: string, index?: number): string | null {
+    return this.effectsCtl.addModifier(owner, modifierId, index);
+  }
+  removeModifier(owner: ChainOwner, uid: string): void {
+    this.effectsCtl.removeModifier(owner, uid);
+  }
+  moveModifier(owner: ChainOwner, uid: string, index: number): void {
+    this.effectsCtl.moveModifier(owner, uid, index);
+  }
+  setModifierParam(owner: ChainOwner, uid: string, key: string, value: number | boolean | string): void {
+    this.effectsCtl.setModifierParam(owner, uid, key, value);
+  }
+  setModifierMix(owner: ChainOwner, uid: string, mix: number): void {
+    this.effectsCtl.setModifierMix(owner, uid, mix);
+  }
+  setModifierEnvelope(owner: ChainOwner, uid: string, envelope: effectChain.ModifierEnvelopeSpec | null): void {
+    this.effectsCtl.setModifierEnvelope(owner, uid, envelope);
+  }
+  setModifierBypass(owner: ChainOwner, uid: string, bypass: boolean): void {
+    this.effectsCtl.setModifierBypass(owner, uid, bypass);
+  }
+
+  // ---- Controls -------------------------------------------------------------------------------
+  addControl(effectId: string, kind: effectChain.ControlKind): string | null {
+    return this.effectsCtl.addControl(effectId, kind);
+  }
+  removeControl(effectId: string, uid: string): void {
+    this.effectsCtl.removeControl(effectId, uid);
+  }
+  setControlSettings(effectId: string, uid: string, settings: Partial<effectChain.ControlDevice['settings']>): void {
+    this.effectsCtl.setControlSettings(effectId, uid, settings);
+  }
+  addMapping(effectId: string, controlUid: string, mapping: effectChain.ControlMapping): void {
+    this.effectsCtl.addMapping(effectId, controlUid, mapping);
+  }
+  setMapping(effectId: string, controlUid: string, index: number, mapping: Partial<effectChain.ControlMapping>): void {
+    this.effectsCtl.setMapping(effectId, controlUid, index, mapping);
+  }
+  removeMapping(effectId: string, controlUid: string, index: number): void {
+    this.effectsCtl.removeMapping(effectId, controlUid, index);
+  }
+
+  // ---- Cells ----------------------------------------------------------------------------------
+  copyCell(cell: effectChain.EffectCell): void {
+    this.effectsCtl.copyCell(cell);
+  }
+  pasteCell(cell: effectChain.EffectCell): ApplyResult {
+    return this.effectsCtl.pasteCell(cell);
+  }
+  get canPasteCell(): boolean {
+    return this.effectsCtl.canPasteCell;
+  }
+  clearCell(cell: effectChain.EffectCell): void {
+    this.effectsCtl.clearCell(cell);
+  }
+
+  // ---- Cue learn ------------------------------------------------------------------------------
+  startCueLearn(effectId: string, via: 'midi' | 'osc'): void {
+    this.effectsCtl.startCueLearn(effectId, via);
+  }
+  cancelCueLearn(): void {
+    this.effectsCtl.cancelCueLearn();
+  }
+  get cueLearnEffectId(): string | null {
+    return this.effectsCtl.cueLearnEffectId;
+  }
+
+  /** Disarm a cue learn on either transport (another target's arm is left alone). */
+  private cancelCueLearnArms(): void {
+    if (this.midi.learnTarget?.kind === 'cue') this.midi.cancelLearn();
+    if (this.osc.target?.kind === 'cue') this.osc.cancel();
+  }
+
+  /**
+   * Bind a Cue Effect's source (the MIDI / OSC learn write). The binding guard reuses the graph
+   * trigger rule: a Cue is a `pad-trigger` claim, so it may share a note with a zone but not with
+   * a sequence reset, a global control or reserved CC 0. The v3 document has no graphs, so only
+   * the input map's claims (and globals) can collide. False = refused (the learn stays armed).
+   */
+  private setCueSource(effectId: string, source: effectChain.CueSource): boolean {
+    const effect = this.effectsCtl.effectById(effectId);
+    if (!effect || effect.trigger.kind !== 'cue' || !this.effectsCtl.canEdit) return false;
+    const scope: voice.BindingScope | null = this.project ? { inputMap: this.project.inputMap, graphs: {} } : null;
+    if (scope) {
+      const asSource: TriggerSource =
+        source.oscAddress !== undefined ? { kind: 'osc', address: source.oscAddress } : { kind: 'midi', note: source.midiNote, cc: source.midiCc };
+      const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey: `cue:${effectId}`, nodeId: effectId };
+      if (this.refuseBindings(voice.sourceBindingRejections(scope, asSource, self))) return false;
+    }
+    this.effectsCtl.setTrigger(effectId, { kind: 'cue', source });
+    return true;
+  }
+
+  // ---- Files (Tim's save / load to file, extended) --------------------------------------------
+  saveEffectToFile(effectId: string): Promise<void> {
+    return this.effectsCtl.saveEffectToFile(effectId);
+  }
+  saveCellToFile(cell: effectChain.EffectCell): Promise<void> {
+    return this.effectsCtl.saveCellToFile(cell);
+  }
+  saveDeviceToFile(effectId: string, device: 'generator' | string): Promise<void> {
+    return this.effectsCtl.saveDeviceToFile(effectId, device);
+  }
+  loadFileIntoCell(cell: effectChain.EffectCell): Promise<ApplyResult> {
+    return this.effectsCtl.loadFileIntoCell(cell);
+  }
+  loadFileIntoEffect(effectId: string): Promise<ApplyResult> {
+    return this.effectsCtl.loadFileIntoEffect(effectId);
+  }
+  /** Save one Master-chain modifier to a device file. Outside the contract (it has no master
+      save / load) — reported as a gap for the orchestrator. */
+  saveMasterModifierToFile(uid: string): Promise<void> {
+    return this.saveEffectsDevice(MASTER_CELL, uid);
+  }
+  /** Load a modifier device file onto the end of the Master chain (outside the contract, see
+      {@link saveMasterModifierToFile}). */
+  loadFileIntoMaster(): Promise<ApplyResult> {
+    if (!this.effectsCtl.canEdit) return Promise.resolve(READ_ONLY);
+    return this.readEffectsFile((text) => this.applyDeviceFileToMaster(text));
+  }
+
+  /** IO-free: load an Effect / cell file's text into `cell` (one undo step, scenes included). */
+  applyEffectsFileToCell(cell: effectChain.EffectCell, text: string): ApplyResult {
+    return this.applyEffectsFile((section, ctx) => effectsFiles.applyFileToCell(section, cell, text, ctx));
+  }
+  /** IO-free: load an Effect / device file's text onto an existing Effect (one undo step). */
+  applyEffectsFileToEffect(effectId: string, text: string): ApplyResult {
+    return this.applyEffectsFile((section, ctx) => effectsFiles.applyFileToEffect(section, effectId, text, ctx));
+  }
+  /** IO-free: load a modifier device file onto the Master chain (one undo step). */
+  applyDeviceFileToMaster(text: string): ApplyResult {
+    return this.applyEffectsFile((section, ctx) => effectsFiles.applyDeviceFile(section, MASTER_CELL, text, ctx));
+  }
+
+  /** The one load chokepoint: guard, apply the pure file op to a detached copy of the active
+      section, then write the section AND the scenes it brought in ONE undo checkpoint. */
+  private applyEffectsFile(
+    apply: (section: EffectsSection, ctx: effectsFiles.EffectsFileContext) => effectsFiles.EffectsFileApplied<EffectsSection>,
+  ): ApplyResult {
+    const section = this.activeEffectsSection;
+    if (!section || !this.effectsCtl.canEdit) return READ_ONLY;
+    const plain = $state.snapshot({ effects: section.effects, master: section.master }) as EffectsSection;
+    const out = apply(plain, { canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[] });
+    if (!out.result.ok) return out.result;
+    this.pushUndoSnapshot();
+    this.batchIntoCurrentUndo(() => {
+      this.writeActiveEffectsSection(out.section);
+      this.unionCanvasScenes(out.canvasScenes);
+    });
+    const placed = out.effectIds[0];
+    if (placed) this.effectsCtl.selectEffect(placed);
+    return out.result;
+  }
+
+  /** Pick a file and apply it; toasts the outcome. Guards the show being replaced meanwhile. */
+  private async readEffectsFile(apply: (text: string) => ApplyResult): Promise<ApplyResult> {
+    const generation = this.documentGeneration;
+    const opened: OpenOutcome = await openTextFile();
+    if (generation !== this.documentGeneration) return { ok: false, reason: 'The show changed while the file was open.' };
+    if (opened === 'cancelled') return { ok: false, reason: 'Cancelled.' };
+    const result: ApplyResult = opened === 'failed' ? { ok: false, reason: 'Couldn’t read that file.' } : apply(opened.text);
+    pushToast(result.ok ? 'Loaded the file.' : result.reason, { tone: result.ok ? 'success' : 'error' });
+    return result;
+  }
+
+  private async saveEffectsDevice(effectId: string, device: 'generator' | string): Promise<void> {
+    const section = this.activeEffectsSection;
+    if (!section) return;
+    const payload = effectsFiles.findDevice($state.snapshot(section) as EffectsSection, effectId, device);
+    if (!payload) return;
+    const file = effectsFiles.deviceFile(payload, this.effectsClipSources(), this.clipMeta());
+    await this.writeFile(file.text, file.fileName, 'Saved the device.');
+  }
+
+  private effectsClipSources(): { canvasScenes: CanvasScene[] } {
+    return { canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[] };
+  }
+
+  /** Add scenes the show does not already hold (by id) — file loads and song detach. */
+  private unionCanvasScenes(scenes: readonly CanvasScene[]): void {
+    const have = new Set(this.canvasScenes.map((scene) => scene.id));
+    const fresh = scenes.filter((scene) => !have.has(scene.id));
+    if (fresh.length > 0) this.canvasScenes = [...this.canvasScenes, ...fresh];
+  }
+
+  // ---- fire paths + flashes -------------------------------------------------------------------
+
+  /** Per-Effect last-fire time (`performance.now()` ms) for the grid / strip fire flashes. A UI
+      timestamp, never engine state. Stamped from local intents (hit / audition) online and
+      offline, and offline also from the Sim's engine (Always / Clock fires). */
+  effectFireStamps = $state.raw<Record<string, number>>({});
+  /** The Sim time each Effect was last seen firing, so the offline poll stamps only new fires. */
+  private readonly simFireSeen = new Map<string, number>();
+
+  private stampEffectFires(effectIds: readonly string[]): void {
+    if (effectIds.length === 0) return;
+    const now = nowMs();
+    const next = { ...this.effectFireStamps };
+    for (const id of effectIds) next[id] = now;
+    this.effectFireStamps = next;
+  }
+
+  /** Offline: stamp the active section's Effects the Sim's engine fired since the last frame. */
+  private pollSimEffectFires(): void {
+    const fired: string[] = [];
+    for (const effect of this.activeSection?.effects ?? EMPTY_EFFECTS) {
+      const at = this.sim.effectFiredAt(effect.id);
+      if (at > 0 && at !== this.simFireSeen.get(effect.id)) {
+        this.simFireSeen.set(effect.id, at);
+        fired.push(effect.id);
+      }
+    }
+    this.stampEffectFires(fired);
+  }
+
+  /** The active section's Effects an input fires (core's matcher — the one the engine runs). */
+  private matchActiveEffects(event: effectChain.EffectInputEvent): effectChain.Effect[] {
+    const section = this.activeSection;
+    return section ? effectChain.matchSectionEffects({ effects: section.effects ?? EMPTY_EFFECTS }, event) : [];
+  }
+
+  /** Audition Effects by id: the `fireEffect` intent connected, the Sim's engine offline. */
+  private auditionEffects(effectIds: readonly string[], source: 'audition' | 'cell'): void {
+    if (effectIds.length === 0) return;
+    this.stampEffectFires(effectIds);
+    if (this.link === 'open') {
+      for (const effectId of effectIds) this.client.send({ t: 'fireEffect', effectId });
+      return;
+    }
+    this.ensureSimShow();
+    for (const effectId of effectIds) this.sim.fireEffect(effectId);
+    this.addMonitor({
+      type: 'effect',
+      direction: 'local',
+      source,
+      label: effectIds.map((id) => this.effectsCtl.effectById(id)?.name ?? id).join(', '),
+      detail: effectIds.map((id) => `▶ ${this.effectsCtl.effectById(id)?.name ?? id}`).join(' | '),
+    });
+    this.renderFrame();
+    this.snapshot();
+    this.markLocalPreview();
+  }
+
+  // ---- legacy import (old v1 / v2 libraries) -----------------------------------------------------
+
+  /** An old-format library found at boot (local keys) or in the server's first `state`. */
+  private legacyLibrary = $state.raw<LegacyLibrary | null>(null);
+  private legacyDismissed = $state(readLegacyDismissed());
+
+  private noteServerLegacyLibrary(showLibrary: unknown, songLibrary: unknown): void {
+    if (this.legacyLibrary) return; // local wins (the freshest copy), and the first sighting sticks
+    this.legacyLibrary = detectLegacyLibrary(null, { showLibrary, songLibrary });
+  }
+
+  /** Names of the old-format shows an import would still bring across. */
+  get legacyShowNames(): readonly string[] {
+    const lib = this.legacyLibrary;
+    return lib ? pendingLegacyShowNames(lib, { shows: this.showsCtl.showLibrary, activeShowId: this.activeShowId }) : [];
+  }
+  /** Offer the import: an old library with shows not yet imported, not dismissed, not a viewer. */
+  get legacyImportAvailable(): boolean {
+    return !this.legacyDismissed && !this.isViewer && this.legacyShowNames.length > 0;
+  }
+  importLegacyShows(): ApplyResult {
+    return this.effectsCtl.importLegacyShows();
+  }
+  dismissLegacyImport(): void {
+    this.effectsCtl.dismissLegacyImport();
+  }
+
+  /** Import every not-yet-imported old show (and its song library) beside the current shows. The
+      old data is never written or deleted; the active show stays active. Idempotent. */
+  private runLegacyImport(): ApplyResult {
+    if (this.isViewer) return { ok: false, reason: 'This show is read-only.' };
+    const lib = this.legacyLibrary;
+    if (!lib) return { ok: false, reason: 'No old shows to import.' };
+    const imported = this.showsCtl.importLegacy(lib);
+    if (imported.length === 0) return { ok: false, reason: 'Every old show is already imported.' };
+    pushToast(`Imported ${imported.length} show${imported.length === 1 ? '' : 's'}.`, { tone: 'success' });
+    this.scheduleSave();
+    return { ok: true };
+  }
+
+  private dismissLegacyImportPrompt(): void {
+    this.legacyDismissed = true;
+    writeLegacyDismissed();
+  }
+
   // --- lifecycle -----------------------------------------------------------
 
   start(): void {
@@ -1428,6 +2022,7 @@ export class TriggerLab {
     const loop = (now: number): void => {
       const dt = Math.min(64, now - this.last);
       this.last = now;
+      this.ensureSimShow();
       if (this.timingSource === 'midiClock' && this.clockInput === 'browser' && this.link !== 'open') {
         // Offline preview under external clock: the same reducer the server runs, fed from the
         // selected port. The sim's beat is set from the reducer (tick-counted + interpolated),
@@ -1534,6 +2129,10 @@ export class TriggerLab {
             const consumed = globalControlForNote(this.globalControls, ev.note) !== null;
             if (!consumed && this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
           }
+        } else if (this.link !== 'open' && this.acceptsMidiChannel(ev.channel)) {
+          // Note-off: release the `hold` Effects this note (and the zone it claims) fired.
+          const claim = this.project?.inputMap.midiNotes.find((m) => m.note === ev.note);
+          this.sim.releaseEffects({ note: ev.note, ...(claim ? { drumId: claim.drumId, zone: String(claim.slot) } : {}) });
         }
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
@@ -1575,15 +2174,17 @@ export class TriggerLab {
     announceSystemActions(actions);
   }
 
-  /** Reset every authored rune to the blank-document seed (via {@link seedAuthored}) — the
-      clean baseline a show SWITCH starts from, so no field of the outgoing show survives. */
+  /** Reset every authored rune to the blank-document seed (via {@link seedAuthoredV3}, plus the
+      graph-era sandbox seed) — the clean baseline a show SWITCH starts from, so no field of the
+      outgoing show survives. */
   private resetAuthoredToSeed(): void {
-    this.applyAuthored(seedAuthored());
+    this.applyLegacy(seedLegacySlice());
+    this.applyAuthored(seedAuthoredV3());
   }
 
   /** The sole document replacement boundary, including same-id server adoption. History is
       session-local to this document revision; an in-flight gesture cannot suppress its first edit. */
-  private replaceDocument(show: Show, source: 'loaded' | 'live'): void {
+  private replaceDocument(show: ShowV3, source: 'loaded' | 'live'): void {
     ++this.documentGeneration;
     this.pasteFallback = null;
     this.songPasteOpen = false;
@@ -1622,25 +2223,28 @@ export class TriggerLab {
     this.sim.pixelModel = this.labModel.pm;
     this.sim.bpm = this.bpm;
     this.sim.beatsPerBar = this.beatsPerBar;
+    // A fresh Sim holds no Show: load the Effect show into its private core engine now.
+    this.simShow = null;
+    this.simFireSeen.clear();
+    this.ensureSimShow();
     this.serverVoices = [];
+    this.effectVoices = [];
     this.busLevels = {};
     this.frameBuf.fill(0);
     this.snapshot();
   }
 
-  /** One field list for dependency tracking, history and persistence. References here stay LIVE;
-      only toAuthored/History materialize detached data, at their respective commit boundaries. */
-  private get authoredSource(): AuthoredState {
-    return {
-      graphs: this.graphs,
-      graphNames: this.graphNames,
-      songs: this.songs,
+  /** One field list for dependency tracking, history and persistence (the v3 document). The
+      songs are re-shaped to v3 sections (the store keeps graph-era `graphs` / `looks` on its
+      sections until S08); Effect / master arrays stay LIVE references — only
+      toAuthored/History materialize detached data, at their respective commit boundaries. */
+  private get authoredSource(): AuthoredStateV3 {
+    const out: AuthoredStateV3 = {
+      songs: this.songs.map(toEffectSong),
       songRefs: this.songRefs,
-      buses: this.buses,
-      presets: this.presets,
-      effects: this.effects,
       canvasScenes: this.canvasScenes,
-      selectedPadKey: this.selectedPadKey,
+      selectedCell: this.effectsCtl.selectedCell,
+      selectedEffectId: this.effectsCtl.selectedEffectId,
       activeSongId: this.activeSongId,
       activeSectionId: this.activeSectionId,
       bpm: this.bpm,
@@ -1648,48 +2252,66 @@ export class TriggerLab {
       beatsPerBar: this.beatsPerBar,
       paneSizes: this.paneSizes,
       patchLabels: this.patchLabels,
+    };
+    if (this.mappings !== undefined) out.mappings = this.mappings;
+    return out;
+  }
+
+  /** The graph-era sandbox runes (live references) for undo checkpoints — see {@link LegacyGraphSlice}. */
+  private get legacySource(): LegacyGraphSlice {
+    return {
+      graphs: this.graphs,
+      graphNames: this.graphNames,
+      buses: this.buses,
+      presets: this.presets,
+      effects: this.effects,
+      selectedPadKey: this.selectedPadKey,
       autoZoneGraphs: this.autoZoneGraphs,
     };
   }
 
   /** Materialize only at a save/flush/document-switch boundary. */
-  private toAuthored(): AuthoredState {
-    return $state.snapshot(this.authoredSource);
+  private toAuthored(): AuthoredStateV3 {
+    return $state.snapshot(this.authoredSource) as AuthoredStateV3;
   }
 
-  /** Merge a (partial) restored slice into the runes — only present fields, so a
+  /** Merge a (partial) restored v3 slice into the runes — only present fields, so a
       missing/forward field keeps its seed default. */
-  private applyAuthored(a: Partial<AuthoredState>): void {
-    if (a.graphs) this.graphs = a.graphs;
-    if (a.graphNames) this.graphNames = a.graphNames;
-    if (a.songs) this.songs = a.songs;
+  private applyAuthored(a: Partial<AuthoredStateV3>): void {
+    if (a.songs) this.songs = a.songs.map(toStoreSong);
     // Always assigned (even when absent) so a show that references nothing CLEARS the outgoing
     // show's refs on a swap — no cross-show bleed of references (seed/replaceDocument reset to []).
     this.songRefs = a.songRefs ?? [];
-    if (a.buses) this.buses = a.buses;
-    // Union, never replace (mirrors effects below): a stale localStorage slice must
-    // not drop the built-in generator `:default` presets, or play nodes that point at
-    // a generator effect can't resolve their preset (blank sub + frozen live preview).
-    if (a.presets) this.presets = unionPresets(a.presets);
-    // Union, never replace: keep every current built-in (so new generator effects
-    // always appear) and re-add only the user's own created effects.
-    if (a.effects) this.effects = unionEffects(a.effects);
     // Always assigned (even when absent) so switching from a scene-heavy show to a
     // scene-less show clears prior scenes — no cross-show bleed.
     this.canvasScenes = a.canvasScenes ?? [];
     if (a.activeSongId !== undefined) this.activeSongId = a.activeSongId;
     if (a.activeSectionId !== undefined) this.activeSectionId = a.activeSectionId;
-    // After the section pointers: re-pointing the section re-homes the open graph
-    // (followActiveSection), and the restored selection — which may be an unplaced Objects
-    // graph — must win over that.
-    if (a.selectedPadKey !== undefined) this.selectedPadKey = a.selectedPadKey;
+    // After the section pointers (re-pointing the section re-follows the selection): the
+    // restored Effect selection wins, else the restored cell.
+    if (a.selectedEffectId) this.effectsCtl.selectEffect(a.selectedEffectId);
+    if (!a.selectedEffectId || this.effectsCtl.selectedEffectId === null) {
+      if (a.selectedCell !== undefined) this.effectsCtl.selectCell(a.selectedCell);
+    }
     if (typeof a.bpm === 'number') this.bpm = a.bpm;
     if (typeof a.velocity === 'number') this.velocity = a.velocity;
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
     if (a.paneSizes) this.paneSizes = a.paneSizes;
     if (a.patchLabels) this.patchLabels = a.patchLabels;
-    // Always assigned, like canvasScenes: a show that never set it must not inherit it on a swap.
-    this.autoZoneGraphs = a.autoZoneGraphs === true;
+    // Opaque until S07a; always assigned so a swap never inherits another show's mappings.
+    this.mappings = a.mappings;
+  }
+
+  /** Restore the graph-era sandbox (undo / document reset). */
+  private applyLegacy(l: LegacyGraphSlice): void {
+    this.graphs = l.graphs;
+    this.graphNames = l.graphNames;
+    this.buses = l.buses;
+    // Union, never replace: a stale slice must not drop the built-in generator presets / effects.
+    this.presets = unionPresets(l.presets);
+    this.effects = unionEffects(l.effects);
+    this.selectedPadKey = l.selectedPadKey;
+    this.autoZoneGraphs = l.autoZoneGraphs;
   }
 
   private pushUndoSnapshot(): void {
@@ -1703,6 +2325,7 @@ export class TriggerLab {
     const result = this.history.push(this.activeShowId, {
       authored: this.authoredSource,
       project: this.project,
+      legacy: this.legacySource,
     });
     if (result === 'oversized') {
       pushToast('Undo cleared: this document exceeds the 32 MiB history budget. Your edit is kept.');
@@ -1764,6 +2387,7 @@ export class TriggerLab {
     if (!prev) return false;
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
+    this.applyLegacy(structuredClone(prev.legacy));
     this.applyAuthored(structuredClone(prev.authored));
     this.normalizeGraphs();
     this.replaceRuntime();
@@ -1786,29 +2410,15 @@ export class TriggerLab {
     if (this.persistDispose || typeof localStorage === 'undefined') return;
     this.persistDispose = $effect.root(() => {
       let authoredMounted = false;
-      let graphsMounted = false;
       let poolMounted = false;
       $effect(() => {
         this.showsCtl.trackLibraryChanges();
-        const { graphs: _graphs, ...fields } = this.authoredSource;
-        trackDocument(fields);
+        trackDocument(this.authoredSource);
         this.scheduleSave(authoredMounted);
         authoredMounted = true;
       });
-      // Per-graph subscriptions: a node drag reads only that graph, not every other graph in
-      // a large active show. Svelte disposes the child effects when the graph map is replaced.
-      $effect(() => {
-        for (const graph of Object.values(this.graphs)) {
-          let mounted = false;
-          $effect(() => {
-            trackDocument(graph);
-            this.scheduleSave(mounted);
-            mounted = true;
-          });
-        }
-        this.scheduleSave(graphsMounted);
-        graphsMounted = true;
-      });
+      // The graph runes are a transient sandbox since effect chains (S05) — not persisted, so no
+      // per-graph subscription.
       $effect(() => {
         this.showsCtl.trackSongLibraryChanges();
         this.scheduleSave(poolMounted);
@@ -1856,8 +2466,8 @@ export class TriggerLab {
   private flushSave(syncServer = true): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    const shows = serializeShowLibrary(this.showsCtl.currentLibrary());
-    const songs = serializeSongLibrary(this.showsCtl.currentSongLibrary());
+    const shows = serializeShowLibraryV3(this.showsCtl.currentLibrary());
+    const songs = serializeSongLibraryV2(this.showsCtl.currentSongLibrary());
     const showSaved = writeStoredLibrary(shows);
     const songsSaved = writeStoredSongLibrary(songs);
     if (syncServer) {
@@ -1915,6 +2525,9 @@ export class TriggerLab {
         // pool): adopt server on first state / seed it from our cache / viewer live-follows. Role-
         // aware (S1) — presence arrives before this state on a (re)connect, so `isViewer` is settled.
         // Owned by {@link ShowsController} (R23).
+        // An OLD-format server library (v1/v2) is never adopted by the v3 reconcile below — it is
+        // offered for import instead. Stash it BEFORE the reconcile seeds the server with v3.
+        this.noteServerLegacyLibrary(showLibrary, songLibrary);
         this.showsCtl.reconcileOnState(showLibrary, songLibrary);
         this.tryApplyPendingRecall();
       },
@@ -1979,7 +2592,7 @@ export class TriggerLab {
           // A successful handshake means any PIN we sent was accepted — clear the gate.
           this.authRequired = false;
           // hand the server the authored content (with library refs resolved in), then transport
-          const show = buildShow(this.showSource);
+          const show = this.effectsShow;
           this.client.send({ t: 'setShow', show });
           this.engineSync.baselineShow(show); // baseline so the first sync tick is a no-op
           const cur = { bpm: this.bpm, playing: this.playing, beatsPerBar: this.beatsPerBar };
@@ -2052,6 +2665,8 @@ export class TriggerLab {
         // fire signal so the card indicator is the same subscription online and off.
         const fired = graphFireKeyOf(event);
         if (fired) this.markGraphFire(fired);
+        // Effect fires connected: the server does not (yet) report `effect-fired` on the monitor
+        // stream, so connected fire flashes come from the local intents (hit / audition) only.
       },
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
@@ -2143,27 +2758,42 @@ export class TriggerLab {
       recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
-  private get showSource(): ShowSource {
-    const rv = this.resolvedView;
+  private get showSource(): EffectsShowSource {
     return {
-      buses: this.buses,
-      graphs: rv.graphs,
-      sections: this.sections,
-      // Send virtual canvas effects + their default presets alongside the real registry so
-      // the engine's VoicePool can host `canvas:<id>` voices; scene docs register the generators.
-      effects: [...rv.effects, ...this.canvasEffects],
-      presets: [...rv.presets, ...this.allPresets.filter((p) => p.effectId.startsWith('canvas:'))],
+      format: 'effects',
+      songs: this.songs.map(toEffectSong),
+      songRefs: this.songRefs,
       canvasScenes: this.canvasScenes,
-      drums: this.drums,
-      songs: this.resolvedSongs,
+      songLibrary: this.songLibrary.songs,
     };
+  }
+
+  /** The runtime Show (core `buildRuntimeShow`), memoized on the authored document: a `$derived`
+      re-runs only after an authored field it read changed, so a drag that republishes the same
+      value, or a render frame, never rebuilds it. `buildEffectsShow` snapshots the source. */
+  private effectsShowBuild = $derived.by(() => buildEffectsShow(this.showSource));
+  private get effectsShow(): voice.Show {
+    return this.effectsShowBuild.show;
   }
 
   private syncShowToServer(): void {
     if (this.link !== 'open' || this.isViewer) return; // a viewer follows the editor — never authors up
-    const show = buildShow(this.showSource);
+    const show = this.effectsShow;
     if (!this.engineSync.planShowPush(show)) return;
     this.client.send({ t: 'setShow', show });
+  }
+
+  /** The Show the offline Sim's Effect path last loaded (identity of the memoized build). */
+  private simShow: voice.Show | null = null;
+  /** Load the current Effect show into the offline Sim when it changed since the last load.
+      Called before every offline input and each rendered frame, so edits coalesce to one load
+      per frame and an input always meets the current show. The active section rides along so
+      the engine recalls it (its Always Effects and Master chain). */
+  private ensureSimShow(): void {
+    const show = this.effectsShow;
+    if (show === this.simShow) return;
+    this.simShow = show;
+    this.sim.setEffectShow(show, { songId: this.activeSongId || null, sectionId: this.activeSectionId });
   }
 
   private receiveAuthoritativeRecall(recall: AuthoritativeRecall, source: 'state' | 'recalled'): void {
@@ -2237,7 +2867,17 @@ export class TriggerLab {
     this.client.send({ t: 'setTransport', ...cur });
   }
 
+  private lastVoiceStatsAt = -Infinity;
+
   private snapshot(): void {
+    if (this.link !== 'open') {
+      const now = nowMs();
+      if (now - this.lastVoiceStatsAt >= EFFECT_STATS_INTERVAL_MS) {
+        this.lastVoiceStatsAt = now;
+        this.effectVoices = this.sim.effectVoiceStats();
+      }
+      this.pollSimEffectFires();
+    }
     this.voices = this.sim.voices.slice();
     this.log = this.sim.log.slice(0, 40);
     this.timeMs = this.sim.timeMs;
@@ -2326,51 +2966,30 @@ export class TriggerLab {
     return this.pads[0]?.drumId ?? '';
   }
 
+  /** Offline hardware MIDI on the Effect path: ONE `hitEffects` carrying the zone the note map
+      claims AND the note, so the zone Effect and a Cue on that note each fire exactly once
+      (the Sim does not forward `setNote` into its engine). */
   private fireRawMidiLocal(note: number, value: number): void {
-    const graphs = this.resolvedView.graphs;
-    // The drum the zone-map CLAIMS this note for — no `pads[0]` fallback here, unlike the
-    // ctx's `sourceDrumId` below: an unclaimed note carries no drum's sensitivity, and
-    // plotting it under one would attribute a hit to a drum that was never struck.
-    const claimedDrumId = this.mappedDrumIdForMidiNote(note) ?? undefined;
+    const claim = this.project?.inputMap.midiNotes.find((m) => m.note === note);
     const raw = Math.max(0, Math.min(1, value / 127));
     // Offline the local sim IS the engine, so this path is both the echo and the fire.
-    this.recordVelocityHit(claimedDrumId, raw);
-    const toFire = resolveGraphsForFire(graphs, { kind: 'midi', note, value });
-    // Sequence reset bindings apply BEFORE the fires (mirroring engine.processInput), so a note
-    // that both resets and triggers a sequence plays step 1 on this very hit. A reset-only note
-    // is still a routed input — it did its job with nothing to fire.
-    const resets = this.sim.applySequenceResets(graphs, { note });
-    for (const r of resets) {
-      this.addMonitor({
-        type: 'effect',
-        direction: 'local',
-        source: `midi:${note}`,
-        label: `${this.graphLabel(r.graphKey)} · reset`,
-        detail: '↺ sequence back to step 1',
-      });
-    }
-    if (toFire.length === 0 && resets.length === 0) return;
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      velocity: this.shapeVelocity(claimedDrumId, raw),
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: claimedDrumId ?? this.pads[0]?.drumId ?? '',
-      bpm: this.bpm,
-      beatsPerBar: this.beatsPerBar,
-    };
-    for (const { key, graph } of toFire) {
-      this.markGraphFire(key); // offline hardware MIDI: the local sim IS the engine, so stamp here
-      const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
-      this.addMonitor({
-        type: 'effect',
-        direction: 'local',
-        source: `midi:${note}`,
-        label: this.graphLabel(key),
-        detail: resolved.join(' | '),
-      });
-    }
+    this.recordVelocityHit(claim?.drumId, raw);
+    const fired = this.matchActiveEffects({ drumId: claim?.drumId, slot: claim?.slot, midiNote: note });
+    if (fired.length === 0) return;
+    this.stampEffectFires(fired.map((e) => e.id));
+    this.ensureSimShow();
+    this.sim.hitEffects({
+      ...(claim ? { drumId: claim.drumId, zone: String(claim.slot) } : {}),
+      note,
+      velocity: this.shapeVelocity(claim?.drumId, raw),
+    });
+    this.addMonitor({
+      type: 'effect',
+      direction: 'local',
+      source: `midi:${note}`,
+      label: fired.map((e) => e.name).join(', '),
+      detail: fired.map((e) => `▶ ${e.name}`).join(' | '),
+    });
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
@@ -2378,95 +2997,30 @@ export class TriggerLab {
 
   // --- play surface --------------------------------------------------------
 
-  /**
-   * Resolve which graphs to fire locally for a pad hit — U4 model + U3 source filter.
-   * Candidate graphs = the ACTIVE section's flat graph list; a graph fires when its trigger
-   * `source` is a `drum` source matching this pad's drum+zone ({@link sourceMatchesPad}) — so
-   * each zone still fires only its own graph, and LAYERING is two section graphs sharing a
-   * source (both fire). Returns one entry per matching graph in section order (may be empty
-   * when the section doesn't use this pad). Falls back to the flat per-pad graph when there
-   * is NO active section — today's pre-section per-zone behaviour.
-   *
-   * (Raw MIDI/OSC direct bindings resolve via the sim's `resolveGraphsForFire` / the server
-   * input-router — U3 — not this pad path.)
-   */
-  private resolveHitGraphsLocal(pad: Pad): Array<{ graph: TriggerGraph; label: string; key: string }> {
-    const section = this.activeSection;
-    // Resolved graphs (S42): a referenced section's keys (`lib:<id>/…`) only exist in the resolved
-    // view, so hit-resolution reads through it — a referenced section fires exactly like a local one.
-    const graphs = this.resolvedView.graphs;
-    if (section) {
-      const resolved: Array<{ graph: TriggerGraph; label: string; key: string }> = [];
-      for (const key of section.graphs) {
-        const g = graphs[key];
-        if (g && sourceMatchesPad(triggerSourceOf(g), pad.drumId, String(pad.zone))) {
-          resolved.push({ graph: g, label: this.graphLabel(key), key });
-        }
-      }
-      return resolved;
-    }
-    const legacyKey = padKey(pad);
-    const legacyGraph = graphs[legacyKey];
-    if (legacyGraph) return [{ graph: legacyGraph, label: this.graphLabel(legacyKey), key: legacyKey }];
-    // Fresh seeded shows no longer carry an unreferenced canonical pad key. Preserve the old
-    // no-section fallback by selecting the first graph explicitly bound to this pad instead.
-    const seeded = Object.entries(graphs).find(([, graph]) => sourceMatchesPad(triggerSourceOf(graph), pad.drumId, String(pad.zone)));
-    return seeded ? [{ graph: seeded[1], label: this.graphLabel(seeded[0]), key: seeded[0] }] : [];
-  }
-
+  /** A pad hit on the Effect path: the active section's zone Effects on this drum + slot fire.
+      Connected, the server resolves (the `key` intent); offline the Sim's core engine does. */
   hit(pad: Pad): void {
     // Live feedback for the velocity editor, before the routing checks below: a hit on a pad
     // that routes nowhere is still a hit worth plotting while tuning. Connected, the server's
     // `key` echo carries this same pair, so recording here too would double-plot it.
     if (this.link !== 'open') this.recordVelocityHit(pad.drumId, this.velocity);
-    const toFire = this.resolveHitGraphsLocal(pad);
-    // A pad may route to a sequence RESET binding alone (a sequence node's own `resetSource`,
-    // firing nothing) — that hit still counts as routed, and connected it must still reach the
-    // server, whose engine applies the reset.
-    const resetBindings = voice.resolveSequenceResets(this.resolvedView.graphs, {
-      drumId: pad.drumId,
-      zone: String(pad.zone),
-    });
-    if (toFire.length === 0 && resetBindings.length === 0) return;
-    // Mark each fired graph's UI fire-clock so its live-on-trigger node previews play (both
-    // online + offline — the preview is display-only and reacts to the local intent either way).
-    for (const { key } of toFire) this.markGraphFire(key);
-    // Connected: the server owns resolution + render. Forward the hit and let its frames/levels
-    // come back; do NOT fire the local sim (authority principle, doc 03). `onInput` has no `key`
-    // echo branch, so this is a single authoritative fire.
+    const fired = this.matchActiveEffects({ drumId: pad.drumId, slot: Number(pad.zone) });
+    if (fired.length === 0) return;
+    // Fire flashes react to the local intent, online and offline (display-only).
+    this.stampEffectFires(fired.map((e) => e.id));
     if (this.link === 'open') {
       this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
       return;
     }
-    // Offline preview: fire the local sim (it drives the lab's voice lanes + resolution log).
-    // Drum-bound sequence resets apply first (mirroring engine.processInput), so a pad that
-    // both resets and triggers a sequence plays step 1 on this very hit.
-    const resets = this.sim.applySequenceResets(this.resolvedView.graphs, { drumId: pad.drumId, zone: String(pad.zone) });
-    for (const r of resets) {
-      this.addMonitor({
-        type: 'effect',
-        direction: 'local',
-        source: `${pad.drumId}:${pad.zone}`,
-        label: `${this.graphLabel(r.graphKey)} · reset`,
-        detail: '↺ sequence back to step 1',
-      });
-    }
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      // Offline mirror of the server's `key` seam: the pad's drum shapes its own velocity,
-      // so a test fire and a real stick agree about what this drum does with a hit.
-      velocity: this.shapeVelocity(pad.drumId, this.velocity),
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: pad.drumId,
-      bpm: this.bpm,
-      beatsPerBar: this.beatsPerBar,
-    };
-    for (const { graph, label, key } of toFire) {
-      const resolved = this.sim.triggerGraph(label, graph, ctx, key);
-      this.addMonitor({ type: 'effect', direction: 'local', source: `${pad.drumId}:${pad.zone}`, label, detail: resolved.join(' | ') });
-    }
+    this.ensureSimShow();
+    this.sim.hitEffects({ drumId: pad.drumId, zone: String(pad.zone), velocity: this.shapeVelocity(pad.drumId, this.velocity) });
+    this.addMonitor({
+      type: 'effect',
+      direction: 'local',
+      source: `${pad.drumId}:${pad.zone}`,
+      label: fired.map((e) => e.name).join(', '),
+      detail: fired.map((e) => `▶ ${e.name}`).join(' | '),
+    });
     this.renderFrame();
     this.snapshot();
     this.markLocalPreview();
@@ -2555,7 +3109,10 @@ export class TriggerLab {
     // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
     // outbound authority gate (S12) — the sim resolves only while the link is closed.
     if (look && this.link !== 'open') {
-      this.sim.recallSection(look);
+      // Effect path: the Sim recalls through its core engine (Always Effects + Master chain);
+      // the show must already hold this section, so load the current one first.
+      this.ensureSimShow();
+      this.sim.recallSection(look, this.activeSongId || null);
       this.snapshot();
     }
     if (this.link === 'open') {
@@ -2571,6 +3128,10 @@ export class TriggerLab {
    * the new section while the canvas still edits a graph from the old one.
    */
   private followActiveSection(): void {
+    // Effect chains: the selected CELL is a grid coordinate, valid in every section — keep it and
+    // re-select that cell's first Effect in the new section (a Master selection stays).
+    const cell = this.effectsCtl.selectedCell;
+    if (cell !== null && cell !== MASTER_CELL) this.effectsCtl.selectCell(cell);
     const graphs = this.activeSection?.graphs ?? [];
     if (this.selectedPadKey !== null && graphs.includes(this.selectedPadKey)) return;
     this.selectedPadKey = graphs.find((key) => this.resolvedView.graphs[key]) ?? null;
@@ -2677,10 +3238,9 @@ export class TriggerLab {
   }
 
   zoneGraphUsers(drumId: string, slot: number): string[] {
-    const pools = [
+    // Effect chains: v3 shows and library songs hold no graphs; only the live sandbox does.
+    const pools: { graphs?: Record<string, TriggerGraph>; graphNames?: Record<string, string> }[] = [
       { graphs: this.graphs, graphNames: this.graphNames },
-      ...Object.values(this.showsCtl.showLibrary).filter((show) => show.id !== this.activeShowId).map((show) => show.authored),
-      ...Object.values(this.songLibrary.songs),
     ];
     const users = new Set<string>();
     for (const pool of pools) for (const [key, graph] of Object.entries(pool.graphs ?? {})) {
@@ -3587,17 +4147,11 @@ export class TriggerLab {
     // Song → Library: extract a fresh, self-contained namespaced closure into the pool.
     if (doc.kind === 'song' && opts.songDest === 'library') {
       const libId = freshId('song', (id) => id in this.songLibrary.songs);
-      const sources: ClosureSources = {
-        graphs: doc.deps.graphs ?? {},
-        graphNames: doc.deps.graphNames ?? {},
-        effects: doc.deps.effects ?? [],
-        presets: doc.deps.presets ?? [],
-      };
-      const closure = extractSongClosure(doc.payload.song, sources, libId);
-      this.songLibrary = songRefsLib.withLibrarySong(this.songLibrary, closure);
-      // Reserve the new pool entry's raw node/edge ids: S42 lets a user edit this referenced graph,
-      // so a fresh node mint must clear any high id the pasted closure carried in.
-      reserveIds(idsFromLibrarySong(closure));
+      const libSong = extractEffectSong(doc.payload.song, doc.deps.canvasScenes ?? [], libId);
+      const songLibrary: SongLibraryV2 = { ...this.songLibrary, songs: { ...this.songLibrary.songs, [libId]: libSong } };
+      this.songLibrary = songLibrary;
+      // Reserve the new pool entry's raw Effect ids / device uids against later local mints.
+      reserveIds(idsFromSongLibraryV2({ songs: { [libId]: libSong } }));
       return { ok: true, kind: 'song', message: `Pasted “${doc.payload.song.name || 'song'}” into the library.` };
     }
 
@@ -4526,7 +5080,7 @@ export class TriggerLab {
       in-place mutation would corrupt the global registry), then re-points the sim's id-map at
       the new object so the live preview reflects it. Persists via the authored autosave
       ({@link unionEffects} keeps a built-in's renamed name on reload). */
-  renameEffect(id: string, name: string): void {
+  renameEffectDef(id: string, name: string): void {
     if (this.isViewer) return; // read-only viewer (S2): authoring no-op
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -4543,7 +5097,7 @@ export class TriggerLab {
       Returns the new id, or null for an unknown id. The clone is independent (its own id +
       Default preset); a generator-backed effect keeps its `generatorId` so it renders
       identically. Persists via the authored autosave. */
-  duplicateEffect(id: string): string | null {
+  duplicateEffectDef(id: string): string | null {
     if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
     const src = this.effects.find((e) => e.id === id);
     if (!src) return null;
@@ -4898,8 +5452,9 @@ export class TriggerLab {
     node.params = graphsLib.modifierParamsFor(modifierId);
     node.env = {};
   }
-  /** Toggle a modifier node's bypass (identity when true; the chain keeps its state slot). */
-  setModifierBypass(node: GraphNode, bypass: boolean): void {
+  /** Toggle a modifier node's bypass (identity when true; the chain keeps its state slot).
+      Renamed from `setModifierBypass` (effect chains: that name is the Effects contract's). */
+  setModifierNodeBypass(node: GraphNode, bypass: boolean): void {
     if (!this.canEditSelectedGraph) return;
     if (node.kind !== 'modifier') return;
     this.pushUndoSnapshot();

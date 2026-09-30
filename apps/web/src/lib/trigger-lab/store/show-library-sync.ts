@@ -6,9 +6,17 @@
    authored change up via setShowLibrary. localStorage is a fast cache (offline / first paint).
 
    This controller owns ONLY the once-per-session gate + echo/no-op suppression signatures; the
-   store performs the rune swap (adoptLibrary) and the actual WS send. */
+   store performs the rune swap (adoptLibrary) and the actual WS send.
 
-import { type ShowLibrary, deserializeShowLibrary, serializeShowLibrary } from '../persistence';
+   Effect chains (S05): the library is the v3 envelope. A server blob in an OLD format (v1/v2)
+   never deserializes here, so it is never adopted — the editor seeds the server with its v3
+   library instead (the server archives the old blob) and the old one is offered for import. */
+
+import {
+  type ShowLibraryV3 as ShowLibrary,
+  deserializeShowLibraryV3 as deserializeShowLibrary,
+  serializeShowLibraryV3 as serializeShowLibrary,
+} from '../persistence';
 
 /** What a `state`-message reconcile decides the store should do. */
 export type ReconcilePlan =
