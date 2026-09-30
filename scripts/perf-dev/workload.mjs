@@ -7,9 +7,9 @@ export const emptyShow = () => ({ songs: [] });
 export const fingerprint = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 /** The Wave Generator Style that hosts `spatial-field` (core `effect-chain/generators/wave.ts`). */
-export const GENERATOR = Object.freeze({ kind: 'wave', style: 'field' });
-export const SONG_ID = 'perf-dev';
-export const SECTION_ID = 'perf-dev-section';
+const GENERATOR = Object.freeze({ kind: 'wave', style: 'field' });
+const SONG_ID = 'perf-dev';
+const SECTION_ID = 'perf-dev-section';
 const BANDS = ['level', 'bass', 'mids', 'highs'];
 
 /** One CANONICAL Effect (every field core's `effectSchema` would default is present): the
