@@ -3,10 +3,12 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent, type RenderEngine } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import type { Show } from './types';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
 /* Global controls 5–8, engine half: the OUTPUT-STAGE gate (panic blackout, master
-   brightness) and the two state actions (stop-all-voices, sequence re-sync).
+   brightness) and the two state actions (stop-all-voices, and sequence re-sync — a no-op now
+   that the Effect model has no sequencers).
 
    The blackout/brightness rule these all turn on: they act at the very last step and
    never touch voice state. That is what makes a panic instantly reversible — the show
@@ -25,49 +27,14 @@ function transport(now: number): TransportState {
   return { timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true };
 }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: false, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 1, delayMode: 'time', ms: 0, division: '1/8', ...over,
-  } as GraphNode;
-}
-
-/** A kit-wide solid effect with a long sustain, so a fired voice keeps the frame lit. */
-function fx(id: string): EffectDef {
-  return {
-    id,
-    name: id,
-    generatorId: 'solid-base',
-    busId: 'main',
-    scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 0,
-    sustainMs: 1_000_000,
-    releaseMs: 50,
-  };
-}
-
-function buses(): Bus[] {
-  return [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }];
-}
-
-/** trigger → play(oneshot) — a pad hit spawns one trigger voice that stays lit. */
-function hitGraph(mode: 'oneshot' | 'loop'): TriggerGraph {
-  return {
-    nodes: [node('trigger', 'trigger'), node('play', 'p', { effectId: 'fx', mode, params: { brightness: 1 } })],
-    edges: [{ id: 'e', from: 'trigger', to: 'p' }],
-  };
-}
-
+/** A kick-zone, kit-wide solid Effect with a long gate, so a fired voice keeps the frame lit.
+    `loop` makes it a looping voice (the section's base layer). */
 function show(mode: 'oneshot' | 'loop' = 'oneshot'): Show {
-  return {
-    buses: buses(),
-    graphs: { [padKey('kick', '0')]: hitGraph(mode) },
-    sections: [],
-    effects: [fx('fx')],
-    presets: [],
-  };
+  const effect = zoneEffect('fx', { kind: 'solid', style: 'swirl', params: { brightness: 1 } }, {
+    amp: { attackMs: 0, length: mode === 'loop' ? 'loop' : { ms: 1_000_000 }, releaseMs: 50 },
+    target: { kind: 'kit' },
+  });
+  return effectShowOf(sectionOf('s', [effect]));
 }
 
 function setup(mode: 'oneshot' | 'loop' = 'oneshot'): RenderEngine {
@@ -264,42 +231,18 @@ describe('stop all voices', () => {
 });
 
 describe('sequence re-sync', () => {
-  it('snaps sequencers back to step 1 without disturbing voices or the frame', () => {
-    // A sequence node advances its index per fire; re-sync clears that state so the next
-    // fire starts from the top again.
-    const seqShow: Show = {
-      ...show(),
-      graphs: {
-        [padKey('kick', '0')]: {
-          nodes: [
-            node('trigger', 'trigger'),
-            node('sequence', 's'),
-            node('play', 'a', { effectId: 'fx', params: { brightness: 1 } }),
-            node('play', 'b', { effectId: 'fx', params: { brightness: 1 } }),
-          ],
-          edges: [
-            { id: 'e0', from: 'trigger', to: 's' },
-            { id: 'e1', from: 's', to: 'a' },
-            { id: 'e2', from: 's', to: 'b' },
-          ],
-        },
-      },
-    };
-    const engine = createVoiceBusEngine();
-    engine.setModel(testModel());
-    engine.setShow(seqShow);
+  it('is a no-op on the Effect model (no sequencers): voices and the frame are untouched', () => {
+    const engine = setup();
+    light(engine);
+    const voices = engine.stats().voiceCount;
+    const before = frameMax(engine);
 
-    // Advance the sequencer off step 1.
-    engine.applyInput(hit(0));
-    engine.tick(10, 10, transport(10));
-    const afterFirst = engine.stats().voiceCount;
+    engine.applyInput(ctl('sequenceResync', 60));
+    engine.tick(70, 10, transport(70));
 
-    engine.applyInput(ctl('sequenceResync', 20));
-    engine.tick(30, 10, transport(30));
-
-    // Voices are untouched by a re-sync — it is state only, not a reset.
-    expect(engine.stats().voiceCount).toBe(afterFirst);
-    expect(() => engine.tick(40, 10, transport(40))).not.toThrow();
+    expect(engine.stats().voiceCount).toBe(voices);
+    expect(voices).toBeGreaterThan(0);
+    expect(frameMax(engine)).toBeCloseTo(before, 3);
   });
 });
 

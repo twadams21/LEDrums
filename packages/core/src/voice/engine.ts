@@ -892,6 +892,9 @@ class VoiceBusEngine implements RenderEngine {
       skip('unknown-generator');
       return;
     }
+    // A Splice / Slice member names its own internal def; the pool drops a member whose def is
+    // missing, so build each one too (a nested Generator slot would otherwise render blank).
+    for (const member of action.spliceInputs ?? []) this.ensureChainEffectDef(member.effectId);
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {

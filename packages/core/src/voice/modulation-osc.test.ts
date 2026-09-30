@@ -4,12 +4,13 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { oscValue01, sampleOsc, type OscTable } from './modulation';
-import { nodeModSource } from './modulation-graph';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import type { Show } from './types';
+import type { Effect } from '../effect-chain/types';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
 // OSC modulation source: the OSC analogue of the S37 CC source. The engine holds an OSC value
 // table (address → 0..1) fed from queued OSC input events (determinism preserved), and an `osc`
-// modulation source node reads it per frame so live voices track the address continuously.
+// Control device reads it per frame so live voices track the address continuously.
 
 // ---- pure helpers (oscValue01 / sampleOsc) ----------------------------------
 
@@ -30,29 +31,6 @@ describe('OSC table helpers', () => {
   });
 });
 
-// ---- nodeModSource: an osc node resolves to an `osc` ModSource ----------------
-
-describe('nodeModSource — OSC mode', () => {
-  const osc = (over: Partial<GraphNode>): GraphNode => node('osc', 'osc1', over);
-
-  it('osc node → { kind: "osc", address }', () => {
-    expect(nodeModSource(osc({ oscAddress: '/fader/1' }))).toEqual({
-      kind: 'osc',
-      address: '/fader/1',
-    });
-  });
-  it('osc node without an address falls back to "" (neutral until set)', () => {
-    expect(nodeModSource(osc({}))).toEqual({ kind: 'osc', address: '' });
-  });
-  it('default (MIDI) mode still resolves to a cc ModSource', () => {
-    expect(nodeModSource(node('cc', 'cc1', { ccController: 20, ccChannel: 5 }))).toEqual({
-      kind: 'cc',
-      controller: 20,
-      channel: 5,
-    });
-  });
-});
-
 // ---- engine fixtures --------------------------------------------------------
 
 function testModel(): PixelModel {
@@ -63,53 +41,24 @@ function testModel(): PixelModel {
   return buildPixelModel(kit);
 }
 
-function buses(): Bus[] {
-  return [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
+/** A kick-zone, kit-wide looping solid Effect (brightness base 0) whose `brightness` is driven
+    over [0,1] at full depth by one Control device — so brightness == the control's value, and
+    the control is directly observable in the rendered frame. */
+function modEffect(control: Record<string, unknown>, id = 'fx', over: Record<string, unknown> = {}): Effect {
+  return zoneEffect(id, { kind: 'solid', style: 'swirl', params: { brightness: 0 } }, {
+    amp: { attackMs: 10, length: 'loop', releaseMs: 100 },
+    target: { kind: 'kit' },
+    controls: [{ uid: 'ctl', ...control, mappings: [{ device: 'generator', param: 'brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 }] }],
+    ...over,
+  });
 }
 
-/** A flash effect whose `brightness` param (base 0 here) scales output intensity — so an OSC
-    value mapped onto it is directly observable in the rendered frame. */
-function fx(): EffectDef {
-  return {
-    id: 'fx',
-    name: 'fx',
-    generatorId: 'solid-base',
-    busId: 'base',
-    scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 10,
-    sustainMs: 100000, // effectively no decay over the test window
-    releaseMs: 100,
-  };
+function show(...effects: Effect[]): Show {
+  return effectShowOf(sectionOf('s', effects));
 }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
-}
-
-/** trigger → play (loop, brightness base 0, exposes `brightness`) ← osc(address).
-    The `param:brightness` edge maps the OSC value over [0,1] at full depth, so brightness == it. */
-function oscGraph(address: string): TriggerGraph {
-  return {
-    nodes: [
-      node('trigger', 'trigger'),
-      node('play', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
-      node('osc', 'osc1', { oscAddress: address }),
-    ],
-    edges: [
-      { id: 'e0', from: 'trigger', to: 'pa' },
-      { id: 'e1', from: 'osc1', to: 'pa', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
-    ],
-  };
-}
-
-function show(graph: TriggerGraph): Show {
-  return { buses: buses(), graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [fx()], presets: [] };
-}
+/** An OSC Control reading `address`. */
+const oscGraph = (address: string): Effect => modEffect({ kind: 'osc', settings: { address } });
 
 function transport(now: number): TransportState {
   return { timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true };
@@ -129,38 +78,36 @@ function frameSum(f: Readonly<Float32Array>): number {
 // ---- acceptance -------------------------------------------------------------
 
 describe('VoiceBusEngine — OSC modulation', () => {
-  it('track signals update modulation without firing a matching trigger graph or reset', () => {
-    const diagnostics: string[] = [];
-    const e = createVoiceBusEngine({ onDiagnostic: (event) => diagnostics.push(event.kind) });
+  it('track signals update modulation without firing a matching Cue', () => {
+    const fired: string[] = [];
+    const e = createVoiceBusEngine({ onDiagnostic: (event) => { if (event.kind === 'effect-fired') fired.push(event.effectId); } });
     e.setModel(testModel());
-    const graph = oscGraph('/tracks/test/audio/level');
-    graph.nodes.push(node('sequence', 'seq', { resetSource: { kind: 'osc', address: '/tracks/test/audio/level' } }));
-    graph.edges[0] = { id: 'e0', from: 'trigger', to: 'seq' };
-    graph.edges.push({ id: 'seq-out', from: 'seq', to: 'pa' });
-    const content = show(graph);
-    const direct = oscGraph('/unused');
-    direct.nodes[0]!.source = { kind: 'osc', address: '/tracks/test/audio/level' };
-    content.graphs['graph-direct'] = direct;
-    e.setShow(content);
+    const address = '/tracks/test/audio/level';
+    const cue = zoneEffect('cue', { kind: 'solid', style: 'swirl' }, {
+      cell: { row: 'kit', column: { kind: 'cue' } },
+      trigger: { kind: 'cue', source: { oscAddress: address } },
+      amp: { attackMs: 10, length: 'loop', releaseMs: 100 },
+    });
+    e.setShow(show(oscGraph(address), cue));
     e.applyInput(hit(0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
     expect(e.stats().voiceCount).toBe(1);
     expect(frameSum(e.frame())).toBeCloseTo(0, 3);
-    e.applyInput({ kind: 'oscValue', address: '/tracks/test/audio/level', value: 1, timeMs: 60 });
+    e.applyInput({ kind: 'oscValue', address, value: 1, timeMs: 60 });
     e.tick(60, 20, transport(60));
     expect(e.stats().voiceCount).toBe(1);
     expect(frameSum(e.frame())).toBeGreaterThan(0.5);
-    e.applyInput({ kind: 'oscValue', address: '/tracks/test/audio/level', value: 0, timeMs: 80 });
+    e.applyInput({ kind: 'oscValue', address, value: 0, timeMs: 80 });
     e.tick(80, 20, transport(80));
     expect(frameSum(e.frame())).toBeCloseTo(0, 3);
     expect(e.stats().voiceCount).toBe(1);
-    expect(diagnostics).not.toContain('sequence-reset');
-    // Ordinary OSC retains its existing trigger/reset semantics; only the dedicated value kind yields.
-    e.applyInput(osc('/tracks/test/audio/level', 1, 100));
+    expect(fired).toEqual(['fx']);
+    // Ordinary OSC keeps its trigger semantics; only the dedicated value kind yields.
+    e.applyInput(osc(address, 1, 100));
     e.tick(100, 20, transport(100));
     expect(e.stats().voiceCount).toBe(2);
-    expect(diagnostics).toContain('sequence-reset');
+    expect(fired).toEqual(['fx', 'cue']);
   });
 
   it('a queued OSC event moves a mapped param on a live (looping) voice, continuously', () => {

@@ -236,14 +236,9 @@ function effectFrames(gen: GeneratorDevice): number[][] {
     target: { kind: 'kit' },
   });
   const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] };
-  // Stand-in for the engine hook reported for merge: the engine lazily builds only the HOST's
-  // chain EffectDef; the hook also ensures one per splice member (see the commit report).
-  const ensureMemberDefs = (engine: RenderEngine): void => {
-    const action = effectPlayAction(effect, { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!;
-    const defs = (engine as unknown as { chainEffects: Map<string, EffectDef> }).chainEffects;
-    for (const m of action.spliceInputs ?? []) defs.set(m.effectId, chainEffectDef(m.effectId.slice(m.effectId.indexOf(':') + 1))!);
-  };
-  return framesOf(show, { kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: 0 }, SAMPLES, ensureMemberDefs);
+  // The engine builds the internal def of every splice member itself (not only the host's), so
+  // a nested Generator slot renders through the real engine with no test-side setup.
+  return framesOf(show, { kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: 0 }, SAMPLES);
 }
 
 const lit = (frames: number[][]): number => frames.reduce((s, f) => s + f.reduce((a, b) => a + b, 0), 0);

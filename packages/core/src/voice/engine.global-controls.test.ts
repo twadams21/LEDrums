@@ -219,7 +219,6 @@ describe('setShow — preserve the authoritative selection', () => {
 
     const updated: Show = {
       ...current,
-      buses: current.buses.map((bus) => ({ ...bus, name: `${bus.name} updated` })),
       songs: current.songs!.map((s) => ({ ...s, name: `${s.name} updated` })),
     };
     engine.setShow(updated);

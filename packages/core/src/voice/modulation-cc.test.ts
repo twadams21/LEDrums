@@ -4,10 +4,12 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { ccKey, ccValue01, sampleCc, type CcTable } from './modulation';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import type { Show } from './types';
+import type { Effect } from '../effect-chain/types';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
 // S37 — CC-In modulation source: the engine holds a CC value table updated from the queued
-// CC input events (determinism preserved), and a `cc` mapping reads it per frame so live
+// CC input events (determinism preserved), and a `cc` Control device reads it per frame so live
 // voices track the controller continuously.
 
 // ---- pure helpers (ccKey / ccValue01 / sampleCc) ----------------------------
@@ -50,53 +52,25 @@ function testModel(): PixelModel {
   return buildPixelModel(kit);
 }
 
-function buses(): Bus[] {
-  return [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
+/** A kick-zone, kit-wide looping solid Effect (brightness base 0) whose `brightness` is driven
+    over [0,1] at full depth by one Control device — so brightness == the control's value, and
+    the control is directly observable in the rendered frame. */
+function modEffect(control: Record<string, unknown>, id = 'fx', over: Record<string, unknown> = {}): Effect {
+  return zoneEffect(id, { kind: 'solid', style: 'swirl', params: { brightness: 0 } }, {
+    amp: { attackMs: 10, length: 'loop', releaseMs: 100 },
+    target: { kind: 'kit' },
+    controls: [{ uid: 'ctl', ...control, mappings: [{ device: 'generator', param: 'brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 }] }],
+    ...over,
+  });
 }
 
-/** A flash effect whose `brightness` param (base 0 here) scales output intensity — so a CC
-    mapped onto it is directly observable in the rendered frame. */
-function fx(): EffectDef {
-  return {
-    id: 'fx',
-    name: 'fx',
-    generatorId: 'solid-base',
-    busId: 'base',
-    scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 10,
-    sustainMs: 100000, // effectively no decay over the test window
-    releaseMs: 100,
-  };
+function show(...effects: Effect[]): Show {
+  return effectShowOf(sectionOf('s', effects));
 }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
-}
-
-/** trigger → play (loop, brightness base 0, exposes `brightness`) ← cc(controller, channel).
-    The `param:brightness` edge maps the CC over [0,1] at full depth, so brightness == the CC. */
-function ccGraph(controller: number, channel: number | null): TriggerGraph {
-  return {
-    nodes: [
-      node('trigger', 'trigger'),
-      node('play', 'pa', { effectId: 'fx', mode: 'loop', params: { brightness: 0 }, modInputs: [{ param: 'brightness' }] }),
-      node('cc', 'cc1', { ccController: controller, ccChannel: channel }),
-    ],
-    edges: [
-      { id: 'e0', from: 'trigger', to: 'pa' },
-      { id: 'e1', from: 'cc1', to: 'pa', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
-    ],
-  };
-}
-
-function show(graph: TriggerGraph): Show {
-  return { buses: buses(), graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [fx()], presets: [] };
-}
+/** A CC Control on `controller` / `channel` (null = omni). */
+const ccGraph = (controller: number, channel: number | null): Effect =>
+  modEffect({ kind: 'cc', settings: { controller, channel } });
 
 function transport(now: number): TransportState {
   return { timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true };
@@ -142,8 +116,8 @@ describe('VoiceBusEngine — CC-In modulation (S37)', () => {
     expect(frameSum(e.frame())).toBeLessThan(bright * 0.25);
   });
 
-  it('honours the channel filter: a channel-specific node ignores other channels; omni tracks any', () => {
-    // Channel-5 node — a CC on ch 3 must not move it, a CC on ch 5 must.
+  it('honours the channel filter: a channel-specific control ignores other channels; omni tracks any', () => {
+    // Channel-5 control — a CC on ch 3 must not move it, a CC on ch 5 must.
     const eCh = createVoiceBusEngine();
     eCh.setModel(testModel());
     eCh.setShow(show(ccGraph(20, 5)));
@@ -157,7 +131,7 @@ describe('VoiceBusEngine — CC-In modulation (S37)', () => {
     eCh.tick(80, 20, transport(80));
     expect(frameSum(eCh.frame())).toBeGreaterThan(0.5);
 
-    // Omni node — tracks whatever channel last sent the controller.
+    // Omni control — tracks whatever channel last sent the controller.
     const eOmni = createVoiceBusEngine();
     eOmni.setModel(testModel());
     eOmni.setShow(show(ccGraph(20, null)));

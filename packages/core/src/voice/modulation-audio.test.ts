@@ -4,30 +4,30 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { AUDIO_STALE_MS, type AudioFeatureFrame } from './audio-features';
-import { nodeModSource, resolveNodeModulations } from './modulation-graph';
-import { resolveModifierChain } from './modifier-graph';
 import { sampleSource } from './modulation';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import type { AudioBand } from './audio-features';
+import type { Show } from './types';
+import type { Effect } from '../effect-chain/types';
+import { effectPlayAction } from '../effect-chain/resolver';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
 /* Audio modulation (GH #214): an `audioFeatures` input event replaces the engine's audio table
-   (stamped with the engine clock), and an `audio` source node reads one band of it per frame on
-   every sampling path — effect params AND modifier params — until the frame goes stale, at which
-   point it reads 0 without any further event. An audio event never fires a graph. */
+   (stamped with the engine clock), and an `audio` Control device reads one band of it per frame
+   on every sampling path — effect params AND modifier params — until the frame goes stale, at
+   which point it reads 0 without any further event. An audio event never fires an Effect. */
 
-// ---- graph resolution -------------------------------------------------------
+// ---- resolution -------------------------------------------------------------
 
-describe('nodeModSource — audio', () => {
-  it('audio node → { kind: "audio", band } and defaults to the broadband level', () => {
-    expect(nodeModSource(node('audio', 'a1', { audioBand: 'bass' }))).toEqual({ kind: 'audio', band: 'bass' });
-    expect(nodeModSource(node('audio', 'a1'))).toEqual({ kind: 'audio', band: 'level' });
+describe('audio Control — resolution', () => {
+  it('defaults to the broadband level', () => {
+    const action = effectPlayAction(audioEffect(undefined), { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!;
+    expect(action.modulations!.map((m) => m.source)).toEqual([{ kind: 'audio', band: 'level' }]);
   });
 
   it('resolves onto both carriers: an effect param mapping and a modifier link mapping', () => {
-    const g = audioGraph('highs');
-    const play = g.nodes.find((n) => n.id === 'pa')!;
-    expect(resolveNodeModulations(g, play).map((m) => m.source)).toEqual([{ kind: 'audio', band: 'highs' }]);
-    const chain = resolveModifierChain(g, play);
-    expect(chain[0]?.modulations?.[0]).toMatchObject({ targetParam: 'hue', source: { kind: 'audio', band: 'highs' } });
+    const action = effectPlayAction(audioEffect('highs'), { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!;
+    expect(action.modulations!.map((m) => m.source)).toEqual([{ kind: 'audio', band: 'highs' }]);
+    expect(action.modifiers?.[0]?.modulations?.[0]).toMatchObject({ targetParam: 'hue', source: { kind: 'audio', band: 'highs' } });
   });
 
   it('sampleSource applies the freshness rule from the ctx clock (stale → 0, unheard band → 0)', () => {
@@ -49,66 +49,27 @@ function testModel(): PixelModel {
   return buildPixelModel(kit);
 }
 
-function buses(): Bus[] {
-  return [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
+/** A kick-zone, kit-wide looping solid red Effect: brightness (base 0) is the effect-param probe
+    and its pure red hue is the modifier-param probe. One audio Control drives brightness over
+    [0,1] AND a hue-shift modifier's `hue` over [0,180] — so a full-scale band both lights the
+    voice AND turns its red into cyan. */
+function audioEffect(band: AudioBand | undefined): Effect {
+  return zoneEffect('fx', { kind: 'solid', style: 'swirl', params: { hue: 0, saturation: 1, brightness: 0, speed: 0, noise: 0 } }, {
+    amp: { attackMs: 10, length: 'loop', releaseMs: 100 },
+    target: { kind: 'kit' },
+    modifiers: [{ uid: 'm1', modifierId: 'hue-shift', params: { hue: 0, mode: 'shift' } }],
+    controls: [{
+      uid: 'a1', kind: 'audio', settings: band ? { band } : {},
+      mappings: [
+        { device: 'generator', param: 'brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
+        { device: 'm1', param: 'hue', amount: 1, invert: false, rangeMin: 0, rangeMax: 180 },
+      ],
+    }],
+  });
 }
 
-/** A solid red, no-noise, static effect: brightness (base 0) is the effect-param probe and its
-    pure red hue is the modifier-param probe (a hue-shift modifier turns it cyan). */
-function fx(): EffectDef {
-  return {
-    id: 'fx',
-    name: 'fx',
-    generatorId: 'solid-base',
-    busId: 'base',
-    scope: 'kit',
-    params: [
-      { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 0 },
-      { key: 'saturation', label: 'Saturation', kind: 'number', min: 0, max: 1, default: 1 },
-      { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
-      { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, default: 0 },
-      { key: 'noise', label: 'Noise', kind: 'number', min: 0, max: 1, default: 0 },
-    ],
-    attackMs: 10,
-    sustainMs: 100000,
-    releaseMs: 100,
-  };
-}
-
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
-}
-
-/** trigger → play(loop; brightness base 0, exposes brightness) ← audio(band) over [0,1];
-    a hue-shift modifier on the play node exposes `hue`, also driven by the same audio node over
-    [0,180] — so a full-scale band both lights the voice AND turns its red into cyan. */
-function audioGraph(band: GraphNode['audioBand']): TriggerGraph {
-  return {
-    nodes: [
-      node('trigger', 'trigger'),
-      node('play', 'pa', {
-        effectId: 'fx', mode: 'loop',
-        params: { hue: 0, saturation: 1, brightness: 0, speed: 0, noise: 0 },
-        modInputs: [{ param: 'brightness' }],
-      }),
-      node('modifier', 'm1', { modifierId: 'hue-shift', params: { hue: 0, mode: 'shift' }, modInputs: [{ param: 'hue' }] }),
-      node('audio', 'a1', { audioBand: band }),
-    ],
-    edges: [
-      { id: 'e0', from: 'trigger', to: 'pa' },
-      { id: 'e1', from: 'm1', to: 'pa', toPort: 'mod' },
-      { id: 'e2', from: 'a1', to: 'pa', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
-      { id: 'e3', from: 'a1', to: 'm1', toPort: 'param:hue', amount: 1, invert: false, rangeMin: 0, rangeMax: 180 },
-    ],
-  };
-}
-
-function show(graph: TriggerGraph): Show {
-  return { buses: buses(), graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [fx()], presets: [] };
+function show(effect: Effect): Show {
+  return effectShowOf(sectionOf('s', [effect]));
 }
 
 function transport(now: number): TransportState {
@@ -134,10 +95,10 @@ function channels(f: Readonly<Float32Array>): { r: number; g: number; b: number 
 }
 const lit = (f: Readonly<Float32Array>): number => { const c = channels(f); return c.r + c.g + c.b; };
 
-function warm(band: GraphNode['audioBand'] = 'bass'): ReturnType<typeof createVoiceBusEngine> {
+function warm(band: AudioBand = 'bass'): ReturnType<typeof createVoiceBusEngine> {
   const e = createVoiceBusEngine();
   e.setModel(testModel());
-  e.setShow(show(audioGraph(band)));
+  e.setShow(show(audioEffect(band)));
   e.applyInput(hit(0));
   e.tick(5, 5, transport(5));
   e.tick(40, 35, transport(40));
@@ -194,11 +155,11 @@ describe('VoiceBusEngine — audio modulation', () => {
     expect(lit(e.frame())).toBeCloseTo(0, 3);
   });
 
-  it('an audio frame never fires a graph and never trips a routing diagnostic', () => {
+  it('an audio frame never fires an Effect and never trips a routing diagnostic', () => {
     const diagnostics: string[] = [];
     const e = createVoiceBusEngine({ onDiagnostic: (d) => diagnostics.push(d.kind) });
     e.setModel(testModel());
-    e.setShow(show(audioGraph('level')));
+    e.setShow(show(audioEffect('level')));
     e.applyInput(audio({ level: 1 }, 5));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40));
@@ -220,7 +181,7 @@ describe('VoiceBusEngine — audio modulation', () => {
     e.applyInput(audio({ level: 1 }, 45));
     e.tick(60, 15, transport(60));
     expect(lit(e.frame())).toBeGreaterThan(0.5);
-    e.setShow(show(audioGraph('level')));
+    e.setShow(show(audioEffect('level')));
     e.applyInput(hit(70));
     e.tick(75, 5, transport(75));
     e.tick(110, 35, transport(110));
@@ -232,7 +193,7 @@ describe('VoiceBusEngine — audio modulation', () => {
     const run = (): number[] => {
       const e = createVoiceBusEngine();
       e.setModel(testModel());
-      e.setShow(show(audioGraph('bass')));
+      e.setShow(show(audioEffect('bass')));
       for (const ev of events) e.applyInput(ev);
       let now = 0;
       for (let i = 0; i < 20; i++) {

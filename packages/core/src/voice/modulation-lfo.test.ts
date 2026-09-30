@@ -8,11 +8,12 @@ import {
 } from './lfo';
 import { DELAY_DIVISIONS } from './delay';
 import { applyModulations, sampleSource, type Mapping, type ModSampleCtx } from './modulation';
-import { nodeModSource, resolveNodeModulations } from './modulation-graph';
-import type { GraphNode, ParamSpec, TriggerGraph } from './types';
+import type { ParamSpec } from './types';
+import { effectPlayAction } from '../effect-chain/resolver';
+import { zoneEffect } from './effect-test-fixtures';
 
-/* S36 — LFO source node. Pins the acceptance criteria: per-waveform determinism (same t/bpm ⇒
-   same value); division sync tracks bpm; and a graph-resolved LFO mapping modulates a param
+/* S36 — LFO source. Pins the acceptance criteria: per-waveform determinism (same t/bpm ⇒
+   same value); division sync tracks bpm; and an LFO Control's resolved mapping modulates a param
    CONTINUOUSLY — the same value for every voice regardless of its life phase (envelopes phase-lock,
    LFOs don't). Pure f(timeMs, bpm): no state, no wall-clock, no Math.random (S&H is hash-derived). */
 
@@ -134,23 +135,17 @@ describe('sampleSource — LFO reads absolute time, never the voice phase', () =
   });
 });
 
-describe('graph resolution — an LFO node wired to a param modulates every voice the same', () => {
-  const graph: TriggerGraph = {
-    nodes: [
-      { id: 'lfo1', kind: 'lfo', lfo: lfo({ waveform: 'saw', rateHz: 1 }) } as unknown as GraphNode,
-      { id: 'play1', kind: 'play' } as unknown as GraphNode,
-    ],
-    edges: [{ id: 'e1', from: 'lfo1', to: 'play1', toPort: 'param:brightness', amount: 1 }],
-  };
+describe('Effect resolution — an LFO Control mapped to a param modulates every voice the same', () => {
+  const effect = zoneEffect('fx', { kind: 'solid', style: 'swirl' }, {
+    controls: [{
+      uid: 'lfo1', kind: 'lfo', settings: { waveform: 'saw', rateHz: 1 },
+      mappings: [{ device: 'generator', param: 'brightness', amount: 1, rangeMin: 0, rangeMax: 1 }],
+    }],
+  });
   const spec: ParamSpec = { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 0 };
 
-  it('nodeModSource builds an lfo source from the node settings', () => {
-    const src = nodeModSource(graph.nodes[0]!);
-    expect(src?.kind).toBe('lfo');
-  });
-
   it('resolves to an lfo mapping; the swept value is phase-independent + tracks time', () => {
-    const mappings: Mapping[] = resolveNodeModulations(graph, graph.nodes[1]!, [spec]);
+    const mappings: Mapping[] = effectPlayAction(effect, { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!.modulations ?? [];
     expect(mappings).toHaveLength(1);
     expect(mappings[0]!.source.kind).toBe('lfo');
 
