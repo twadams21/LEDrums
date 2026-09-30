@@ -2027,21 +2027,41 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     if (modifier) this.effectsCtl.setModifierBypass(owner, modifier.uid, !modifier.bypass);
   }
 
+  /** Whether map mode's MIDI learn arm is up: a heard MIDI input is then a learn gesture only. */
+  private get midiMapLearnArmed(): boolean {
+    return this.midi.learnTarget?.kind === 'map';
+  }
+  /** Whether map mode's OSC learn arm is up (see {@link midiMapLearnArmed}). */
+  private get oscMapLearnArmed(): boolean {
+    return this.osc.target?.kind === 'map';
+  }
+
   /**
-   * A heard MIDI / OSC input that a BYPASS mapping takes: toggle on its press edge. Called from
-   * the input echo when linked and from the local MIDI forward offline — never both, since
-   * offline there is no echo. The engine only consumes these inputs (nothing fires).
+   * A heard MIDI / OSC input that a mapping the STORE owns takes, performed on its press edge: a
+   * bypass toggle always, and a section recall when `recall` is set (offline CC — offline notes
+   * reach it through {@link fireMappedMidiLocal}; linked, the engine recalls). Called from the
+   * input echo when linked and from the local MIDI forward offline — never both, since offline
+   * there is no echo. With `learning` (a map learn arm was up when the input arrived) the press
+   * edge is still recorded but nothing is performed: the input only binds (spec story 62).
    */
-  private performBypassInput(event: effectChain.InputMappingEvent, value01: number): void {
+  private performStoreOwnedInput(
+    event: effectChain.InputMappingEvent,
+    value01: number,
+    { recall = false, learning = false }: { recall?: boolean; learning?: boolean } = {},
+  ): void {
     if (this.mappings.length === 0) return;
     const mapping = effectChain.matchInputMapping(this.mappings, event);
-    if (!mapping || mapping.target.kind !== 'bypass') return;
+    if (!mapping) return;
+    const target = mapping.target;
+    if (target.kind !== 'bypass' && !(recall && target.kind === 'recallSection')) return;
     const presses = event.midiCc !== undefined
       ? this.bypassEdges.cc(event.midiCc, value01)
       : event.oscAddress !== undefined
         ? this.bypassEdges.osc(value01)
         : value01 > 0;
-    if (presses) this.toggleMappedBypass(mapping.target);
+    if (!presses || learning) return;
+    if (target.kind === 'bypass') this.toggleMappedBypass(target);
+    else this.performDiscreteMapping(target);
   }
 
   // ---- Files (Tim's save / load to file, extended) --------------------------------------------
@@ -2356,6 +2376,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
           // badge activity here (channel-filtered inside recordInputActivity).
           this.recordInputActivity({ kind: 'midi', note: ev.note, channel: ev.channel, value: ev.velocity, time: Date.now() });
           if (this.acceptsMidiChannel(ev.channel)) {
+            // Captured before the learn applies: a map learn arm makes this press a bind only —
+            // nothing fires, toggles or recalls locally (spec story 62), not even the mapping
+            // the press just created.
+            const learning = this.midiMapLearnArmed;
             this.midi.applyNoteLearn(ev.note);
             // Preview the fire on the local sim ONLY when offline. When connected the server is the
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
@@ -2366,7 +2390,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
             // modes agree on what a bound note does NOT do. The action itself stays
             // server-resolved (like Program Change / CC#0 recall), so offline it is inert.
             const consumed = globalControlForNote(this.globalControls, ev.note) !== null;
-            if (!consumed && this.link !== 'open') {
+            if (!consumed && !learning && this.link !== 'open') {
               // A MIDI-map mapping takes the note next (global control > mapping > zone).
               const mapping = effectChain.matchInputMapping(this.mappings, { midiNote: ev.note });
               if (mapping) this.fireMappedMidiLocal(mapping, ev.note, ev.velocity);
@@ -2385,10 +2409,14 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
         // Controller 0 is reserved for section recall and never learns/binds here.
         if (this.acceptsMidiChannel(ev.channel)) {
+          const learning = this.midiMapLearnArmed;
           this.midi.applyCcLearn(ev.controller);
-          // Offline there is no input echo, so a CC bypass toggle is applied here (linked, the
-          // echo applies it — see receiveInputEcho).
-          if (this.link !== 'open') this.performBypassInput({ midiCc: ev.controller }, voice.ccValue01(ev.value));
+          // Offline there is no input echo, so a CC bypass toggle — and a CC section recall,
+          // which the store must perform for the UI to follow — are applied here (linked, the
+          // echo toggles and the engine recalls — see receiveInputEcho).
+          if (this.link !== 'open') {
+            this.performStoreOwnedInput({ midiCc: ev.controller }, voice.ccValue01(ev.value), { recall: true, learning });
+          }
         }
         this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
@@ -2965,16 +2993,18 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       const velocity = Math.round(Math.max(0, Math.min(1, value)) * 127);
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
       if (value > 0 && this.acceptsMidiChannel(channel)) {
+        const learning = this.midiMapLearnArmed;
         this.midi.applyNoteLearn(note);
-        this.performBypassInput({ midiNote: note }, value);
+        this.performStoreOwnedInput({ midiNote: note }, value, { learning });
       }
     } else if (kind === 'midi' && controller !== undefined) {
       // A CC echo (value normalised 0..1): CC learn from any source, like notes above, and the
       // linked half of a CC bypass toggle. Re-learning a local CC the forward already bound is a
       // no-op (the arm cleared, or map mode re-binds the same source).
       if (this.acceptsMidiChannel(channel)) {
+        const learning = this.midiMapLearnArmed;
         this.midi.applyCcLearn(controller);
-        this.performBypassInput({ midiCc: controller }, value);
+        this.performStoreOwnedInput({ midiCc: controller }, value, { learning });
       }
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson). Named zero
@@ -2996,8 +3026,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       // Dedicated value/release echoes cannot author trigger bindings. Ordinary OSC keeps its
       // existing Learn contract, including a fader first heard at zero.
       if (!modulationOnly) {
+        const learning = this.oscMapLearnArmed;
         this.osc.apply(label);
-        this.performBypassInput({ oscAddress: label }, value);
+        this.performStoreOwnedInput({ oscAddress: label }, value, { learning });
       }
       // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
       // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
@@ -3266,7 +3297,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private fireMappedMidiLocal(mapping: effectChain.InputMapping, note: number, value: number): void {
     const target = mapping.target;
     if (target.kind === 'bypass') {
-      this.performBypassInput({ midiNote: note }, 1);
+      this.performStoreOwnedInput({ midiNote: note }, 1);
       return;
     }
     if (target.kind === 'recallSection') {

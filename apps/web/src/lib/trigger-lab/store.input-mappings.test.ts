@@ -233,6 +233,50 @@ describe('MIDI / OSC learn (the `map` learn target)', () => {
     expect(store.mapLearnTargetId).toBe(store.mapTargetId(fader));
   });
 
+  it('while armed, a press only binds: a bypass is not toggled, and history grows by the bind alone', () => {
+    const { store } = setup();
+    const id = kickId(store);
+    const bypass: MapTarget = { kind: 'bypass', effectId: id };
+    store.startMapLearn(bypass);
+    const depth = history(store);
+    noteOn(store, 60);
+    expect(store.bindingFor(bypass)).toEqual({ midiNote: 60 });
+    expect(store.effectById(id)!.bypass).toBe(false);
+    expect(history(store)).toBe(depth + 1);
+    noteOn(store, 60); // re-binding the same source is a no-op, and still toggles nothing
+    expect(store.effectById(id)!.bypass).toBe(false);
+    expect(history(store)).toBe(depth + 1);
+
+    // Linked: a CC echo re-binds to the CC, and does not toggle either.
+    store.link = 'open';
+    internals(store).receiveInputEcho({ kind: 'midi', label: 'cc 20', value: 1, controller: 20, channel: 0 });
+    expect(store.bindingFor(bypass)).toEqual({ midiCc: 20 });
+    expect(store.effectById(id)!.bypass).toBe(false);
+    expect(history(store)).toBe(depth + 2);
+    // An OSC echo likewise.
+    internals(store).receiveInputEcho({ kind: 'osc', label: '/bypass', value: 1 });
+    expect(store.bindingFor(bypass)).toEqual({ oscAddress: '/bypass' });
+    expect(store.effectById(id)!.bypass).toBe(false);
+    expect(history(store)).toBe(depth + 3);
+
+    // Disarmed, the learnt source performs again.
+    store.cancelMapLearn();
+    internals(store).receiveInputEcho({ kind: 'osc', label: '/bypass', value: 1 });
+    expect(store.effectById(id)!.bypass).toBe(true);
+  });
+
+  it('while armed offline, a mapped note fires nothing in the Sim', () => {
+    const { store } = setup();
+    const tom = store.addEffect(TOM_0, 'solid')!;
+    store.startMapLearn(TOM_CELL);
+    noteOn(store, 61);
+    expect(store.bindingFor(TOM_CELL)).toEqual({ midiNote: 61 });
+    expect(store.effectFireAt(tom)).toBe(0);
+    store.cancelMapLearn();
+    noteOn(store, 61);
+    expect(store.effectFireAt(tom)).toBeGreaterThan(0);
+  });
+
   it('a viewer cannot arm', () => {
     const { store } = setup();
     store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
@@ -269,6 +313,20 @@ describe('key mappings (resolved in the web)', () => {
     store.bindTarget({ kind: 'recallSection', sectionId: chorus }, { key: 'Digit2' });
     expect(store.performKeyMapping('Digit2')).toBe(true);
     expect(store.activeSectionId).toBe(chorus);
+  });
+
+  it('offline: a recallSection CC re-points the active section on its press edge', () => {
+    const { store } = setup();
+    const first = store.activeSectionId!;
+    store.addSongSection('Chorus');
+    const chorus = store.activeSong!.sections.at(-1)!.id;
+    store.setActiveSection(first);
+    expect(store.bindTarget({ kind: 'recallSection', sectionId: chorus }, { midiCc: 22 })).toEqual({ ok: true });
+    cc(store, 22, 127);
+    expect(store.activeSectionId).toBe(chorus);
+    store.setActiveSection(first);
+    cc(store, 22, 127); // still held: no new press edge
+    expect(store.activeSectionId).toBe(first);
   });
 
   it('a bypass key toggles the Effect’s bypass, one undo step per press', () => {
