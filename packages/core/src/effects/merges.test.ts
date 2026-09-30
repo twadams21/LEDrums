@@ -10,7 +10,8 @@
  * 2. The merged mode / param reproduces the merged-away effect at matched params. The
  *    merged-away implementations were deleted in S08 (w5b delete-merged-effects); their
  *    frames are pinned here as digests recorded from them on base 9977658c.
- * 3. Where the two cannot match, the exact delta is asserted, not hand-waved.
+ * 3. Where the two cannot match, the exact delta is asserted, not hand-waved: the delta is
+ *    applied to the merged effect's frame and must reproduce the recorded digest.
  */
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
@@ -116,6 +117,8 @@ const WAVE_COLLAPSE_DIGESTS: string[][][] = [
 const COLLAPSE_RADII: Array<[number, number, number]> = [[1, 0, 1], [1, 1, 0.19999999999999996], [1, 333, 0.5999999999999659], [1, 999, 0.20000000000004547], [1, 1000, 1], [1, 1001, 0.20000000000004547], [1, 2500, 1], [1, 7777, 0.6000000000003638], [700, 0, 700], [700, 1, 698.8], [700, 333, 300.40000000000003], [700, 999, 498.79999999999995], [700, 1000, 500], [700, 1001, 501.20000000000005], [700, 2500, 500], [700, 7777, 232.39999999999964], [1200, 0, 1200], [1200, 1, 1198.8], [1200, 333, 800.4000000000001], [1200, 999, 1.2000000000000455], [1200, 1000, 0], [1200, 1001, 1.2000000000000455], [1200, 2500, 600], [1200, 7777, 932.3999999999996]];
 /** wave-collapse's empty-frame digest (no pixel lit). */
 const UNLIT = '956d46c5';
+/** wave-collapse's frame for `{ ...COLLAPSE_CASES[0], brightness: 0.5 }` at HITS(300) (deleted impl). */
+const WAVE_COLLAPSE_HALF_BRI = '16f5573b';
 
 describe('radial-wash collapse reproduces wave-collapse', () => {
   it('its radius is wave-collapse’s radius at every age', () => {
@@ -135,6 +138,32 @@ describe('radial-wash collapse reproduces wave-collapse', () => {
       });
     });
     expect(litFrames).toBeGreaterThanOrEqual(COLLAPSE_AGES.length);
+  });
+
+  it('below brightness 1, RGB matches and only alpha / the visibility cut differ by the brightness factor', () => {
+    // Radial-wash's alpha is intensity; wave-collapse's was intensity × brightness, and it cut
+    // pixels whose intensity × brightness fell under 0.004. Applying exactly that delta to the
+    // radial-wash frame (RGB untouched) must reproduce wave-collapse's recorded frame bit for bit.
+    const bri = 0.5;
+    const rw = render(radialWash, m, ctx(m, HITS(300)), { ...COLLAPSE_CASES[0], brightness: bri, mode: 'collapse' });
+    let scaled = 0;
+    let cut = 0;
+    for (let i = 0; i < m.pixelCount; i++) {
+      const j = i * 4;
+      const b = rw.rgba[j + 3]!;
+      if (b <= 0) continue;
+      if (b * bri < 0.004) {
+        // Lit only by radial-wash: its intensity clears the 0.004 cut, intensity × brightness does not.
+        rw.rgba.fill(0, j, j + 4);
+        cut++;
+      } else {
+        rw.rgba[j + 3] = b * bri;
+        scaled++;
+      }
+    }
+    expect(scaled).toBeGreaterThan(0);
+    expect(cut).toBeGreaterThan(0);
+    expect(digest(rw)).toBe(WAVE_COLLAPSE_HALF_BRI);
   });
 
   it('offers collapse as a Mode option on the registered effect, default still out', () => {
