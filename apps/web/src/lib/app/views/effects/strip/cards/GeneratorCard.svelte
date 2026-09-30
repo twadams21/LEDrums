@@ -17,6 +17,8 @@
   import ParamRows from './ParamRows.svelte';
   import SlotsEditor from './SlotsEditor.svelte';
   import { GENERATOR_ICON } from './device-icons';
+  import { effectDisplayName } from '../strip-model';
+  import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import {
     SCENE_PARAM,
     currentStyle,
@@ -27,6 +29,7 @@
     modulatedKeys,
     styleOptions,
     thumbSource,
+    type CardParam,
   } from './card-model';
 
   interface Props {
@@ -46,6 +49,14 @@
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
+  const effectName = $derived(effectDisplayName(effect));
+
+  /** MIDI-map: a CC / OSC value drives the param live across its range. */
+  const mapParam = (p: CardParam): MappableSpec => ({
+    target: { kind: 'param', effectId: effect.id, device: 'generator', param: p.key },
+    kind: 'continuous',
+    label: `${effectName} · ${p.label}`,
+  });
 
   const sceneOptions = $derived(device.kind === 'scene' ? listCanvasScenes().map((s) => ({ value: s.id, label: s.name })) : []);
   const sceneId = $derived.by(() => {
@@ -157,6 +168,7 @@
     {modulated}
     {disabled}
     labelPrefix={label}
+    {mapParam}
     onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
     onGestureStart={() => api.beginGesture()}
     onGestureEnd={() => api.endGesture()}

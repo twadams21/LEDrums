@@ -14,6 +14,9 @@
   import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
   import { VIEWING_REASON } from './edit-gate';
   import IconButton from '../../ui/IconButton.svelte';
+  import { globalControlDef, type GlobalControlAction } from '@ledrums/core';
+  import type { MappableSpec } from '../../trigger-lab/map-api';
+  import { mappable } from '../map-mode/mappable.svelte';
   import NavArrow from '../../ui/NavArrow.svelte';
   import CommitInput from '../../ui/CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../ui/ContextMenu.svelte';
@@ -109,11 +112,20 @@
       },
     ];
   }
+
+  /** MIDI-map: a nav arrow maps its global control (written to Settings' bindings). */
+  const globalMap = (action: GlobalControlAction): MappableSpec => ({
+    target: { kind: 'globalControl', action },
+    kind: 'button',
+    label: globalControlDef(action).label,
+  });
 </script>
 
 <div class="bar" role="navigation" aria-label="Setlist songs">
   <span class="rowlabel"><ListMusic size={13} aria-hidden="true" /> Setlist</span>
-  <NavArrow direction="prev" unit="song" disabled={!store.canStepSetlist('song', -1)} binding={prevBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('song', -1)} />
+  <span class="nav" {@attach mappable(globalMap('prevSong'))}>
+    <NavArrow direction="prev" unit="song" disabled={!store.canStepSetlist('song', -1)} binding={prevBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('song', -1)} />
+  </span>
   <div class="chips">
     {#if songRows.length === 0}
       <span class="none">No songs in this show</span>
@@ -158,7 +170,9 @@
       onclick={() => store.createSong()}
     />
   </div>
-  <NavArrow direction="next" unit="song" disabled={!store.canStepSetlist('song', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('song', 1)} />
+  <span class="nav" {@attach mappable(globalMap('nextSong'))}>
+    <NavArrow direction="next" unit="song" disabled={!store.canStepSetlist('song', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('song', 1)} />
+  </span>
   <span class="menu">
     <ContextMenu mode="dropdown" label="Setlist actions" actions={setlistActions}>
       <Ellipsis size={15} aria-hidden="true" />
@@ -180,6 +194,10 @@
 />
 
 <style>
+  .nav {
+    display: inline-flex;
+    flex: none;
+  }
   .bar {
     display: flex;
     align-items: center;

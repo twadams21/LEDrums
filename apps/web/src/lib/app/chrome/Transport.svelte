@@ -11,6 +11,7 @@
   import Play from '@lucide/svelte/icons/play';
   import Pause from '@lucide/svelte/icons/pause';
   import Square from '@lucide/svelte/icons/square';
+  import { mappable } from '../map-mode/mappable.svelte';
 
   let { store, compact = false }: { store: TriggerLab; compact?: boolean } = $props();
 
@@ -51,7 +52,7 @@
     <span class="flabel">bpm</span>
     <span class="sld"><Slider min={60} max={200} bind:value={store.bpm} showValue={false} ariaLabel="Tempo" /></span>
     <b>{store.bpm}</b>
-    <button class="tap" type="button" onclick={tap}>TAP</button>
+    <button class="tap" type="button" {@attach mappable({ target: { kind: 'globalControl', action: 'tapTempo' }, kind: 'button', label: 'Tap tempo' })} onclick={tap}>TAP</button>
   </label>
 
   {#if !compact}
@@ -62,7 +63,13 @@
     </label>
   {/if}
 
-  <button class="panic" type="button" onclick={() => store.panic()} title="Stop all playback">
+  <button
+    class="panic"
+    type="button"
+    {@attach mappable({ target: { kind: 'globalControl', action: 'stopAllVoices' }, kind: 'button', label: 'Stop all voices' })}
+    onclick={() => store.panic()}
+    title="Stop all playback"
+  >
     <Square size={11} aria-hidden="true" /> Stop all
   </button>
 </div>

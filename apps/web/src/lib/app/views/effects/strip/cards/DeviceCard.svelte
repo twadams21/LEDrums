@@ -11,6 +11,8 @@
      Interaction contract (S06 UI conventions): instant hover, no lift, no press animation. */
   import type { Component, Snippet } from 'svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
+  import type { MappableSpec } from '../../../../../trigger-lab/map-api';
+  import { mappable } from '../../../../map-mode/mappable.svelte';
   import Power from '@lucide/svelte/icons/power';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -24,8 +26,9 @@
     title: string;
     /** A short family label under the title ("Generator", "Modifier · Temporal"). */
     eyebrow?: string;
-    /** Present → the card shows a power (bypass) toggle; `on` = not bypassed. */
-    power?: { on: boolean; onToggle: (on: boolean) => void };
+    /** Present → the card shows a power (bypass) toggle; `on` = not bypassed. `map` makes the
+        toggle MIDI-mappable (its bypass target). */
+    power?: { on: boolean; onToggle: (on: boolean) => void; map?: MappableSpec };
     /** Viewer / read-only song: the power toggle is inert (controls handle their own). */
     disabled?: boolean;
     /** Panel width in px (the chain scrolls; cards never squeeze). */
@@ -75,6 +78,7 @@
           aria-pressed={power.on}
           aria-label={`${title} on`}
           {disabled}
+          {@attach power.map && mappable(power.map)}
           onclick={() => power.onToggle(!power.on)}
         >
           <Power size={13} aria-hidden="true" />

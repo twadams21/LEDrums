@@ -7,6 +7,8 @@
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
   import GestureScope from './GestureScope.svelte';
+  import type { MappableSpec } from '../../../../../trigger-lab/map-api';
+  import { mappable } from '../../../../map-mode/mappable.svelte';
   import { enumLabel, formatParam, paramValue, type CardParam, type ParamValue } from './card-model';
 
   interface Props {
@@ -20,6 +22,9 @@
     onChange: (key: string, value: ParamValue) => void;
     onGestureStart?: () => void;
     onGestureEnd?: () => void;
+    /** MIDI-map registration for a param's control, or null when it can't be mapped. Only
+        number params are offered: a mapped CC / OSC value scales into the param's range. */
+    mapParam?: (param: CardParam) => MappableSpec | null;
   }
 
   let {
@@ -31,6 +36,7 @@
     onChange,
     onGestureStart,
     onGestureEnd,
+    mapParam,
   }: Props = $props();
 
   const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
@@ -40,9 +46,10 @@
   <ul class="rows">
     {#each params as p (p.key)}
       {@const v = paramValue(p, values)}
+      {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
       <li class="row" class:modulated={modulated?.has(p.key)}>
         <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}</span>
-        <span class="ctl">
+        <span class="ctl" {@attach map && mappable(map)}>
           {#if p.kind === 'enum'}
             <Select
               value={String(v)}
