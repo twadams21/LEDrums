@@ -417,6 +417,45 @@ describe('offline/core Effect-show parity', () => {
     expect(reference).not.toEqual(lit);
   });
 
+  it('InputMappings resolve identically offline: a mapped note fires its cell, not its zone; a CC drives a live param', () => {
+    const base = effectParityShow();
+    const show: voice.Show = {
+      ...base,
+      mappings: [
+        // note 36 arrives zone-claimed (d0 head) but is mapped to the Clock cell on d1
+        { id: 'fire', source: { midiNote: 36 }, target: { kind: 'fireCell', cell: { row: 'd1', column: { kind: 'clock' } } } },
+        // CC 21 runs the Always look's opacity live
+        { id: 'fade', source: { midiCc: 21 }, target: { kind: 'opacity', effectId: 'always' } },
+        // CC 22 is mapped, so it can never edge a Cue
+        { id: 'mix', source: { midiCc: 22 }, target: { kind: 'modifierMix', effectId: 'zone', modifierUid: 'st' } },
+      ],
+    };
+    const p = effectPair(show);
+    const cc = (controller: number, value: number) => {
+      p.sim.setCc(controller, value, null);
+      p.engine.applyInput({ kind: 'cc', controller, value, timeMs: p.sim.timeMs });
+    };
+    const fired: string[] = [];
+    const seen = new Set<string>();
+    for (let frame = 0; frame < 80; frame++) {
+      if (frame === 5) p.hit({ note: 36, drumId: 'd0', zone: '0' });
+      if (frame === 10) p.hit({ drumId: 'd0', zone: '0' });
+      if (frame === 20) cc(21, 0);
+      if (frame === 30) cc(21, 90);
+      if (frame === 40) cc(22, 20);
+      p.tick(16);
+      const top = p.sim.log[0];
+      if (top?.t === p.sim.timeMs) fired.push(...top.resolved);
+      const [actual, expected] = p.frames();
+      expect(actual, `frame ${frame}`).toEqual(expected);
+      seen.add(actual.join(','));
+    }
+    // The mapped note fired the Clock cell (an audition), never the zone Effect it is claimed by.
+    expect(fired.filter((line) => line.startsWith('▶ Zone'))).toHaveLength(1); // frame 10's real hit only
+    expect(fired.some((line) => line.startsWith('▶ Clock') && line.includes('audition'))).toBe(true);
+    expect(seen.size).toBeGreaterThan(10);
+  });
+
   it('Effect-show parity holds across a geometry revision', () => {
     const p = effectPair(effectParityShow());
     p.hit({ drumId: 'd0', zone: '0' });
