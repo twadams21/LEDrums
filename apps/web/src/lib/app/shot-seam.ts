@@ -26,6 +26,7 @@ import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './vi
 import { lintPreview } from './views/lint-preview.svelte';
 import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
+import { mapRegistry } from './map-mode/registry.svelte';
 
 /** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
     animation frames is enough for a rune update to render and the flow canvas to
@@ -203,6 +204,9 @@ export interface ShotSeam {
   addEffectToSelected(spec: string): void;
   /** Fill the selected cell with `n` demo Effects of varied Generators (`effect-stack:3`). */
   fillEffectStack(count: number): void;
+  /** MIDI-map mode on (`map-mode`); `map-mode:armed` also arms the first visible mappable
+      control, through the overlay's real capture layer (a synthetic primary press). */
+  mapMode(armed?: boolean): Promise<void>;
   /** Select the Master cell (the section's master modifier chain). */
   selectMaster(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
@@ -224,6 +228,7 @@ class ShotSeamImpl implements ShotSeam {
   ) {}
 
   reset(): void {
+    this.shell.setMapMode(false);
     this.store.closeGallery();
     this.store.closeSettings();
     this.shell.closeSettings();
@@ -896,6 +901,15 @@ class ShotSeamImpl implements ShotSeam {
     this.effects.selectCell(MASTER_CELL);
   }
 
+  async mapMode(armed = false): Promise<void> {
+    this.shell.setMapMode(true);
+    if (!armed) return;
+    await settle(); // the overlay installs its capture layer once the mode renders
+    const entry = mapRegistry.entries.find((e) => e.node.isConnected && e.node.getBoundingClientRect().width > 0);
+    if (!entry) throw new Error('map-mode:armed: no mappable control is on screen');
+    entry.node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, composed: true, button: 0 }));
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -1092,6 +1106,8 @@ class ShotSeamImpl implements ShotSeam {
       case 'master':
         this.selectMaster();
         break;
+      case 'map-mode':
+        return this.mapMode(arg === 'armed');
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }

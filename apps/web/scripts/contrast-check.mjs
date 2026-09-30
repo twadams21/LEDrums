@@ -90,5 +90,19 @@ for (const t of [
   );
 }
 
+// MIDI-map mode (S07b): the map outline is a non-text indicator (WCAG 1.4.11, 3:1) on every
+// surface a control sits on; the badge's mono label is body text on the --map fill (4.5:1).
+console.log('\nMIDI-map mode — --map outline vs surfaces (3.0), --on-map badge text (4.5)\n');
+for (const [fg, bg, min] of [
+  ...surfaces.map((s) => ['map', s, AA_LARGE]),
+  ['map-bright', 'surface-3', AA_BODY],
+  ['on-map', 'map', AA_BODY],
+]) {
+  if (!get(fg) || !get(bg)) continue;
+  const r = contrast(get(fg), get(bg));
+  if (r < min) fails++;
+  console.log(`${pad(fg, 12)} on ${pad(bg, 14)} ${r.toFixed(2)} ${r >= min ? '✓' : `✗ (< ${min})`}`);
+}
+
 console.log(`\n${fails === 0 ? '✓ all required pairs pass' : `✗ ${fails} required pair(s) below target`}\n`);
 process.exit(fails === 0 ? 0 : 1);

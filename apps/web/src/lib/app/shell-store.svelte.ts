@@ -7,6 +7,7 @@
 import * as nav from './shell-nav';
 import type { Selection, SettingsPane, ShellNav, View } from './shell-nav';
 import type { PatchRouting } from './patch-routing';
+import type { MapKeySession } from './map-mode/map-keys';
 
 export type { PatchNodeId, Selection, SettingsPane, View } from './shell-nav';
 
@@ -59,6 +60,31 @@ export class ShellStore {
   }
   clearSelection(): void {
     this.s = nav.clearSelection(this.s);
+  }
+
+  /** MIDI-map mode (S07b): while on, the map-mode overlay turns clicks into arm-for-learn. */
+  get mapMode(): boolean {
+    return this.s.mapMode;
+  }
+  /** Enter / leave map mode. Leaving resets the mounted map session (disarm + cancel learn),
+      so the TopBar toggle, Escape and the shortcut all exit through this one path. */
+  setMapMode(on: boolean): void {
+    if (!on && this.s.mapMode) this.session?.reset();
+    this.s = nav.setMapMode(this.s, on);
+  }
+  toggleMapMode(): void {
+    this.setMapMode(!this.s.mapMode);
+  }
+
+  /** The mounted map-mode controller's keyboard face, published by MapModeOverlay (null when
+      none is mounted) — how the app keyboard dispatcher learns and performs key mappings. Plain
+      (not $state): only event handlers read it. */
+  private session: MapKeySession | null = null;
+  get mapSession(): MapKeySession | null {
+    return this.session;
+  }
+  setMapSession(session: MapKeySession | null): void {
+    this.session = session;
   }
 
   /** True when `sel` is the currently-inspected thing (for "active" affordances). */

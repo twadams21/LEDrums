@@ -47,6 +47,10 @@ export interface ShellNav {
   selection: Selection | null;
   /** The open Settings-modal section, or null when the modal is closed. */
   settings: SettingsPane | null;
+  /** MIDI-map mode (effect chains S07b): while on, clicks arm mappable controls for learn
+      instead of acting. Orthogonal to the view — mapping spans every view — so view switches
+      leave it alone. */
+  mapMode: boolean;
 }
 
 export const VIEWS: readonly View[] = ['perform', 'objects', 'sections', 'trigger', 'monitor'];
@@ -56,7 +60,14 @@ export function initialNav(init: Partial<Pick<ShellNav, 'view' | 'settings'>> = 
     view: init.view ?? 'trigger',
     selection: null,
     settings: init.settings ?? null,
+    mapMode: false,
   };
+}
+
+/** Enter / leave MIDI-map mode. No-op when already in that state. */
+export function setMapMode(nav: ShellNav, on: boolean): ShellNav {
+  if (nav.mapMode === on) return nav;
+  return { ...nav, mapMode: on };
 }
 
 /** Switch the workspace view; resets the Inspector selection (wireframe:
