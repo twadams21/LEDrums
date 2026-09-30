@@ -66,6 +66,18 @@
   --warn: oklch(0.810 0.150 80); /* dry-run / warning                          */
   --info: oklch(0.720 0.120 240);
 
+  /* ---- MIDI-map mode (effect chains S07b) --------------------------------- */
+  /* Ableton-style map orange: every mappable control wears it while mapping. Redder
+     than --role-effect (H 68) and --warn (H 80) so a mapped Modifier reads as "mapped",
+     not "modifier"; in sRGB gamut so both engines paint one orange. */
+  --map: oklch(0.720 0.175 48);
+  --map-bright: oklch(0.780 0.140 50);
+  --map-soft: oklch(0.720 0.175 48 / 0.14); /* mapped / armed control fill            */
+  --map-ring: oklch(0.780 0.140 50 / 0.6); /* armed pulse                            */
+  --map-border: oklch(0.720 0.175 48 / 0.55); /* map-mode hint bar edge              */
+  --map-scrim: oklch(0.1 0.01 256 / 0.55); /* dims unmappable UI while mapping      */
+  --on-map: oklch(0.200 0.040 48); /* dark text on a --map badge                    */
+
   /* ---- Signal-flow role colours (functional; icon + label always) --------- */
   --role-input: oklch(0.720 0.130 245); /* MIDI / OSC in                       */
   --role-content: oklch(0.700 0.165 300); /* generator / media                 */

@@ -9,6 +9,7 @@ import {
   openSettings,
   parseSearch,
   select,
+  setMapMode,
   setView,
   type Selection,
 } from './shell-nav';
@@ -16,7 +17,7 @@ import {
 describe('initialNav', () => {
   it('defaults to trigger with nothing selected and Settings closed', () => {
     const nav = initialNav();
-    expect(nav).toEqual({ view: 'trigger', selection: null, settings: null });
+    expect(nav).toEqual({ view: 'trigger', selection: null, settings: null, mapMode: false });
   });
 
   it('honours a seeded view', () => {
@@ -142,5 +143,23 @@ describe('parseSearch', () => {
   });
   it('ignores the retired mode param', () => {
     expect(parseSearch('?mode=perform&view=sections')).toEqual({ view: 'sections' });
+  });
+});
+
+describe('setMapMode', () => {
+  it('enters and leaves map mode without touching the view, selection or Settings', () => {
+    const base = select(openSettings(initialNav({ view: 'sections' }), 'zones'), { kind: 'section', sectionId: 's1' });
+    const on = setMapMode(base, true);
+    expect(on).toEqual({ ...base, mapMode: true });
+    expect(setMapMode(on, false)).toEqual(base);
+  });
+
+  it('is a no-op (same object) when already in the requested state', () => {
+    const nav = initialNav();
+    expect(setMapMode(nav, false)).toBe(nav);
+  });
+
+  it('survives a view switch — mapping spans every view', () => {
+    expect(setView(setMapMode(initialNav(), true), 'perform').mapMode).toBe(true);
   });
 });

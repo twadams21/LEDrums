@@ -116,6 +116,13 @@ export function matchesShortcut(
   return registry.some((entry) => matchShortcut(event, parseCombo(entry.combo), platform));
 }
 
+/** The MIDI-map mode toggle (effect chains S07b), Ableton's chord. It is not in the App.svelte
+    registry: the app keyboard dispatcher owns it directly, because map mode must see it before
+    the registry and before its own learn-first branch would bind the key. The TopBar "MIDI"
+    toggle is the always-available path: on macOS the browser / desktop window menu may reserve
+    Cmd+M (Minimize) before the page sees it. */
+export const MAP_MODE_COMBO = 'mod+m';
+
 /** Registry as render-ready data for a future shortcut help sheet. */
 export function describeShortcuts(
   registry: readonly ShortcutEntry[],
