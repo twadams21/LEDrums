@@ -1,17 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { SongLibrarySync } from './song-library-sync';
-import { serializeSongLibrary, type SongLibrary } from '../persistence';
-import type { LibrarySong } from './song-library';
+import { serializeSongLibraryV2 as serializeSongLibrary, type EffectLibrarySong, type SongLibraryV2 as SongLibrary } from '../persistence';
 
-const song = (id: string): LibrarySong => ({
-  id,
-  name: id,
-  sections: [],
-  graphs: {},
-  graphNames: {},
-  effects: [],
-  presets: [],
-});
+const song = (id: string): EffectLibrarySong => ({ id, name: id, sections: [] });
 
 const lib = (...ids: string[]): SongLibrary => ({ songs: Object.fromEntries(ids.map((id) => [id, song(id)])) });
 

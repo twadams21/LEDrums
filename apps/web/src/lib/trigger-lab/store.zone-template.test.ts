@@ -92,12 +92,17 @@ describe('templateAuthored', () => {
 });
 
 describe('newShow from a template', () => {
-  it('From my trigger zones: the active section holds a graph for every declared zone', () => {
+  it('From my trigger zones: one empty section, and the Effects grid lays out every declared zone', () => {
     const store = setup();
     store.newShow('Gig', 'zones');
     expect(store.activeShow?.name).toBe('Gig');
-    expect(zonesOf(store, store.activeSection!.graphs)).toEqual(declared(store));
-    expect(store.autoZoneGraphs).toBe(true);
+    expect(store.activeSong!.sections).toHaveLength(1);
+    expect(store.activeSection!.effects ?? []).toEqual([]);
+    // Effect chains: the grid derives its zone columns from the input map, so the template no
+    // longer seeds per-zone graphs (the graph-era zone fill is a sandbox until S08).
+    const zoneSlots = new Set(store.drumZones.map((zone) => zone.slot));
+    const gridSlots = store.gridColumns.flatMap((c) => (c.column.kind === 'zone' ? [c.column.slot] : []));
+    expect(new Set(gridSlots)).toEqual(zoneSlots);
   });
 
   it('Blank: an empty section and the setting off', () => {
@@ -117,32 +122,6 @@ describe('newShow from a template', () => {
 });
 
 describe('new sections and songs in a zone show', () => {
-  it('a new section gets its own graph per zone; one undo removes section and graphs', () => {
-    const store = setup();
-    store.newShow('Gig', 'zones');
-    const first = new Set(store.activeSection!.graphs);
-    const sectionCount = store.activeSong!.sections.length;
-    const graphCount = Object.keys(store.graphs).length;
-
-    store.addSongSection('Chorus');
-
-    const added = store.activeSection!;
-    expect(added.name).toBe('Chorus');
-    expect(zonesOf(store, added.graphs)).toEqual(declared(store));
-    expect(added.graphs.some((key) => first.has(key))).toBe(false); // independent, not linked
-
-    store.undo();
-    expect(store.activeSong!.sections).toHaveLength(sectionCount);
-    expect(Object.keys(store.graphs)).toHaveLength(graphCount);
-  });
-
-  it('a new song’s first section gets them too', () => {
-    const store = setup();
-    store.newShow('Gig', 'zones');
-    store.createSong('Encore');
-    expect(store.activeSong!.name).toBe('Encore');
-    expect(zonesOf(store, store.activeSection!.graphs)).toEqual(declared(store));
-  });
 
   it('with the setting off, a new section stays empty', () => {
     const store = setup();

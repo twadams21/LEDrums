@@ -3,7 +3,6 @@ import { BUSES, EFFECTS, PRESETS } from './fixtures';
 import { Sim, makeNode, type TriggerCtx, type TriggerGraph } from './sim';
 import { TriggerLab } from './store.svelte';
 import { MidiController, type MidiControllerHost } from './midi-controller.svelte';
-import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
 import type { WSClient } from '../ws/client';
 
 /* Web-side coverage for the contained sequence reset (issue #159): the sim's offline mirror of
@@ -129,19 +128,6 @@ describe('setSequenceResetSource', () => {
     store.undo();
     const node = store.selectedGraph!.nodes.find((n) => n.id === seq.id)!;
     expect(node.resetSource).toBeUndefined();
-  });
-
-  it('survives a serialize → reload round-trip', () => {
-    const { store, seq } = withSequence();
-    store.setSequenceResetSource(seq, { kind: 'midi', note: 61 });
-    const graphKey = store.selectedPadKey!;
-
-    const slice: Partial<AuthoredState> = { graphs: store.graphs, graphNames: store.graphNames };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored(slice as AuthoredState)));
-    const reloaded = new TriggerLab(fakeClient);
-
-    const node = reloaded.graphs[graphKey]!.nodes.find((n) => n.kind === 'sequence')!;
-    expect(node.resetSource).toEqual({ kind: 'midi', note: 61 });
   });
 });
 

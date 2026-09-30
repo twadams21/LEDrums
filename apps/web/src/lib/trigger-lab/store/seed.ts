@@ -7,7 +7,8 @@ import { type TriggerGraph, treeToGraph } from '../sim';
 import { BUSES, PADS, PRESETS, EFFECTS, SECTIONS, type Pad } from '../fixtures';
 import * as setlist from '../../app/setlist';
 import type { Song } from '../../app/setlist';
-import type { AuthoredState } from '../persistence';
+import type { AuthoredState, AuthoredStateV3 } from '../persistence';
+import { SEED_SONG_ID, seedAuthoredV3, seedEffectSection } from '../seed-effects';
 
 /** Stable graph key for a pad — `"drumId:zone"`. */
 export const padKey = (p: Pad): string => `${p.drumId}:${p.zone}`;
@@ -79,4 +80,27 @@ export function seedAuthored(): AuthoredState {
     patchLabels: {},
     autoZoneGraphs: false,
   };
+}
+
+// ---- effect chains (S05) ---------------------------------------------------------------------
+
+/**
+ * A fresh v3 show's authored content: the effect-chains seed (`seed-effects.ts`) with the demo
+ * Effects in the Intro section, followed by the fixture's other sections (Verse, Chorus) empty —
+ * the same three-section song a fresh graph-era show started with (agent-chosen, S05 §1).
+ */
+export function seedDocumentV3(): AuthoredStateV3 {
+  const seed = seedAuthoredV3();
+  const demo = seedEffectSection();
+  const sections = SECTIONS.map((s) => (s.id === demo.id ? demo : { id: s.id, name: s.name, effects: [], master: [] }));
+  if (!sections.some((s) => s.id === demo.id)) sections.unshift(demo);
+  return { ...seed, songs: seed.songs.map((song) => (song.id === SEED_SONG_ID ? { ...song, sections } : song)) };
+}
+
+/** The graph-era section placements of the seed song (`graphs` / `looks` per section id) — the
+    transient graph sandbox's seed until S08 (never persisted). */
+export function seedSectionPlacements(): Record<string, { graphs: string[]; looks: Record<string, string | null> }> {
+  const out: Record<string, { graphs: string[]; looks: Record<string, string | null> }> = {};
+  for (const song of seedSongs()) for (const s of song.sections) out[s.id] = { graphs: [...s.graphs], looks: { ...s.looks } };
+  return out;
 }

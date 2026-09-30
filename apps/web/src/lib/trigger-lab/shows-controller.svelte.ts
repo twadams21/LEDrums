@@ -44,7 +44,7 @@ import {
 import { ShowLibrarySync } from './store/show-library-sync';
 import { SongLibrarySync } from './store/song-library-sync';
 import { nid, freshId, reserveIds } from './store/ids';
-import { seedAuthoredV3 } from './seed-effects';
+import { seedDocumentV3 } from './store/seed';
 import { authoredIdsFromLibraryV3, idsFromSongLibraryV2 } from './store/reserve-library-ids';
 import * as showsLib from './store/shows';
 import * as songRefsLib from './store/song-library-refs';
@@ -140,7 +140,7 @@ export class ShowsController {
   // --- setlist (songs → sections → flat ordered graph lists) ---------------
   /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS
       (reuse-by-reference; layering = two graphs sharing a source). */
-  songs = $state<Song[]>(seedAuthoredV3().songs.map(toStoreSong));
+  songs = $state<Song[]>(seedDocumentV3().songs.map(toStoreSong));
   /** Library-song references (S41): ids into {@link songLibrary} this show resolves into its runtime
       view (canonical propagation — the referenced closure lives in the library, edited once,
       reflected in every show that references it). Authored state (persisted per show); an ordered
@@ -184,7 +184,7 @@ export class ShowsController {
     // Did we boot from REAL local content? If so, localStorage is the freshest source (it's written
     // on EVERY edit, while the server push is gated on link/sig), so the server's cold-load library
     // must not overwrite it — only adopt the server when there was nothing local to lose.
-    const boot = bootEffectLibraries(browserStorage(), () => nid('show'), seedAuthoredV3);
+    const boot = bootEffectLibraries(browserStorage(), () => nid('show'), seedDocumentV3);
     this.bootedFromLocalLibrary = boot.showsFromStorage;
     this.bootedFromLocalSongLibrary = boot.songsFromStorage;
     reserveIds(authoredIdsFromLibraryV3(boot.shows));
@@ -298,7 +298,7 @@ export class ShowsController {
   /** Create a show and switch to it — from `authored` (a new-show template), else the seed
       content. Name defaults to the first unused "Untitled Show [N]". The previous show's edits are
       flushed to its slot first. Returns the new id. */
-  newShow(name?: string, authored: AuthoredStateV3 = seedAuthoredV3()): string {
+  newShow(name?: string, authored: AuthoredStateV3 = seedDocumentV3()): string {
     if (this.host.isViewer()) return this.activeShowId; // read-only viewer (S2): authoring no-op
     this.flushActiveToLibrary();
     const id = this.freshShowId();
@@ -353,7 +353,7 @@ export class ShowsController {
     if (plan.kind === 'reseed') {
       // deleted the only show → start over from a blank Untitled (mirrors closeShow's reset).
       const freshShowId = this.freshShowId();
-      const show = { id: freshShowId, name: 'Untitled Show', authored: seedAuthoredV3() };
+      const show = { id: freshShowId, name: 'Untitled Show', authored: seedDocumentV3() };
       this.showLibrary = { [freshShowId]: show };
       this.activateDocument(show);
       return;

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
-import { buildShow } from './show-builder';
-import { SONGS_STORAGE_KEY, serializeSongLibrary, type SongLibrary } from './persistence';
-import type { LibrarySong } from './store/song-library';
+import {
+  SONGS_V2_STORAGE_KEY as SONGS_STORAGE_KEY,
+  serializeSongLibraryV2 as serializeSongLibrary,
+  type EffectLibrarySong,
+  type SongLibraryV2 as SongLibrary,
+} from './persistence';
 import type { WSClient, WSCallbacks } from '../ws/client';
 import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel } from '../ws/protocol-types';
 
@@ -46,8 +49,8 @@ const MODEL: SerializedModel = { count: 0, positions: [], tangents: [], normals:
 const OUTPUT: OutputStatus = { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 };
 const OSC_LISTEN: OscListenInfo = { status: 'listening', port: 9000, hosts: ['192.168.1.20'] };
 
-/** A minimal, valid pool song under `id` (empty closure — enough to reserve its id). */
-const libSong = (id: string): LibrarySong => ({ id, name: id, sections: [], graphs: {}, graphNames: {}, effects: [], presets: [] });
+/** A minimal, valid pool song under `id` (no sections — enough to reserve its id). */
+const libSong = (id: string): EffectLibrarySong => ({ id, name: id, sections: [] });
 const suffix = (id: string): number => Number(id.split('-')[1]);
 
 function withRaf(fn: () => void): void {
@@ -131,7 +134,7 @@ describe('canonical propagation + detach', () => {
   });
 });
 
-describe('referenced songs are navigable + playable but graph-read-only (S42 consumption)', () => {
+describe('referenced songs are navigable + playable but read-only (S42 consumption)', () => {
   it('a referenced song is a valid active song, and its sections resolve', () => {
     const store = new TriggerLab(fakeClient);
     const libId = store.exportSongToLibrary('set-1')!;
@@ -146,94 +149,72 @@ describe('referenced songs are navigable + playable but graph-read-only (S42 con
     expect(store.activeSection).toBeTruthy(); // its first section became active (playable)
   });
 
-  it('graph mutators are no-ops for a canonical graph; authored state and library stay unchanged', () => {
+  it('Effect mutators are no-ops on a referenced song; authored state and library stay unchanged', () => {
     const store = new TriggerLab(fakeClient);
     const libId = store.exportSongToLibrary('set-1')!;
     store.importSongReference(libId);
-
-    // a referenced graph carrying a play node (keys are namespaced `lib:<libId>/…`)
-    const libGraphs = store.songLibrary.songs[libId]!.graphs;
-    const refKey = Object.keys(libGraphs).find((k) => libGraphs[k]!.nodes.some((n) => n.kind === 'effect'))!;
-    expect(refKey).toBeTruthy();
-
     store.setActiveSong(libId);
-    const section = store.activeSong!.sections.find((candidate) => candidate.graphs.includes(refKey))!;
-    store.selectGraphInSection(section.id, refKey);
-    const play = store.selectedGraph!.nodes.find((n) => n.kind === 'effect')!;
-    const beforeLibraryGraph = store.songLibrary.songs[libId]!.graphs[refKey]!;
-    const beforeLibraryNodeCount = beforeLibraryGraph.nodes.length;
-    const beforeLibraryEdgeCount = beforeLibraryGraph.edges.length;
-    const beforeLibraryParams = { ...play.params };
-    const beforeNodeCount = store.selectedGraph!.nodes.length;
-    const beforeEdgeCount = store.selectedGraph!.edges.length;
-    const beforeParams = { ...play.params };
-    expect(store.canEditSelectedGraph).toBe(false);
-    expect(store.graphOwnership(refKey)).toBe('canonical');
 
-    expect(store.addNode('effect', 300, 200)).toBeNull();
-    store.setParam(play, '__s42probe', 0.4242);
-    store.moveNode(play, 999, 999);
-    store.removeNode(play);
-    expect(store.connect('trigger', play.id)).toBeNull();
-    store.disconnect(store.selectedGraph!.edges[0]?.id ?? 'missing');
+    const section = store.activeSection!;
+    expect(section.id.startsWith(`lib:${libId}/`)).toBe(true); // namespaced section ids
+    const effect = section.effects![0]!;
+    const beforeLibrary = JSON.stringify(store.songLibrary.songs[libId]);
+    const beforeSongs = JSON.stringify(store.songs);
+    expect(store.canEditActiveSong).toBe(false);
 
-    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.nodes).toHaveLength(beforeLibraryNodeCount);
-    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.edges).toHaveLength(beforeLibraryEdgeCount);
-    expect(store.songLibrary.songs[libId]!.graphs[refKey]!.nodes.find((node) => node.id === play.id)?.params).toEqual(beforeLibraryParams);
-    expect(store.selectedGraph!.nodes).toHaveLength(beforeNodeCount);
-    expect(store.selectedGraph!.edges).toHaveLength(beforeEdgeCount);
-    expect(play.params).toEqual(beforeParams);
+    expect(store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid')).toBeNull();
+    store.setEffectOpacity(effect.id, 0.01);
+    store.setGeneratorParam(effect.id, 'color', '#000000');
+    store.removeEffect(effect.id);
+    store.addModifier(effect.id, 'strobe');
+    store.clearCell(effect.cell);
+
+    expect(JSON.stringify(store.songLibrary.songs[libId])).toBe(beforeLibrary);
+    expect(JSON.stringify(store.songs)).toBe(beforeSongs); // the show did NOT absorb a copy
+    expect(store.effectById(effect.id)).toEqual(effect);
     expect(store.undo()).toBe(false);
-
-    // …and the show did NOT absorb a copy: authored graphs stay local-only; the show still holds a REF
-    expect(store.graphs[refKey]).toBeUndefined();
     expect(store.songRefs).toEqual([libId]);
   });
 
-  it('allows canonical graphs only through copy-as-source operations that create local content', () => {
+  it('allows a referenced cell only as a copy source that creates local content', () => {
     const store = new TriggerLab(fakeClient);
     const localSongId = store.activeSongId;
     const libraryId = store.exportSongToLibrary(localSongId)!;
     store.importSongReference(libraryId);
     store.setActiveSong(libraryId);
-    const canonicalKey = Object.keys(store.songLibrary.songs[libraryId]!.graphs)[0]!;
-    const section = store.activeSong!.sections.find((candidate) => candidate.graphs.includes(canonicalKey))!;
-    store.selectGraphInSection(section.id, canonicalKey);
+    const cell = store.activeSection!.effects![0]!.cell;
     const beforeLibrary = JSON.stringify(store.songLibrary.songs[libraryId]);
 
-    const duplicate = store.duplicateGraph(canonicalKey);
-    expect(duplicate).toBeTruthy();
-    expect(store.graphs[duplicate!]).toBeDefined();
-    expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
+    store.copyCell(cell); // reading is allowed on a read-only song
+    expect(store.canPasteCell).toBe(false); // …but not pasting into it
+    expect(store.pasteCell(cell).ok).toBe(false);
 
     store.setActiveSong(localSongId);
-    const localSection = store.activeSong!.sections[0]!;
-    const copied = store.copyGraphToSection(localSection.id, canonicalKey, 'Local canonical copy');
-    expect(copied).toBeTruthy();
-    expect(store.graphs[copied!]).toBeDefined();
+    const localSection = store.activeSection!;
+    const before = localSection.effects!.length;
+    expect(store.pasteCell(cell)).toEqual({ ok: true });
+    expect(store.activeSection!.effects).toHaveLength(before + 1);
     expect(JSON.stringify(store.songLibrary.songs[libraryId])).toBe(beforeLibrary);
   });
 
-  it('buildShow carries a referenced song + its namespaced graphs (engine push; passes integrity)', () => {
-    const store = new TriggerLab(fakeClient);
-    const libId = store.exportSongToLibrary('set-1')!;
-    store.importSongReference(libId);
-    store.setActiveSong(libId);
-
-    // the resolved show source is what syncShowToServer sends — building it must NOT throw on the
-    // `lib:<id>/…` graph keys (core integrity exempts them) and must include the referenced content.
-    const show = buildShow({
-      buses: store.buses,
-      graphs: store.resolvedView.graphs,
-      sections: store.sections,
-      effects: store.resolvedView.effects,
-      presets: store.resolvedView.presets,
-      drums: store.drums,
-      songs: store.resolvedSongs,
+  it('the engine Show carries a referenced song + its Effects (setShow on connect)', () => {
+    const sent: ClientMessage[] = [];
+    let cb: WSCallbacks | null = null;
+    withRaf(() => {
+      const store = new TriggerLab(() => ({ on(c: WSCallbacks) { cb = c; }, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient);
+      store.start();
+      const libId = store.exportSongToLibrary('set-1')!;
+      store.importSongReference(libId);
+      cb!.onConnection!('open');
+      const setShow = sent.find((m) => m.t === 'setShow');
+      const show = setShow?.t === 'setShow' ? setShow.show : null;
+      const ref = show?.songs?.find((s) => s.id === libId);
+      expect(ref).toBeDefined();
+      const librarySection = store.songLibrary.songs[libId]!.sections[0]!;
+      expect(ref!.sections[0]!.id).toBe(librarySection.id);
+      expect(ref!.sections[0]!.effects?.map((e) => e.id)).toEqual(librarySection.effects.map((e) => e.id));
+      store.stop();
     });
-    expect(show.songs?.some((s) => s.id === libId)).toBe(true);
-    const refKey = Object.keys(store.songLibrary.songs[libId]!.graphs)[0]!;
-    expect(show.graphs[refKey]).toBeDefined();
   });
 
   it('removeSongReference drops the ref WITHOUT cloning (the inverse of import)', () => {

@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
+import { effectChain } from '@ledrums/core';
 import {
-  SHOWS_STORAGE_KEY,
-  serializeShowLibrary,
-  type AuthoredState,
-  type ShowLibrary,
+  SHOWS_V3_STORAGE_KEY,
+  serializeShowLibraryV3,
+  type AuthoredStateV3,
+  type ShowLibraryV3,
 } from './persistence';
-import { makeNode, type TriggerGraph } from './sim';
 import type { WSClient } from '../ws/client';
 
 class MemStorage {
@@ -45,81 +45,64 @@ afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage;
 });
 
-function persistLibrary(suffix: number, graph: TriggerGraph): { graphKey: string; sectionId: string } {
-  const graphKey = `graph-${suffix}`;
+/** Persist a v3 library whose generated ids all carry `suffix` (a number far above anything the
+    id counter reaches in a test process), then reload from it. */
+function persistLibrary(suffix: number): { sectionId: string; effectId: string } {
   const sectionId = `section-${suffix}`;
+  const effectId = `fx-${suffix}`;
   const songId = `song-${suffix}`;
   const showId = `show-${suffix}`;
+  const effect = effectChain.parseEffect({
+    id: effectId,
+    name: 'Reloaded',
+    cell: { row: 'kick', column: { kind: 'zone', slot: 0 } },
+    generator: { kind: 'solid', style: 'simple' },
+    modifiers: [{ uid: `mod-${suffix}`, modifierId: 'strobe' }],
+    controls: [{ uid: `ctl-${suffix}`, kind: 'lfo' }],
+  });
   const authored = {
-    graphs: { [graphKey]: graph },
-    graphNames: { [graphKey]: 'Reloaded graph' },
-    songs: [{ id: songId, name: 'Song', sections: [{ id: sectionId, name: 'Section', graphs: [graphKey], looks: {} }] }],
-    buses: [],
-    presets: [],
-    effects: [],
-    selectedPadKey: graphKey,
+    songs: [{ id: songId, name: 'Song', sections: [{ id: sectionId, name: 'Section', effects: [effect], master: [] }] }],
+    selectedCell: effect.cell,
+    selectedEffectId: effectId,
     activeSongId: songId,
     activeSectionId: sectionId,
     bpm: 120,
     velocity: 0.85,
     beatsPerBar: 4,
-    paneSizes: {},
-    patchLabels: {},
-  } as AuthoredState;
-  const lib: ShowLibrary = {
-    activeShowId: showId,
-    shows: { [showId]: { id: showId, name: 'Reloaded Show', authored } },
-  };
-  localStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(serializeShowLibrary(lib)));
-  return { graphKey, sectionId };
+  } as AuthoredStateV3;
+  const lib: ShowLibraryV3 = { activeShowId: showId, shows: { [showId]: { id: showId, name: 'Reloaded Show', authored } } };
+  localStorage.setItem(SHOWS_V3_STORAGE_KEY, JSON.stringify(serializeShowLibraryV3(lib)));
+  return { sectionId, effectId };
 }
 
+const suffixOf = (id: string): number => Number(id.split('-').at(-1));
+
 describe('TriggerLab persisted id reservation', () => {
-  it('does not reuse a persisted node id after reload', () => {
-    const graph: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'n-9000', 100, 100)],
-      edges: [{ id: 'e-9000', from: 'trigger', to: 'n-9000' }],
-    };
-    const { graphKey } = persistLibrary(9000, graph);
-
+  it('does not reuse a persisted Effect id after reload (the counter moves past it)', () => {
+    const { effectId } = persistLibrary(9_000_000);
     const store = new TriggerLab(fakeClient);
-    const added = store.addNode('play', 300, 400);
-
-    expect(store.selectedPadKey).toBe(graphKey);
-    expect(added?.id).not.toBe('n-9000');
-    const ids = store.graphs[graphKey]!.nodes.map((n) => n.id);
-    expect(new Set(ids).size).toBe(ids.length);
+    const added = store.addEffect({ row: 'snare', column: { kind: 'zone', slot: 0 } }, 'solid')!;
+    expect(added).not.toBe(effectId);
+    expect(suffixOf(added)).toBeGreaterThan(9_000_000);
   });
 
-  it('does not reuse a persisted edge id after reload', () => {
-    const graph: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'n-9100', 100, 100)],
-      edges: [{ id: 'e-9100', from: 'trigger', to: 'n-9100' }],
-    };
-    const { graphKey } = persistLibrary(9100, graph);
-
+  it('does not reuse a persisted device uid after reload', () => {
+    const { effectId } = persistLibrary(9_100_000);
     const store = new TriggerLab(fakeClient);
-    const added = store.addNode('play', 300, 400)!;
-    store.connect('n-9100', added.id);
-
-    const ids = store.graphs[graphKey]!.edges.map((e) => e.id);
-    expect(ids).toContain('e-9100');
-    expect(new Set(ids).size).toBe(ids.length);
+    const mod = store.addModifier(effectId, 'strobe')!;
+    const ctl = store.addControl(effectId, 'lfo')!;
+    expect(suffixOf(mod)).toBeGreaterThan(9_100_000);
+    expect(suffixOf(ctl)).toBeGreaterThan(9_100_000);
   });
 
   it('does not reuse a persisted section id after reload', () => {
-    const graph: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0)],
-      edges: [],
-    };
-    const { sectionId } = persistLibrary(9200, graph);
-
+    const { sectionId } = persistLibrary(9_200_000);
     const store = new TriggerLab(fakeClient);
     store.copySection(sectionId);
     store.pasteSection();
-
     const ids = store.activeSong!.sections.map((s) => s.id);
     expect(ids).toContain(sectionId);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(suffixOf(ids.at(-1)!)).toBeGreaterThan(9_200_000);
   });
 });

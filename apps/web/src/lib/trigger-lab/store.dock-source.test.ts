@@ -99,15 +99,27 @@ describe('store.dockVoices (S17)', () => {
     expect(store.dockVoices.some((v) => v.via === 'sim-via')).toBe(false);
   });
 
-  it('offline: derives from the local sim voices, ignoring any leftover server voices', () => {
+  it('offline: derives from the Sim’s Effect-path voices, ignoring leftover server + graph voices', () => {
     const store = new TriggerLab(capturing([]));
-    store.voices = [simVoice({ effectId: 'flash', via: 'sim-via' })];
+    store.voices = [simVoice({ effectId: 'flash', via: 'sim-via' })]; // graph-era pool: not the dock's source
     store.serverVoices = [serverVoice({ effectId: 'aurora' })];
+    store.effectVoices = [serverVoice({ effectId: 'chain:solid', via: 'effect-via' })];
     store.link = 'offline';
 
     expect(store.dockVoices).toHaveLength(1);
-    expect(store.dockVoices[0]!.effectId).toBe('flash');
-    expect(store.dockVoices[0]!.via).toBe('sim-via');
+    expect(store.dockVoices[0]!.effectId).toBe('chain:solid');
+    expect(store.dockVoices[0]!.via).toBe('effect-via');
+  });
+
+  it('offline: a fired Effect reaches the dock through the Sim’s engine stats', () => {
+    const store = new TriggerLab(capturing([]));
+    store.link = 'offline';
+    const effect = store.activeSection!.effects![0]!;
+    store.fireEffect(effect.id);
+    store.sim.tick(16);
+    (store as unknown as { lastVoiceStatsAt: number }).lastVoiceStatsAt = -Infinity; // telemetry window due
+    internals(store).snapshot();
+    expect(store.dockVoices.length).toBeGreaterThan(0);
   });
 });
 

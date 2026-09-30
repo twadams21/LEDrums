@@ -141,7 +141,7 @@ import {
 // --- pure domain slices (S3.2) --------------------------------------------------
 import { nid, freshId, reserveIds } from './store/ids';
 import { findFreePosition } from '../app/views/node-placement';
-import { padKey, seedGraphKey, seedGraphNames, seedGraphs, seedAuthored } from './store/seed';
+import { padKey, seedGraphKey, seedGraphNames, seedGraphs, seedAuthored, seedDocumentV3, seedSectionPlacements } from './store/seed';
 import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
 import { announceSystemActions } from './store/system-toasts';
 import { idsFromSongLibraryV2 } from './store/reserve-library-ids';
@@ -447,6 +447,8 @@ interface LegacyGraphSlice {
   effects: EffectDef[];
   selectedPadKey: string | null;
   autoZoneGraphs: boolean;
+  /** Each section's graph placements + looks, by section id (the v3 document drops them). */
+  placements: Record<string, { graphs: string[]; looks: Record<string, string | null> }>;
 }
 
 /** One undo checkpoint: the authored show slice plus a separate snapshot of the authoritative
@@ -469,6 +471,7 @@ function seedLegacySlice(): LegacyGraphSlice {
     effects: seed.effects,
     selectedPadKey: seed.selectedPadKey,
     autoZoneGraphs: false,
+    placements: seedSectionPlacements(),
   };
 }
 
@@ -1403,6 +1406,8 @@ export class TriggerLab implements EffectsAuthoringApi {
     // so applyAuthored fills any absent field. loadShowLibrary never throws: a valid library wins;
     // else a legacy single blob migrates to one "Default Show"; else a fresh "Untitled Show" seeds.
     this.applyAuthored(this.showsCtl.hydrateFromStorage());
+    // The graph sandbox (transient until S08) starts from its seed, placed on seed-id sections.
+    this.applyLegacy(seedLegacySlice());
     this.rehomeLoadedSelection();
     // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
     // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
@@ -2174,12 +2179,12 @@ export class TriggerLab implements EffectsAuthoringApi {
     announceSystemActions(actions);
   }
 
-  /** Reset every authored rune to the blank-document seed (via {@link seedAuthoredV3}, plus the
+  /** Reset every authored rune to the blank-document seed (via {@link seedDocumentV3}, plus the
       graph-era sandbox seed) — the clean baseline a show SWITCH starts from, so no field of the
       outgoing show survives. */
   private resetAuthoredToSeed(): void {
+    this.applyAuthored(seedDocumentV3());
     this.applyLegacy(seedLegacySlice());
-    this.applyAuthored(seedAuthoredV3());
   }
 
   /** The sole document replacement boundary, including same-id server adoption. History is
@@ -2198,7 +2203,9 @@ export class TriggerLab implements EffectsAuthoringApi {
     // graphs). Only genuinely loaded documents need seed defaults, registry union and migration.
     if (source === 'loaded') {
       this.resetAuthoredToSeed();
-      this.applyAuthored($state.snapshot(show.authored));
+      this.applyAuthored($state.snapshot(show.authored) as AuthoredStateV3);
+      // The graph sandbox's seed placements land on the loaded sections that share a seed id.
+      this.applyPlacements(seedSectionPlacements());
       this.rehomeLoadedSelection();
       this.normalizeGraphs();
     }
@@ -2267,6 +2274,9 @@ export class TriggerLab implements EffectsAuthoringApi {
       effects: this.effects,
       selectedPadKey: this.selectedPadKey,
       autoZoneGraphs: this.autoZoneGraphs,
+      placements: Object.fromEntries(
+        this.songs.flatMap((song) => song.sections.map((s) => [s.id, { graphs: s.graphs, looks: s.looks }] as const)),
+      ),
     };
   }
 
@@ -2310,8 +2320,27 @@ export class TriggerLab implements EffectsAuthoringApi {
     // Union, never replace: a stale slice must not drop the built-in generator presets / effects.
     this.presets = unionPresets(l.presets);
     this.effects = unionEffects(l.effects);
+    this.applyPlacements(l.placements);
     this.selectedPadKey = l.selectedPadKey;
     this.autoZoneGraphs = l.autoZoneGraphs;
+  }
+
+  /** Put graph-era placements (graph keys + looks) back onto the sections that share an id. */
+  private applyPlacements(placements: LegacyGraphSlice['placements']): void {
+    let changed = false;
+    const songs = this.songs.map((song) => {
+      let songChanged = false;
+      const sections = song.sections.map((section) => {
+        const placed = placements[section.id];
+        if (!placed) return section;
+        songChanged = true;
+        return { ...section, graphs: [...placed.graphs], looks: { ...placed.looks } };
+      });
+      if (!songChanged) return song;
+      changed = true;
+      return { ...song, sections };
+    });
+    if (changed) this.songs = songs;
   }
 
   private pushUndoSnapshot(): void {
@@ -2387,8 +2416,8 @@ export class TriggerLab implements EffectsAuthoringApi {
     if (!prev) return false;
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
-    this.applyLegacy(structuredClone(prev.legacy));
     this.applyAuthored(structuredClone(prev.authored));
+    this.applyLegacy(structuredClone(prev.legacy));
     this.normalizeGraphs();
     this.replaceRuntime();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
@@ -3237,16 +3266,23 @@ export class TriggerLab implements EffectsAuthoringApi {
     this.client.send({ t: 'setKitNodeLayout', nodeLayout });
   }
 
+  /** Who uses a drum zone (the zone-delete guard + the zones list): every Effect in that zone's
+      cell, in any show (the live one, inactive ones) or library song — `"<Effect> · <section>"`.
+      Effect chains replaced the graph users (the graph runes are an unpersisted sandbox now). The
+      name is kept for its callers. */
   zoneGraphUsers(drumId: string, slot: number): string[] {
-    // Effect chains: v3 shows and library songs hold no graphs; only the live sandbox does.
-    const pools: { graphs?: Record<string, TriggerGraph>; graphNames?: Record<string, string> }[] = [
-      { graphs: this.graphs, graphNames: this.graphNames },
+    const songs: { sections: readonly { name: string; effects?: readonly effectChain.Effect[] }[] }[] = [
+      ...this.songs,
+      ...Object.values(this.showsCtl.showLibrary).filter((show) => show.id !== this.activeShowId).flatMap((show) => show.authored.songs ?? []),
+      ...Object.values(this.songLibrary.songs),
     ];
     const users = new Set<string>();
-    for (const pool of pools) for (const [key, graph] of Object.entries(pool.graphs ?? {})) {
-      if (graph.nodes.some((node) => [node.source, node.resetSource].some((source) =>
-        source?.kind === 'drum' && source.drumId === drumId && Number(source.zone) === slot && source.zone !== '',
-      ))) users.add(pool.graphNames?.[key] ?? key);
+    for (const song of songs) for (const section of song.sections) {
+      for (const effect of section.effects ?? []) {
+        if (effect.cell.row === drumId && effect.cell.column.kind === 'zone' && effect.cell.column.slot === slot) {
+          users.add(`${effect.name || effect.generator.kind} · ${section.name}`);
+        }
+      }
     }
     return [...users];
   }
@@ -3298,7 +3334,7 @@ export class TriggerLab implements EffectsAuthoringApi {
           if (remaining.includes(slot)) continue;
           const users = this.zoneGraphUsers(drum.id, slot);
           if (users.length) {
-            pushToast(`Remove this zone from graphs before deleting it: ${users.join(', ')}`, { tone: 'error' });
+            pushToast(`Remove this zone’s Effects before deleting it: ${users.join(', ')}`, { tone: 'error' });
             return false;
           }
         }

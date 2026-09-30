@@ -3,8 +3,6 @@ import { defaultProject } from '@ledrums/core';
 import { removeZone, setZoneLabel, setZoneMidiNote, setZoneOscAddress, zoneSlotsForDrum } from '../app/docks/patch-inspector';
 import { sectionActions } from '../app/section-actions';
 import { TriggerLab } from './store.svelte';
-import { makeNode, type TriggerGraph } from './sim';
-import { STORAGE_KEY, VERSION } from './persistence';
 import type { WSClient } from '../ws/client';
 
 /* Store-level coverage for the trigger-source back-compat default + mutators (U1 T1).
@@ -65,25 +63,6 @@ describe('trigger-source back-compat default (hydrate)', () => {
   });
 });
 
-describe('trigger-source hydrate is idempotent + respects explicit sources', () => {
-  it('keeps an already-explicit source and only fills the missing ones', () => {
-    // a persisted blob: kick:0 already carries an explicit MIDI source; snare:0 has none.
-    const sourced: TriggerGraph = {
-      nodes: [makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'midi', note: 60 } })],
-      edges: [],
-    };
-    const bare: TriggerGraph = { nodes: [makeNode('trigger', 'trigger', 0, 0)], edges: [] };
-    const blob = { version: VERSION, data: { graphs: { 'kick:0': sourced, 'snare:0': bare } } };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
-
-    const store = new TriggerLab(fakeClient);
-    // the explicit MIDI source is untouched (not overwritten with a drum default)
-    expect(store.triggerSource('kick:0')).toEqual({ kind: 'midi', note: 60 });
-    // the bare pad graph picked up its drum default from the padKey
-    expect(store.triggerSource('snare:0')).toEqual({ kind: 'drum', drumId: 'snare', zone: '0' });
-  });
-});
-
 describe('trigger-source mutators', () => {
   it('setTriggerSource writes the source onto the graph trigger node', () => {
     const store = new TriggerLab(fakeClient);
@@ -132,24 +111,22 @@ describe('drum zone graph authoring', () => {
 });
 
 describe('configured zones', () => {
-  it('blocks removing a zone used by a graph, including an unplaced graph', () => {
+  it('blocks removing a zone whose cell holds an Effect, in any section', () => {
     const store = new TriggerLab(fakeClient);
     store.project = defaultProject();
-    const key = store.createGraph('Unplaced');
-    store.setTriggerSource(key, { kind: 'drum', drumId: 'kick', zone: '0' });
+    const kick0 = { row: 'kick', column: { kind: 'zone' as const, slot: 0 } };
+    store.clearCell(kick0);
+    store.setActiveSection('verse');
+    store.addEffect(kick0, 'solid'); // an Effect in a section that is not the one on show
+    store.setActiveSection('intro');
     const before = store.project.inputMap;
+    expect(store.zoneGraphUsers('kick', 0)).toHaveLength(1);
     expect(store.setInputMap(removeZone(before, 'kick', 0))).toBe(false);
     expect(store.project.inputMap).toEqual(before);
-    store.graphs = {};
+    store.setActiveSection('verse');
+    store.clearCell(kick0);
     expect(store.setInputMap(removeZone(before, 'kick', 0))).toBe(true);
     expect(zoneSlotsForDrum(store.project.inputMap, 'kick')).not.toContain(0);
-  });
-
-  it('blocks a zone used only by a sequence reset', () => {
-    const store = new TriggerLab(fakeClient);
-    store.project = defaultProject();
-    store.graphs = { reset: { nodes: [makeNode('sequence', 'reset', 0, 0, { resetSource: { kind: 'drum', drumId: 'kick', zone: '0' } })], edges: [] } };
-    expect(store.setInputMap(removeZone(store.project.inputMap, 'kick', 0))).toBe(false);
   });
 
   it('uses configured zone labels and keeps default names current when a zone is renamed', () => {
@@ -209,24 +186,24 @@ describe('section menu actions', () => {
 });
 
 describe('zone use outside the open show', () => {
-  it('protects inactive shows and releases the zone once those graphs are deleted', () => {
+  it('protects inactive shows and releases the zone once those Effects are deleted', () => {
     const store = new TriggerLab(fakeClient);
     store.project = defaultProject();
     const original = store.activeShowId;
     store.newShow('Second show');
-    store.graphs = {};
+    store.clearCell({ row: 'kick', column: { kind: 'zone', slot: 0 } }); // the open show no longer uses it
     const next = removeZone(store.project.inputMap, 'kick', 0);
     expect(store.setInputMap(next)).toBe(false);
     store.deleteShow(original);
     expect(store.setInputMap(next)).toBe(true);
   });
 
-  it('protects an unreferenced canonical song library graph', () => {
+  it('protects an unreferenced canonical song library Effect', () => {
     const store = new TriggerLab(fakeClient);
     store.project = defaultProject();
     const libraryId = store.exportSongToLibrary(store.activeSongId)!;
     expect(libraryId).toBeTruthy();
-    store.graphs = {};
+    store.clearCell({ row: 'kick', column: { kind: 'zone', slot: 0 } });
     expect(store.setInputMap(removeZone(store.project.inputMap, 'kick', 0))).toBe(false);
     store.deleteLibrarySong(libraryId);
     expect(store.setInputMap(removeZone(store.project.inputMap, 'kick', 0))).toBe(true);
