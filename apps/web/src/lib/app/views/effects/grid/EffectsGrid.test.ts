@@ -189,7 +189,6 @@ describe('EffectsGrid keyboard audition (app keyboard seam)', () => {
   function withKeyboard(effects: effectChain.Effect[]) {
     const m = mount(effects);
     const store: AppKeyboardStore = {
-      fireSectionGraph: vi.fn(),
       stepSetlist: vi.fn(() => true),
       fireEffectAt: (i) => m.api.fireEffectAt(i),
     };
@@ -204,14 +203,13 @@ describe('EffectsGrid keyboard audition (app keyboard seam)', () => {
   };
 
   it('digits fire the section’s nth Effect in grid order, even while a cell has focus', () => {
-    const { api, store } = withKeyboard([fx('snareHit', { row: 'snare', column: { kind: 'zone', slot: 0 } }), fx('kickHit', kickHead)]);
+    const { api } = withKeyboard([fx('snareHit', { row: 'snare', column: { kind: 'zone', slot: 0 } }), fx('kickHit', kickHead)]);
     cellAt(1, 0).focus();
     const first = press(cellAt(1, 0), '1');
     press(cellAt(1, 0), '2');
     // Grid order is row by row: Kick's Effect is 1, Snare's is 2 — not composition order.
     expect(api.fired).toEqual(['effect:kickHit', 'effect:snareHit']);
     expect(first.defaultPrevented).toBe(true);
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
   });
 
   it('digits yield while the Generator picker is open', async () => {

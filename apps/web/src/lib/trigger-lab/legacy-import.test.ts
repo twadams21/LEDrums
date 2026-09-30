@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { effectChain } from '@ledrums/core';
 import {
   LEGACY_SINGLE_SHOW_ID,
+  SHOWS_STORAGE_KEY,
+  SONGS_STORAGE_KEY,
+  STORAGE_KEY,
   detectLegacyLibrary,
   importLegacyShows,
   pendingLegacyShowNames,
 } from './legacy-import';
 import {
-  SHOWS_STORAGE_KEY,
-  SONGS_STORAGE_KEY,
-  STORAGE_KEY,
   loadShowLibraryV3,
   serializeShowLibraryV3,
   serializeSongLibraryV2,
@@ -187,7 +187,7 @@ describe('importLegacyShows', () => {
     expect(imported.authored.activeSectionId).toBe('section-900');
   });
 
-  it('accepts a v1 source through the existing hoop migration (graphs are then dropped)', () => {
+  it('accepts a v1 source; graphs are dropped, so v1 and v2 import identically', () => {
     const fromV1 = importLegacyShows({ shows: legacyLibrary(1), songs: null });
     const fromV2 = importLegacyShows({ shows: legacyLibrary(2), songs: null });
     expect(fromV1.importedShowIds).toEqual(['show-1', 'show-2']);

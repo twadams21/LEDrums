@@ -1,5 +1,6 @@
-/* Throwaway seed data: effects (with parameters), named presets, an abstract kit,
-   and trigger trees chosen to show every block type. */
+/* Seed data the Effect-chain app still reads: the kit's pad roster (drum × zone) for the
+   performance surface, the drum roster, and every core generator as a selectable EffectDef (the
+   thumbnail / gallery fixtures). */
 
 import {
   DEFAULT_KIT,
@@ -8,48 +9,17 @@ import {
   type EffectCategory,
   mapVoiceParamSpec as mapParamSpec,
 } from '@ledrums/core';
-import {
-  defaultParams,
-  type Block,
-  type Bus,
-  type EffectDef,
-  type ParamSpec,
-  type PlayMode,
-  type Preset,
-  type Section,
-} from './sim';
+import { type EffectDef } from './sim';
 
+/** One playable drum zone. */
 export interface Pad {
   drumId: string;
   drumLabel: string;
   zone: number;
   zoneLabel: string;
-  tree: Block;
 }
 
 export const ZONE_LABELS = ['center', 'edge', 'rim', 'shell'];
-
-export const BUSES: Bus[] = [
-  { id: 'base', name: 'Base', polyphony: 'mono', crossfadeMs: 900 },
-  { id: 'trigger', name: 'Trigger', polyphony: 'poly', crossfadeMs: 240 },
-  { id: 'effect', name: 'Effect', polyphony: 'mono', crossfadeMs: 600 },
-];
-
-// ---- param spec builders ----------------------------------------------------
-const hueP = (def: number): ParamSpec => ({ key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, step: 1, unit: '°', default: def, envable: true });
-const briP: ParamSpec = { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, step: 0.05, default: 1, envable: true };
-const speedP: ParamSpec = { key: 'speed', label: 'Speed', kind: 'number', min: 0.1, max: 3, step: 0.1, default: 1, envable: true };
-const syncP: ParamSpec = { key: 'tempoSync', label: 'Tempo sync', kind: 'bool', default: false };
-const bandsP = (def: number): ParamSpec => ({ key: 'bands', label: 'Bands', kind: 'number', min: 1, max: 8, step: 1, default: def, envable: true });
-const angleP: ParamSpec = { key: 'angle', label: 'Angle', kind: 'number', min: 0, max: 360, step: 5, unit: '°', default: 0, envable: true };
-const widthP: ParamSpec = { key: 'width', label: 'Width', kind: 'number', min: 0.04, max: 0.4, step: 0.01, default: 0.13, envable: true };
-const densityP: ParamSpec = { key: 'density', label: 'Density', kind: 'number', min: 0.05, max: 1, step: 0.05, default: 0.3, envable: true };
-
-// The 10 hand-rolled per-pixel pattern effects were RETIRED in U3 (Effects Library v2):
-// each was aliased onto its generator equivalent (core `aliases.ts`) and the whole legacy
-// pattern render path was deleted. Old shows referencing the retired ids (`swirl`, `whole`,
-// `chase`, …) resolve through the alias map at hydrate / buildShow. The seed PADS/SECTIONS
-// below now reference the generator effects directly.
 
 // ---- generator-backed effects ------------------------------------------------
 // Each legacy `EffectGenerator` in core's registry is surfaced as a selectable
@@ -81,9 +51,6 @@ const CATEGORY_ENV: Record<EffectCategory, { attackMs: number; sustainMs: number
   trigger: { attackMs: 10, sustainMs: 100, releaseMs: 300 },
 };
 
-/** Compatibility export; server and browser use the same pure parameter adapter. */
-export { mapParamSpec };
-
 /** All core generators as selectable, generator-backed EffectDefs. Scope is `kit`
     for every one: generators own their spatial layout (drum-locality is intrinsic — e.g.
     whole-drum lights only the struck drum from its trigger), so drum-masking a kit-wide
@@ -108,106 +75,22 @@ export const GENERATOR_EFFECTS: EffectDef[] = listEffects().map((gen): EffectDef
   };
 });
 
-/** The full selectable registry of REAL effects. Canvas cards are NOT listed here: the
-    store derives virtual `canvas:<sceneId>` EffectDefs from the core built-in scene library
-    plus the show's authored scenes (`store.canvasEffects`), so there is exactly one source
-    of canvas cards and shows never persist duplicates of the built-ins (D4). */
-export const EFFECTS: EffectDef[] = [...GENERATOR_EFFECTS];
-
-const effectById = new Map(EFFECTS.map((e) => [e.id, e] as const));
-
-// ---- presets ----------------------------------------------------------------
-const slug = (s: string) => s.toLowerCase().replace(/\s+/g, '-');
-
-function preset(effectId: string, name: string, overrides: Record<string, number | boolean | string> = {}): Preset {
-  const eff = effectById.get(effectId)!;
-  return { id: `${effectId}:${slug(name)}`, name, effectId, params: { ...defaultParams(eff), ...overrides } };
-}
-
-export const PRESETS: Preset[] = [
-  // A Default preset for every selectable effect so play nodes resolve `${id}:default`.
-  ...EFFECTS.map((e) => preset(e.id, 'Default')),
-  // Burst merge (U3): its per-hit pop = a short-reach, fast-decay radial wash.
-  preset('gen:radial-wash', 'Pop', { reach: 320, decayMs: 200, speed: 2.2, width: 300 }),
-];
-
-const presetById = new Map(PRESETS.map((p) => [p.id, p] as const));
-
-let n = 0;
-const bid = (k: string) => `${k}-${++n}`;
-
-/** Build a fresh single-instance Play from an effect's Default preset. */
-export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
-  const eff = effectById.get(effectId)!;
-  const presetId = `${effectId}:default`;
-  const p = presetById.get(presetId);
-  return {
-    id: bid('play'),
-    kind: 'play',
-    mode,
-    scope: eff.scope,
-    effectId,
-    presetId,
-    params: { ...(p?.params ?? defaultParams(eff)) },
-    env: {},
-  };
-};
-
-// --- starter trees that exercise the block set ------------------------------
-
-// Seed trees reference the generator effects (the retired pattern ids were remapped to
-// their generator equivalents in U3 — see the alias map in core `aliases.ts`). The snare
-// rim / shell trees played `gen:strobe` until S08 deleted the strobe generator (strobe is a
-// Modifier now); they play `gen:whole-kit`, the nearest kit-wide flash.
-const kickCenter: Block = play('gen:whole-drum', 'oneshot');
-const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('gen:chase-bands'), play('gen:pixel-accum'), play('gen:ripple-3d')] };
-const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('gen:pixel-accum'), play('gen:whole-kit')] };
-const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('gen:chase-bands'), play('gen:ripple-3d'), play('gen:whole-drum')] };
-// value+bands switch: 3 even bands (cutoffs 1/3, 2/3) == the old 3-child velocity split.
-// treeToGraph wires the children onto band-0 / band-1 / band-2 in y-order.
-const tomEdge: Block = {
-  id: bid('switch'),
-  kind: 'switch',
-  on: 'value',
-  valueMode: 'bands',
-  bands: [1 / 3, 2 / 3],
-  children: [play('gen:pixel-accum'), play('gen:chase-bands'), play('gen:whole-drum')],
-};
-const kickShell: Block = { id: bid('toggle'), kind: 'toggle', child: play('gen:lava-lamp', 'loop') };
-const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('gen:whole-kit') };
-const tomRim: Block = {
-  id: bid('rand2'),
-  kind: 'random',
-  noRepeat: false,
-  children: [play('gen:radial-wash', 'loop'), { id: bid('all2'), kind: 'all', children: [play('gen:chase-bands'), play('gen:pixel-accum')] }],
-};
-const tom2Center: Block = { id: bid('seq2'), kind: 'sequence', children: [play('gen:ripple-3d'), play('gen:pixel-accum')] };
-const tom2Rim: Block = { id: bid('chance2'), kind: 'chance', p: 0.7, child: play('gen:whole-drum') };
-
-function pad(drumId: string, drumLabel: string, zone: number, tree: Block): Pad {
-  return { drumId, drumLabel, zone, zoneLabel: ZONE_LABELS[zone]!, tree };
+function pad(drumId: string, drumLabel: string, zone: number): Pad {
+  return { drumId, drumLabel, zone, zoneLabel: ZONE_LABELS[zone]! };
 }
 
 export const PADS: Pad[] = [
-  pad('kick', 'Kick', 0, kickCenter),
-  pad('kick', 'Kick', 3, kickShell),
-  pad('snare', 'Snare', 0, snareCenter),
-  pad('snare', 'Snare', 2, snareRim),
-  pad('snare', 'Snare', 3, snareShell),
-  pad('tom1', 'Tom 1', 0, tomCenter),
-  pad('tom1', 'Tom 1', 1, tomEdge),
-  pad('tom1', 'Tom 1', 2, tomRim),
-  pad('tom2', 'Tom 2', 0, tom2Center),
-  pad('tom2', 'Tom 2', 2, tom2Rim),
+  pad('kick', 'Kick', 0),
+  pad('kick', 'Kick', 3),
+  pad('snare', 'Snare', 0),
+  pad('snare', 'Snare', 2),
+  pad('snare', 'Snare', 3),
+  pad('tom1', 'Tom 1', 0),
+  pad('tom1', 'Tom 1', 1),
+  pad('tom1', 'Tom 1', 2),
+  pad('tom2', 'Tom 2', 0),
+  pad('tom2', 'Tom 2', 2),
 ];
 
-/** The drum roster, sourced from the canonical kit so ids/labels can't drift from
-    the engine. PADS below reference these ids; the integrity check + a guard test
-    fail loudly if a pad ever names a drum the canonical kit doesn't define. */
+/** The drum roster, sourced from the canonical kit so ids/labels can't drift from the engine. */
 export const DRUMS = DEFAULT_KIT.drums.map((d) => ({ id: d.id, label: d.label }));
-
-export const SECTIONS: Section[] = [
-  { id: 'intro', name: 'Intro', looks: { base: 'gen:solid-base', trigger: null, effect: 'gen:radial-wash' } },
-  { id: 'verse', name: 'Verse', looks: { base: 'gen:perlin-clouds', trigger: null, effect: null } },
-  { id: 'chorus', name: 'Chorus', looks: { base: 'gen:plasma', trigger: null, effect: 'gen:radial-wash' } },
-];

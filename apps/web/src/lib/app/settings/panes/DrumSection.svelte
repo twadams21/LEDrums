@@ -1,8 +1,8 @@
 <script lang="ts">
   /* One collapsible per-drum card in the Drums & Hoops pane: rename (on the `drum:<id>`
      zone id) + the drum transform (setDrumTransform — origin / rotation / colour / angles /
-     spacing / diameter / flip, re-homed from PatchDrumInspector), the bound-trigger
-     read-out, and the per-hoop rows (HoopRow). */
+     spacing / diameter / flip, re-homed from PatchDrumInspector), the read-out of the Effects
+     the active section plays on this drum, and the per-hoop rows (HoopRow). */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import { hexToHsv, hsvToHex, type DrumConfig, type Hsv, type KitConfig } from '@ledrums/core';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -13,7 +13,7 @@
   import ReadRow from '../../docks/inspectors/ReadRow.svelte';
   import RenameField from '../../docks/inspectors/RenameField.svelte';
   import { onNum, patchLabel } from '../../docks/inspectors/forms';
-  import { boundTriggerFor, hoopPixelSpan } from '../../docks/patch-inspector';
+  import { drumEffectNames, hoopPixelSpan } from '../../docks/patch-inspector';
   import { drumZoneId } from '../../patch-graph';
   import type { PatchRouting } from '../../patch-routing';
   import { drumPixelTotal, hoopIndices, pixelsForHoopIn } from './drums-hoops';
@@ -39,9 +39,8 @@
   // hsvToHex round-trips hexToHsv (core/color), so read + write stay lossless.
   const swatch = $derived<Hsv>(hexToHsv(drum.color ?? '#ffffff'));
 
-  // Read-only: the trigger graph bound to this drum by identity, human-labelled when named.
-  const bound = $derived(boundTriggerFor(drum.id, store.graphs));
-  const boundLabel = $derived(bound ? store.graphLabel(bound.graphKey) : null);
+  // Read-only: the Effects the active section plays on this drum's grid row.
+  const effectNames = $derived(drumEffectNames(drum.id, store.activeSection));
 
   function setAxis(field: 'origin' | 'rotation', axis: 'x' | 'y' | 'z', n: number): void {
     store.setDrumTransform(drum.id, { [field]: { ...drum[field], [axis]: n } });
@@ -150,7 +149,7 @@
       />
     </Field>
     </div>
-    <ReadRow label="Bound trigger" value={boundLabel ?? bound?.label ?? '—'} />
+    <ReadRow label="Effects" value={effectNames.length > 0 ? effectNames.join(', ') : '—'} />
 
     <ListHead label="Hoops" count={hoops.length} />
     <div class="hoopgrid" role="group" aria-label={`${patchLabel(store, nodeId, fallback)} hoops`}>

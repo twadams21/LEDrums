@@ -22,7 +22,7 @@
   import Eyebrow from '../../../ui/Eyebrow.svelte';
   import OutputStatusPanel from '../../docks/inspectors/OutputStatusPanel.svelte';
   import { onNum } from '../../docks/inspectors/forms';
-  import { PROTOCOL_OPTS } from '../../views/node-options';
+  import { PROTOCOL_OPTS } from '../../views/output-options';
   import PaneHeader from '../PaneHeader.svelte';
 
   let { store }: { store: TriggerLab } = $props();

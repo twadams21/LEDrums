@@ -46,7 +46,6 @@ function setup(options: ConstructorParameters<typeof MemoryMapModeApi>[0] = {}) 
   const onFire = vi.fn();
   const fireEffectAt = vi.fn();
   const store: AppKeyboardStore = {
-    fireSectionGraph: vi.fn(),
     fireEffectAt,
     stepSetlist: vi.fn(() => true),
   };

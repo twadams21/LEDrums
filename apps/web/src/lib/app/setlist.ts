@@ -1,47 +1,19 @@
-/* Setlist model — songs → sections → a FLAT ORDERED LIST OF GRAPHS, as a PURE module
-   (no runes, no DOM) so the structure + its invariants are unit-testable in node, like
-   shell-nav / show-builder. A section is `{ id, name, graphs }` where `graphs` is an
-   ordered list of graph KEYS into the store's `graphs` map — a *reference*, never a copy,
-   so the SAME graph can appear in many sections (reuse). The store is a thin rune holder
-   that delegates here.
-
-   Resolution (in the store + sim): a hit fires the ACTIVE section's graphs whose trigger
-   `source` matches the input — so each zone still fires only its own graph, and LAYERING
-   is two graphs in the section that share a source (layer routing lives inside each
-   graph's buses). This drops the old per-pad 3-layer slot grid (`SectionSlots`/`Slot`,
-   keyed by padKey) entirely; the back-compat migration that flattens a persisted section's
-   `slots` into this `graphs` list lives in `persistence.ts`. */
+/* Setlist model — songs → sections, as a PURE module (no runes, no DOM) so the structure and its
+   invariants are unit-testable in node, like shell-nav / show-builder. A section carries its
+   Effect stack (composition order), its Master chain and optional timing (effect chains, S05);
+   the store is a thin rune holder that delegates here. */
 
 import type { effectChain } from '@ledrums/core';
 
-/** One section in a song's arrangement: an ordered SET of graph keys (into store.graphs)
-    plus its per-bus "looks" — which effect each bus LOOPS while the section is active (the
-    base/trigger/effect ambience the engine spawns on recall). The graph list is de-duplicated
-    (a graph appears at most once per section); `looks` is keyed by bus id, a value of `null`
-    (or an absent key) meaning that bus loops nothing. Looks are AUTHORED here (S16) — the
-    single source of truth the show-builder bridges to the engine's `Section.looks`. */
+/** One section in a song's arrangement: its Effect stack in composition order, its Master chain
+    and its optional timing. */
 export interface SetlistSection {
   id: string;
   name: string;
-  graphs: string[];
-  looks: Record<string, string | null>;
-  /** Effect chains (S05): the section's Effect stack in composition order, its Master chain and
-      its optional timing. Absent on graph-era sections (read as empty). `graphs` / `looks` stay
-      until the graph model is deleted (S08). */
-  effects?: effectChain.Effect[];
-  master?: effectChain.ModifierDevice[];
+  effects: effectChain.Effect[];
+  master: effectChain.ModifierDevice[];
   bars?: number;
   bpm?: number;
-}
-
-/** The effect-chain fields of a section, deep-copied (a clone must never alias its source). */
-function effectFieldsOf(section: SetlistSection): Pick<SetlistSection, 'effects' | 'master' | 'bars' | 'bpm'> {
-  const out: Pick<SetlistSection, 'effects' | 'master' | 'bars' | 'bpm'> = {};
-  if (section.effects) out.effects = JSON.parse(JSON.stringify(section.effects)) as effectChain.Effect[];
-  if (section.master) out.master = JSON.parse(JSON.stringify(section.master)) as effectChain.ModifierDevice[];
-  if (section.bars !== undefined) out.bars = section.bars;
-  if (section.bpm !== undefined) out.bpm = section.bpm;
-  return out;
 }
 
 export interface Song {
@@ -50,16 +22,9 @@ export interface Song {
   sections: SetlistSection[];
 }
 
-/** A section seeded with an (optional) ordered graph-key list (de-duplicated) and an
-    (optional) per-bus looks map (copied, so the section owns it). Both default to empty —
-    a brand-new section references no graphs and loops no looks. */
-export function makeSection(
-  id: string,
-  name: string,
-  graphs: readonly string[] = [],
-  looks: Readonly<Record<string, string | null>> = {},
-): SetlistSection {
-  return { id, name, graphs: dedupe(graphs), looks: { ...looks } };
+/** A fresh, empty section (no Effects, an empty Master chain). */
+export function makeSection(id: string, name: string): SetlistSection {
+  return { id, name, effects: [], master: [] };
 }
 
 /** A fresh song. Defaults to ONE empty section (id derived from the song id so it is
@@ -102,42 +67,11 @@ function mapSection(song: Song, sectionId: string, fn: (s: SetlistSection) => Se
   const sections = song.sections.map((s) => {
     if (s.id !== sectionId) return s;
     const next = fn(s);
-    if (next === s) return s; // no-op edits (e.g. duplicate add) keep the ref
+    if (next === s) return s; // no-op edits keep the ref
     changed = true;
-    // Graph-slot edits rebuild the section via makeSection; its Effect stack must survive them.
-    return { ...effectFieldsOf(s), ...next };
+    return next;
   });
   return changed ? { ...song, sections } : song;
-}
-
-/** Append a graph reference to a section. Idempotent — a key already in the section is a
-    no-op (returns the same Song ref), keeping the list a set-like ordered list. */
-export function addGraph(song: Song, sectionId: string, graphKey: string): Song {
-  return mapSection(song, sectionId, (s) =>
-    s.graphs.includes(graphKey) ? s : { ...s, graphs: [...s.graphs, graphKey] },
-  );
-}
-
-/** Remove a graph reference from a section (no-op if absent). */
-export function removeGraph(song: Song, sectionId: string, graphKey: string): Song {
-  return mapSection(song, sectionId, (s) =>
-    s.graphs.includes(graphKey) ? { ...s, graphs: s.graphs.filter((k) => k !== graphKey) } : s,
-  );
-}
-
-/** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
-export function setGraphs(song: Song, sectionId: string, graphs: readonly string[]): Song {
-  return mapSection(song, sectionId, (s) => ({ ...s, graphs: dedupe(graphs) }));
-}
-
-/** Set (or clear) the effect a section loops on a bus — its "look". `effectId` `null` = None
-    (the bus loops nothing). Immutable + idempotent: setting the value a bus already carries
-    (treating an absent key as `null`) returns the SAME Song ref, so a no-op re-pick doesn't
-    churn autosave/resync. Mirrors {@link setGraphs} — a per-section attribute edit. */
-export function setLook(song: Song, sectionId: string, busId: string, effectId: string | null): Song {
-  return mapSection(song, sectionId, (s) =>
-    (s.looks[busId] ?? null) === effectId ? s : { ...s, looks: { ...s.looks, [busId]: effectId } },
-  );
 }
 
 export function addSection(song: Song, section: SetlistSection): Song {
@@ -172,117 +106,22 @@ export function removeSection(song: Song, sectionId: string): Song {
   return { ...song, sections: song.sections.filter((s) => s.id !== sectionId) };
 }
 
-/** Copy a section's arrangement under a NEW id (name defaults to "<name> copy"). Graph content
-    is cloned by the store operation that owns the graph map; this pure structural helper only
-    copies the ordered key list and looks. */
+/** Copy a section under a NEW id (name defaults to "<name> copy"). The Effect stack and Master
+    chain are deep-copied, so the clone never aliases its source. */
 export function cloneSection(section: SetlistSection, newId: string, newName?: string): SetlistSection {
-  return { ...makeSection(newId, newName ?? `${section.name} copy`, section.graphs, section.looks), ...effectFieldsOf(section) };
-}
-
-/** Replace one exact graph placement while preserving the section's order. The caller owns the
-    graph map; this only changes the placement identity used for explicit linking/unlinking. */
-export function replaceGraphPlacement(
-  song: Song,
-  sectionId: string,
-  fromGraphKey: string,
-  toGraphKey: string,
-): Song {
-  return mapSection(song, sectionId, (section) => {
-    const index = section.graphs.indexOf(fromGraphKey);
-    if (index < 0 || (fromGraphKey !== toGraphKey && section.graphs.includes(toGraphKey))) return section;
-    const graphs = [...section.graphs];
-    graphs[index] = toGraphKey;
-    return makeSection(section.id, section.name, graphs, section.looks);
-  });
+  const out: SetlistSection = {
+    id: newId,
+    name: newName ?? `${section.name} copy`,
+    effects: JSON.parse(JSON.stringify(section.effects)) as effectChain.Effect[],
+    master: JSON.parse(JSON.stringify(section.master)) as effectChain.ModifierDevice[],
+  };
+  if (section.bars !== undefined) out.bars = section.bars;
+  if (section.bpm !== undefined) out.bpm = section.bpm;
+  return out;
 }
 
 export function renameSection(song: Song, sectionId: string, name: string): Song {
   return mapSection(song, sectionId, (s) => ({ ...s, name }));
-}
-
-/** Move one graph placement within or between sections. The graph key itself is reused; the
-    source placement is removed and the target section receives the key at the requested index.
-    If the target already contains that key from another placement, it is first removed so the
-    per-section de-dupe invariant holds while still allowing cross-section moves. */
-export function moveGraphPlacement(
-  song: Song,
-  fromSectionId: string,
-  graphKey: string,
-  toSectionId: string,
-  toIndex: number,
-): Song {
-  const fromSection = song.sections.find((s) => s.id === fromSectionId);
-  const toSection = song.sections.find((s) => s.id === toSectionId);
-  if (!fromSection || !toSection) return song;
-  const fromIndex = fromSection.graphs.indexOf(graphKey);
-  if (fromIndex < 0) return song;
-
-  if (fromSectionId === toSectionId) {
-    const graphs = [...fromSection.graphs];
-    graphs.splice(fromIndex, 1);
-    const insertAt = sameListInsertIndex(fromIndex, toIndex, graphs.length);
-    if (insertAt === fromIndex) return song;
-    graphs.splice(insertAt, 0, graphKey);
-    return setGraphs(song, fromSectionId, graphs);
-  }
-
-  const sections = song.sections.map((section) => {
-    if (section.id === fromSectionId) {
-      return { ...section, graphs: section.graphs.filter((key) => key !== graphKey) };
-    }
-    if (section.id === toSectionId) {
-      const graphs = section.graphs.filter((key) => key !== graphKey);
-      graphs.splice(clampIndex(toIndex, graphs.length), 0, graphKey);
-      return { ...section, graphs };
-    }
-    return section;
-  });
-  return { ...song, sections };
-}
-
-// ---- reuse / usage queries -------------------------------------------------
-
-/** How many sections across the song reference a graph (each section counts once — the
-    flat list is de-duplicated per section). */
-export function graphUsageCount(song: Song, graphKey: string): number {
-  let n = 0;
-  for (const sec of song.sections) if (sec.graphs.includes(graphKey)) n++;
-  return n;
-}
-
-/** A graph is "reused" when it appears in more than one section. */
-export function isReused(song: Song, graphKey: string): boolean {
-  return graphUsageCount(song, graphKey) > 1;
-}
-
-/** How many supported section placements a graph key has across the WHOLE local setlist (every
-    section of every song; each section counts once). Canonical library sections are not in this
-    authored setlist and cannot be linked by local placement actions. `> 1` is the linked state the
-    graph card badges — reuse is explicit wiring, so the count is shown, never hidden. */
-export function graphPlacementCount(songs: readonly Song[], graphKey: string): number {
-  let n = 0;
-  for (const song of songs) n += graphUsageCount(song, graphKey);
-  return n;
-}
-
-/** Distinct graph keys referenced anywhere in the song, in first-appearance order. */
-export function referencedGraphs(song: Song): string[] {
-  const set = new Set<string>();
-  for (const sec of song.sections) for (const k of sec.graphs) set.add(k);
-  return [...set];
-}
-
-/** De-duplicate a key list, preserving first-appearance order. */
-function dedupe(keys: readonly string[]): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const k of keys) {
-    if (!seen.has(k)) {
-      seen.add(k);
-      out.push(k);
-    }
-  }
-  return out;
 }
 
 function clampIndex(index: number, max: number): number {

@@ -13,22 +13,20 @@ import type { CanvasScene } from '@ledrums/core';
 import type { SetlistSection, Song } from '../../app/setlist';
 import { buildCellClipDoc } from '../clipdoc';
 import type { EffectLibrarySong, EffectSection, EffectSong, SongLibraryV2 } from '../persistence';
-import { songNamespace } from './song-library';
 
-const EMPTY: never[] = [];
+/** The namespace prefix for a library song's re-keyed section ids (`lib:<songId>/<sectionId>`),
+    so a referenced song's sections never collide with a show's own. */
+export function songNamespace(librarySongId: string): string {
+  return `lib:${librarySongId}/`;
+}
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** A store (setlist) section as its v3 effect section: the graph-era fields are dropped. */
+/** A store (setlist) section as its v3 effect section (the same fields, re-shaped explicitly). */
 function toEffectSection(section: SetlistSection): EffectSection {
-  const out: EffectSection = {
-    id: section.id,
-    name: section.name,
-    effects: section.effects ?? EMPTY,
-    master: section.master ?? EMPTY,
-  };
+  const out: EffectSection = { id: section.id, name: section.name, effects: section.effects, master: section.master };
   if (section.bars !== undefined) out.bars = section.bars;
   if (section.bpm !== undefined) out.bpm = section.bpm;
   return out;
@@ -39,18 +37,9 @@ export function toEffectSong(song: Song): EffectSong {
   return { id: song.id, name: song.name, sections: song.sections.map(toEffectSection) };
 }
 
-/** A v3 effect section as a store section. The store keeps the graph-era `graphs` / `looks`
-    fields (always empty now) until S08 deletes the graph model; a store section passes through. */
+/** A v3 effect section as a store section (a store section passes through). */
 function toStoreSection(section: EffectSection | SetlistSection): SetlistSection {
-  const legacy = section as Partial<SetlistSection>;
-  const out: SetlistSection = {
-    id: section.id,
-    name: section.name,
-    graphs: Array.isArray(legacy.graphs) ? legacy.graphs : [],
-    looks: legacy.looks && typeof legacy.looks === 'object' ? legacy.looks : {},
-    effects: section.effects ?? [],
-    master: section.master ?? [],
-  };
+  const out: SetlistSection = { id: section.id, name: section.name, effects: section.effects ?? [], master: section.master ?? [] };
   if (section.bars !== undefined) out.bars = section.bars;
   if (section.bpm !== undefined) out.bpm = section.bpm;
   return out;
@@ -129,4 +118,32 @@ interface DetachedEffectSong {
 export function detachEffectSong(lib: EffectLibrarySong, newSongId: string, mintSectionId: () => string): DetachedEffectSong {
   const sections = cloneJson(lib.sections).map((section) => toStoreSection({ ...section, id: mintSectionId() }));
   return { song: { id: newSongId, name: lib.name, sections }, canvasScenes: cloneJson(lib.canvasScenes ?? []) };
+}
+
+// ---- song references (ids into the song library, as an ordered set) -----------------------------
+
+/** Append a library-song reference (idempotent — an id already referenced is a no-op). Returns the
+    SAME ref when unchanged. */
+export function addSongRef(refs: readonly string[], id: string): string[] {
+  return refs.includes(id) ? (refs as string[]) : [...refs, id];
+}
+
+/** Drop a library-song reference (no-op if absent). */
+export function removeSongRef(refs: readonly string[], id: string): string[] {
+  return refs.includes(id) ? refs.filter((r) => r !== id) : (refs as string[]);
+}
+
+/** A show identified for the used-by guard — `{ id, name, songRefs }`. */
+export interface RefBearingShow {
+  id: string;
+  name: string;
+  songRefs?: readonly string[];
+}
+
+/** The shows (id + name) that reference `librarySongId`, in the given order — the "used by" list a
+    delete guard reports and the UI shows. */
+export function showsUsingSong(shows: readonly RefBearingShow[], librarySongId: string): { id: string; name: string }[] {
+  return shows
+    .filter((s) => (s.songRefs ?? []).includes(librarySongId))
+    .map((s) => ({ id: s.id, name: s.name }));
 }

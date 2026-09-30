@@ -10,27 +10,20 @@
     and the local-fire preview — the ambiguous "routing fed by MIDI events" the split leaves in place;
     it calls back into {@link applyNoteLearn} / {@link applyCcLearn} once it has channel-gated. The
     learn binds through a thin {@link MidiControllerHost}: whether we're a read-only viewer, the input
-    map read/write, the trigger-source setter, and the selected graph's nodes (for a cc-node bind). */
+    map read/write, and the binding writers each target kind needs. */
 
-import type { GraphNode, TriggerSource } from './sim';
 import { initMidi, type MidiDeviceInfo, type MidiEventHandler, type MidiInitResult } from '../midi/webmidi';
 import type { GlobalControlAction, GlobalControlBinding, InputMap } from '@ledrums/core';
 import type { MapTarget } from './map-api';
 
 /** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
-    so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
+    so a CC learn never binds it — the target stays armed for a real CC. */
 const RESERVED_CC_CONTROLLER = 0;
 
-/** What an armed MIDI-learn is waiting to bind: a zone's note, a trigger node's source, or (S37) a
-    CC source node's controller. The store's inspectors arm one, then the next matching input binds it. */
+/** What an armed MIDI-learn is waiting to bind. The settings and Effect cards arm one, then the
+    next matching input binds it. */
 export type MidiLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
-  | { kind: 'trigger'; graphKey: string }
-  | { kind: 'cc-node'; nodeId: string } // S37: bind a CC source node to the next incoming CC
-  /** Bind a sequence node's own RESET source to the next incoming note — press the pedal/pad with
-      Learn armed rather than looking the number up. Node-scoped (not graph-scoped like `trigger`)
-      because the reset binding lives on the sequence node, independent of what fires its graph. */
-  | { kind: 'sequence-reset'; nodeId: string }
   /** An app-general control's MIDI note (Settings → Global controls). */
   | { kind: 'global-control'; action: GlobalControlAction }
   /** An app-general CONTINUOUS control's MIDI CC (master brightness). Separate from the
@@ -45,28 +38,21 @@ export type MidiLearnTarget =
   | { kind: 'map'; target: MapTarget };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
-    project/routing plumbing and the graph-editing internals it drives. */
+    project/routing plumbing it drives. */
 export interface MidiControllerHost {
   /** Whether this client is a read-only viewer (S2) — arming and binding no-op then. */
   isViewer(): boolean;
   /** The live patch input map (zone note / CC routing), or null before a project loads. */
   getInputMap(): InputMap | null;
-  /* The four binding writers all return whether the write was ACCEPTED. A `false` means the
+  /* The binding writers all return whether the write was ACCEPTED. A `false` means the
      binding guard refused it — the address already belongs to another group (see
      `binding-claims`); the store has already told the user why. Learn reads this so a
      refused note leaves the target ARMED for another try, matching how a reserved CC 0
      keeps a cc-learn waiting instead of silently eating the gesture. */
   /** Replace the input map (a zone-note learn writes the new binding through here). */
   setInputMap(inputMap: InputMap): boolean;
-  /** Set a trigger node's source (a trigger learn binds `{ kind: 'midi', note }` through here). */
-  setTriggerSource(graphKey: string, source: TriggerSource): boolean;
-  /** Set a sequence node's reset source (a sequence-reset learn binds through here, so the bind
-      shares the mutator's undo/viewer guards). */
-  setSequenceResetSource(nodeId: string, source: TriggerSource): boolean;
   /** Write one global control's binding (a global-control learn writes its note here). */
   setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
-  /** The selected graph's nodes, for a cc-node learn to find and rebind its controller. */
-  selectedGraphNodes(): readonly GraphNode[] | undefined;
   /** Set a Cue Effect's MIDI source (a cue learn binds through here — the Effect's undo / guard
       path). Same accepted / refused contract as the other writers. */
   setCueMidiSource(effectId: string, source: { midiNote: number } | { midiCc: number }): boolean;
@@ -134,9 +120,10 @@ export class MidiController {
     this.learnTarget = null;
   }
 
-  /** Bind an armed note-learn to `note`: a zone target writes the note→drum map, a trigger target
-      sets the node's midi source. A cc-node target ignores notes (it waits for {@link applyCcLearn}).
-      No-op for a viewer or when nothing is armed. Called by the store's channel-gated input paths. */
+  /** Bind an armed note-learn to `note`: a zone target writes the note→drum map, a global control
+      its note, a Cue / map target its source. A CC-only target ignores notes (it waits for
+      {@link applyCcLearn}). No-op for a viewer or when nothing is armed. Called by the store's
+      channel-gated input paths. */
   applyNoteLearn(note: number): void {
     const target = this.learnTarget;
     if (!target || this.host.isViewer()) return;
@@ -151,10 +138,6 @@ export class MidiController {
         ...inputMap,
         midiNotes: [...rest, { note, drumId: target.drumId, slot: target.slot }],
       });
-    } else if (target.kind === 'trigger') {
-      accepted = this.host.setTriggerSource(target.graphKey, { kind: 'midi', note });
-    } else if (target.kind === 'sequence-reset') {
-      accepted = this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
     } else if (target.kind === 'global-control') {
       accepted = this.host.setGlobalControlBinding(target.action, { midiNote: note });
     } else if (target.kind === 'cue') {
@@ -163,7 +146,7 @@ export class MidiController {
       this.host.bindMapSource(target.target, { midiNote: note });
       return; // map learn stays armed (see MidiLearnTarget)
     } else {
-      return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
+      return; // a CC-only learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
     // Refused by the binding guard → stay armed so the next pad hit can bind instead. The
     // store has already said why; disarming here would look like the gesture was lost.
@@ -171,9 +154,9 @@ export class MidiController {
     this.learnTarget = null;
   }
 
-  /** Bind an armed cc-node learn target to the next incoming controller (S37). Controller 0 is
-      reserved for section recall, so it is never learned — the target stays armed for a real CC.
-      No-op unless a `cc-node` learn is armed and its node still exists. */
+  /** Bind an armed CC learn target (a continuous global control, a Cue, a map target) to the next
+      incoming controller. Controller 0 is reserved for section recall, so it is never learned —
+      the target stays armed for a real CC. */
   applyCcLearn(controller: number): void {
     const target = this.learnTarget;
     if (!target || this.host.isViewer()) return;
@@ -189,12 +172,7 @@ export class MidiController {
     }
     if (target.kind === 'map') {
       this.host.bindMapSource(target.target, { midiCc: controller });
-      return; // map learn stays armed
+      // map learn stays armed
     }
-    if (target.kind !== 'cc-node') return;
-    const node = this.host.selectedGraphNodes()?.find((n) => n.id === target.nodeId);
-    if (!node || node.kind !== 'cc') return;
-    node.ccController = controller;
-    this.learnTarget = null;
   }
 }

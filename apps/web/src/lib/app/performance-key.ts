@@ -1,5 +1,5 @@
-/* Performance-key ownership. Graph digits are claimed in EVERY view: authoring a graph means
-   firing it to hear it, so the Trigger view needs the same 1-9,0 bank the Perform view has.
+/* Performance-key ownership. Audition digits are claimed in EVERY view: authoring an Effect means
+   firing it to see it, so the Effects view needs the same 1-9,0 bank the Perform view has.
    Section arrows stay Perform-only - stepping the setlist while authoring is not an authoring
    action, and the authoring views own their arrows (the effects grid moves its cell focus).
 
@@ -15,7 +15,7 @@ export type SectionStep = -1 | 1;
 
 export interface PerformanceKeyInput {
   key: string;
-  /** Only the section-arrow family reads this; graph digits are view-independent. */
+  /** Only the section-arrow family reads this; audition digits are view-independent. */
   view: View;
   /** Settings overlays the workspace, so it must never expose hidden performance actions. */
   settingsOpen: boolean;
@@ -30,13 +30,13 @@ export interface PerformanceKeyInput {
   metaKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
-  /** Held graph digits must not retrigger; arrows intentionally repeat for navigation. */
+  /** Held audition digits must not retrigger; arrows intentionally repeat for navigation. */
   repeat: boolean;
 }
 
 export interface PerformanceKeyDecision {
-  /** Index into the active section's graph list, when a digit fired one. */
-  fireGraphIndex?: number;
+  /** Index into the active section's Effects in grid order, when a digit auditions one. */
+  fireEffectIndex?: number;
   /** Direction to step the active song's sections, when an arrow asked for it. */
   sectionStep?: SectionStep;
   /** The caller must prevent the browser default and stop propagation when true. */
@@ -51,10 +51,10 @@ export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKey
   if (input.ctrlKey || input.metaKey || input.altKey || input.shiftKey) return NOTHING;
 
   if (/^[0-9]$/.test(input.key)) {
-    // A held digit is one graph intent. Let the repeated event continue to its native owner.
+    // A held digit is one audition intent. Let the repeated event continue to its native owner.
     if (input.repeat) return NOTHING;
-    // `0` is the tenth graph, so the row reads 1…9,0 like a keyboard shortcut bank.
-    return { fireGraphIndex: input.key === '0' ? 9 : Number(input.key) - 1, claim: true };
+    // `0` is the tenth Effect, so the row reads 1…9,0 like a keyboard shortcut bank.
+    return { fireEffectIndex: input.key === '0' ? 9 : Number(input.key) - 1, claim: true };
   }
 
   if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
@@ -62,7 +62,7 @@ export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKey
     // view has its own arrow owner.
     if (input.view !== 'perform') return NOTHING;
     // Arrow repeat is intentional: holding an arrow walks through sections at the browser's
-    // repeat cadence. This is different from graph digits, which are edge-triggered above.
+    // repeat cadence. This is different from audition digits, which are edge-triggered above.
     return { sectionStep: input.key === 'ArrowRight' ? 1 : -1, claim: true };
   }
 

@@ -100,7 +100,7 @@
       <section class="viz"><Visualizer {store} variant="panel" /></section>
       <section class="buses">
         <PanelHeader icon={LayersIcon} title="Buses / Layers" />
-        <LayersDock {store} {shell} />
+        <LayersDock {store} />
       </section>
     </aside>
   {/if}

@@ -161,7 +161,7 @@ function fail<S extends EffectsFileSection>(section: S, reason: string): Effects
 function readDoc(text: string, want: readonly EffectsClipDoc['kind'][]): EffectsClipDoc | { reason: string } {
   const doc = parse(text);
   if (isClipParseError(doc)) return { reason: parseReason(doc.reason) };
-  if (!isEffectsClipDoc(doc)) return { reason: `That file holds a ${doc.kind} from the old graph editor, which can’t be loaded here.` };
+  if (!isEffectsClipDoc(doc)) return { reason: `That file holds a ${doc.kind}, which can’t be loaded here.` };
   if (!want.includes(doc.kind)) return { reason: `That file holds ${KIND_NOUN[doc.kind]}, not ${want.map((k) => KIND_NOUN[k]).join(' or ')}.` };
   return doc;
 }
