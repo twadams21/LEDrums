@@ -271,7 +271,7 @@ describe('Load node from file', () => {
     const from = new TriggerLab(fakeClient);
     const into = new TriggerLab(fakeClient);
     const effect = from.addNode('effect', 200, 0)!;
-    const custom = from.duplicateEffect(nodeOf(from, effect.id).effectId)!;
+    const custom = from.duplicateEffectDef(nodeOf(from, effect.id).effectId)!;
     from.pickEffect(nodeOf(from, effect.id), custom);
     await from.saveNodeToFile(nodeOf(from, effect.id), 'Custom');
     const customName = from.effects.find((def) => def.id === custom)!.name;

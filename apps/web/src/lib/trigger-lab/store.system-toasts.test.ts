@@ -5,9 +5,9 @@ import { STORAGE_KEY, VERSION } from './persistence';
 import { toastStore } from '../ui/toast.svelte';
 import type { WSClient } from '../ws/client';
 
-/* R02 component seam (store ⇄ toast): loading persisted content that needs a Gen3 migration /
-   auto-wire announces itself in ONE plain-language toast, batched across every graph the hydrate
-   touches. A fresh (already-Gen3) boot stays silent. Drives the real store constructor + the shared
+/* R02 component seam (store ⇄ toast): a boot stays silent. Since effect chains an old (graph)
+   library is no longer hydrated — so never migrated or auto-wired on load — it is offered for
+   import instead. Drives the real store constructor + the shared
    toast store — the same path a returning user hits on load. */
 
 class MemStorage {
@@ -58,26 +58,15 @@ afterEach(() => {
 });
 
 describe('system-action toasts on load', () => {
-  it('announces a Gen3 migration + auto-wire when a legacy blob is hydrated', () => {
+  it('an old-format (graph) library at boot is left alone: no migration toast, an import offer instead', () => {
     seedLegacyBlob({ 'kick:0': legacyGraph() });
 
-    new TriggerLab(fakeClient);
+    const store = new TriggerLab(fakeClient);
 
-    expect(toastStore.items).toHaveLength(1);
-    expect(toastStore.items[0]!.message).toContain('Graph updated');
-    expect(toastStore.items[0]!.message).toContain('wired up to the Output anchor');
+    expect(toastStore.items).toHaveLength(0);
+    expect(store.legacyImportAvailable).toBe(true);
   });
 
-  it('emits ONE batched toast even when several graphs migrate at once', () => {
-    seedLegacyBlob({ 'kick:0': legacyGraph(), 'snare:0': legacyGraph(), 'tom1:0': legacyGraph() });
-
-    new TriggerLab(fakeClient);
-
-    expect(toastStore.items).toHaveLength(1);
-    expect(toastStore.items[0]!.message).toBe(
-      '3 graphs updated. 3 nodes were wired up to the Output anchor.',
-    );
-  });
 
   it('stays silent on a fresh (already-Gen3) boot', () => {
     (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildPixelModel, DEFAULT_KIT, defaultProject, voice } from '@ledrums/core';
+import { defaultProject, voice } from '@ledrums/core';
 import { TRACK_INPUT_LIMIT, trackInputAddress, type TrackInputsStatus } from '@ledrums/protocol';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import TrackInputsPanel from '../app/chrome/TrackInputsPanel.svelte';
@@ -300,39 +300,6 @@ describe('named OSC mirror lifetime', () => {
     f.cb.onInput?.({ kind: 'osc', label: address, value: 0 });
     expect(f.store.sim.oscTable.get(address)).toBe(0);
     expect(badge(f.store, address)?.value).toBe('0');
-  });
-
-  it('returns rendered offline pixels to black after link loss, not just the meter', () => {
-    const f = wired();
-    f.store.createGraph('track-render');
-    const graph = f.store.selectedGraph!;
-    const effectId = f.store.addNode('effect', 100, 0)!.id;
-    const effect = graph.nodes.find((node) => node.id === effectId)!;
-    f.store.pickEffect(effect, 'gen:solid-colour');
-    f.store.setMode(effect, 'loop');
-    f.store.setParam(effect, 'brightness', 0);
-    f.store.addModInput(effect, 'brightness');
-    const oscId = f.store.addNode('osc', 0, 100)!.id;
-    const osc = graph.nodes.find((node) => node.id === oscId)!;
-    const address = trackInputAddress('audio-track', 'audio/level');
-    f.store.setOscNodeAddress(osc, address);
-    expect(f.store.connect(graph.nodes[0]!.id, effect.id)).toBeNull();
-    expect(f.store.connect(osc.id, effect.id, undefined, 'param:brightness')).toBeNull();
-    f.store.sim.triggerGraph('track-render', graph, { velocity: 1, sourceDrumId: 'kick', sectionIndex: 0, sectionCount: 0, beatPhase: 0, bpm: 120 });
-    f.store.sim.tick(32);
-    expect(f.store.sim.voices[0]?.mode).toBe('loop');
-    const model = buildPixelModel(DEFAULT_KIT);
-    const rgb = () => f.store.sim.render(model).reduce((sum, value, i) => sum + (i % 4 === 3 ? 0 : value), 0);
-    expect(rgb()).toBe(0);
-    f.cb.onConnection?.('open');
-    trackEcho(f, 'audio-track', 'audio/level');
-    expect(f.store.oscNodeLiveValue(osc)).toBe(0.8);
-    expect(rgb()).toBeGreaterThan(0);
-    f.cb.onConnection?.('closed');
-    for (let i = 0; i < 320; i++) f.store.sim.tick(16);
-    expect(f.store.sim.voices.some((v) => v.active)).toBe(true);
-    expect(rgb()).toBe(0);
-    expect(f.store.oscNodeLiveValue(osc)).toBe(0);
   });
 });
 

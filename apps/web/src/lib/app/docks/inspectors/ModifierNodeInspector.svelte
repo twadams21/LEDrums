@@ -58,7 +58,7 @@
   />
   <label class="bypass">
     <span class="k">Bypass</span>
-    <Toggle pressed={!!node.bypass} onChange={(v) => store.setModifierBypass(node, v)} ariaLabel="Bypass modifier" />
+    <Toggle pressed={!!node.bypass} onChange={(v) => store.setModifierNodeBypass(node, v)} ariaLabel="Bypass modifier" />
   </label>
 </div>
 

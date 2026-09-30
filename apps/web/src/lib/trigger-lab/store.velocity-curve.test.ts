@@ -98,13 +98,14 @@ describe('offline hit shaping (parity with the server seam)', () => {
     const { project, drumId } = projectWithCurve();
     fireState(h, project);
     const pad = store.pads.find((p) => p.drumId === drumId)!;
-    const trigger = vi.spyOn(store.sim, 'triggerGraph').mockReturnValue([]);
+    expect(store.addEffect({ row: pad.drumId, column: { kind: 'zone', slot: pad.zone } }, 'solid')).not.toBeNull();
+    const hit = vi.spyOn(store.sim, 'hitEffects');
 
     store.velocity = 0.8;
     store.hit(pad);
 
-    expect(trigger).toHaveBeenCalled();
-    expect(trigger.mock.calls[0]![2].velocity).toBeCloseTo(0.4, 6);
+    expect(hit).toHaveBeenCalled();
+    expect(hit.mock.calls[0]![0].velocity).toBeCloseTo(0.4, 6);
   });
 
   it('leaves a drum with no curve exactly as it was', () => {
@@ -115,12 +116,13 @@ describe('offline hit shaping (parity with the server seam)', () => {
     fireState(h, project);
     const other = store.pads.find((p) => p.drumId !== drumId);
     expect(other).toBeDefined();
-    const trigger = vi.spyOn(store.sim, 'triggerGraph').mockReturnValue([]);
+    expect(store.addEffect({ row: other!.drumId, column: { kind: 'zone', slot: other!.zone } }, 'solid')).not.toBeNull();
+    const hit = vi.spyOn(store.sim, 'hitEffects');
 
     store.velocity = 0.8;
     store.hit(other!);
 
-    expect(trigger.mock.calls[0]![2].velocity).toBeCloseTo(0.8, 6);
+    expect(hit.mock.calls[0]![0].velocity).toBeCloseTo(0.8, 6);
   });
 
   it('sends the RAW velocity when connected — the server applies the curve, once', () => {

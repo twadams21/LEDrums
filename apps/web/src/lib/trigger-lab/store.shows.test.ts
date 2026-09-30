@@ -42,6 +42,13 @@ const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() 
 
 /** Drive the real autosave: start() registers the persist $effect; a no-op RAF keeps the
     render loop from running in node; stop() flushes the library to localStorage synchronously. */
+/** Author one Effect (show content) on the tom's first zone of the active section. */
+function addTomEffect(store: TriggerLab, name: string): string {
+  const id = store.addEffect({ row: 'tom1', column: { kind: 'zone', slot: 0 } }, 'solid')!;
+  store.renameEffect(id, name);
+  return id;
+}
+
 function withRaf(fn: () => void): void {
   const raf = globalThis.requestAnimationFrame;
   const caf = globalThis.cancelAnimationFrame;
@@ -75,7 +82,7 @@ describe('newShow', () => {
   it('creates a blank, active show and preserves the previous one in the library', () => {
     const store = new TriggerLab(fakeClient);
     const first = store.activeShowId;
-    const gA = store.createGraph('Graph A'); // edit the first show
+    const gA = addTomEffect(store, 'Effect A'); // edit the first show
     store.bpm = 140;
 
     const second = store.newShow('Show 2');
@@ -83,9 +90,8 @@ describe('newShow', () => {
     expect(store.activeShowId).toBe(second);
     expect(store.shows).toHaveLength(2);
     expect(store.activeShow!.name).toBe('Show 2');
-    // the new show is blank — the first show's graph + bpm edit are gone from the live runes
-    expect(store.graphs[gA]).toBeUndefined();
-    expect(store.graphNames[gA]).toBeUndefined();
+    // the new show is blank — the first show's Effect + bpm edit are gone from the live runes
+    expect(store.effectById(gA)).toBeUndefined();
     expect(store.bpm).toBe(120);
   });
 
@@ -102,31 +108,29 @@ describe('openShow', () => {
   it('swaps the authored content; each show retains its own edits (no cross-show bleed)', () => {
     const store = new TriggerLab(fakeClient);
     const showA = store.activeShowId;
-    const gA = store.createGraph('Graph A'); // edit A
+    const gA = addTomEffect(store, 'Effect A'); // edit A
     store.bpm = 100;
 
     const showB = store.newShow(); // blank B, active
-    const gB = store.createGraph('Graph B'); // edit B
+    const gB = addTomEffect(store, 'Effect B'); // edit B
     store.bpm = 90;
 
     store.openShow(showA); // back to A
     expect(store.activeShowId).toBe(showA);
-    expect(store.graphs[gA]).toBeTruthy();
-    expect(store.graphNames[gA]).toBe('Graph A');
+    expect(store.effectById(gA)?.name).toBe('Effect A');
     expect(store.bpm).toBe(100);
-    expect(store.graphs[gB]).toBeUndefined(); // B's edits do not bleed into A
+    expect(store.effectById(gB)).toBeUndefined(); // B's edits do not bleed into A
 
     store.openShow(showB); // back to B
-    expect(store.graphs[gB]).toBeTruthy();
-    expect(store.graphNames[gB]).toBe('Graph B');
+    expect(store.effectById(gB)?.name).toBe('Effect B');
     expect(store.bpm).toBe(90);
-    expect(store.graphs[gA]).toBeUndefined(); // A's edits do not bleed into B
+    expect(store.effectById(gA)).toBeUndefined(); // A's edits do not bleed into B
   });
 
   it('local authored content never bleeds, but a library-song reference is the shared channel (S41)', () => {
     const store = new TriggerLab(fakeClient);
     const showA = store.activeShowId;
-    const gA = store.createGraph('Local A'); // A's OWN content — must never reach B
+    const gA = addTomEffect(store, 'Local A'); // A's OWN content — must never reach B
 
     // A references a canonical library song; B references the SAME song
     const libId = store.exportSongToLibrary('set-1')!;
@@ -134,8 +138,8 @@ describe('openShow', () => {
     store.newShow(); // show B
     store.importSongReference(libId);
 
-    // B does NOT see A's local graph — own-content isolation still holds
-    expect(store.graphs[gA]).toBeUndefined();
+    // B does NOT see A's local Effect — own-content isolation still holds
+    expect(store.effectById(gA)).toBeUndefined();
     // but B DOES resolve the shared library song (the deliberate exception)
     expect(store.resolvedSongs.some((s) => s.id === libId)).toBe(true);
 
@@ -144,7 +148,7 @@ describe('openShow', () => {
     expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Shared Edit');
     store.openShow(showA);
     expect(store.resolvedSongs.find((s) => s.id === libId)!.name).toBe('Shared Edit');
-    expect(store.graphs[gA]).toBeTruthy(); // A still has its own local graph back
+    expect(store.effectById(gA)).toBeTruthy(); // A still has its own local Effect back
     expect(store.activeShowId).toBe(showA);
   });
 
@@ -163,20 +167,20 @@ describe('saveShowAs', () => {
   it('clones the current authored under a new id + name, switches, and leaves the source intact', () => {
     const store = new TriggerLab(fakeClient);
     const src = store.activeShowId;
-    const g = store.createGraph('Shared');
+    const g = addTomEffect(store, 'Shared');
     store.bpm = 132;
 
     const clone = store.saveShowAs('Clone');
     expect(clone).not.toBe(src);
     expect(store.activeShowId).toBe(clone);
     expect(store.activeShow!.name).toBe('Clone');
-    expect(store.graphs[g]).toBeTruthy(); // clone has the source's content at fork time
+    expect(store.effectById(g)).toBeTruthy(); // clone has the source's content at fork time
     expect(store.bpm).toBe(132);
 
     store.bpm = 80; // edit the clone
     store.openShow(src);
     expect(store.bpm).toBe(132); // source unchanged by the clone's edit
-    expect(store.graphs[g]).toBeTruthy();
+    expect(store.effectById(g)).toBeTruthy();
   });
 });
 
@@ -244,16 +248,16 @@ describe('closeShow', () => {
   it('switches to a fresh blank Untitled show; the closed show stays in the library + reopenable', () => {
     const store = new TriggerLab(fakeClient);
     const a = store.activeShowId;
-    const g = store.createGraph('keep me');
+    const g = addTomEffect(store, 'keep me');
 
     store.closeShow();
     expect(store.activeShowId).not.toBe(a);
     expect(store.activeShow!.name).toBe('Untitled Show 2'); // boot was "Untitled Show"
-    expect(store.graphs[g]).toBeUndefined(); // fresh blank runes
+    expect(store.effectById(g)).toBeUndefined(); // fresh blank runes
 
     expect(store.shows.some((s) => s.id === a)).toBe(true); // closed show preserved
     store.openShow(a);
-    expect(store.graphs[g]).toBeTruthy(); // its edits come back
+    expect(store.effectById(g)).toBeTruthy(); // its edits come back
   });
 });
 

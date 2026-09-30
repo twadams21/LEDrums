@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { makeNode } from './sim';
-import { STORAGE_KEY, VERSION } from './persistence';
 import type { WSClient } from '../ws/client';
 import type { ClientMessage } from '../ws/protocol-types';
 
@@ -60,27 +58,6 @@ describe('seed: sections are flat graph lists of every pad', () => {
     }
     expect(store.activeSectionId).toBe(store.activeSong!.sections[0]!.id);
     expect(store.activeSection?.id).toBe(store.activeSectionId);
-  });
-});
-
-describe('legacy repeated graph keys', () => {
-  it('loads repeated persisted keys as explicit links without splitting them', () => {
-    const graph = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      version: VERSION,
-      data: {
-        graphs: { 'kick:0': graph },
-        songs: [{ id: 'legacy', name: 'Legacy', sections: [
-          { id: 'a', name: 'Verse A', graphs: ['kick:0'], looks: {} },
-          { id: 'b', name: 'Verse B', graphs: ['kick:0'], looks: {} },
-        ] }],
-        activeSongId: 'legacy',
-        activeSectionId: 'a',
-      },
-    }));
-    const store = new TriggerLab(fakeClient);
-    expect(store.songs[0]!.sections.map((section) => section.graphs[0])).toEqual(['kick:0', 'kick:0']);
-    expect(store.graphs['kick:0']).toBeDefined();
   });
 });
 
@@ -535,44 +512,43 @@ describe('copy / paste section (clipboard)', () => {
   });
 });
 
-describe('hit resolution = active section graphs whose drum source matches the pad', () => {
-  it('fires only the matching pad graph (each zone fires its own)', () => {
+describe('hit resolution = the active section’s zone Effects on the pad’s drum + slot', () => {
+  const KICK_0 = { row: 'kick', column: { kind: 'zone' as const, slot: 0 } };
+  const localFires = (store: TriggerLab) => store.monitorEvents.filter((e) => e.type === 'effect');
+
+  it('fires only the matching zone’s Effects (each zone fires its own)', () => {
     const store = new TriggerLab(fakeClient);
+    const kick = store.cellEffects(KICK_0)[0]!;
+    const snare = store.cellEffects({ row: 'snare', column: { kind: 'zone', slot: 0 } })[0]!;
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(1); // exactly one graph fired
-    expect(store.log[0]!.pad).toBe(store.graphLabel('kick:0'));
+    expect(store.effectFireAt(kick.id)).toBeGreaterThan(0);
+    expect(store.effectFireAt(snare.id)).toBe(0);
+    expect(localFires(store)).toHaveLength(1);
+    expect(localFires(store)[0]!.label).toBe(kick.name);
   });
 
-  it('fires nothing when the active section has no graph matching the pad', () => {
+  it('fires nothing when the active section has no Effect in the pad’s zone', () => {
     const store = new TriggerLab(fakeClient);
-    const key = store.activeSection!.graphs.find((graphKey) => {
-      const source = store.triggerSource(graphKey);
-      return source?.kind === 'drum' && source.drumId === 'kick';
-    })!;
-    store.removeGraphFromSection(store.activeSectionId!, key);
+    store.clearCell(KICK_0);
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(0); // the section gates resolution — no fallback while active
+    expect(localFires(store)).toHaveLength(0); // the section gates resolution — no fallback while active
   });
 
-  it('layers two section graphs that share a source (both fire on the hit)', () => {
+  it('layers two Effects stacked in one cell (both fire on the hit)', () => {
     const store = new TriggerLab(fakeClient);
-    // an authored graph bound to the SAME drum source as kick:0 → layered onto kick centre
-    const layer = store.createGraph('Kick layer');
-    store.setTriggerSource(layer, { kind: 'drum', drumId: 'kick', zone: '0' });
-    store.addGraphToSection(store.activeSectionId!, layer);
+    const base = store.cellEffects(KICK_0)[0]!;
+    const layer = store.addEffect(KICK_0, 'wave', 'radial')!;
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(2); // kick:0 + the layered graph
-    expect(store.log.map((l) => l.pad)).toEqual(
-      expect.arrayContaining([store.graphLabel('kick:0'), 'Kick layer']),
-    );
+    expect(store.effectFireAt(base.id)).toBeGreaterThan(0);
+    expect(store.effectFireAt(layer)).toBeGreaterThan(0);
+    expect(localFires(store)[0]!.detail?.split(' | ')).toHaveLength(2);
   });
 
-  it('falls back to the pad’s own graph when there is NO active section (pre-section behaviour)', () => {
+  it('fires nothing when there is NO active section (the graph-era pad fallback is gone)', () => {
     const store = new TriggerLab(fakeClient);
     store.activeSectionId = null;
     store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(1);
-    expect(store.log[0]!.pad).toBe('Kick · center');
+    expect(localFires(store)).toHaveLength(0);
   });
 });
 

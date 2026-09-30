@@ -21,7 +21,7 @@
   const sub = $derived(`${effect.presetCount} ${effect.presetCount === 1 ? 'preset' : 'presets'}`);
 
   const actions = $derived<ContextMenuAction[]>([
-    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateEffect(effect.id) },
+    { label: 'Duplicate', icon: CopyPlus, onSelect: () => store.duplicateEffectDef(effect.id) },
   ]);
 </script>
 
@@ -32,12 +32,12 @@
   {active}
   bind:editing
   onclick={() => onSelect?.()}
-  onCommit={(name) => store.renameEffect(effect.id, name)}
+  onCommit={(name) => store.renameEffectDef(effect.id, name)}
   {actions}
   renameLabel="Effect name"
 >
   {#snippet quickActions()}
     <IconButton icon={Pencil} label="Rename effect" size={13} onclick={() => (editing = true)} />
-    <IconButton icon={CopyPlus} label="Duplicate effect" size={13} onclick={() => store.duplicateEffect(effect.id)} />
+    <IconButton icon={CopyPlus} label="Duplicate effect" size={13} onclick={() => store.duplicateEffectDef(effect.id)} />
   {/snippet}
 </EditableRow>

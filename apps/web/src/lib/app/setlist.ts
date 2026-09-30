@@ -12,6 +12,8 @@
    keyed by padKey) entirely; the back-compat migration that flattens a persisted section's
    `slots` into this `graphs` list lives in `persistence.ts`. */
 
+import type { effectChain } from '@ledrums/core';
+
 /** One section in a song's arrangement: an ordered SET of graph keys (into store.graphs)
     plus its per-bus "looks" — which effect each bus LOOPS while the section is active (the
     base/trigger/effect ambience the engine spawns on recall). The graph list is de-duplicated
@@ -23,6 +25,23 @@ export interface SetlistSection {
   name: string;
   graphs: string[];
   looks: Record<string, string | null>;
+  /** Effect chains (S05): the section's Effect stack in composition order, its Master chain and
+      its optional timing. Absent on graph-era sections (read as empty). `graphs` / `looks` stay
+      until the graph model is deleted (S08). */
+  effects?: effectChain.Effect[];
+  master?: effectChain.ModifierDevice[];
+  bars?: number;
+  bpm?: number;
+}
+
+/** The effect-chain fields of a section, deep-copied (a clone must never alias its source). */
+function effectFieldsOf(section: SetlistSection): Pick<SetlistSection, 'effects' | 'master' | 'bars' | 'bpm'> {
+  const out: Pick<SetlistSection, 'effects' | 'master' | 'bars' | 'bpm'> = {};
+  if (section.effects) out.effects = JSON.parse(JSON.stringify(section.effects)) as effectChain.Effect[];
+  if (section.master) out.master = JSON.parse(JSON.stringify(section.master)) as effectChain.ModifierDevice[];
+  if (section.bars !== undefined) out.bars = section.bars;
+  if (section.bpm !== undefined) out.bpm = section.bpm;
+  return out;
 }
 
 export interface Song {
@@ -83,8 +102,10 @@ function mapSection(song: Song, sectionId: string, fn: (s: SetlistSection) => Se
   const sections = song.sections.map((s) => {
     if (s.id !== sectionId) return s;
     const next = fn(s);
-    if (next !== s) changed = true; // no-op edits (e.g. duplicate add) keep the ref
-    return next;
+    if (next === s) return s; // no-op edits (e.g. duplicate add) keep the ref
+    changed = true;
+    // Graph-slot edits rebuild the section via makeSection; its Effect stack must survive them.
+    return { ...effectFieldsOf(s), ...next };
   });
   return changed ? { ...song, sections } : song;
 }
@@ -155,7 +176,7 @@ export function removeSection(song: Song, sectionId: string): Song {
     is cloned by the store operation that owns the graph map; this pure structural helper only
     copies the ordered key list and looks. */
 export function cloneSection(section: SetlistSection, newId: string, newName?: string): SetlistSection {
-  return makeSection(newId, newName ?? `${section.name} copy`, section.graphs, section.looks);
+  return { ...makeSection(newId, newName ?? `${section.name} copy`, section.graphs, section.looks), ...effectFieldsOf(section) };
 }
 
 /** Replace one exact graph placement while preserving the section's order. The caller owns the

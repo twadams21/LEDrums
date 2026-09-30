@@ -138,34 +138,3 @@ describe('connect — modulation edge = one mapping', () => {
   });
 });
 
-describe('persistence round-trip', () => {
-  it('modInputs, the envelope shape, and edited mapping settings survive save + reload', () => {
-    let key = '';
-    let playId = '';
-    let envId = '';
-    withRaf(() => {
-      const store = new TriggerLab(fakeClient);
-      store.start();
-      key = store.createGraph('test');
-      const play = store.addNode('play', 200, 0)!;
-      const env = store.addNode('envelope', 0, 100)!;
-      playId = play.id;
-      envId = env.id;
-      store.addModInput(play, 'brightness');
-      store.connect(env.id, play.id, undefined, 'param:brightness');
-      const mid = store.mappingsFor(play, 'brightness')[0]!.id;
-      store.setMappingAmount(mid, 0.33);
-      store.setMappingRange(mid, 0.2, 0.7);
-      store.stop();
-    });
-
-    const reloaded = new TriggerLab(fakeClient);
-    const g = reloaded.graphs[key]!;
-    const play = g.nodes.find((n) => n.id === playId)!;
-    const env = g.nodes.find((n) => n.id === envId)!;
-    expect(play.modInputs).toEqual([{ param: 'brightness' }]);
-    expect(env.env[voice.ENVELOPE_NODE_KEY]?.adsr).toBeDefined();
-    const edge = g.edges.find((e) => e.toPort === 'param:brightness')!;
-    expect(edge).toMatchObject({ amount: 0.33, rangeMin: 0.2, rangeMax: 0.7 });
-  });
-});

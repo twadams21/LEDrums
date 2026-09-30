@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { TriggerLab } from './store.svelte';
 import { buildGraphClipDoc, buildSectionClipDoc, buildSongClipDoc, serialize } from './clipdoc';
-import { serializeShowLibrary, SHOWS_STORAGE_KEY } from './persistence';
+import { serializeShowLibraryV3, SHOWS_V3_STORAGE_KEY } from './persistence';
 import { toastStore } from '../ui/toast.svelte';
 import type { WSCallbacks, WSClient } from '../ws/client';
 
@@ -23,9 +23,12 @@ const kinds = ['graph', 'section', 'song-show', 'song-library'] as const;
 type Kind = typeof kinds[number];
 function clipText(store: TriggerLab, kind: Kind): string {
   // Match the production adapter's detached snapshot: structuredClone cannot consume rune proxies.
-  store.saveShow();
-  const sources = JSON.parse(localStorage.getItem(SHOWS_STORAGE_KEY)!).data.shows[store.activeShowId].authored;
-  const song = sources.songs.find((s: { id: string }) => s.id === store.activeSongId);
+  // Effect chains: the graph closure is no longer persisted (a transient sandbox), so the sources
+  // are read from the live store.
+  const sources = JSON.parse(JSON.stringify({
+    graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets, canvasScenes: store.canvasScenes,
+  }));
+  const song = JSON.parse(JSON.stringify(store.songs.find((s) => s.id === store.activeSongId)));
   if (kind === 'graph') return serialize(buildGraphClipDoc(store.selectedPadKey!, sources));
   if (kind === 'section') return serialize(buildSectionClipDoc(song.sections[0], sources));
   return serialize(buildSongClipDoc(song, sources));
@@ -40,7 +43,7 @@ function replace(store: TriggerLab, callbacks: WSCallbacks, sameId: boolean) {
   if (!sameId) { store.newShow('B'); return; }
   store.saveShow();
   const id = store.activeShowId;
-  const library = serializeShowLibrary({ activeShowId: id, shows: { [id]: {
+  const library = serializeShowLibraryV3({ activeShowId: id, shows: { [id]: {
     id, name: 'Same ID, new server revision', authored: { ...store.activeShow!.authored, bpm: 99 },
   } } });
   store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
@@ -51,8 +54,9 @@ function replace(store: TriggerLab, callbacks: WSCallbacks, sameId: boolean) {
 }
 function snapshot(store: TriggerLab) {
   store.saveShow();
-  const authored = JSON.parse(localStorage.getItem(SHOWS_STORAGE_KEY)!).data.shows[store.activeShowId].authored;
-  return JSON.stringify({ authored, pool: store.songLibrary });
+  const authored = JSON.parse(localStorage.getItem(SHOWS_V3_STORAGE_KEY)!).data.shows[store.activeShowId].authored;
+  // The graph closure is a transient sandbox since effect chains (not persisted): include it.
+  return JSON.stringify({ authored, pool: store.songLibrary, graphs: store.graphs, graphNames: store.graphNames });
 }
 function flushAutosave() { flushSync(); vi.advanceTimersByTime(500); }
 
@@ -82,13 +86,13 @@ describe.each([false, true])('clipboard document lifetime (same ID: %s)', (sameI
         replace(store, callbacks, sameId);
         flushAutosave();
         const before = snapshot(store);
-        const saved = localStorage.getItem(SHOWS_STORAGE_KEY);
+        const saved = localStorage.getItem(SHOWS_V3_STORAGE_KEY);
         toastStore.clear();
         if (outcome === 'rejected') pending.reject(new Error('permission denied'));
         else pending.resolve(outcome === 'valid' ? text : 'not a ClipDoc');
         const result = await work;
         flushAutosave();
-        expect(localStorage.getItem(SHOWS_STORAGE_KEY)).toBe(saved);
+        expect(localStorage.getItem(SHOWS_V3_STORAGE_KEY)).toBe(saved);
         expect(snapshot(store)).toBe(before);
         expect(store.pasteFallback).toBeNull();
         expect(store.songPasteOpen).toBe(false);

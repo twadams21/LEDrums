@@ -32,7 +32,6 @@ class MemStorage {
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
-const kickCentre = (store: TriggerLab) => store.pads.find((p) => p.drumId === 'kick' && p.zone === 0)!;
 const seededKickKey = (store: TriggerLab): string =>
   store.activeSong!.sections[0]!.graphs.find((key) => {
     const source = store.triggerSource(key);
@@ -45,20 +44,6 @@ beforeEach(() => {
 afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage;
 });
-
-/** Run a body with a no-op rAF so start()/stop() drive the real autosave in node. */
-function withRaf(body: () => void): void {
-  const raf = globalThis.requestAnimationFrame;
-  const caf = globalThis.cancelAnimationFrame;
-  globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
-  globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
-  try {
-    body();
-  } finally {
-    globalThis.requestAnimationFrame = raf;
-    globalThis.cancelAnimationFrame = caf;
-  }
-}
 
 describe('pad-label hydration', () => {
   it('seeds a friendly display name for every pad graph (no raw keys)', () => {
@@ -73,19 +58,6 @@ describe('pad-label hydration', () => {
   it('graphLabel resolves a pad key to its friendly name', () => {
     const store = new TriggerLab(fakeClient);
     expect(store.graphLabel(seededKickKey(store))).toBe('Kick · center');
-  });
-
-  it('does not overwrite a user rename of a pad graph across reload (idempotent)', () => {
-    withRaf(() => {
-      const store = new TriggerLab(fakeClient);
-      store.start();
-      const key = seededKickKey(store);
-      store.renameGraph(key, 'Big Kick');
-      store.stop();
-
-      const reloaded = new TriggerLab(fakeClient);
-      expect(reloaded.graphNames[seededKickKey(reloaded)]).toBe('Big Kick'); // hydrate left the rename alone
-    });
   });
 });
 
@@ -240,51 +212,5 @@ describe('deleteGraph (any graph)', () => {
     const before = Object.keys(store.graphs).length;
     store.deleteGraph('graph-999999');
     expect(Object.keys(store.graphs).length).toBe(before);
-  });
-});
-
-describe('deleted pad graph → silence, no respawn', () => {
-  it('a hit on the pad fires nothing once its graph is deleted', () => {
-    const store = new TriggerLab(fakeClient);
-    store.deleteGraph(seededKickKey(store)); // also purges it from the active section
-    store.hit(kickCentre(store));
-    expect(store.log).toHaveLength(0); // no graph resolves for the pad → silent
-  });
-
-  it('does not respawn the pad graph across a reload', () => {
-    withRaf(() => {
-      const store = new TriggerLab(fakeClient);
-      store.start();
-      const key = seededKickKey(store);
-      store.deleteGraph(key);
-      store.stop(); // flush authored slice → localStorage
-
-      const reloaded = new TriggerLab(fakeClient); // a "reload" hydrates from storage
-      expect(reloaded.graphs[key]).toBeUndefined(); // gone, not reseeded
-      expect(key in reloaded.graphNames).toBe(false);
-      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain(key);
-    });
-  });
-});
-
-describe('persistence (autosave → hydrate)', () => {
-  it('persists a rename + a delete across a reload', () => {
-    withRaf(() => {
-      const store = new TriggerLab(fakeClient);
-      store.start();
-      const keeper = store.createGraph('Keeper');
-      store.renameGraph(keeper, 'Renamed');
-      const doomed = store.createGraph('Doomed');
-      const sec = store.activeSong!.sections[0]!.id;
-      store.addGraphToSection(sec, doomed);
-      store.deleteGraph(doomed);
-      store.stop(); // flush authored slice → localStorage
-
-      const reloaded = new TriggerLab(fakeClient); // a "reload" hydrates from storage
-      expect(reloaded.graphNames[keeper]).toBe('Renamed');
-      expect(reloaded.graphs[doomed]).toBeUndefined();
-      expect(doomed in reloaded.graphNames).toBe(false);
-      for (const song of reloaded.songs) for (const s of song.sections) expect(s.graphs).not.toContain(doomed);
-    });
   });
 });

@@ -131,21 +131,3 @@ describe('preset Apply / Save (S39)', () => {
   });
 });
 
-describe('persistence round-trips without the linked flag (S39)', () => {
-  it('an authored graph with node-local params survives a reload; no `linked` field', () => {
-    withRaf(() => {
-      const store = new TriggerLab(fakeClient);
-      store.start();
-      const key = numKey(store, 'gen:helix');
-      const { A } = twoNodeGraph(store);
-      store.setParam(A, key, 0.37);
-      store.stop(); // flush authored slice → localStorage
-
-      const reloaded = new TriggerLab(fakeClient); // "reload" hydrates from storage
-      const node = reloaded.graphs['g']?.nodes.find((n) => n.id === 'A');
-      expect(node).toBeDefined();
-      expect(node!.params[key]).toBe(0.37);
-      expect('linked' in (node as unknown as Record<string, unknown>)).toBe(false);
-    });
-  });
-});

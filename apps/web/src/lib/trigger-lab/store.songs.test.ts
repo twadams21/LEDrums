@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
 import type { WSClient } from '../ws/client';
 
 /* Song CRUD on the SongRail: createSong / renameSong / duplicateSong / removeSong. The store
@@ -30,6 +29,9 @@ class MemStorage {
   }
 }
 
+/** A plain copy of rune-proxied authored data. */
+const $snapshot = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
 beforeEach(() => {
@@ -39,15 +41,10 @@ afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage;
 });
 
-/** Simulate a reload: persist the store's songs + active ids the way the autosave would,
-    then construct a fresh store that hydrates them. */
+/** Simulate a reload: persist the document through the real save path (the v3 show library),
+    then construct a fresh store that hydrates it. */
 function reload(store: TriggerLab): TriggerLab {
-  const slice: Partial<AuthoredState> = {
-    songs: store.songs,
-    activeSongId: store.activeSongId,
-    activeSectionId: store.activeSectionId,
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored(slice as AuthoredState)));
+  store.saveShow();
   return new TriggerLab(fakeClient);
 }
 
@@ -104,7 +101,7 @@ describe('renameSong', () => {
 });
 
 describe('duplicateSong', () => {
-  it('appends an independent "<name> copy", activates it, and gives it its OWN graphs', () => {
+  it('appends an independent "<name> copy", activates it, and gives it its OWN Effects', () => {
     const store = new TriggerLab(fakeClient);
     const newId = store.duplicateSong('set-1')!;
     const dup = store.songs.find((s) => s.id === newId)!;
@@ -115,16 +112,9 @@ describe('duplicateSong', () => {
     expect(store.activeSongId).toBe(newId); // activated
     expect(dup.sections).toHaveLength(src.sections.length);
     expect(dup.sections[0]!.id).not.toBe(src.sections[0]!.id); // fresh section id
-    expect(dup.sections[0]!.graphs).toHaveLength(src.sections[0]!.graphs.length);
-    // Fresh graph KEYS, each registered in `graphs` and carrying the source's label — the copy
-    // is a variant you can author without editing the song you copied.
-    for (const key of dup.sections[0]!.graphs) {
-      expect(src.sections[0]!.graphs).not.toContain(key);
-      expect(store.graphs[key]).toBeDefined();
-    }
-    expect(dup.sections[0]!.graphs.map((k) => store.graphLabel(k))).toEqual(
-      src.sections[0]!.graphs.map((k) => store.graphLabel(k)),
-    );
+    // The copy's Effect stack is equal in content but a separate copy.
+    expect(dup.sections[0]!.effects).toEqual(src.sections[0]!.effects);
+    expect(dup.sections[0]!.effects).not.toBe(src.sections[0]!.effects);
   });
 
   it('preserves cross-section graph reuse inside the copy', () => {
@@ -142,20 +132,17 @@ describe('duplicateSong', () => {
     expect(dup.sections[1]!.graphs).toContain(dup.sections[0]!.graphs[0]!);
   });
 
-  it('editing a graph in the copy does not touch the source song', () => {
+  it('editing an Effect in the copy does not touch the source song', () => {
     const store = new TriggerLab(fakeClient);
-    const srcKey = store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs[0]!;
-    const srcLabel = store.graphLabel(srcKey);
-    const srcNodeCount = store.graphs[srcKey]!.nodes.length;
+    const srcEffect = $snapshot(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.effects![0]!);
 
     const newId = store.duplicateSong('set-1')!;
-    const dupKey = store.songs.find((s) => s.id === newId)!.sections[0]!.graphs[0]!;
+    store.setActiveSection(store.songs.find((s) => s.id === newId)!.sections[0]!.id);
+    store.renameEffect(srcEffect.id, 'EDITED IN THE COPY');
+    store.setEffectOpacity(srcEffect.id, 0.1);
 
-    store.renameGraph(dupKey, 'EDITED IN THE COPY');
-    store.graphs[dupKey]!.nodes.pop();
-
-    expect(store.graphLabel(srcKey)).toBe(srcLabel); // source label untouched
-    expect(store.graphs[srcKey]!.nodes).toHaveLength(srcNodeCount); // source structure untouched
+    expect(store.effectById(srcEffect.id)!.name).toBe('EDITED IN THE COPY'); // the copy changed
+    expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.effects![0]).toEqual(srcEffect); // source untouched
   });
 
   it('clones sections independently — editing the copy does not touch the source', () => {
