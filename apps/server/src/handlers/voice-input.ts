@@ -73,6 +73,18 @@ export function handleVoiceInput(msg: ClientMessage, deps: VoiceInputDeps): bool
         // where `cc` modulation sources read it per frame. Determinism preserved — same events,
         // same frames. Controller 0 is reserved above for section recall and never reaches here.
         voiceHost.applyInput({ kind: 'cc', controller: msg.controller, value: msg.value, channel: msg.channel });
+        // Echo it (normalised 0..1, like a note's velocity) so every client sees the CC: MIDI
+        // learn binds from it, and the editor applies a CC-mapped bypass toggle (MIDI-map, effect
+        // chains S07) — bypass is an authored edit the web store owns, so the engine only
+        // consumes the CC. Controller 0 above keeps its own recall echo.
+        deps.broadcastJson({
+          t: 'input',
+          kind: 'midi',
+          label: `cc ${msg.controller}`,
+          value: Math.max(0, Math.min(1, msg.value / 127)),
+          controller: msg.controller,
+          ...(msg.channel !== undefined ? { channel: msg.channel } : {}),
+        });
       }
       return true;
     }

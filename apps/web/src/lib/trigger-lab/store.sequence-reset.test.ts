@@ -144,6 +144,7 @@ function stubHost(over: Partial<MidiControllerHost> = {}): MidiControllerHost & 
     setInputMap: () => true,
     setTriggerSource: () => true,
     setCueMidiSource: () => true,
+    bindMapSource: () => {},
     setSequenceResetSource: (nodeId, source) => {
       bound.push([nodeId, source]);
       return true;

@@ -163,6 +163,10 @@
     return api.inputMappings.find((m) => effectChain.inputMappingTargetId(m.target) === id) ?? null;
   });
 
+  /* The target's own range: what an unset rangeMin / rangeMax scales into, so the fields show
+     the value actually in effect instead of a blank. */
+  const armedDefault = $derived(armedMapping ? api.defaultRange(armedMapping.target) : null);
+
   function commitRange(which: 'min' | 'max', raw: string): void {
     const mapping = armedMapping;
     if (!mapping) return;
@@ -225,9 +229,9 @@
     {#if armedMapping}
       <span class="range" aria-label="Mapping range">
         <span class="range-label">Range</span>
-        <CommitInput type="number" value={armedMapping.rangeMin ?? ''} placeholder="min" ariaLabel="Range minimum" onCommit={(v) => commitRange('min', v)} />
+        <CommitInput type="number" value={armedMapping.rangeMin ?? armedDefault?.min ?? ''} placeholder="min" ariaLabel="Range minimum" onCommit={(v) => commitRange('min', v)} />
         <span class="range-sep" aria-hidden="true">–</span>
-        <CommitInput type="number" value={armedMapping.rangeMax ?? ''} placeholder="max" ariaLabel="Range maximum" onCommit={(v) => commitRange('max', v)} />
+        <CommitInput type="number" value={armedMapping.rangeMax ?? armedDefault?.max ?? ''} placeholder="max" ariaLabel="Range maximum" onCommit={(v) => commitRange('max', v)} />
       </span>
     {/if}
 

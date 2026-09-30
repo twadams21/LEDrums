@@ -111,6 +111,8 @@ import {
   type GridRow,
 } from './effects-api';
 import type { ChainOwner, EffectsSection } from './effects-doc';
+import type { BindResult, MapModeApi, MapTarget } from './map-api';
+import * as inputMappings from './store/input-mappings';
 import * as effectsFiles from './effects-files';
 import { detectLegacyLibrary, importLegacyShows, pendingLegacyShowNames, type LegacyLibrary } from './legacy-import';
 import { extractEffectSong, toEffectSong, toStoreSong } from './store/effect-song-library';
@@ -520,7 +522,7 @@ function writeLegacyDismissed(): void {
   }
 }
 
-export class TriggerLab implements EffectsAuthoringApi {
+export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   // editable config (shared by reference with the sim)
   buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
   pads = $state<Pad[]>(structuredClone(PADS));
@@ -1143,6 +1145,7 @@ export class TriggerLab implements EffectsAuthoringApi {
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
     selectedGraphNodes: () => this.selectedGraph?.nodes,
     setCueMidiSource: (effectId, source) => this.setCueSource(effectId, source),
+    bindMapSource: (target, source) => this.bindFromMapLearn(target, source),
   });
   /** OSC learn — bind the next heard address (Settings → Global controls). A separate arm
       from {@link midi}'s so a control's MIDI and OSC Learn buttons don't disarm each other. */
@@ -1155,6 +1158,7 @@ export class TriggerLab implements EffectsAuthoringApi {
       return true;
     },
     setCueOscAddress: (effectId, address) => this.setCueSource(effectId, { oscAddress: address }),
+    bindMapOscAddress: (target, address) => this.bindFromMapLearn(target, { oscAddress: address }),
   });
   /** Audio input capture (GH #214): lifecycle, meter and local preferences live on the
       controller; frames come back through {@link forwardAudio}. */
@@ -1533,9 +1537,10 @@ export class TriggerLab implements EffectsAuthoringApi {
   // The controller owns selection + the cell clipboard; the store supplies the section, kit, input
   // map, fire paths, files, cue learn and legacy import through the host below.
 
-  /** MIDI-map mappings — opaque until effect chains S07a gives them a shape; carried through
-      persistence so a v3 blob never loses them. */
-  private mappings: unknown = undefined;
+  /** The show's MIDI-map InputMappings (`AuthoredV3.mappings`), validated on load (an invalid
+      stored entry is dropped, as core `buildRuntimeShow` drops it). Replaced whole on every edit
+      (raw: never mutated in place), so undo checkpoints can hold the live reference. */
+  private mappings = $state.raw<readonly effectChain.InputMapping[]>([]);
 
   private readonly effectsCtl: EffectsController = new EffectsController({
     getSection: () => this.activeEffectsSection,
@@ -1823,6 +1828,220 @@ export class TriggerLab implements EffectsAuthoringApi {
     }
     this.effectsCtl.setTrigger(effectId, { kind: 'cue', source });
     return true;
+  }
+
+  // ---- MIDI-map mode (effect chains S07): MapModeApi over the show's InputMappings -------------
+  // Mappings are SHOW-level (`AuthoredV3.mappings`), so editing them needs only the editor seat
+  // (not a local active song). Every write is one undo step and autosaves; the runtime Show carries
+  // them to the engine (server, or the offline Sim), which consumes a mapped note / CC / OSC at
+  // global-control precedence. Two target kinds resolve HERE instead: key mappings (the web owns
+  // the keyboard) and bypass toggles (an authored edit, applied when the input echo arrives
+  // linked, or when local MIDI fires offline).
+
+  /** CC / OSC press edges for bypass toggles (a knob sweep toggles once, not per message). */
+  private readonly bypassEdges = new inputMappings.BypassToggleEdges();
+  /** The last refusal MIDI / OSC learn met, for the armed control (cleared on arm / bind). */
+  private mapRefusal = $state<string | null>(null);
+
+  get inputMappings(): readonly effectChain.InputMapping[] {
+    return this.mappings;
+  }
+  get canEditMappings(): boolean {
+    return !this.isViewer;
+  }
+  mapTargetId(target: MapTarget): string {
+    return inputMappings.mapTargetId(target);
+  }
+  bindingFor(target: MapTarget): effectChain.InputMappingSource | null {
+    if (target.kind === 'globalControl') return inputMappings.globalControlSource(this.globalControls[target.action]);
+    return inputMappings.mappingForTarget(this.mappings, this.mapTargetId(target))?.source ?? null;
+  }
+  defaultRange(target: effectChain.InputMappingTarget): { min: number; max: number } | null {
+    if (!effectChain.isContinuousTarget(target)) return null;
+    // The engine's own resolution (the active section's Effect, the param spec's number range),
+    // so the range shown is exactly the one a knob scales into.
+    const probe: effectChain.InputMapping = { id: 'default-range', source: { key: 'default-range' }, target };
+    const [binding] = effectChain.resolveContinuousInputMappings([probe], this.activeEffectsSection);
+    return binding ? { min: binding.lo, max: binding.hi } : null;
+  }
+
+  bindTarget(target: MapTarget, source: effectChain.InputMappingSource): BindResult {
+    if (!this.canEditMappings) return { ok: false, reason: 'Viewing — another client is editing; mappings are read-only.' };
+    const kindRefusal = inputMappings.mapSourceKindRefusal(target, source);
+    if (kindRefusal) return { ok: false, reason: kindRefusal };
+    if (target.kind === 'globalControl') return this.bindGlobalControl(target.action, source);
+
+    const selfId = this.mapTargetId(target);
+    const [rejection] = voice.inputMappingConflicts(this.mappingBindingScope, source, selfId);
+    if (rejection) return { ok: false, reason: this.bindingRefusalText(rejection) };
+    const next = inputMappings.withMappingSource(this.mappings, target, source, () =>
+      freshId('map', (id) => this.mappings.some((m) => m.id === id)),
+    );
+    if (next !== this.mappings) {
+      this.pushUndoSnapshot();
+      this.mappings = next;
+    }
+    return { ok: true };
+  }
+
+  clearTarget(target: MapTarget): void {
+    if (!this.canEditMappings) return;
+    if (target.kind === 'globalControl') {
+      if (this.globalControls[target.action]) this.setGlobalControlBinding(target.action, inputMappings.CLEAR_GLOBAL_CONTROL);
+      return;
+    }
+    const next = inputMappings.withoutMapping(this.mappings, this.mapTargetId(target));
+    if (next === this.mappings) return;
+    this.pushUndoSnapshot();
+    this.mappings = next;
+  }
+
+  /** MapModeApi: a continuous InputMapping's range. The string overload is the graph era's
+      modulation-edge range (the Modulation inspector), kept compiling until S08 deletes it. */
+  setMappingRange(target: effectChain.InputMappingTarget, rangeMin: number | undefined, rangeMax: number | undefined): void;
+  setMappingRange(edgeId: string, min: number, max: number): void;
+  setMappingRange(target: effectChain.InputMappingTarget | string, rangeMin: number | undefined, rangeMax: number | undefined): void {
+    if (typeof target === 'string') {
+      if (rangeMin !== undefined && rangeMax !== undefined) this.setEdgeMappingRange(target, rangeMin, rangeMax);
+      return;
+    }
+    if (!this.canEditMappings) return;
+    const next = inputMappings.withMappingRange(this.mappings, this.mapTargetId(target), rangeMin, rangeMax);
+    if (next === this.mappings) return;
+    this.pushUndoSnapshot();
+    this.mappings = next;
+  }
+
+  /** Arm MIDI AND OSC learn for one control: whichever input arrives binds, and the arm stays up
+      (map mode re-binds on each new input until the user disarms). */
+  startMapLearn(target: MapTarget): void {
+    if (!this.canEditMappings) return;
+    this.mapRefusal = null;
+    this.midi.startLearn({ kind: 'map', target });
+    this.osc.start({ kind: 'map', target });
+  }
+  cancelMapLearn(): void {
+    if (this.midi.learnTarget?.kind === 'map') this.midi.cancelLearn();
+    if (this.osc.target?.kind === 'map') this.osc.cancel();
+    this.mapRefusal = null;
+  }
+  get mapLearnTargetId(): string | null {
+    const midi = this.midi.learnTarget;
+    if (midi?.kind === 'map') return this.mapTargetId(midi.target);
+    const osc = this.osc.target;
+    return osc?.kind === 'map' ? this.mapTargetId(osc.target) : null;
+  }
+  get mapLearnRefusal(): string | null {
+    return this.mapRefusal;
+  }
+
+  performKeyMapping(code: string): boolean {
+    const mapping = effectChain.matchInputMapping(this.mappings, { key: code });
+    if (!mapping) return false;
+    this.performDiscreteMapping(mapping.target);
+    return true;
+  }
+
+  /** A MIDI / OSC learn bind (midi-controller / osc-learn `map` target): record the refusal for
+      the armed control, clear it on success. */
+  private bindFromMapLearn(target: MapTarget, source: effectChain.InputMappingSource): void {
+    const result = this.bindTarget(target, source);
+    this.mapRefusal = result.ok ? null : result.reason;
+  }
+
+  /** Map mode binding a global control: only the source's own field changes (Settings stays the
+      source of truth), refused with the same guard `setInputMap` applies, but without its toast —
+      the overlay shows the reason on the armed control. */
+  private bindGlobalControl(action: GlobalControlAction, source: effectChain.InputMappingSource): BindResult {
+    const patch = inputMappings.globalControlPatch(source);
+    if (!patch) return { ok: false, reason: 'Global controls bind a MIDI note, a CC or an OSC address.' };
+    if (!this.project) return { ok: false, reason: 'Connect to the LEDrums server to bind a global control.' };
+    const current = this.project.inputMap;
+    const next: InputMap = { ...current, globalControls: withGlobalControlBinding(current.globalControls, action, patch) };
+    const [rejection] = voice.inputMapBindingRejections(current, next, this.graphs, { mappings: this.mappings });
+    if (rejection) return { ok: false, reason: this.bindingRefusalText(rejection) };
+    const before = current.globalControls[action];
+    const after = next.globalControls[action];
+    if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return { ok: true };
+    return this.setGlobalControlBinding(action, patch) ? { ok: true } : { ok: false, reason: 'That binding was refused.' };
+  }
+
+  /** Everything a mapping source can collide with: the zone map and global controls, every
+      section's Effects (a Cue would be starved) and the other mappings. Offline the default
+      input map stands in for the server Project's. */
+  private get mappingBindingScope(): voice.BindingScope {
+    return {
+      inputMap: this.effectsInputMap,
+      graphs: this.graphs,
+      mappings: this.mappings,
+      effects: this.resolvedSongs.flatMap((song) => song.sections.flatMap((section) => section.effects ?? [])),
+    };
+  }
+
+  private bindingRefusalText(rejection: voice.BindingRejection): string {
+    return bindingRejectionMessage(rejection, this.drums, (key) => this.graphLabel(key));
+  }
+
+  /**
+   * Perform a discrete target the web resolves itself — a key press (every discrete kind), or a
+   * MIDI / OSC press on a bypass toggle. Fires go through the same audition path the grid uses
+   * (the server when linked, the Sim offline); a recall re-points the active song / section; a
+   * bypass toggle is an authored edit (one undo step, the Effects mutators' guard). Continuous
+   * targets are the engine's (a key mapping is refused on them at bind time).
+   */
+  private performDiscreteMapping(target: effectChain.InputMappingTarget): void {
+    switch (target.kind) {
+      case 'fireCell':
+        this.effectsCtl.fireCell(target.cell);
+        return;
+      case 'fireEffect':
+        this.effectsCtl.fireEffect(target.effectId);
+        return;
+      case 'recallSection': {
+        const songId = target.songId
+          ?? this.resolvedSongs.find((song) => song.sections.some((s) => s.id === target.sectionId))?.id;
+        if (!songId) return;
+        if (this.activeSongId !== songId) this.setActiveSong(songId);
+        this.setActiveSection(target.sectionId);
+        return;
+      }
+      case 'bypass':
+        this.toggleMappedBypass(target);
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** Flip an Effect's bypass, or one of its (or the Master chain's) Modifiers' when a uid is
+      given. A target that no longer resolves in the active section is a no-op. */
+  private toggleMappedBypass(target: Extract<effectChain.InputMappingTarget, { kind: 'bypass' }>): void {
+    if (target.modifierUid === undefined) {
+      const effect = this.effectsCtl.effectById(target.effectId);
+      if (effect) this.effectsCtl.setEffectBypass(effect.id, !effect.bypass);
+      return;
+    }
+    const owner: ChainOwner = target.effectId === MASTER_CELL ? MASTER_CELL : target.effectId;
+    const chain = owner === MASTER_CELL ? this.effectsCtl.masterChain : (this.effectsCtl.effectById(owner)?.modifiers ?? []);
+    const modifier = chain.find((m) => m.uid === target.modifierUid);
+    if (modifier) this.effectsCtl.setModifierBypass(owner, modifier.uid, !modifier.bypass);
+  }
+
+  /**
+   * A heard MIDI / OSC input that a BYPASS mapping takes: toggle on its press edge. Called from
+   * the input echo when linked and from the local MIDI forward offline — never both, since
+   * offline there is no echo. The engine only consumes these inputs (nothing fires).
+   */
+  private performBypassInput(event: effectChain.InputMappingEvent, value01: number): void {
+    if (this.mappings.length === 0) return;
+    const mapping = effectChain.matchInputMapping(this.mappings, event);
+    if (!mapping || mapping.target.kind !== 'bypass') return;
+    const presses = event.midiCc !== undefined
+      ? this.bypassEdges.cc(event.midiCc, value01)
+      : event.oscAddress !== undefined
+        ? this.bypassEdges.osc(value01)
+        : value01 > 0;
+    if (presses) this.toggleMappedBypass(mapping.target);
   }
 
   // ---- Files (Tim's save / load to file, extended) --------------------------------------------
@@ -2147,7 +2366,12 @@ export class TriggerLab implements EffectsAuthoringApi {
             // modes agree on what a bound note does NOT do. The action itself stays
             // server-resolved (like Program Change / CC#0 recall), so offline it is inert.
             const consumed = globalControlForNote(this.globalControls, ev.note) !== null;
-            if (!consumed && this.link !== 'open') this.fireRawMidiLocal(ev.note, ev.velocity);
+            if (!consumed && this.link !== 'open') {
+              // A MIDI-map mapping takes the note next (global control > mapping > zone).
+              const mapping = effectChain.matchInputMapping(this.mappings, { midiNote: ev.note });
+              if (mapping) this.fireMappedMidiLocal(mapping, ev.note, ev.velocity);
+              else this.fireRawMidiLocal(ev.note, ev.velocity);
+            }
           }
         } else if (this.link !== 'open' && this.acceptsMidiChannel(ev.channel)) {
           // Note-off: release the `hold` Effects this note (and the zone it claims) fired.
@@ -2160,7 +2384,12 @@ export class TriggerLab implements EffectsAuthoringApi {
         // S37: a CC source node can MIDI-learn the next incoming controller; the live value
         // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
         // Controller 0 is reserved for section recall and never learns/binds here.
-        if (this.acceptsMidiChannel(ev.channel)) this.midi.applyCcLearn(ev.controller);
+        if (this.acceptsMidiChannel(ev.channel)) {
+          this.midi.applyCcLearn(ev.controller);
+          // Offline there is no input echo, so a CC bypass toggle is applied here (linked, the
+          // echo applies it — see receiveInputEcho).
+          if (this.link !== 'open') this.performBypassInput({ midiCc: ev.controller }, voice.ccValue01(ev.value));
+        }
         this.sim.setCc(ev.controller, ev.value, ev.channel);
         this.client.send({ t: 'cc', controller: ev.controller, value: ev.value, channel: ev.channel });
         return;
@@ -2275,7 +2504,7 @@ export class TriggerLab implements EffectsAuthoringApi {
       paneSizes: this.paneSizes,
       patchLabels: this.patchLabels,
     };
-    if (this.mappings !== undefined) out.mappings = this.mappings;
+    if (this.mappings.length > 0) out.mappings = this.mappings;
     return out;
   }
 
@@ -2323,8 +2552,10 @@ export class TriggerLab implements EffectsAuthoringApi {
     if (typeof a.beatsPerBar === 'number') this.beatsPerBar = a.beatsPerBar;
     if (a.paneSizes) this.paneSizes = a.paneSizes;
     if (a.patchLabels) this.patchLabels = a.patchLabels;
-    // Opaque until S07a; always assigned so a swap never inherits another show's mappings.
-    this.mappings = a.mappings;
+    // Always assigned so a swap never inherits another show's mappings.
+    this.mappings = effectChain.parseInputMappings(a.mappings).mappings;
+    reserveIds(this.mappings.map((m) => m.id));
+    this.bypassEdges.reset();
   }
 
   /** Restore the graph-era sandbox (undo / document reset). */
@@ -2724,7 +2955,7 @@ export class TriggerLab implements EffectsAuthoringApi {
       re-fired every hit — the echo loop this slice kills (doc 03). Monitor display of the input
       rides the separate onMonitor / server-diagnostics path, so dropping the local fire leaves
       the timeline intact. */
-  private receiveInputEcho({ kind, label, value, note, channel, drumId, modulationOnly, trackInputId }: InputEcho): void {
+  private receiveInputEcho({ kind, label, value, note, controller, channel, drumId, modulationOnly, trackInputId }: InputEcho): void {
     const time = Date.now();
     // The echo's `value` is the RAW input, before the drum's sensitivity curve — exactly the
     // x a velocity-curve editor plots. Connected, this is the ONLY place hits are recorded
@@ -2735,6 +2966,15 @@ export class TriggerLab implements EffectsAuthoringApi {
       this.recordInputActivity({ kind: 'midi', note, channel, value: velocity, time });
       if (value > 0 && this.acceptsMidiChannel(channel)) {
         this.midi.applyNoteLearn(note);
+        this.performBypassInput({ midiNote: note }, value);
+      }
+    } else if (kind === 'midi' && controller !== undefined) {
+      // A CC echo (value normalised 0..1): CC learn from any source, like notes above, and the
+      // linked half of a CC bypass toggle. Re-learning a local CC the forward already bound is a
+      // no-op (the arm cleared, or map mode re-binds the same source).
+      if (this.acceptsMidiChannel(channel)) {
+        this.midi.applyCcLearn(controller);
+        this.performBypassInput({ midiCc: controller }, value);
       }
     } else if (kind === 'osc') {
       // For OSC the wire `label` carries the address (see server broadcastJson). Named zero
@@ -2755,7 +2995,10 @@ export class TriggerLab implements EffectsAuthoringApi {
       this.recordInputActivity({ kind: 'osc', address: label, value, time });
       // Dedicated value/release echoes cannot author trigger bindings. Ordinary OSC keeps its
       // existing Learn contract, including a fader first heard at zero.
-      if (!modulationOnly) this.osc.apply(label);
+      if (!modulationOnly) {
+        this.osc.apply(label);
+        this.performBypassInput({ oscAddress: label }, value);
+      }
       // Feed the sim's OSC table so an OSC-bound modulation source previews live (the OSC
       // analogue of forwardMidi's `sim.setCc`; OSC arrives only via the server broadcast).
       this.sim.setOsc(label, value);
@@ -2808,6 +3051,7 @@ export class TriggerLab implements EffectsAuthoringApi {
       songs: this.songs.map(toEffectSong),
       songRefs: this.songRefs,
       canvasScenes: this.canvasScenes,
+      mappings: this.mappings,
       songLibrary: this.songLibrary.songs,
     };
   }
@@ -3013,6 +3257,35 @@ export class TriggerLab implements EffectsAuthoringApi {
   /** Offline hardware MIDI on the Effect path: ONE `hitEffects` carrying the zone the note map
       claims AND the note, so the zone Effect and a Cue on that note each fire exactly once
       (the Sim does not forward `setNote` into its engine). */
+  /**
+   * Offline: a note-on a MIDI-map mapping takes. The Sim's core engine performs fires and
+   * continuous targets (it consumes the note before zones, as the server does), so the zone
+   * Effects the note would otherwise claim are never pre-resolved here. A section recall is the
+   * store's (so the UI follows it), and so is a bypass toggle.
+   */
+  private fireMappedMidiLocal(mapping: effectChain.InputMapping, note: number, value: number): void {
+    const target = mapping.target;
+    if (target.kind === 'bypass') {
+      this.performBypassInput({ midiNote: note }, 1);
+      return;
+    }
+    if (target.kind === 'recallSection') {
+      this.performDiscreteMapping(target);
+      return;
+    }
+    this.ensureSimShow();
+    this.sim.hitEffects({ note, velocity: Math.max(0, Math.min(1, value / 127)) });
+    const fired = target.kind === 'fireEffect'
+      ? [target.effectId]
+      : target.kind === 'fireCell'
+        ? this.effectsCtl.cellEffects(target.cell).map((e) => e.id)
+        : [];
+    if (fired.length > 0) this.stampEffectFires(fired);
+    this.renderFrame();
+    this.snapshot();
+    this.markLocalPreview();
+  }
+
   private fireRawMidiLocal(note: number, value: number): void {
     const claim = this.project?.inputMap.midiNotes.find((m) => m.note === note);
     const raw = Math.max(0, Math.min(1, value / 127));
@@ -3354,7 +3627,7 @@ export class TriggerLab implements EffectsAuthoringApi {
           }
         }
       }
-      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, this.graphs))) {
+      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, this.graphs, { mappings: this.mappings }))) {
         return false;
       }
       this.pushUndoSnapshot();
@@ -5709,8 +5982,9 @@ export class TriggerLab implements EffectsAuthoringApi {
   setMappingInvert(edgeId: string, invert: boolean): void {
     this.editEdge(edgeId, (e) => (e.invert = invert));
   }
-  /** Per-mapping output range the source maps into (clamped to the param spec at render). */
-  setMappingRange(edgeId: string, min: number, max: number): void {
+  /** Per-mapping output range the source maps into (clamped to the param spec at render). Graph
+      era; reached through the string overload of {@link setMappingRange}. */
+  private setEdgeMappingRange(edgeId: string, min: number, max: number): void {
     this.editEdge(edgeId, (e) => {
       e.rangeMin = min;
       e.rangeMax = max;

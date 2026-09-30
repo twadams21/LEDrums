@@ -18,6 +18,8 @@ export interface MemoryMapModeOptions {
   /** Sources claimed elsewhere (zones, cues, reserved CCs): binding one is refused with `reason`. */
   claims?: readonly { source: InputMappingSource; reason: string }[];
   canEdit?: boolean;
+  /** `param` targets' own ranges by target id (opacity / mix are always 0..1). */
+  ranges?: Readonly<Record<string, { min: number; max: number }>>;
   /** Called when a key mapping is performed outside map mode. */
   onPerform?: (target: MapTarget) => void;
 }
@@ -36,6 +38,7 @@ export class MemoryMapModeApi implements MapModeApi {
   private refusal = $state<string | null>(null);
   private readonly claims: readonly { source: InputMappingSource; reason: string }[];
   private readonly onPerform: ((target: MapTarget) => void) | undefined;
+  private readonly ranges: Readonly<Record<string, { min: number; max: number }>>;
   private nextId = 1;
   readonly canEditMappings: boolean;
 
@@ -45,6 +48,7 @@ export class MemoryMapModeApi implements MapModeApi {
     this.claims = options.claims ?? [];
     this.canEditMappings = options.canEdit ?? true;
     this.onPerform = options.onPerform;
+    this.ranges = options.ranges ?? {};
   }
 
   get inputMappings(): readonly InputMapping[] {
@@ -104,6 +108,12 @@ export class MemoryMapModeApi implements MapModeApi {
     this.mappings = this.mappings.map((m) =>
       effectChain.inputMappingTargetId(m.target) === id ? { ...m, rangeMin, rangeMax } : m,
     );
+  }
+
+  defaultRange(target: InputMappingTarget): { min: number; max: number } | null {
+    if (target.kind === 'opacity' || target.kind === 'modifierMix') return { min: 0, max: 1 };
+    if (target.kind !== 'param') return null;
+    return this.ranges[effectChain.inputMappingTargetId(target)] ?? null;
   }
 
   startMapLearn(target: MapTarget): void {

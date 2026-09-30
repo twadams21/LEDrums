@@ -152,6 +152,8 @@ export interface EffectsShowSource {
   /** Ids into `songLibrary`, in setlist order. Duplicates / dangling refs are skipped by core. */
   songRefs: readonly string[];
   canvasScenes: readonly CanvasScene[];
+  /** The show's MIDI-map InputMappings (`AuthoredV3.mappings`); core validates each one. */
+  mappings?: readonly unknown[];
   /** The song library (`id → song`); `null` / absent when there is none. */
   songLibrary?: Readonly<Record<string, EffectsLibrarySongSource>> | null;
 }
@@ -184,6 +186,7 @@ export function buildEffectsShow(source: EffectsShowSource): EffectsShowBuild {
     songs: source.songs,
     songRefs: source.songRefs,
     canvasScenes: source.canvasScenes,
+    ...(source.mappings?.length ? { mappings: source.mappings } : {}),
   });
   const showLib = effectChain.parseShowLibraryV3({
     version: SHOWS_VERSION_EFFECTS,

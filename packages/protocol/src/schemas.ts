@@ -541,6 +541,8 @@ export const serverMessageSchema = z.discriminatedUnion('t', [
         the raw hit, which is what a velocity-curve editor plots on its x axis. */
     value: z.number(),
     note: z.number().optional(),
+    /** A MIDI CC echo's controller number (`value` is then the CC's normalised 0..1 value). */
+    controller: z.number().optional(),
     channel: z.number().optional(),
     /** The drum the zone-map claimed this hit for, when it claimed one. Absent =
         unrouted or not a drum trigger. */
