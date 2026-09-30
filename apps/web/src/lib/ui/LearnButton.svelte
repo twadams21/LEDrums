@@ -1,7 +1,7 @@
 <script lang="ts">
   /* LEARN — arm a field to bind the next input it hears.
 
-     The house "learn the next hit" affordance, extracted from TriggerSourceInspector once
+     The house "learn the next hit" affordance, extracted from the trigger inspector once
      the global-control bindings needed the same 15 lines. It is a TOGGLE, not a one-shot:
      pressing it while armed disarms, so a mis-armed field is escapable without binding
      something wrong.

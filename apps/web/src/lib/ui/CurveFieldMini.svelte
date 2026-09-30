@@ -1,7 +1,7 @@
 <script lang="ts">
   /* The read-only thumbnail rendering of a {@link CurveField} value — the shape
-     with nothing else: no handles, no controls, no interaction. Sized for a node
-     face (the 56×32 slot `NodeSignalPreview` gives an envelope), where the full
+     with nothing else: no handles, no controls, no interaction. Sized for a
+     thumbnail slot (56×32 by default) in a list row or a card, where the full
      control would be illegible and its hit areas unusable.
 
      Deliberately a separate component rather than a mode on CurveField: a

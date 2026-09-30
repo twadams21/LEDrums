@@ -17,7 +17,7 @@
   const radii = [
     ['--radius-1', '3px — chips, tiny controls'],
     ['--radius-2', '5px — buttons, inputs'],
-    ['--radius-3', '8px — cards-within-panels, node cards'],
+    ['--radius-3', '8px — cards-within-panels, device cards'],
     ['--radius-4', '12px — styleguide blocks'],
     ['--radius-pill', '999px — pills'],
     ['--radius-card', '0px — panels/cards (LOCKED square; the one soften-everything knob)'],

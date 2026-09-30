@@ -37,8 +37,6 @@
   import ConfirmDialog from '../../ui/ConfirmDialog.svelte';
   import Drawer from '../../ui/Drawer.svelte';
   import PanelHeader from '../../ui/PanelHeader.svelte';
-  import AnchorHeader from '../../ui/AnchorHeader.svelte';
-  import LintCallout from '../../ui/LintCallout.svelte';
   import LoadFeedback from '../../ui/LoadFeedback.svelte';
   import Logo from '../../ui/Logo.svelte';
   import ToastHost from '../../ui/ToastHost.svelte';
@@ -61,8 +59,6 @@
   import Disc3 from '@lucide/svelte/icons/disc-3';
   import Activity from '@lucide/svelte/icons/activity';
   import Wand2 from '@lucide/svelte/icons/wand-2';
-  import CircleDot from '@lucide/svelte/icons/circle-dot';
-  import Zap from '@lucide/svelte/icons/zap';
 
   let textVal = $state('Opening set');
   let pillTags = $state<string[]>(['hit']);
@@ -382,7 +378,7 @@
     <DemoCard
       title="Ease picker"
       src="lib/ui/EasePicker"
-      note="Compact per-segment easing selector — a family Select (the Resolume-familiar set, grouped) paired with an In/Out/In·Out direction control. Direction disables for Linear (identical in every direction). Composed from Select + SegmentedControl; reused by the envelope editor and the Envelope node inspector."
+      note="Compact per-segment easing selector — a family Select (the Resolume-familiar set, grouped) paired with an In/Out/In·Out direction control. Direction disables for Linear (identical in every direction). Composed from Select + SegmentedControl; reused wherever an envelope segment picks its easing."
     >
       <div class="comp-stack">
         <EasePicker value={demoEase} onChange={(e) => (demoEase = e)} ariaLabel="Demo easing" />
@@ -394,7 +390,7 @@
       title="Curve field"
       src={['lib/ui/CurveField', 'lib/ui/CurveFieldMini', 'lib/ui/curve-field']}
       wide
-      note="Two free handles, one profile for the whole curve, and a BIPOLAR strength fader with a magnetic notch at centre. The notch is linear; above it Bend goes exponential and below it logarithmic — the inverse shape — so lin/exp/log are one continuum with one neutral position rather than three buttons, and the mode word under the fader is read back off the fader rather than picked. S-curve rides the same fader and goes over centre to invert its shoulders (in-out ↔ out-in); Snap has nothing to bend, so the fader greys out (never hidden). Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 in both axes (strength −1..+1) and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at node-face size."
+      note="Two free handles, one profile for the whole curve, and a BIPOLAR strength fader with a magnetic notch at centre. The notch is linear; above it Bend goes exponential and below it logarithmic — the inverse shape — so lin/exp/log are one continuum with one neutral position rather than three buttons, and the mode word under the fader is read back off the fader rather than picked. S-curve rides the same fader and goes over centre to invert its shoulders (in-out ↔ out-in); Snap has nothing to bend, so the fader greys out (never hidden). Flat outside the handles, so a hold or a threshold needs no third handle. Domain-agnostic: the value is normalised 0..1 in both axes (strength −1..+1) and the consumer owns the units. Drag a handle, or click it and use the arrow keys (shift = coarse); wheel over the plot steps the selected handle's level. The mini renders the same value read-only at thumbnail size, for a list row or a card."
     >
       <div class="curve-demo">
         <div class="curve-col">
@@ -434,7 +430,7 @@
         </div>
       </div>
       <div class="curve-minis">
-        <span class="curve-cap">node faces (56×32, read-only)</span>
+        <span class="curve-cap">thumbnails (56×32, read-only)</span>
         <CurveFieldMini value={decayCurve} ariaLabel="Decay envelope thumbnail" />
         <CurveFieldMini value={velocityCurve} ariaLabel="Velocity curve thumbnail" />
         <CurveFieldMini
@@ -514,7 +510,7 @@
     <DemoCard
       title="Level meter"
       src="lib/ui/LevelMeter"
-      note="Read-only 0..1 level with a tabular readout. Settings › Input › Audio input stacks four (Level / Bass / Mids / Highs); a source node's face uses the compact bar in NodeSignalPreview instead."
+      note="Read-only 0..1 level with a tabular readout. Settings › Input › Audio input stacks four (Level / Bass / Mids / Highs)."
     >
       <div class="meter-stack">
         <LevelMeter label="Level" value={0.72} />
@@ -632,7 +628,7 @@
       title="Disclosure"
       src="lib/ui/Disclosure"
       wide
-      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by the effect inspector to fold an effect's own params under its always-visible common section."
+      note="Progressive disclosure for a secondary group of rows — eyebrow-styled summary, rotating chevron, optional count, over a native <details> (so keyboard + find-in-page work for free). `open` is bindable: the CALLER owns whether the state is remembered and where, so the primitive never invents a persistence surface. Used by Track inputs to fold its track-specific mappings under the always-visible rows."
     >
       <div class="disc-demo">
         <Disclosure label="Comet Trails" count={4} open={discOpen} onToggle={(v) => (discOpen = v)}>
@@ -654,40 +650,12 @@
       note="THE panel-title treatment (accent icon + tracked uppercase label, trailing controls). Used on every docked panel, rail, and drawer — retired Eyebrow as a panel title (Eyebrow stays for small in-content labels)."
     >
       <div class="ph-demo">
-        <PanelHeader icon={Layers} title="Buses / Layers" />
+        <PanelHeader icon={Layers} title="Effects" />
       </div>
       <div class="ph-demo">
         <PanelHeader icon={ListMusic} title="Setlist">
           <IconButton icon={Plus} label="Add song" size={14} />
         </PanelHeader>
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Anchor header"
-      src="lib/ui/AnchorHeader"
-      wide
-      note="Inspector title block for a PROTECTED graph anchor (the trigger root / output terminal). Those nodes aren't conversion targets, so they can't carry the shared kind selector — this is its stand-in: tinted icon + h3 title, mono sub-line, optional trailing action. Same scale as the patch / trigger headers."
-    >
-      <div class="ph-demo">
-        <AnchorHeader icon={CircleDot} tint="var(--role-output)" title="Output" sub="graph output — every layer lands here" />
-      </div>
-      <div class="ph-demo">
-        <AnchorHeader icon={Zap} tint="var(--accent)" title="Kick · Centre" sub="graph input">
-          {#snippet action()}
-            <IconButton icon={Copy} label="Duplicate graph" variant="soft" size={14} />
-          {/snippet}
-        </AnchorHeader>
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Lint callout"
-      src="lib/ui/LintCallout"
-      note="Warn-toned inspector row for a node's render-plan lint finding (empty scope, not reaching Output, dead branch). Glyph + plain problem + one next step, copy shared with the lint strip and node badge so a finding reads identically everywhere. Warn, never the red fault alarm — it guides authoring."
-    >
-      <div class="ph-demo">
-        <LintCallout problem="Not reaching Output" action="Wire this into the Output node so what it renders can light." />
       </div>
     </DemoCard>
 
@@ -740,7 +708,7 @@
 
 <ConfirmDialog
   bind:open={confirmOpen}
-  title="Delete node?"
+  title="Delete effect?"
   message="A confirmation modal for destructive verbs — Cancel + a danger confirm, on the shared Dialog."
   confirmLabel="Delete"
   danger

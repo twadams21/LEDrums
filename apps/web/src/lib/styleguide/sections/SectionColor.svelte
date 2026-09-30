@@ -17,7 +17,7 @@
   const borders = [
     ['--border-faint', 'Hairlines, block outlines'],
     ['--border', 'Control borders'],
-    ['--border-strong', 'Hover emphasis, wires'],
+    ['--border-strong', 'Hover emphasis'],
     ['--border-accent', 'Accent-tinted: hover / selected control'],
   ] as const;
 
@@ -162,7 +162,7 @@
         <span class="fn" style="--rc: var(--role-output)">Output</span>
       </div>
       <p class="micro">
-        Role colour is never decoration: it always rides an icon + label pair (node chips,
+        Role colour is never decoration: it always rides an icon + label pair (device chips,
         palette buttons, flow diagrams). <code>--reactive-tint</code>/<code>--reactive-amount</code>
         are the opt-in live-show tint hooks (default: off).
       </p>
