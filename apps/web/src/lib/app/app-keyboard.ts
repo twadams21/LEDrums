@@ -64,6 +64,9 @@ export function dispatchAppKeyboard({
   // key with nothing armed is dropped rather than firing a cell behind the overlay. Modified
   // chords pass through so Undo still works.
   if (shell.mapMode && !modalOpen && !target.inOpenPopup) {
+    // Map mode's own chrome (hint bar Clear / Done, the TopBar toggle) stays keyboard-operable:
+    // Enter / Space on a focused chrome control is native activation, never a key to learn.
+    if (isChromeActivation(event)) return;
     const map = decideMapModeKey(event, shortcutPlatform);
     if (map.kind !== 'pass') {
       event.preventDefault();
@@ -188,4 +191,13 @@ export function dispatchAppKeyboard({
   }
   if (decision.sectionStep === undefined) return;
   store.stepSetlist('section', decision.sectionStep);
+}
+
+const ACTIVATION_CODES = new Set(['Enter', 'NumpadEnter', 'Space']);
+
+/** Enter / Space whose target is map-mode chrome (`[data-map-mode-chrome]`): the browser's
+    native button activation, which map mode's key learn must not claim. */
+function isChromeActivation(event: KeyboardEvent): boolean {
+  if (!ACTIVATION_CODES.has(event.code)) return false;
+  return event.target instanceof Element && event.target.closest('[data-map-mode-chrome]') !== null;
 }

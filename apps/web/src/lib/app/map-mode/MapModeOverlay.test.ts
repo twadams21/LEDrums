@@ -156,6 +156,34 @@ describe('MIDI-map mode overlay', () => {
     expect(shell.mapMode).toBe(false);
   });
 
+  it('Enter on the focused Clear button activates it instead of being learnt', () => {
+    const { api, enter } = setup({ mappings: [{ id: 'm1', source: { midiNote: 40 }, target: cellTarget }] });
+    enter();
+    press(cellButton());
+    const clear = screen.getByRole('button', { name: /Clear/ });
+    clear.focus();
+    const event = keydown(clear, 'Enter', { key: 'Enter' });
+    // Left to the browser's native activation; jsdom does not synthesise it, so click as it would.
+    expect(event.defaultPrevented).toBe(false);
+    expect(api.bindingFor(cellTarget)).toEqual({ midiNote: 40 });
+    clear.click();
+    flushSync();
+    expect(api.bindingFor(cellTarget)).toBeNull();
+    expect(api.inputMappings.some((m) => 'key' in m.source && m.source.key === 'Enter')).toBe(false);
+  });
+
+  it('Space on the focused Done button is not learnt; Enter elsewhere still is', () => {
+    const { api, enter } = setup();
+    enter();
+    press(cellButton());
+    const done = screen.getByRole('button', { name: /Done/ });
+    const space = keydown(done, 'Space', { key: ' ' });
+    expect(space.defaultPrevented).toBe(false);
+    expect(api.bindingFor(cellTarget)).toBeNull();
+    keydown(window, 'Enter', { key: 'Enter' });
+    expect(api.bindingFor(cellTarget)).toEqual({ key: 'Enter' });
+  });
+
   it('a conflicting binding is refused with its reason and the control stays armed', () => {
     const { api, enter } = setup({ claims: [{ source: { key: 'KeyZ' }, reason: 'Key Z already fires Snare · Edge' }] });
     enter();
