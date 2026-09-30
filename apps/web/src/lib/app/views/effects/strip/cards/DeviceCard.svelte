@@ -242,7 +242,10 @@
     min-height: 0;
     padding: var(--space-2);
     overflow-y: auto;
-    overscroll-behavior: contain;
+    /* No `overscroll-behavior: contain` here: a card face sits inside the strip's own vertical
+       scroll, and containing it made the wheel die over every card — the Effects list couldn't
+       be scrolled while the pointer was on an Effect, even over a face with nothing to scroll
+       (Tim, 2026-10-01). A face that does overflow still scrolls first, then hands on. */
     scrollbar-width: thin;
   }
   /* A bypassed device still edits — it just reads as out of the signal path. */
