@@ -105,7 +105,15 @@
   const targetOf = (m: ControlMapping) => targets.find((t) => t.device === m.device && t.param === m.param);
 </script>
 
-<DeviceCard role="control" icon={CONTROL_ICON[control.kind]} title={label} eyebrow="Control" {disabled}>
+<DeviceCard
+  role="control"
+  icon={CONTROL_ICON[control.kind]}
+  title={label}
+  eyebrow="Control"
+  {disabled}
+  selected={api.selectedDevice?.kind === 'control' && api.selectedDevice.effectId === effect.id && api.selectedDevice.uid === control.uid}
+  onSelect={() => api.selectDevice({ kind: 'control', effectId: effect.id, uid: control.uid })}
+>
   {#snippet actions()}
     <IconButton icon={Trash2} label={`Remove ${label}`} size={14} {disabled} onclick={() => api.removeControl(effect.id, control.uid)} />
   {/snippet}

@@ -37,6 +37,10 @@
     initiallyFolded?: boolean;
     /** Extra title-bar controls (a menu, a save button). */
     actions?: Snippet;
+    /** Highlighted in the strip — the thing Delete / ⌘X / ⌘C act on. */
+    selected?: boolean;
+    /** A press anywhere on the card highlights it (see `selected`). */
+    onSelect?: () => void;
     children: Snippet;
     class?: string;
   }
@@ -51,6 +55,8 @@
     width = 248,
     initiallyFolded = false,
     actions,
+    selected = false,
+    onSelect,
     children,
     class: klass,
   }: Props = $props();
@@ -61,10 +67,15 @@
   const bypassed = $derived(power ? !power.on : false);
 </script>
 
+<!-- A press anywhere on the card highlights it — in the CAPTURE phase, so a control that stops
+     its own pointer events (a face-param drag) still selects the card it sits on. Selecting never
+     moves focus: the control keeps it. -->
 <section
   class={['card', `role-${role}`, klass]}
   class:folded
   class:bypassed
+  class:selected
+  onpointerdowncapture={() => onSelect?.()}
   style:--card-w={`${width}px`}
   aria-label={`${eyebrow ? `${eyebrow}: ` : ''}${title}`}
 >
@@ -136,6 +147,13 @@
       inset 0 0 0 1px var(--border-faint);
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
+     keeping the role rule on top. */
+  .card.selected {
+    box-shadow:
+      inset 0 2px 0 0 var(--role),
+      inset 0 0 0 2px var(--accent);
   }
   .role-generator { --role: var(--role-content); }
   .role-modifier { --role: var(--role-effect); }

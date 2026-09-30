@@ -10,11 +10,53 @@ import type { voice } from '@ledrums/core';
 import type { SettingsPane, View } from './shell-nav';
 import type { ShortcutPlatform } from './primary-shortcut';
 import { decideMapModeKey, isBindableKey, isMapModeToggle, type MapKeySession } from './map-mode/map-keys';
+import { hasPrimaryModifier } from './primary-shortcut';
+import type { SelectionVerb } from '../trigger-lab/effects-api';
+
+/**
+ * The Effects view's edit keys (Tim, 2026-10-01: "highlight a plugin by clicking on it and
+ * pressing delete … cut, copy and paste with the usual key commands"): Delete / Backspace, and
+ * ⌘/Ctrl + X / C / V with no other modifier. Only in the Effects view (`trigger`). A copy or cut
+ * while the user has page text highlighted is the browser's, so that text still copies.
+ */
+export function selectionVerbFor(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>,
+  view: View,
+  platform: ShortcutPlatform,
+  hasTextSelection: boolean,
+): SelectionVerb | null {
+  if (view !== 'trigger') return null;
+  const plain = !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+  if (plain && (event.key === 'Delete' || event.key === 'Backspace')) return 'delete';
+  if (!hasPrimaryModifier(event, platform) || event.altKey || event.shiftKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === 'v') return 'paste';
+  if (hasTextSelection) return null;
+  return key === 'c' ? 'copy' : key === 'x' ? 'cut' : null;
+}
+
+function pageHasTextSelection(): boolean {
+  if (typeof window === 'undefined') return false;
+  const selection = window.getSelection?.();
+  return !!selection && !selection.isCollapsed && selection.toString().trim().length > 0;
+}
+
+/** Hand an edit key to the strip; claim it when the strip took it. */
+function editSelection(event: KeyboardEvent, store: AppKeyboardStore, view: View, platform: ShortcutPlatform): boolean {
+  const verb = selectionVerbFor(event, view, platform, pageHasTextSelection());
+  if (!verb || event.repeat || !store.editSelectionFromKeyboard?.(verb)) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
 
 export interface AppKeyboardStore {
   /** Keys 1–9 / 0 audition the section's nth Effect in grid order (EffectsAuthoringApi). */
   fireEffectAt(index: number): void;
   stepSetlist(axis: voice.NavAxis, delta: number): boolean;
+  /** Delete / cut / copy / paste on the Effects strip's highlighted Effect or device. True when
+      the strip took the key (it had something to act on, or said why it couldn't). */
+  editSelectionFromKeyboard?(verb: SelectionVerb): boolean;
 }
 
 export interface AppKeyboardShell {
@@ -114,6 +156,9 @@ export function dispatchAppKeyboard({
     // and Delete and the registered chords stay suppressed below — Backspace on a focused slider
     // must not act on what it edits. Same order as the unfocused path: mappings first.
     if (target.inKeyboardControl && !modalOpen && !target.inOpenPopup) {
+      // The card a focused control sits on is the highlighted one (a press selects it), so its
+      // Delete / ⌘X / ⌘C / ⌘V act on that card — a slider has no use for them.
+      if (editSelection(event, store, shell.view, shortcutPlatform)) return;
       const session = shell.mapSession;
       if (session && isBindableKey(event) && !CONTROL_NAVIGATION_CODES.has(event.code)) {
         const took = event.repeat ? session.isKeyMapped(event.code) : session.performKey(event.code);
@@ -143,6 +188,8 @@ export function dispatchAppKeyboard({
   // A modal or keyboard-active popup owns every app shortcut in its surface. In particular, do
   // not let a portalled menu/popover duplicate or delete what is hidden behind it.
   if (dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
+
+  if (editSelection(event, store, shell.view, shortcutPlatform)) return;
 
   if (shell.setMapMode && isMapModeToggle(event, shortcutPlatform)) {
     event.preventDefault();

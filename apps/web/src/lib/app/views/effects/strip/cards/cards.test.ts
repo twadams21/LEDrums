@@ -176,3 +176,22 @@ describe('ControlCard', () => {
     expect(again.container.querySelector('[aria-label="LFO Rate"][role="slider"]')).toBeNull();
   });
 });
+
+describe('highlighting a card (the thing Delete / ⌘X / ⌘C act on)', () => {
+  it('a press anywhere on a Modifier card highlights that Modifier', async () => {
+    const { api } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
+    const modifier = api.effectById('e1')!.modifiers[0]!;
+    const { container, rerender } = render(ModifierCard, { props: { api, effectId: 'e1', modifier } });
+    await fireEvent.pointerDown(container.querySelector('section.card')!);
+    expect(api.selectedDevice).toEqual({ kind: 'modifier', owner: 'e1', uid: 'm1' });
+    await rerender({ api, effectId: 'e1', modifier });
+    expect(container.querySelector('section.card')!.classList.contains('selected')).toBe(true);
+  });
+
+  it('a press on the Generator highlights the whole Effect', async () => {
+    const { api, effect } = demo();
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    await fireEvent.pointerDown(container.querySelector('section.card')!);
+    expect(api.selectedDevice).toEqual({ kind: 'effect', effectId: 'e1' });
+  });
+});

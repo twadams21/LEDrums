@@ -104,6 +104,8 @@
   eyebrow={isMaster ? `Master${category ? ` · ${enumLabel(category)}` : ''}` : category ? enumLabel(category) : 'Modifier'}
   power={{ on: !modifier.bypass, onToggle: (on) => api.setModifierBypass(effectId, modifier.uid, !on), map: bypassMap }}
   {disabled}
+  selected={api.selectedDevice?.kind === 'modifier' && api.selectedDevice.owner === effectId && api.selectedDevice.uid === modifier.uid}
+  onSelect={() => api.selectDevice({ kind: 'modifier', owner: effectId, uid: modifier.uid })}
 >
   {#snippet actions()}
     <ContextMenu mode="dropdown" actions={menu} label={`${name} actions`}>

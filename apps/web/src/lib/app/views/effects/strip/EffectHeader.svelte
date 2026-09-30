@@ -72,7 +72,7 @@
   <!-- The header click is a convenience: every control inside is keyboard reachable, and the
        name button (inside the header) selects. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="head" class:selected class:bypassed={effect.bypass} onclick={() => api.selectEffect(effect.id)}>
+  <div class="head" class:selected class:bypassed={effect.bypass} onclick={() => api.selectDevice({ kind: 'effect', effectId: effect.id })}>
     <Tooltip text="Drag to reorder · ↑ ↓ to move">
       <button
         type="button"

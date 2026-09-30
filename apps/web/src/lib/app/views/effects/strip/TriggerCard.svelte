@@ -78,7 +78,14 @@
   }
 </script>
 
-<DeviceCard title="Trigger" tint="var(--role-input)" icon={KIND_ICON[trigger.kind]} class="trigger-card">
+<DeviceCard
+  title="Trigger"
+  tint="var(--role-input)"
+  icon={KIND_ICON[trigger.kind]}
+  class="trigger-card"
+  selected={api.selectedDevice?.kind === 'effect' && api.selectedDevice.effectId === effect.id}
+  onSelect={() => api.selectDevice({ kind: 'effect', effectId: effect.id })}
+>
   <!-- A dropdown, not segments: four kinds do not fit a card-width segmented row legibly. -->
   <ParamLine label="Kind">
     <Select value={trigger.kind} options={kindOptions} onChange={setKind} ariaLabel="Trigger kind" {disabled} segment={false} />

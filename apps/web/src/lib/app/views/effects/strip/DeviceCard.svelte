@@ -28,6 +28,10 @@
     dimmed?: boolean;
     /** Trailing title-bar controls (menus, audition). */
     actions?: Snippet;
+    /** Highlighted in the strip — the thing Delete / ⌘X / ⌘C act on. */
+    selected?: boolean;
+    /** A press anywhere on the card highlights it (see `selected`). */
+    onSelect?: () => void;
     children: Snippet;
     class?: string;
   };
@@ -41,6 +45,8 @@
     folded: startFolded = false,
     dimmed = false,
     actions,
+    selected = false,
+    onSelect,
     children,
     class: klass,
   }: Props = $props();
@@ -49,10 +55,15 @@
   let folded = $state(untrack(() => startFolded));
 </script>
 
+<!-- A press anywhere on the card — its title bar or any control on its face — highlights it,
+     in the CAPTURE phase so a control that stops its own pointer events (a face-param drag)
+     still selects the card it sits on. Selecting never moves focus: the control keeps it. -->
 <section
   class={['device', klass]}
   class:folded
   class:dimmed
+  class:selected
+  onpointerdowncapture={() => onSelect?.()}
   style:--tint={tint}
   style:--device-w={folded ? undefined : `${width}px`}
   aria-label={title}
@@ -115,6 +126,13 @@
   }
   .device.folded {
     width: 32px;
+  }
+  /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
+     keeping the role rule on top — the same ring as the device cards. */
+  .device.selected {
+    box-shadow:
+      inset 0 2px 0 0 color-mix(in oklch, var(--tint) 70%, transparent),
+      inset 0 0 0 2px var(--accent);
   }
   .bar {
     display: flex;

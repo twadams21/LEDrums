@@ -5,7 +5,8 @@ import { createRawSnippet } from 'svelte';
 import type { TunnelInfo } from '../ws/protocol-types';
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import AppKeyboardCapture from './AppKeyboardCapture.svelte';
-import type { AppKeyboardShell, AppKeyboardStore } from './app-keyboard';
+import { selectionVerbFor, type AppKeyboardShell, type AppKeyboardStore } from './app-keyboard';
+import type { SelectionVerb } from '../trigger-lab/effects-api';
 import type { ShortcutEntry } from './shortcuts';
 import { createAppShortcuts } from './app-shortcuts';
 import BootOverlay from './chrome/BootOverlay.svelte';
@@ -331,5 +332,72 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const textDelete = key(input, 'Backspace');
     expect(textDelete.defaultPrevented).toBe(false);
     expect(laterWindow).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AppKeyboardCapture — Effects strip edit keys', () => {
+  function effectsFixture(took = true) {
+    const editSelectionFromKeyboard = vi.fn((_verb: SelectionVerb) => took);
+    const store: AppKeyboardStore = { fireEffectAt: vi.fn(), stepSetlist: vi.fn(() => true), editSelectionFromKeyboard };
+    const shell: AppKeyboardShell = { view: 'trigger', settingsPane: null };
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts: [], shortcutPlatform: 'mac' } });
+    return { editSelectionFromKeyboard, shell };
+  }
+
+  it('Delete / Backspace and ⌘X / ⌘C / ⌘V go to the strip, and a taken key is claimed', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const del = key(document.body, 'Delete');
+    key(document.body, 'Backspace');
+    key(document.body, 'x', { metaKey: true });
+    key(document.body, 'c', { metaKey: true });
+    key(document.body, 'v', { metaKey: true });
+    expect(editSelectionFromKeyboard.mock.calls.map((c) => c[0])).toEqual(['delete', 'delete', 'cut', 'copy', 'paste']);
+    expect(del.defaultPrevented).toBe(true);
+  });
+
+  it('works while a slider on the highlighted card has focus', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const slider = document.body.appendChild(document.createElement('div'));
+    slider.setAttribute('role', 'slider');
+    slider.tabIndex = 0;
+    key(slider, 'Backspace');
+    expect(editSelectionFromKeyboard).toHaveBeenCalledWith('delete');
+  });
+
+  it('leaves text fields, other views and page-text copies alone', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const input = document.body.appendChild(document.createElement('input'));
+    key(input, 'Backspace');
+    key(input, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).not.toHaveBeenCalled();
+
+    const text = document.body.appendChild(document.createElement('p'));
+    text.textContent = 'Kick hit';
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    key(document.body, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).not.toHaveBeenCalled();
+    window.getSelection()!.removeAllRanges();
+  });
+
+  it('a key the strip did not take is left for the browser', () => {
+    const { editSelectionFromKeyboard } = effectsFixture(false);
+    const copy = key(document.body, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).toHaveBeenCalledWith('copy');
+    expect(copy.defaultPrevented).toBe(false);
+  });
+});
+
+describe('selectionVerbFor', () => {
+  it('maps the keys only in the Effects view, with the platform’s own modifier', () => {
+    const k = (key: string, mods: Partial<KeyboardEvent> = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+    expect(selectionVerbFor(k('Delete'), 'trigger', 'mac', false)).toBe('delete');
+    expect(selectionVerbFor(k('Delete'), 'sections', 'mac', false)).toBeNull();
+    expect(selectionVerbFor(k('c', { ctrlKey: true }), 'trigger', 'mac', false)).toBeNull(); // Ctrl is not ⌘ on a Mac
+    expect(selectionVerbFor(k('c', { ctrlKey: true }), 'trigger', 'other', false)).toBe('copy');
+    expect(selectionVerbFor(k('V', { metaKey: true }), 'trigger', 'mac', true)).toBe('paste'); // paste ignores page text
+    expect(selectionVerbFor(k('c', { metaKey: true, shiftKey: true }), 'trigger', 'mac', false)).toBeNull();
   });
 });
