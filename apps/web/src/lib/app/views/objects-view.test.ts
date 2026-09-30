@@ -7,6 +7,7 @@ import {
   librarySongRows,
   presetRows,
   showSongRows,
+  songSubline,
 } from './objects-view';
 import type { EffectDef, Preset } from '../../trigger-lab/sim';
 import type { Song } from '../setlist';
@@ -34,8 +35,17 @@ function pre(id: string, name: string, effectId: string): Preset {
 }
 
 describe('OBJECT_TYPE_IDS', () => {
-  it('is the rail order — Songs · Song Library · Effects · Graphs · Presets · Canvas Scenes', () => {
-    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'effects', 'graphs', 'presets', 'canvas-scenes']);
+  it('is the rail order — Songs · Song Library · Canvas Scenes (no graph-era Effects / Graphs / Presets)', () => {
+    expect(OBJECT_TYPE_IDS).toEqual(['songs', 'library', 'canvas-scenes']);
+  });
+});
+
+describe('songSubline', () => {
+  it('counts sections, and Effects only when there are any', () => {
+    expect(songSubline(1, 0)).toBe('1 section');
+    expect(songSubline(3, 0)).toBe('3 sections');
+    expect(songSubline(3, 1)).toBe('3 sections · 1 effect');
+    expect(songSubline(2, 12)).toBe('2 sections · 12 effects');
   });
 });
 
@@ -144,6 +154,18 @@ describe('showSongRows', () => {
     expect(rows.map((r) => r.origin)).toEqual(['local', 'local', 'reference']);
     expect(rows.map((r) => r.name)).toEqual(['Opener', 'Bridge', 'Anthem (lib)']);
     expect(rows.find((r) => r.id === 'song-9')!.sectionCount).toBe(3);
+  });
+
+  it('totals each song’s Effects across its sections (graph-shaped sections count none)', () => {
+    const withEffects = {
+      ...song('song-1', 'Opener', 2),
+      sections: [
+        { id: 'a', name: 'A', graphs: [], looks: {}, effects: [{ id: 'e1' }, { id: 'e2' }] },
+        { id: 'b', name: 'B', graphs: [], looks: {}, effects: [{ id: 'e3' }] },
+      ],
+    } as unknown as Song;
+    const rows = showSongRows([withEffects, song('song-2', 'Bridge')], [withEffects, song('song-2', 'Bridge')]);
+    expect(rows.map((r) => r.effectCount)).toEqual([3, 0]);
   });
 
   it('is all-local when the show references nothing', () => {

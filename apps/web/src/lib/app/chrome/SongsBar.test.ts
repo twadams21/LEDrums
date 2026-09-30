@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
+import type { ApplyResult, EffectsAuthoringApi } from '../../trigger-lab/effects-api';
+import { toastStore } from '../../ui/toast.svelte';
 import SongsBar from './SongsBar.svelte';
 import { VIEWING_REASON } from './edit-gate';
 
@@ -137,5 +139,94 @@ describe('SongsBar', () => {
     // startRename defers a frame; give it one before asserting nothing mounted.
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     expect(queryByLabelText('Rename song')).toBeNull();
+  });
+});
+
+/* Import from the previous version (effect chains S06c): the notice, the setlist-menu action and
+   the confirm dialog read and drive ONLY the authoring api's import surface. */
+describe('SongsBar — legacy show import', () => {
+  function importApi(over: Partial<Record<string, unknown>> = {}) {
+    return {
+      legacyImportAvailable: true,
+      legacyShowNames: ['Old Tour', 'Festival'],
+      importLegacyShows: vi.fn((): ApplyResult => ({ ok: true })),
+      dismissLegacyImport: vi.fn(),
+      ...over,
+    } as unknown as EffectsAuthoringApi;
+  }
+
+  // jsdom has no Web Animations; the notice's enter / exit transitions need a minimal one that
+  // finishes on the next tick.
+  beforeAll(() => {
+    Element.prototype.animate ??= function animate(): Animation {
+      const animation = { onfinish: null as null | (() => void), cancel() {}, finish() {}, currentTime: 0 };
+      setTimeout(() => animation.onfinish?.(), 0);
+      return animation as unknown as Animation;
+    };
+  });
+  afterEach(() => toastStore.clear());
+
+  it('offers a notice that explains what is kept; confirming lists the shows and imports them', async () => {
+    const api = importApi();
+    const { getByRole, queryByRole } = render(SongsBar, { props: { store: mockStore(), api } });
+    const notice = getByRole('region', { name: 'Import shows from the previous version' });
+    expect(notice.textContent).toContain('kit, patch and inputs are kept');
+    expect(notice.textContent).toContain('Graphs are not carried over');
+    expect(notice.textContent).toContain('old data is left untouched');
+
+    await fireEvent.click(within(notice).getByRole('button', { name: 'Import 2 shows…' }));
+    const list = await waitFor(() => screen.getByRole('list', { name: 'Shows to import' }));
+    expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Old Tour', 'Festival']);
+    // The notice steps aside while its dialog is open.
+    await waitFor(() => expect(queryByRole('region', { name: 'Import shows from the previous version' })).toBeNull());
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Import 2 shows' }));
+    expect(api.importLegacyShows).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByRole('list', { name: 'Shows to import' })).toBeNull());
+    expect(toastStore.items.map((t) => [t.message, t.tone])).toEqual([['Imported 2 shows from the previous version.', 'success']]);
+  });
+
+  it('keeps the dialog open with the reason when the import is refused', async () => {
+    const api = importApi({ importLegacyShows: vi.fn((): ApplyResult => ({ ok: false, reason: 'Storage is full.' })) });
+    const { getByRole } = render(SongsBar, { props: { store: mockStore(), api } });
+    await fireEvent.click(getByRole('button', { name: 'Import 2 shows…' }));
+    await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: 'Import 2 shows' })));
+    expect((await waitFor(() => screen.getByRole('alert'))).textContent).toBe('Storage is full.');
+    expect(screen.getByRole('list', { name: 'Shows to import' })).toBeTruthy();
+    expect(toastStore.items).toEqual([]);
+  });
+
+  it('dismisses the offer through the api', async () => {
+    const api = importApi();
+    const { getByRole } = render(SongsBar, { props: { store: mockStore(), api } });
+    await fireEvent.click(getByRole('button', { name: 'Dismiss import notice' }));
+    expect(api.dismissLegacyImport).toHaveBeenCalledTimes(1);
+    await fireEvent.click(getByRole('button', { name: 'Not now' }));
+    expect(api.dismissLegacyImport).toHaveBeenCalledTimes(2);
+    expect(api.importLegacyShows).not.toHaveBeenCalled();
+  });
+
+  it('shows no notice once the offer is gone, or to a viewer', () => {
+    const dismissed = render(SongsBar, { props: { store: mockStore(), api: importApi({ legacyImportAvailable: false }) } });
+    expect(dismissed.container.querySelector('[data-legacy-import-notice]')).toBeNull();
+    dismissed.unmount();
+    const viewer = render(SongsBar, { props: { store: mockStore({ canEdit: false }), api: importApi() } });
+    expect(viewer.container.querySelector('[data-legacy-import-notice]')).toBeNull();
+  });
+
+  it('keeps the on-demand setlist-menu action after a dismiss', async () => {
+    const api = importApi({ legacyImportAvailable: false });
+    const { getByRole } = render(SongsBar, { props: { store: mockStore(), api } });
+    await fireEvent.keyDown(getByRole('button', { name: 'Setlist actions' }), { key: 'Enter' });
+    await fireEvent.click(await waitFor(() => screen.getByRole('menuitem', { name: 'Import shows from the previous version…' })));
+    expect(await waitFor(() => screen.getByRole('list', { name: 'Shows to import' }))).toBeTruthy();
+  });
+
+  it('disables the menu action, with the reason, when there is nothing to import', async () => {
+    const api = importApi({ legacyImportAvailable: false, legacyShowNames: [] });
+    const { getByRole } = render(SongsBar, { props: { store: mockStore(), api } });
+    await fireEvent.keyDown(getByRole('button', { name: 'Setlist actions' }), { key: 'Enter' });
+    const item = await waitFor(() => screen.getByRole('menuitem', { name: /^Import shows — No shows from the previous version/ }));
+    expect(item.hasAttribute('data-disabled') || item.getAttribute('aria-disabled') === 'true').toBe(true);
   });
 });
