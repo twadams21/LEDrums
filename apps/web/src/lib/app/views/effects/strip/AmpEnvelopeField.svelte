@@ -16,7 +16,7 @@
   const amp = $derived(effect.amp);
   const mode = $derived(ampLengthMode(amp.length));
   const always = $derived(effect.trigger.kind === 'always');
-  const path = $derived(ampPath(amp, 200, 36));
+  const path = $derived(ampPath(amp, 200, 24));
   const disabled = $derived(!api.canEdit);
 
   const begin = () => api.beginGesture();
@@ -36,7 +36,7 @@
 </script>
 
 <div class="amp" role="group" aria-label="Amp envelope">
-  <svg class="shape" viewBox="0 0 200 36" preserveAspectRatio="none" aria-hidden="true">
+  <svg class="shape" viewBox="0 0 200 24" preserveAspectRatio="none" aria-hidden="true">
     <path d={path} />
   </svg>
   <div class="stages">
@@ -79,8 +79,8 @@
   }
   .shape {
     width: 100%;
-    height: 36px;
-    margin-bottom: var(--space-1);
+    height: 24px;
+    margin-bottom: 2px;
     background: var(--surface-inset);
     border-radius: var(--radius-1);
   }
@@ -102,7 +102,7 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-1);
-    min-height: 24px;
+    min-height: 20px;
     min-width: 0;
   }
   .amp .stage :global(.rail) {

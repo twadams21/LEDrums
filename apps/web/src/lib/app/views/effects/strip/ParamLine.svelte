@@ -16,7 +16,8 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    min-height: 24px;
+    /* A dense card (the Trigger card) tightens its lines through the variable. */
+    min-height: var(--line-h, 24px);
     min-width: 0;
   }
   .k {

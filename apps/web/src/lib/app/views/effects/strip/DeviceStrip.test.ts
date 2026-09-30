@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { DEFAULT_KIT, effectChain } from '@ledrums/core';
 import { MASTER_CELL, type CellSelection } from '../../../../trigger-lab/effects-api';
@@ -153,5 +153,67 @@ describe('TriggerCard + TargetCard (through the strip)', () => {
     await tick();
     await fireEvent.click(within(target).getByRole('button', { name: 'Snare' }));
     expect(api.effectById('Pulse')!.target).toEqual({ kind: 'select', drums: [{ drumId: 'kick' }, { drumId: 'snare' }] });
+  });
+});
+
+describe('strip edits (through the api)', () => {
+  it('switching the Trigger kind moves the Effect to that column of its row', async () => {
+    const { api, container } = setup();
+    const kind = within(row(container, 'Pulse')).getByRole('button', { name: 'Trigger kind' });
+    await fireEvent.keyDown(kind, { key: 'Enter' });
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: 'Clock' }), { pointerType: 'mouse' });
+    const pulse = api.effectById('Pulse')!;
+    expect(pulse.trigger.kind).toBe('clock');
+    expect(pulse.cell).toEqual({ row: 'kick', column: { kind: 'clock' } });
+    expect(stackIds(api)).toEqual(['Wash']);
+    expect(api.undoDepth).toBe(1);
+  });
+
+  it('Add Effect adds an Effect with the picked Generator to the cell', async () => {
+    const { api } = setup();
+    await fireEvent.keyDown(screen.getByRole('button', { name: 'Add Effect' }), { key: 'Enter' });
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Solid' }));
+    const stack = api.cellEffects(kickHead);
+    expect(stack).toHaveLength(3);
+    expect(stack.filter((e) => !['Pulse', 'Wash'].includes(e.id)).map((e) => e.generator.kind)).toEqual(['solid']);
+  });
+
+  it('the + Modifier slot appends the palette pick to that Effect’s chain', async () => {
+    const { api, container } = setup();
+    await fireEvent.click(within(row(container, 'Pulse')).getByRole('button', { name: 'Add Modifier' }));
+    await fireEvent.click(await screen.findByRole('button', { name: 'Levels' }));
+    const mods = api.effectById('Pulse')!.modifiers;
+    expect(mods.map((m) => m.modifierId)).toEqual(['strobe', 'trail', 'levels']);
+    expect(api.undoDepth).toBe(1);
+  });
+
+  it('the header menu duplicates and deletes the Effect', async () => {
+    const { api, container } = setup();
+    const menu = within(row(container, 'Wash')).getByRole('button', { name: 'Actions for Wash' });
+    await fireEvent.keyDown(menu, { key: 'Enter' });
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Duplicate' }));
+    expect(api.cellEffects(kickHead)).toHaveLength(3);
+    expect(stackIds(api).slice(0, 2)).toEqual(['Pulse', 'Wash']);
+    await tick();
+    const menu2 = within(row(container, 'Pulse')).getByRole('button', { name: 'Actions for Pulse' });
+    await fireEvent.keyDown(menu2, { key: 'Enter' });
+    await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    expect(stackIds(api)).not.toContain('Pulse');
+    expect(api.cellEffects(kickHead)).toHaveLength(2);
+    expect(api.effectById('Pulse')).toBeUndefined();
+  });
+
+  it('an Opacity drag lands as exactly one undo step', async () => {
+    const { api, container } = setup();
+    const opacity = within(row(container, 'Pulse')).getByRole('slider', { name: 'Opacity' });
+    // jsdom has no pointer capture — stub it so the drag handler can run.
+    (opacity as HTMLElement & { setPointerCapture: (id: number) => void }).setPointerCapture = () => {};
+    const before = api.effectById('Pulse')!.opacity;
+    await fireEvent.pointerDown(opacity, { button: 0, clientX: 200, pointerId: 1 });
+    await fireEvent.pointerMove(opacity, { clientX: 170, pointerId: 1 });
+    await fireEvent.pointerMove(opacity, { clientX: 140, pointerId: 1 });
+    await fireEvent.pointerUp(opacity, { pointerId: 1 });
+    expect(api.effectById('Pulse')!.opacity).toBeLessThan(before);
+    expect(api.undoDepth).toBe(1);
   });
 });

@@ -5,7 +5,9 @@
 
      - Zone: the zone is the cell's, shown read-only (move the Effect in the grid to change it).
      - Clock: the period (beat / bar divisions) and an offset in beats.
-     - Cue: MIDI note / CC / OSC address, typed or learned (the store's cue learn). */
+     - Cue: MIDI note / CC / OSC address, typed or learned (the store's cue learn).
+
+     Every param sits on the face at the fixed device height: nothing here scrolls. */
   import type { Component } from 'svelte';
   import type { effectChain } from '@ledrums/core';
   import Drum from '@lucide/svelte/icons/drum';
@@ -16,6 +18,7 @@
   import Select from '../../../../ui/Select.svelte';
   import CommitInput from '../../../../ui/CommitInput.svelte';
   import LearnButton from '../../../../ui/LearnButton.svelte';
+  import Tooltip from '../../../../ui/Tooltip.svelte';
   import FaceParamControl from '../../../../ui/FaceParamControl.svelte';
   import DeviceCard from './DeviceCard.svelte';
   import ParamLine from './ParamLine.svelte';
@@ -116,19 +119,23 @@
     </ParamLine>
   {:else}
     {@const source = trigger.source}
-    <ParamLine label="MIDI note">
-      <CommitInput type="number" min={0} max={127} value={source.midiNote ?? ''} placeholder="—" ariaLabel="Cue MIDI note"
+    <!-- Note and CC share one line (and one Learn) so the card face fits every kind without
+         scrolling; the label keeps their order readable once both hold numbers. -->
+    <ParamLine label="Note / CC">
+      <CommitInput type="number" min={0} max={127} value={source.midiNote ?? ''} placeholder="note" ariaLabel="Cue MIDI note"
         class="cue-num" {disabled} onCommit={(v) => commitMidi('midiNote', v)} />
-      <LearnButton armed={learning('midi')} onclick={() => toggleLearn('midi')} {disabled} ariaLabel="Learn cue MIDI" />
-    </ParamLine>
-    <ParamLine label="MIDI CC">
-      <CommitInput type="number" min={0} max={127} value={source.midiCc ?? ''} placeholder="—" ariaLabel="Cue MIDI CC"
+      <CommitInput type="number" min={0} max={127} value={source.midiCc ?? ''} placeholder="CC" ariaLabel="Cue MIDI CC"
         class="cue-num" {disabled} onCommit={(v) => commitMidi('midiCc', v)} />
+      <Tooltip text={learning('midi') ? 'Listening for MIDI — click to cancel' : 'Learn MIDI'}>
+        <LearnButton armed={learning('midi')} onclick={() => toggleLearn('midi')} {disabled} ariaLabel="Learn cue MIDI" />
+      </Tooltip>
     </ParamLine>
     <ParamLine label="OSC">
       <CommitInput value={source.oscAddress ?? ''} placeholder="/address" mono autofocus={false} allowEmpty ariaLabel="Cue OSC address"
         class="cue-osc" {disabled} onCommit={(v) => setCue({ oscAddress: v.trim() || undefined })} />
-      <LearnButton armed={learning('osc')} onclick={() => toggleLearn('osc')} {disabled} ariaLabel="Learn cue OSC" />
+      <Tooltip text={learning('osc') ? 'Listening for OSC — click to cancel' : 'Learn OSC'}>
+        <LearnButton armed={learning('osc')} onclick={() => toggleLearn('osc')} {disabled} ariaLabel="Learn cue OSC" />
+      </Tooltip>
     </ParamLine>
   {/if}
 
@@ -155,8 +162,36 @@
     flex: none;
     background: var(--border-faint);
   }
+  /* The densest face in the strip: every kind's params plus the amp envelope must fit the fixed
+     device height without scrolling, so its lines, controls and gaps run a step tighter. */
+  :global(.trigger-card) {
+    --line-h: 22px;
+    --control-h: 22px;
+    --face-gap: var(--space-1_5);
+  }
   :global(.trigger-card .cue-num) {
-    width: 3.5rem;
+    width: 3rem;
+    flex: none;
+    padding: 0 var(--space-1_5);
+  }
+  /* No native spinners: they eat the width a 3-digit MIDI number needs (drag/type instead). */
+  :global(.trigger-card .cue-num input) {
+    appearance: textfield;
+  }
+  :global(.trigger-card .cue-num input::-webkit-inner-spin-button),
+  :global(.trigger-card .cue-num input::-webkit-outer-spin-button) {
+    margin: 0;
+    appearance: none;
+  }
+  /* Learn goes icon-only here (the Tooltip names it; the armed icon still pulses), so two
+     numbers and the button share one card-width line. */
+  :global(.trigger-card .learn) {
+    width: 22px;
+    height: 22px;
+    flex: none;
+    gap: 0;
+    padding: 0;
+    font-size: 0;
   }
   :global(.trigger-card .cue-osc) {
     min-width: 0;

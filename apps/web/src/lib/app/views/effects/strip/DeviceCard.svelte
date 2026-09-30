@@ -204,7 +204,7 @@
     padding: var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--face-gap, var(--space-2));
     scrollbar-width: thin;
   }
   .dimmed .face {
