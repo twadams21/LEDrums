@@ -61,7 +61,7 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Couldn’t load Effects' }).waitFor();
   assert.equal(triggerRequests, 1, 'navigation must not silently retry');
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await page.locator('.svelte-flow').waitFor();
+  await page.getByRole('grid', { name: 'Effects grid' }).waitFor();
   assert.equal(triggerRequests, 2, 'retry must make a real new request');
   const entryUrls = requested.filter((url) => /\/EffectsView-[^/]+\.js/.test(url));
   assert.equal(new Set(entryUrls).size, 2, 'retry must use a fresh entry URL');
@@ -70,7 +70,7 @@ try {
   assert.equal(navigations, 1, 'no automatic app reload');
   assert.equal(sockets, 1, 'same engine connection through recovery');
   assert.equal(requested.filter((url) => /\/index-[^/]+\.js/.test(url)).length, 1, 'shared runtime is not re-imported');
-  results.push('aborted production editor import: visible failure → actual network retry → graph ready');
+  results.push('aborted production editor import: visible failure → actual network retry → Effects grid ready');
 
   // Warm navigation must never mount the fallback, even for one DOM mutation.
   await page.getByRole('button', { name: 'Perform', exact: true }).click();
@@ -85,7 +85,7 @@ try {
     window.__lazyObserver.observe(document.querySelector('main.center'), { childList: true, subtree: true });
   });
   await page.getByRole('button', { name: 'Effects', exact: true }).click();
-  await page.locator('.svelte-flow').waitFor();
+  await page.getByRole('grid', { name: 'Effects grid' }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.__lazyFlashes), []);
   assert.equal(triggerRequests, 2);
   results.push('warm Trigger navigation: no import request and no fallback DOM flash');
@@ -225,7 +225,7 @@ try {
   shared.on('console', (m) => { if (m.type() === 'error') sharedConsole.push(m.text()); });
   let sharedRequests = 0, sharedNavigations = 0;
   shared.on('framenavigated', (frame) => { if (frame === shared.mainFrame()) sharedNavigations++; });
-  await shared.route(/\/assets\/graph-thumb-[^/]+\.js(?:\?.*)?$/, (route) => {
+  await shared.route(/\/assets\/Field-[^/]+\.js(?:\?.*)?$/, (route) => {
     sharedRequests++;
     return route.abort('failed');
   });
@@ -239,13 +239,13 @@ try {
   await shared.getByLabel('Show name', { exact: true }).fill(recoveryName);
   await shared.getByLabel('Show name', { exact: true }).press('Enter');
   await shared.getByRole('status').filter({ hasText: 'Saved' }).waitFor();
-  await shared.getByRole('button', { name: 'Effects', exact: true }).click();
+  await shared.getByRole('button', { name: 'Sections', exact: true }).click();
   await shared.getByRole('alert').filter({ hasText: 'Reopen the app when it’s safe to interrupt. Saved edits are kept.' }).waitFor();
   assert.equal(await shared.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
   await shared.screenshot({ path: `${output}/trigger-reopen-guidance.png` });
   await shared.getByRole('button', { name: 'Perform', exact: true }).click();
   await shared.locator('.bigpad').first().click();
-  await shared.getByRole('button', { name: 'Effects', exact: true }).click();
+  await shared.getByRole('button', { name: 'Sections', exact: true }).click();
   assert.equal(sharedRequests, 1);
   assert.equal(sharedNavigations, 1);
   assert.deepEqual(sharedErrors, []);
@@ -376,18 +376,18 @@ try {
 
   await counterexample('shared dependency aborted while a same-path icon probe fails → no retry offered for a delivered entry', async (page) => {
     let releaseShared, entryUrl, iconRequests = 0;
-    page.on('request', (r) => { if (/\/EffectsView-[^/]+\.js$/.test(r.url()) && r.resourceType() === 'script') entryUrl = r.url(); });
-    await page.route(/\/assets\/graph-thumb-[^/]+\.js(?:\?.*)?$/, async (route) => {
+    page.on('request', (r) => { if (/\/SectionsView-[^/]+\.js$/.test(r.url()) && r.resourceType() === 'script') entryUrl = r.url(); });
+    await page.route(/\/assets\/Field-[^/]+\.js(?:\?.*)?$/, async (route) => {
       await new Promise((resolve) => { releaseShared = resolve; });
       return route.abort('failed');
     });
-    await page.route(/\/assets\/EffectsView-[^/]+\.js(?:\?.*)?$/, (route) => {
+    await page.route(/\/assets\/SectionsView-[^/]+\.js(?:\?.*)?$/, (route) => {
       if (route.request().resourceType() === 'other') { iconRequests++; return route.abort('failed'); }
       return route.continue();
     });
-    await page.getByRole('button', { name: 'Effects', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: 'Loading Effects' }).waitFor();
-    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /EffectsView-[^/]+\.js$/.test(e.name) && e.responseStatus === 200));
+    await page.getByRole('button', { name: 'Sections', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Loading Sections' }).waitFor();
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /SectionsView-[^/]+\.js$/.test(e.name) && e.responseStatus === 200));
     await page.evaluate((url) => {
       const link = document.createElement('link');
       link.rel = 'icon';
