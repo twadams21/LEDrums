@@ -97,8 +97,8 @@
   eyebrow="Generator"
   width={272}
   {disabled}
-  selected={api.selectedDevice?.kind === 'effect' && api.selectedDevice.effectId === effect.id}
-  onSelect={() => api.selectDevice({ kind: 'effect', effectId: effect.id })}
+  selected={api.selectedDevice?.kind === 'stage' && api.selectedDevice.effectId === effect.id && api.selectedDevice.stage === 'generator'}
+  onSelect={() => api.selectDevice({ kind: 'stage', effectId: effect.id, stage: 'generator' })}
 >
   {#snippet actions()}
     <IconButton icon={Download} label="Save generator to file…" size={14} onclick={() => void api.saveDeviceToFile(effect.id, 'generator')} />

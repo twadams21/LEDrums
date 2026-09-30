@@ -72,6 +72,25 @@ describe('Delete', () => {
     expect(api.effectById('b')).toBeUndefined();
   });
 
+  it('a highlighted Trigger / Generator / Target is not removed on its own — it says how to delete the Effect', () => {
+    const api = demo();
+    api.selectDevice({ kind: 'stage', effectId: 'a', stage: 'generator' });
+    const result = api.editSelection('delete');
+    expect(result).toMatchObject({ ok: false });
+    expect(result && !result.ok && result.reason).toMatch(/name bar/);
+    expect(api.effectById('a')).toBeDefined();
+    expect(api.undoDepth).toBe(0);
+  });
+
+  it('a paste with a fixed stage highlighted lands on that stage’s Effect', () => {
+    const api = demo();
+    api.selectDevice({ kind: 'modifier', owner: 'a', uid: 'm1' });
+    api.editSelection('copy');
+    api.selectDevice({ kind: 'stage', effectId: 'b', stage: 'trigger' });
+    expect(api.editSelection('paste')).toEqual({ ok: true });
+    expect(api.effectById('b')!.modifiers).toHaveLength(1);
+  });
+
   it('does nothing — and says so by returning null — with nothing highlighted', () => {
     expect(demo().editSelection('delete')).toBeNull();
   });

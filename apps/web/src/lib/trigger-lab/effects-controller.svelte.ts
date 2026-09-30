@@ -51,7 +51,7 @@ const READ_ONLY: ApplyResult = { ok: false, reason: 'This section is read-only.'
 /** The Effect a strip selection belongs to — null for a Master-chain Modifier. */
 function ownerEffectOf(selection: DeviceSelection): string | null {
   if (selection.kind === 'modifier') return selection.owner === MASTER_CELL ? null : selection.owner;
-  return selection.effectId;
+  return selection.effectId; // effect, stage, control
 }
 
 /** The store-side surface the controller depends on. Reads are reactive in the store. */
@@ -186,7 +186,7 @@ export class EffectsController implements EffectsAuthoringApi {
     const held = this.#selectedDevice;
     const section = this.host.getSection();
     if (!held || !section) return null;
-    if (held.kind === 'effect') return doc.effectById(section, held.effectId) ? held : null;
+    if (held.kind === 'effect' || held.kind === 'stage') return doc.effectById(section, held.effectId) ? held : null;
     if (held.kind === 'control') return doc.effectById(section, held.effectId)?.controls.some((c) => c.uid === held.uid) ? held : null;
     const chain = held.owner === MASTER_CELL ? section.master : doc.effectById(section, held.owner)?.modifiers;
     return chain?.some((m) => m.uid === held.uid) ? held : null;
@@ -207,6 +207,12 @@ export class EffectsController implements EffectsAuthoringApi {
     const held = this.selectedDevice;
     const section = this.host.getSection();
     if (!held || !section) return null;
+    // A fixed stage belongs to its Effect: say where the whole-Effect edit lives rather than
+    // silently deleting (or copying) everything around the one card that is highlighted.
+    if (held.kind === 'stage') {
+      const name = held.stage === 'generator' ? 'Generator' : held.stage === 'trigger' ? 'Trigger' : 'Target';
+      return { ok: false, reason: `An Effect can't be without its ${name}. Click the Effect's name bar to ${verb} the whole Effect.` };
+    }
     // Copying only reads — a viewer may copy (it is the paste that is guarded).
     if (verb === 'copy' || verb === 'cut') {
       if (held.kind === 'effect') this.#clipboard = { kind: 'effects', effects: [doc.cloneJson(doc.effectById(section, held.effectId)!)] };

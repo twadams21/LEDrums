@@ -36,11 +36,14 @@ export type CellSelection = EffectCell | typeof MASTER_CELL;
 /**
  * What a click in the device strip highlights — the thing Delete / ⌘X / ⌘C act on (Tim,
  * 2026-10-01: "highlight a plugin by clicking on it and pressing delete … cut, copy and paste").
- * An Effect's fixed stages (its header, Trigger, Generator, Target) select the Effect as a whole;
- * a Modifier (on an Effect or on the Master chain) and a Control select themselves.
+ * Every card highlights ONLY itself (Tim, same day: clicking Wave must not light the Trigger too).
+ * The Effect's name bar selects the whole Effect. A fixed stage — its Trigger, Generator or
+ * Target — highlights on its own but can't be removed or copied apart from its Effect.
  */
+export type EffectStage = 'trigger' | 'generator' | 'target';
 export type DeviceSelection =
   | { kind: 'effect'; effectId: string }
+  | { kind: 'stage'; effectId: string; stage: EffectStage }
   | { kind: 'modifier'; owner: string | typeof MASTER_CELL; uid: string }
   | { kind: 'control'; effectId: string; uid: string };
 

@@ -10,6 +10,7 @@ import { createStandaloneEffectsApi } from '../../../../../trigger-lab/effects-c
 import GeneratorCard from './GeneratorCard.svelte';
 import ModifierCard from './ModifierCard.svelte';
 import ControlCard from './ControlCard.svelte';
+import TriggerCard from '../TriggerCard.svelte';
 
 beforeAll(() => {
   // jsdom has no IntersectionObserver / canvas; the live thumbnail needs neither to mount.
@@ -188,10 +189,15 @@ describe('highlighting a card (the thing Delete / ⌘X / ⌘C act on)', () => {
     expect(container.querySelector('section.card')!.classList.contains('selected')).toBe(true);
   });
 
-  it('a press on the Generator highlights the whole Effect', async () => {
+  it('a press on the Generator highlights the Generator alone — not the Trigger beside it', async () => {
+    // Tim, 2026-10-01: clicking Wave also lit the Trigger, when he only wanted Wave.
     const { api, effect } = demo();
-    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
-    await fireEvent.pointerDown(container.querySelector('section.card')!);
-    expect(api.selectedDevice).toEqual({ kind: 'effect', effectId: 'e1' });
+    const gen = render(GeneratorCard, { props: { api, effect: effect() } });
+    await fireEvent.pointerDown(gen.container.querySelector('section.card')!);
+    expect(api.selectedDevice).toEqual({ kind: 'stage', effectId: 'e1', stage: 'generator' });
+    const trigger = render(TriggerCard, { props: { api, effect: effect() } });
+    expect(trigger.container.querySelector('section.device')!.classList.contains('selected')).toBe(false);
+    await gen.rerender({ api, effect: effect() });
+    expect(gen.container.querySelector('section.card')!.classList.contains('selected')).toBe(true);
   });
 });
