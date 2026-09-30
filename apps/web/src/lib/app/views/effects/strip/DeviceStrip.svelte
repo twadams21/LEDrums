@@ -50,8 +50,8 @@
   }
 
   function onGripDragStart(event: DragEvent, index: number): void {
-    if (!event.dataTransfer) return;
     dragFrom = index;
+    if (!event.dataTransfer) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData(DRAG_TYPE, effects[index]!.id);
     const row = (event.currentTarget as HTMLElement).closest('.effect-row');
@@ -165,7 +165,7 @@
     height: 100%;
     overflow-y: auto;
     background: var(--bg);
-    --device-h: 216px;
+    --device-h: 240px;
   }
   .bar {
     position: sticky;

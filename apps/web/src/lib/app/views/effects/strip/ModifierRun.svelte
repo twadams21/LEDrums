@@ -32,8 +32,9 @@
   }
 
   function onDragStart(event: DragEvent, index: number): void {
-    if (disabled || !event.dataTransfer) return;
+    if (disabled) return;
     dragFrom = index;
+    if (!event.dataTransfer) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData(DRAG_TYPE, modifiers[index]!.uid);
     const card = (event.currentTarget as HTMLElement).closest('.mod-slot');
@@ -74,7 +75,8 @@
   }
 </script>
 
-<div class="run" bind:this={run} role="list" aria-label="Modifiers">
+<div class="run">
+<div class="mods" bind:this={run} role="list" aria-label="Modifiers">
   {#each modifiers as modifier, i (modifier.uid)}
     <div
       class="mod-slot"
@@ -104,6 +106,7 @@
       <ModifierCard {api} effectId={owner} {modifier} />
     </div>
   {/each}
+</div>
   <AddDeviceSlot {api} kind="modifier" {owner} />
 </div>
 
@@ -113,6 +116,11 @@
     align-items: stretch;
     gap: var(--space-2);
     flex: none;
+  }
+  .mods {
+    display: flex;
+    align-items: stretch;
+    gap: var(--space-2);
   }
   .mod-slot {
     position: relative;

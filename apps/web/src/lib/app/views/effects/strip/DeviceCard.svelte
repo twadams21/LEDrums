@@ -7,7 +7,7 @@
      The fold is view state owned here (never authored, never undone). The role tint arrives as
      a CSS colour (a `--role-*` token) and only touches the icon, the top rule and the power
      glyph — the face stays neutral so params read the same on every card. */
-  import type { Component, Snippet } from 'svelte';
+  import { untrack, type Component, type Snippet } from 'svelte';
   import Power from '@lucide/svelte/icons/power';
   import ChevronsLeftRight from '@lucide/svelte/icons/chevrons-left-right';
   import ChevronsRightLeft from '@lucide/svelte/icons/chevrons-right-left';
@@ -45,8 +45,8 @@
     class: klass,
   }: Props = $props();
 
-  // svelte-ignore state_referenced_locally — the prop only seeds the fold; the card owns it after.
-  let folded = $state(startFolded);
+  // The prop only seeds the fold; the card owns it after.
+  let folded = $state(untrack(() => startFolded));
 </script>
 
 <section
@@ -105,7 +105,7 @@
     flex-direction: column;
     flex: none;
     width: var(--device-w, 232px);
-    height: var(--device-h, 216px);
+    height: var(--device-h, 240px);
     min-width: 0;
     background: var(--surface-2);
     border-radius: var(--radius-card);

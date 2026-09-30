@@ -38,7 +38,7 @@
 </script>
 
 <DeviceCard title="Target" tint="var(--role-output)" icon={Crosshair} class="target-card">
-  <SegmentedControl value={target.kind} options={TARGET_KIND_OPTIONS} onChange={setKind} ariaLabel="Target" {disabled} />
+  <SegmentedControl value={target.kind} options={TARGET_KIND_OPTIONS} onChange={setKind} ariaLabel="Target kind" {disabled} />
   <p class="summary" class:warn={selected !== null && selected.drums.length === 0}>{summary}</p>
 
   {#if selected}

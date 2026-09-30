@@ -13,7 +13,6 @@
   import Clock from '@lucide/svelte/icons/clock';
   import Radio from '@lucide/svelte/icons/radio';
   import type { EffectsAuthoringApi } from '../../../../trigger-lab/effects-api';
-  import SegmentedControl from '../../../../ui/SegmentedControl.svelte';
   import Select from '../../../../ui/Select.svelte';
   import CommitInput from '../../../../ui/CommitInput.svelte';
   import LearnButton from '../../../../ui/LearnButton.svelte';
@@ -22,7 +21,6 @@
   import ParamLine from './ParamLine.svelte';
   import AmpEnvelopeField from './AmpEnvelopeField.svelte';
   import {
-    TRIGGER_KIND_LABEL,
     clockEveryFromValue,
     clockEveryOptions,
     clockEveryValue,
@@ -77,8 +75,11 @@
   }
 </script>
 
-<DeviceCard title={TRIGGER_KIND_LABEL[trigger.kind]} tint="var(--role-input)" icon={KIND_ICON[trigger.kind]} class="trigger-card">
-  <SegmentedControl value={trigger.kind} options={kindOptions} onChange={setKind} ariaLabel="Trigger kind" {disabled} />
+<DeviceCard title="Trigger" tint="var(--role-input)" icon={KIND_ICON[trigger.kind]} class="trigger-card">
+  <!-- A dropdown, not segments: four kinds do not fit a card-width segmented row legibly. -->
+  <ParamLine label="Kind">
+    <Select value={trigger.kind} options={kindOptions} onChange={setKind} ariaLabel="Trigger kind" {disabled} segment={false} />
+  </ParamLine>
 
   {#if trigger.kind === 'zone'}
     <ParamLine label="Zone"><span class="read">{zoneLabel}</span></ParamLine>
