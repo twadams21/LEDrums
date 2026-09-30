@@ -161,10 +161,10 @@ describe('referenced songs are navigable + playable but read-only (S42 consumpti
     const beforeLibrary = JSON.stringify(store.songLibrary.songs[libId]);
     const beforeSongs = JSON.stringify(store.songs);
     expect(store.canEditActiveSong).toBe(false);
-    // Contract gap (TODO(ec-w4) on TriggerLab.canEdit): the store's canEdit is viewer-only, so it
-    // still reads true here while every Effect mutator no-ops. Pinned so the orchestrator's fix
-    // (adapter or rename) has to flip this line; see the it.todo below.
+    // By design the store's own canEdit is viewer-only (its app callers' rule), so it reads true
+    // here; the Effects contract's canEdit lives on store.effectsApi and reads false.
     expect(store.canEdit).toBe(true);
+    expect(store.effectsApi.canEdit).toBe(false);
 
     expect(store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid')).toBeNull();
     store.setEffectOpacity(effect.id, 0.01);
@@ -180,7 +180,24 @@ describe('referenced songs are navigable + playable but read-only (S42 consumpti
     expect(store.songRefs).toEqual([libId]);
   });
 
-  it.todo('the Effects API reports canEdit === false on a referenced song (pending the ec-w4 canEdit contract call)');
+  it('the Effects API reports canEdit false on a referenced song and for a viewer, true on a local song', () => {
+    const store = new TriggerLab(fakeClient);
+    const localSongId = store.activeSongId;
+    expect(store.effectsApi.canEdit).toBe(true);
+
+    const libId = store.exportSongToLibrary(localSongId)!;
+    store.importSongReference(libId);
+    store.setActiveSong(libId);
+    expect(store.activeSection).toBeTruthy();
+    expect(store.effectsApi.canEdit).toBe(false);
+
+    store.setActiveSong(localSongId);
+    expect(store.effectsApi.canEdit).toBe(true);
+
+    store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
+    expect(store.isViewer).toBe(true);
+    expect(store.effectsApi.canEdit).toBe(false);
+  });
 
   it('allows a referenced cell only as a copy source that creates local content', () => {
     const store = new TriggerLab(fakeClient);

@@ -11,7 +11,9 @@
 
    EFFECT CHAINS (S05, wave-4 store-wire): the authored document is the v3 show library.
    Sections carry `effects` / `master`; the store implements {@link EffectsAuthoringApi} by
-   delegating to {@link EffectsController} (pure ops in `effects-doc.ts`); the runtime Show is
+   delegating to {@link EffectsController} (pure ops in `effects-doc.ts`) — except `canEdit`,
+   which stays viewer-only for app callers, so Effects UI mounts take `store.effectsApi` (the
+   controller, with the mutators' canEdit) instead of the store itself; the runtime Show is
    core `buildRuntimeShow` (via `buildEffectsShow`), sent to the server and loaded into the
    offline Sim's Effect path. The graph runes (graphs / buses / presets / effect defs) are a
    TRANSIENT sandbox until S08 deletes them: seeded per document, kept in undo, never persisted,
@@ -1037,11 +1039,10 @@ export class TriggerLab implements EffectsAuthoringApi {
       only a viewer is read-only. Authoring mutators no-op when false, and views bind their edit
       affordances' `disabled` to `!canEdit` so a viewer's UI is genuinely read-only (not just
       ignored). View-only interactions (selecting/panning/switching, playing pads) stay enabled.
-      TODO(ec-w4): contract gap. `EffectsAuthoringApi.canEdit` means "the Effect mutators apply"
-      (false on a referenced library song or with no active section too), but this field stays
-      viewer-only for its app callers. Pending an orchestrator call: an adapter
-      (`effectsApi` whose canEdit reads the controller) or renaming this field. Pinned in
-      store.song-library.test.ts. */
+      NOTE: this field stays viewer-only for its app callers; it is NOT the Effects contract's
+      canEdit ("the Effect mutators apply", also false on a referenced library song or with no
+      active section). Effects UI mount sites pass {@link effectsApi} (whose canEdit is the
+      mutators' rule) in place of casting the store. Pinned in store.song-library.test.ts. */
   canEdit = $derived(!this.isViewer);
   /** Whether the active song is authored by this show. Referenced library songs are resolved for
       playback/navigation but their sections are canonical and read-only until detached. */
@@ -1586,6 +1587,13 @@ export class TriggerLab implements EffectsAuthoringApi {
       dismiss: () => this.dismissLegacyImportPrompt(),
     },
   } satisfies EffectsControllerHost);
+
+  /** The Effects authoring surface for UI mounts; its canEdit is the mutators' rule (viewer,
+      library song, no section). Mount sites pass `store.effectsApi` rather than casting the store,
+      whose own {@link canEdit} is viewer-only. */
+  get effectsApi(): EffectsAuthoringApi {
+    return this.effectsCtl;
+  }
 
   /** The kit the grid lays out: the server Project's, else the offline default kit. */
   private get effectsKit(): KitConfig {
