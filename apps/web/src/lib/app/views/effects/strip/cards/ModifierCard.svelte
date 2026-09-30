@@ -83,7 +83,7 @@
   role="modifier"
   icon={modifierIcon(category)}
   title={name}
-  eyebrow={`${isMaster ? 'Master' : 'Modifier'}${category ? ` · ${enumLabel(category)}` : ''}`}
+  eyebrow={isMaster ? `Master${category ? ` · ${enumLabel(category)}` : ''}` : category ? enumLabel(category) : 'Modifier'}
   power={{ on: !modifier.bypass, onToggle: (on) => api.setModifierBypass(effectId, modifier.uid, !on) }}
   {disabled}
 >

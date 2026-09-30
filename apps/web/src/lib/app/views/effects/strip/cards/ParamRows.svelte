@@ -41,7 +41,7 @@
     {#each params as p (p.key)}
       {@const v = paramValue(p, values)}
       <li class="row" class:modulated={modulated?.has(p.key)}>
-        <span class="label" title={p.label}>{p.label}</span>
+        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}</span>
         <span class="ctl">
           {#if p.kind === 'enum'}
             <Select
@@ -68,7 +68,7 @@
             <FaceParamControl
               kind={p.kind}
               value={v}
-              display={formatParam(p, v)}
+              display={formatParam(p, v, { unit: false })}
               min={p.min}
               max={p.max}
               step={p.step}
@@ -110,6 +110,12 @@
     white-space: nowrap;
     font-size: var(--text-2xs);
     color: var(--text-muted);
+  }
+  .unit {
+    margin-left: var(--space-1);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--text-faint);
   }
   .row.modulated .label {
     color: var(--role-modulation);

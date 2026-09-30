@@ -88,6 +88,7 @@ describe('param values and read-outs', () => {
     expect(formatParam(num, 1.5)).toBe('1.50×');
     expect(formatParam(ms, 250.4)).toBe('250 ms');
     expect(formatParam(choice, 'outside-in')).toBe('Outside in');
+    expect(formatParam(ms, 250.4, { unit: false })).toBe('250');
   });
 });
 
@@ -101,14 +102,14 @@ describe('modulation', () => {
     });
     return effectChain.parseEffect({
       ...base,
-      controls: [{ uid: 'c1', kind: 'lfo', mappings: [{ device: 'generator', param: 'speed' }, { device: 'm2', param: 'rateHz' }] }],
+      controls: [{ uid: 'c1', kind: 'lfo', mappings: [{ device: 'generator', param: 'speed' }, { device: 'm2', param: 'rate' }] }],
     });
   };
 
   it('marks exactly the params a control drives, per device', () => {
     const e = withControls();
     expect([...modulatedKeys(e, 'generator')]).toEqual(['speed']);
-    expect([...modulatedKeys(e, 'm2')]).toEqual(['rateHz']);
+    expect([...modulatedKeys(e, 'm2')]).toEqual(['rate']);
     expect(modulatedKeys(e, 'm1').size).toBe(0);
     expect(modulatedKeys(undefined, 'generator').size).toBe(0);
   });
@@ -131,7 +132,7 @@ describe('modulation', () => {
   });
 
   it('round-trips a target key', () => {
-    expect(parseMapTargetKey(mapTargetKey('m2', 'rateHz'))).toEqual({ device: 'm2', param: 'rateHz' });
+    expect(parseMapTargetKey(mapTargetKey('m2', 'rate'))).toEqual({ device: 'm2', param: 'rate' });
     expect(parseMapTargetKey('nonsense')).toBeNull();
   });
 });

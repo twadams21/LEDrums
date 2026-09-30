@@ -54,12 +54,13 @@ function unitSuffix(unit: string | undefined): string {
   return /^[a-z]/i.test(unit) ? ` ${unit}` : unit;
 }
 
-/** The read-out for a value: numbers honour the step (2dp for sub-integer steps) and unit. */
-export function formatParam(p: CardParam, v: ParamValue): string {
+/** The read-out for a value: numbers honour the step (2dp for sub-integer steps) and, unless
+    `unit: false` (the card prints the unit beside the label so the field fits the number), the unit. */
+export function formatParam(p: CardParam, v: ParamValue, opts: { unit?: boolean } = {}): string {
   if (typeof v === 'boolean') return v ? 'On' : 'Off';
   if (typeof v === 'string') return enumLabel(v);
   const n = p.step !== undefined && p.step < 1 ? v.toFixed(2) : String(Math.round(v));
-  return `${n}${unitSuffix(p.unit)}`;
+  return opts.unit === false ? n : `${n}${unitSuffix(p.unit)}`;
 }
 
 /** An enum value as a label: `outside-in` → `Outside in`, `1/8` stays `1/8`. */
@@ -160,7 +161,7 @@ export function thumbSource(device: GeneratorDevice): { generatorId: string; par
 // ---- Splice / Slice slots -----------------------------------------------------------------
 
 /** The value a slot's Generator Select uses for "no Generator". */
-export const SLOT_NO_GENERATOR = '';
+export const SLOT_NO_GENERATOR = 'none';
 
 /** Kinds a slot may nest: any Generator but Splice / Slice (a nested splice renders blank). */
 export function slotGeneratorOptions(): { value: string; label: string }[] {
