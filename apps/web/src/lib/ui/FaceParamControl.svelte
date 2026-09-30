@@ -1,10 +1,10 @@
 <script lang="ts">
-  /* The compact in-place param control that rides a node-face row (S5).
+  /* The compact in-place param control that rides a card param row (S5).
 
-     A node card is 176–260px wide, so a number rides a COMPACT slider — a 48px rail plus its
-     value field — rather than the inspector's full-width one; an enum is a cycle chip, a bool
+     A device card is narrow, so a number rides a COMPACT slider — a 48px rail plus its
+     value field — rather than the full-width Slider; an enum is a cycle chip, a bool
      is a small switch. All are one control height (16px) so a row of any type stays 22px and
-     the card stays legible at graph zoom.
+     a card of mixed rows keeps one rhythm.
 
      The number has two gestures, deliberately: the rail is ABSOLUTE (press jumps to where you
      pressed, the slider contract every DAW shares), the value field is RELATIVE (grab and
@@ -12,25 +12,23 @@
      map — so it falls back to the field alone.
 
      Interaction contract (locked, memory `graph-interaction-prefs`): no lift, no click
-     animation — colour/border state changes are instant. The wrapper carries xyflow's
-     `nodrag nopan nowheel` so dragging the value never drags the NODE and a wheel tick never
-     zooms the canvas.
+     animation — colour/border state changes are instant.
 
      Undo: a drag publishes on every pointermove, so the caller wraps it in one gesture —
      `onGestureStart` fires once at pointer-down, `onGestureEnd` once at pointer-up/cancel
-     (and on destroy, so a pointer lost to a canvas re-render can't leave undo suppressed).
+     (and on destroy, so a pointer lost to a re-render can't leave undo suppressed).
      A wheel tick is its own single-value gesture, so it needs no bracket.
 
      `modulated` reflects the ColorSwatch precedent: a driven param still shows and edits its
-     BASE value — the wire animates around it — with a badge so a static-looking number is
-     never mistaken for the whole story. */
+     BASE value — the modulation moves the live output around it — with a badge so a
+     static-looking number is never mistaken for the whole story. */
   import { wheelStep } from './wheel-step';
   import { dragNumber, railValue, railFraction } from './drag-number';
   import Spline from '@lucide/svelte/icons/spline';
 
   interface Props {
     kind: 'number' | 'bool' | 'enum' | 'color';
-    /** Current value (the node's own, or the spec default). */
+    /** Current value (the device's own, or the spec default). */
     value: number | string | boolean;
     /** Pre-formatted read-out for number/enum (the caller owns units + precision). */
     display: string;
@@ -39,7 +37,7 @@
     step?: number;
     /** Enum choices, in declaration order — the cycle chip walks them. */
     options?: string[];
-    /** True when a modulation source is wired into this param: badge it, keep it editable. */
+    /** True when a Control or modulator drives this param: badge it, keep it editable. */
     modulated?: boolean;
     disabled?: boolean;
     ariaLabel: string;
@@ -166,12 +164,12 @@
     onChange(options[(from + dir + options.length) % options.length]!);
   }
 
-  // A pointer lost mid-drag (canvas re-render, node re-key) must not strand the gesture and
+  // A pointer lost mid-drag (a re-render, a row re-key) must not strand the gesture and
   // leave every later edit folded into it.
   $effect(() => () => closeGesture());
 </script>
 
-<span class={['facectl', 'nodrag', 'nopan', 'nowheel']} class:disabled class:modulated>
+<span class="facectl" class:disabled class:modulated>
   {#if kind === 'bool'}
     <button
       type="button"
@@ -216,7 +214,7 @@
     <!-- number (and `color`, which no effect declares yet — it falls through to the numeric
          field rather than rendering nothing, so a future colour param is still legible). -->
     {#if ranged}
-      <!-- The rail is the affordance the inspector's slider carries, shrunk to card width. It
+      <!-- The rail is the affordance the full Slider carries, shrunk to card width. It
            is decoration for assistive tech — the `.num` field below is the labelled
            role="slider", so a screen reader gets ONE control, not two for the same value. -->
       <span
@@ -259,7 +257,7 @@
     </span>
   {/if}
   {#if modulated}
-    <span class="modbadge" title="Driven by a modulation wire — this is the base value">
+    <span class="modbadge" title="Modulated — this is the base value">
       <Spline size={8} aria-hidden="true" />
     </span>
   {/if}
@@ -278,8 +276,8 @@
     pointer-events: none;
   }
 
-  /* the compact rail — 48px is the smallest span that still reads as a slider at graph zoom
-     and still leaves a legible value field beside it inside a 176px card. */
+  /* the compact rail — 48px is the smallest span that still reads as a slider and still
+     leaves a legible value field beside it inside a narrow card. */
   .rail {
     position: relative;
     display: inline-block;
@@ -319,7 +317,7 @@
     background: var(--ink);
     transform: translateY(-50%);
   }
-  /* instant, no transition — the locked node interaction contract */
+  /* instant, no transition — the locked interaction contract */
   .rail:hover::before {
     box-shadow: inset 0 0 0 1px var(--border);
   }
@@ -350,7 +348,7 @@
     user-select: none;
     touch-action: none;
   }
-  /* instant, no transition — the locked node interaction contract */
+  /* instant, no transition — the locked interaction contract */
   .num:hover {
     box-shadow: inset 0 0 0 1px var(--border);
   }
@@ -393,7 +391,7 @@
     white-space: nowrap;
   }
 
-  /* bool switch — the smallest thing that still reads as a switch at graph zoom */
+  /* bool switch — the smallest thing that still reads as a switch */
   .sw {
     position: relative;
     display: inline-flex;

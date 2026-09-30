@@ -11,7 +11,7 @@ const origin = 'http://localhost:4412';
 const field = `${origin}/assets/Field-CvCM.css`;
 const sections = `${origin}/assets/SectionsView-YSht.css`;
 const objects = `${origin}/assets/ObjectsView-B96n.css`;
-const trigger = `${origin}/assets/TriggerGraphView-BrLA.js`;
+const trigger = `${origin}/assets/EffectsView-BrLA.js`;
 
 function fakeEnvironment() {
   const timings: ResourceTiming[] = [];
@@ -188,7 +188,7 @@ describe('entry failure provenance', () => {
   it('does not treat a same-path icon probe as this boundary’s failed download', async () => {
     const env = fakeEnvironment();
     const host = createLazyHost(env);
-    const view = lazyComponent('TriggerGraphView', async () => {
+    const view = lazyComponent('EffectsView', async () => {
       witness(env, trigger, 200, 'script');
       witness(env, `${trigger}?favicon-probe`, 0, 'other');
       throw fetchFailure(trigger); // Chrome names the entry when a shared dependency failed
@@ -201,19 +201,19 @@ describe('entry failure provenance', () => {
   it('treats a status-0 failure as recoverable only when the network refused the probe or the app is offline', async () => {
     const env = fakeEnvironment();
     const host = createLazyHost(env);
-    const blocked = lazyComponent('TriggerGraphView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
+    const blocked = lazyComponent('EffectsView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
     await blocked.load();
     expect(blocked.state).toEqual({ status: 'error', retryable: false });
     expect(env.probed).toEqual([trigger]);
 
     env.reachable = false;
-    const aborted = lazyComponent('TriggerGraphView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
+    const aborted = lazyComponent('EffectsView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
     await aborted.load();
     expect(aborted.state).toEqual({ status: 'error', retryable: true });
 
     env.reachable = true;
     env.onLine = false;
-    const offline = lazyComponent('TriggerGraphView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
+    const offline = lazyComponent('EffectsView', async () => { witness(env, trigger, 0, 'script'); throw fetchFailure(trigger); }, host);
     await offline.load();
     expect(offline.state).toEqual({ status: 'error', retryable: true });
     expect(env.probed).toEqual([trigger, trigger]);
@@ -222,7 +222,7 @@ describe('entry failure provenance', () => {
   it('licenses recovery from a witnessed HTTP failure without a probe', async () => {
     const env = fakeEnvironment();
     const host = createLazyHost(env);
-    const http = lazyComponent('TriggerGraphView', async () => { witness(env, trigger, 503, 'script'); throw fetchFailure(trigger); }, host);
+    const http = lazyComponent('EffectsView', async () => { witness(env, trigger, 503, 'script'); throw fetchFailure(trigger); }, host);
     await http.load();
     expect(http.state).toEqual({ status: 'error', retryable: true });
     expect(env.probed).toEqual([]);
@@ -232,7 +232,7 @@ describe('entry failure provenance', () => {
     const env = fakeEnvironment();
     const host = createLazyHost(env);
     witness(env, trigger, 503, 'script');
-    const view = lazyComponent('TriggerGraphView', async () => { throw fetchFailure(trigger); }, host);
+    const view = lazyComponent('EffectsView', async () => { throw fetchFailure(trigger); }, host);
     await view.load();
     expect(view.state).toEqual({ status: 'error', retryable: false });
   });
