@@ -5,6 +5,7 @@ import { TRACK_INPUT_LIMIT, trackInputAddress, type TrackInputsStatus } from '@l
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import TrackInputsPanel from '../app/chrome/TrackInputsPanel.svelte';
 import { TriggerLab } from './store.svelte';
+import { Sim } from './sim';
 import type { InputEcho, WSCallbacks, WSClient } from '../ws/client';
 import type { OscLearnTarget } from './osc-learn.svelte';
 
@@ -24,6 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); for (const store of stores.splice(0)) store.stop(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function wired() {
+  if (!vi.isMockFunction(Sim.prototype.setAudio)) vi.spyOn(Sim.prototype, 'setAudio');
   let callbacks: WSCallbacks = {};
   const send = vi.fn();
   const store = new TriggerLab(() => ({ on(cb: WSCallbacks) { callbacks = cb; }, connect() {}, close() {}, send }) as unknown as WSClient);
@@ -41,6 +43,17 @@ function trackEcho(f: ReturnType<typeof wired>, id: string, control: string, val
 }
 function badge(store: TriggerLab, address: string) {
   return store.inputBadge({ kind: 'osc', address });
+}
+/** The audio level the store last fed the offline Sim's engine (0 before any frame). The engine's
+    own freshness rule then applies; this is the store's side of the seam. */
+function audioLevel(): number {
+  const calls = vi.mocked(Sim.prototype.setAudio).mock.calls;
+  return calls.at(-1)?.[0].level ?? 0;
+}
+/** Named track OSC addresses the store currently owns (the bounded bookkeeping). */
+function ownedOscKeys(store: TriggerLab): number {
+  const owned = (store as unknown as { trackOscKeys: Map<string, Set<string>> }).trackOscKeys;
+  return [...owned.values()].reduce((n, keys) => n + keys.size, 0);
 }
 function state(f: ReturnType<typeof wired>, sessionId: string): void {
   f.cb.onState?.(
@@ -74,52 +87,39 @@ describe('track input store integration', () => {
     expect(f.send).not.toHaveBeenCalled();
     expect(f.store.project?.inputMap.trackAudioInput).toBeUndefined();
   });
-  it('only the explicitly selected source supplies node meters; disconnect clears it', () => {
+  it('only the explicitly selected source feeds the Sim’s audio; disconnect clears it', () => {
     const f = wired();
-    f.store.createGraph('audio');
-    const node = f.store.addNode('audio', 0, 0)!;
     f.store.setTrackAudioInput('audio-track');
     f.cb.onTrackInputs?.(status);
-    expect(f.store.audioNodeLiveValue(node)).toBe(0.8);
+    expect(audioLevel()).toBe(0.8);
     expect(f.store.trackInputs?.inputs[0]?.name).toBe('Bass');
     f.cb.onConnection?.('closed');
     expect(f.store.trackInputs).toBeNull();
-    expect(f.store.audioNodeLiveValue(node)).toBe(0);
+    expect(audioLevel()).toBe(0);
   });
   it('registration alone never replaces browser audio or auto-selects a track', () => {
     const f = wired();
-    f.store.createGraph('audio');
-    const node = f.store.addNode('audio', 0, 0)!;
     f.store.sim.setAudio({ ...voice.ZERO_AUDIO_FRAME, level: 0.2 });
     f.cb.onTrackInputs?.(status);
     expect(f.store.project?.inputMap.trackAudioInput).toBeUndefined();
-    expect(f.store.audioNodeLiveValue(node)).toBe(0.2);
+    expect(audioLevel()).toBe(0.2);
   });
   it('zeros stale selected features instead of keeping the last live value', () => {
     const f = wired();
-    f.store.createGraph('audio');
-    const node = f.store.addNode('audio', 0, 0)!;
     f.store.setTrackAudioInput('audio-track');
     f.cb.onTrackInputs?.(status);
-    expect(f.store.audioNodeLiveValue(node)).toBe(0.8);
+    expect(audioLevel()).toBe(0.8);
     f.cb.onTrackInputs?.({ ...status, inputs: [] });
-    expect(f.store.audioNodeLiveValue(node)).toBe(0);
+    expect(audioLevel()).toBe(0);
   });
 
-  it('preserves the selected Audio freshness window and resets on an explicit source change', () => {
+  it('resets the Sim’s audio on an explicit source change', () => {
     const f = wired();
-    f.store.createGraph('audio');
-    const node = f.store.addNode('audio', 0, 0)!;
     f.store.setTrackAudioInput('audio-track');
     f.cb.onTrackInputs?.(status);
-    f.store.sim.tick(voice.AUDIO_STALE_MS);
-    expect(f.store.audioNodeLiveValue(node)).toBe(0.8);
-    f.store.sim.tick(1);
-    expect(f.store.audioNodeLiveValue(node)).toBe(0);
-    f.cb.onTrackInputs?.(status);
-    expect(f.store.audioNodeLiveValue(node)).toBe(0.8);
+    expect(audioLevel()).toBe(0.8);
     f.store.setTrackAudioInput('another-track');
-    expect(f.store.audioNodeLiveValue(node)).toBe(0);
+    expect(audioLevel()).toBe(0);
   });
 
   it('clears the selected track through the offline panel without requesting browser capture', async () => {
@@ -137,7 +137,7 @@ describe('track input store integration', () => {
       status: f.store.trackInputs, selected: f.store.project?.inputMap.trackAudioInput,
       canEdit: f.store.canEdit, onSelect: (id) => f.store.setTrackAudioInput(id),
     });
-    const selector = screen.getByRole('button', { name: 'Audio source for graph nodes' });
+    const selector = screen.getByRole('button', { name: 'Audio source for Effects' });
     expect(selector.hasAttribute('disabled')).toBe(false);
     await fireEvent.keyDown(selector, { key: 'Enter' });
     expect(await screen.findByRole('option', { name: 'Browser / loopback capture' })).toBeTruthy();
@@ -145,7 +145,7 @@ describe('track input store integration', () => {
     await fireEvent.keyDown(selector, { key: 'Enter' });
     expect(f.store.project?.inputMap.trackAudioInput).toBeUndefined();
     await view.rerender({ selected: f.store.project?.inputMap.trackAudioInput });
-    expect(screen.getByRole('button', { name: 'Audio source for graph nodes' }).textContent).toContain('Browser / loopback capture');
+    expect(screen.getByRole('button', { name: 'Audio source for Effects' }).textContent).toContain('Browser / loopback capture');
     expect(f.store.audioRunning).toBe(false);
     expect(getUserMedia).not.toHaveBeenCalled();
     expect(AudioContext).not.toHaveBeenCalled();
@@ -174,20 +174,16 @@ const retiredSnapshots: [string, TrackInputsStatus][] = [
 describe('named OSC mirror lifetime', () => {
   it.each(retiredSnapshots)('retires owned signals, badges and selected Audio on %s', (_name, snapshot) => {
     const f = wired();
-    f.store.createGraph('audio');
-    const node = f.store.addNode('audio', 0, 0)!;
     f.store.setTrackAudioInput('audio-track');
     f.cb.onTrackInputs?.(status);
     const addresses = ['audio/level', 'macro/1', 'midi/1/gate/38', 'midi/1/note/38', 'midi/1/cc/7']
       .map((control) => trackEcho(f, 'audio-track', control));
     for (const address of addresses) expect(badge(f.store, address)).not.toBeNull();
     f.cb.onTrackInputs?.(snapshot);
-    for (const address of addresses) {
-      expect(f.store.sim.oscTable.has(address)).toBe(false);
-      expect(badge(f.store, address)).toBeNull();
-    }
+    for (const address of addresses) expect(badge(f.store, address)).toBeNull();
+    expect(ownedOscKeys(f.store)).toBe(0);
     expect(f.store.oscHeardBadge).toBeNull();
-    expect(f.store.audioNodeLiveValue(node)).toBe(0);
+    expect(audioLevel()).toBe(0);
   });
 
   it('retires only the disconnected ID, not another live device or ordinary /tracks addresses', () => {
@@ -197,11 +193,8 @@ describe('named OSC mirror lifetime', () => {
     const ordinary = trackInputAddress('retired-track', 'macro/2');
     f.cb.onInput?.({ kind: 'osc', label: ordinary, value: 0.4 });
     f.cb.onTrackInputs?.(status);
-    expect(f.store.sim.oscTable.has(retired)).toBe(false);
     expect(badge(f.store, retired)).toBeNull();
-    expect(f.store.sim.oscTable.get(active)).toBe(0.8);
     expect(badge(f.store, active)?.value).toBe('0.8');
-    expect(f.store.sim.oscTable.get(ordinary)).toBe(0.4);
     expect(badge(f.store, ordinary)?.value).toBe('0.4');
   });
 
@@ -215,14 +208,10 @@ describe('named OSC mirror lifetime', () => {
     if (reason === 'stop') f.store.stop();
     else if (reason === 'auth-error') f.cb.onAuthError?.();
     else f.cb.onConnection?.(reason);
-    expect(f.store.sim.oscTable.has(named)).toBe(false);
     expect(badge(f.store, named)).toBeNull();
     expect(f.store.trackInputs).toBeNull();
-    expect(voice.sampleAudio(f.store.sim.audioTable, 'level', f.store.sim.timeMs)).toBe(0);
-    for (const address of ordinary) {
-      expect(f.store.sim.oscTable.get(address)).toBe(0.4);
-      expect(badge(f.store, address)?.value).toBe('0.4');
-    }
+    expect(audioLevel()).toBe(0);
+    for (const address of ordinary) expect(badge(f.store, address)?.value).toBe('0.4');
     expect(f.store.oscHeardBadge?.label).toBe(ordinary[1]);
   });
 
@@ -233,16 +222,15 @@ describe('named OSC mirror lifetime', () => {
     f.cb.onTrackInputs?.(status);
     const address = trackEcho(f, 'audio-track', 'audio/level');
     state(f, 'server-a');
-    expect(f.store.sim.oscTable.get(address)).toBe(0.8);
+    expect(badge(f.store, address)?.value).toBe('0.8');
     expect(f.store.trackInputs).not.toBeNull();
     state(f, 'server-b');
-    expect(f.store.sim.oscTable.has(address)).toBe(false);
     expect(badge(f.store, address)).toBeNull();
     expect(f.store.oscHeardBadge).toBeNull();
     expect(f.store.trackInputs).toBeNull();
-    expect(voice.sampleAudio(f.store.sim.audioTable, 'level', f.store.sim.timeMs)).toBe(0);
+    expect(audioLevel()).toBe(0);
     trackEcho(f, 'audio-track', 'audio/level', 0.2);
-    expect(f.store.sim.oscTable.get(address)).toBe(0.2);
+    expect(badge(f.store, address)?.value).toBe('0.2');
   });
 
   it('deletes zero-valued keys and badges during ID churn instead of retaining tombstones', () => {
@@ -251,19 +239,17 @@ describe('named OSC mirror lifetime', () => {
       const address = trackEcho(f, `track-${i}`, 'macro/1');
       expect(badge(f.store, address)).not.toBeNull();
       trackEcho(f, `track-${i}`, 'macro/1', 0);
-      expect(f.store.sim.oscTable.has(address)).toBe(false);
       expect(badge(f.store, address)).toBeNull();
       expect(f.store.oscHeardBadge).toBeNull();
     }
-    expect(f.store.sim.oscTable.size).toBe(0);
+    expect(ownedOscKeys(f.store)).toBe(0);
   });
 
   it('bounds echo-only IDs before the next registry snapshot arrives', () => {
     const f = wired();
     const oldest = trackEcho(f, 'track-0', 'macro/1');
     for (let i = 1; i <= TRACK_INPUT_LIMIT; i++) trackEcho(f, `track-${i}`, 'macro/1');
-    expect(f.store.sim.oscTable.size).toBe(TRACK_INPUT_LIMIT);
-    expect(f.store.sim.oscTable.has(oldest)).toBe(false);
+    expect(ownedOscKeys(f.store)).toBe(TRACK_INPUT_LIMIT);
     expect(badge(f.store, oldest)).toBeNull();
   });
 
@@ -274,11 +260,10 @@ describe('named OSC mirror lifetime', () => {
     for (let i = 0; i <= ceiling; i++) {
       f.cb.onInput?.({ kind: 'osc', label: `/echo/${i}`, value: 0.5, trackInputId: 'audio-track', modulationOnly: true });
     }
-    expect(f.store.sim.oscTable.size).toBe(ceiling);
-    expect(f.store.sim.oscTable.has('/echo/0')).toBe(false);
+    expect(ownedOscKeys(f.store)).toBe(ceiling);
     expect(badge(f.store, '/echo/0')).toBeNull();
     f.cb.onTrackInputs?.({ ...status, inputs: [] });
-    expect(f.store.sim.oscTable.size).toBe(0);
+    expect(ownedOscKeys(f.store)).toBe(0);
   });
 
   it('a received named zero replaces an ordinary value at the same address, like the server table', () => {
@@ -286,7 +271,6 @@ describe('named OSC mirror lifetime', () => {
     const address = trackInputAddress('audio-track', 'macro/1');
     f.cb.onInput?.({ kind: 'osc', label: address, value: 0.4 });
     trackEcho(f, 'audio-track', 'macro/1', 0);
-    expect(f.store.sim.oscTable.has(address)).toBe(false);
     expect(badge(f.store, address)).toBeNull();
   });
 
@@ -295,10 +279,8 @@ describe('named OSC mirror lifetime', () => {
     const address = trackEcho(f, 'audio-track', 'macro/1');
     f.cb.onInput?.({ kind: 'osc', label: address, value: 0.4 });
     f.cb.onConnection?.('closed');
-    expect(f.store.sim.oscTable.get(address)).toBe(0.4);
     expect(badge(f.store, address)?.value).toBe('0.4');
     f.cb.onInput?.({ kind: 'osc', label: address, value: 0 });
-    expect(f.store.sim.oscTable.get(address)).toBe(0);
     expect(badge(f.store, address)?.value).toBe('0');
   });
 });
@@ -325,13 +307,10 @@ describe('OSC Learn admission', () => {
       f.cb.onInput?.(echo);
       expect(f.store.oscLearnTarget).toEqual(target);
       expect(JSON.stringify(f.store.project?.inputMap)).toBe(before);
-      if (echo.value > 0) {
-        expect(f.store.sim.oscTable.get(echo.label)).toBe(echo.value);
-        expect(badge(f.store, echo.label)).not.toBeNull();
-      }
+      if (echo.value > 0) expect(badge(f.store, echo.label)).not.toBeNull();
     }
     expect(f.send).not.toHaveBeenCalled();
-    expect(f.store.sim.voices).toHaveLength(0);
+    expect(f.store.sim.effectVoiceStats()).toHaveLength(0);
     f.cb.onInput?.({ kind: 'osc', label: '/intended/press', value: 1 });
     expect(f.store.oscLearnTarget).toBeNull();
     expect(f.send).toHaveBeenLastCalledWith(expect.objectContaining({ t: 'setInputMap' }));

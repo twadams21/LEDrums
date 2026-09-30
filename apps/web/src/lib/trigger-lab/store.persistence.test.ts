@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import { effectChain } from '@ledrums/core';
+import { SHOWS_STORAGE_KEY, SONGS_STORAGE_KEY, STORAGE_KEY } from './legacy-import';
 import {
-  SHOWS_STORAGE_KEY,
   SHOWS_V3_STORAGE_KEY,
-  SONGS_STORAGE_KEY,
-  STORAGE_KEY,
   serializeShowLibraryV3,
   type AuthoredStateV3,
 } from './persistence';
@@ -66,9 +64,6 @@ describe('TriggerLab hydration (restore on reload)', () => {
     expect(store.activeSectionId).toBe('intro');
     expect(store.activeSection!.effects!.map((e) => e.generator.kind)).toEqual(['solid', 'wave', 'gradient']);
     expect(store.selectedEffectId).toBe(store.activeSection!.effects![0]!.id);
-    // The graph sandbox (transient until S08) still gets its friendly pad labels.
-    const key = store.activeSong!.sections[0]!.graphs[0]!;
-    expect(store.graphNames[key]).toBe('Kick · center');
   });
 
   it('restores persisted scalar fields and the Effect selection on construction', () => {
@@ -136,25 +131,5 @@ describe('TriggerLab hydration (restore on reload)', () => {
     localStorage.setItem(SHOWS_V3_STORAGE_KEY, '{ not json');
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
-  });
-});
-
-describe('TriggerLab.createGraph', () => {
-  it('mints a uniquely-keyed, auto-named, selected empty graph', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = store.createGraph();
-    expect(store.graphs[key]).toBeTruthy();
-    expect(store.selectedPadKey).toBe(key);
-    expect(store.graphNames[key]).toBe('New graph 1');
-    expect(store.graphs[key]!.nodes.map((n) => n.kind)).toEqual(['trigger', 'output']);
-  });
-
-  it('uses the given name and auto-increments the default for the next', () => {
-    const store = new TriggerLab(fakeClient);
-    const a = store.createGraph('Kick swell');
-    const b = store.createGraph();
-    expect(store.graphNames[a]).toBe('Kick swell');
-    expect(store.graphNames[b]).toBe('New graph 1');
-    expect(a).not.toBe(b);
   });
 });

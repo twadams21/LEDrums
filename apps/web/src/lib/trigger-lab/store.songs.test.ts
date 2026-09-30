@@ -60,7 +60,7 @@ describe('createSong', () => {
     expect(store.activeSongId).toBe(id); // activated
     expect(song.name).toBe('New song 1'); // auto-named
     expect(song.sections).toHaveLength(1); // one empty section
-    expect(song.sections[0]!.graphs).toEqual([]);
+    expect(song.sections[0]!.effects).toEqual([]);
     expect(store.activeSectionId).toBe(song.sections[0]!.id); // active section re-pointed
   });
 
@@ -117,21 +117,6 @@ describe('duplicateSong', () => {
     expect(dup.sections[0]!.effects).not.toBe(src.sections[0]!.effects);
   });
 
-  it('preserves cross-section graph reuse inside the copy', () => {
-    const store = new TriggerLab(fakeClient);
-    // Explicitly link the source song first; fresh seeded sections are independent by default.
-    const src = store.songs.find((s) => s.id === 'set-1')!;
-    const sharedKey = src.sections[0]!.graphs[0]!;
-    const secondKey = src.sections[1]!.graphs[0]!;
-    store.linkGraphPlacement(src.id, src.sections[0]!.id, sharedKey, src.id, src.sections[1]!.id, secondKey);
-    const linkedSrc = store.songs.find((s) => s.id === 'set-1')!;
-    expect(linkedSrc.sections[1]!.graphs).toContain(sharedKey); // precondition: shared in the source
-
-    const newId = store.duplicateSong('set-1')!;
-    const dup = store.songs.find((s) => s.id === newId)!;
-    expect(dup.sections[1]!.graphs).toContain(dup.sections[0]!.graphs[0]!);
-  });
-
   it('editing an Effect in the copy does not touch the source song', () => {
     const store = new TriggerLab(fakeClient);
     const srcEffect = $snapshot(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.effects![0]!);
@@ -145,16 +130,15 @@ describe('duplicateSong', () => {
     expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.effects![0]).toEqual(srcEffect); // source untouched
   });
 
-  it('clones sections independently — editing the copy does not touch the source', () => {
+  it('clones sections independently — renaming a section of the copy does not touch the source', () => {
     const store = new TriggerLab(fakeClient);
     const newId = store.duplicateSong('set-1')!;
-    const srcBefore = [...store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs];
+    const srcName = store.songs.find((s) => s.id === 'set-1')!.sections[0]!.name;
     const dupSecId = store.songs.find((s) => s.id === newId)!.sections[0]!.id;
-    const key = store.songs.find((s) => s.id === newId)!.sections[0]!.graphs[0]!;
 
-    store.removeGraphFromSection(dupSecId, key); // active song is the dup → edits the copy
-    expect(store.songs.find((s) => s.id === newId)!.sections[0]!.graphs).not.toContain(key);
-    expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.graphs).toEqual(srcBefore);
+    store.renameSection(dupSecId, 'Only in the copy'); // active song is the dup → edits the copy
+    expect(store.songs.find((s) => s.id === newId)!.sections[0]!.name).toBe('Only in the copy');
+    expect(store.songs.find((s) => s.id === 'set-1')!.sections[0]!.name).toBe(srcName);
   });
 
   it('returns null for an unknown id', () => {

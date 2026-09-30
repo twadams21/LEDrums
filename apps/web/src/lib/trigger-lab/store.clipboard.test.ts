@@ -1,23 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
-import {
-  buildGraphClipDoc,
-  buildSectionClipDoc,
-  buildSongClipDoc,
-  buildPatchClipDoc,
-  serialize,
-  type RemapMint,
-} from './clipdoc';
-import type { ClosureSources } from './store/song-library';
-import { nid } from './store/ids';
+import { buildEffectClipDoc, buildSectionClipDoc, buildSongClipDoc, buildPatchClipDoc, serialize, type RemapMint } from './clipdoc';
 import type { WSClient } from '../ws/client';
 
 /* Clipboard copy/paste on the store (S44). The pure build/parse/remap contract is covered in
    clipdoc.test.ts; here we exercise the STORE adapter: materializePaste parses text, remaps against
-   THIS show, unions the fresh closure and inserts the primary — for graph / section / song(show) /
-   song(library) — plus the friendly-error paths (foreign text, wrong context, patch kind). Copy is
-   the system-clipboard IO layer (navigator), tested only for its doc-building here. */
+   THIS show and inserts the section / song (into the show, or into the Song Library) — plus the
+   friendly-error paths (foreign text, wrong context, patch kind). */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -45,28 +35,17 @@ const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() 
 
 /** A deterministic minter so pasted ids are predictable in assertions. */
 function testMint(): RemapMint {
-  let g = 0;
-  let e = 0;
-  let p = 0;
   let s = 0;
   let so = 0;
   let sc = 0;
   return {
-    graph: () => `tg-${++g}`,
-    effect: () => `te-${++e}`,
-    preset: () => `tp-${++p}`,
     section: () => `ts-${++s}`,
     song: () => `tso-${++so}`,
     scene: () => `tsc-${++sc}`,
   };
 }
 
-const sourcesOf = (store: TriggerLab): ClosureSources => ({
-  graphs: store.resolvedView.graphs,
-  graphNames: store.resolvedView.graphNames,
-  effects: store.resolvedView.effects,
-  presets: store.resolvedView.presets,
-});
+const sourcesOf = (store: TriggerLab) => ({ canvasScenes: store.canvasScenes });
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -75,56 +54,8 @@ afterEach(() => {
   delete (globalThis as { localStorage?: Storage }).localStorage;
 });
 
-describe('paste materialize — graph', () => {
-  it('re-adds a graph and reuses its (built-in / content-equal) effect closure — no dup effects', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = Object.keys(store.graphs)[0]!;
-    const text = serialize(buildGraphClipDoc(key, sourcesOf(store)));
-    const effectsBefore = store.effects.length;
-
-    // Remove the source graph so the paste actually mints a fresh one (else content-reuse absorbs it).
-    store.deleteGraph(key);
-    const res = store.materializePaste(text, { context: 'graph', mint: testMint() });
-
-    expect(res.ok).toBe(true);
-    expect(res.ok && res.kind).toBe('graph');
-    expect(store.selectedPadKey).toBe('tg-1');
-    expect(store.graphs['tg-1']).toBeDefined();
-    // effects were reused (built-in / content-equal), never duplicated
-    expect(store.effects.length).toBe(effectsBefore);
-  });
-
-  it('reserves a pasted graph’s carried node ids so a later node mint never collides', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = Object.keys(store.graphs)[0]!;
-    const doc = buildGraphClipDoc(key, sourcesOf(store));
-    expect(doc.payload.graph.nodes.length).toBeGreaterThan(0);
-    // A high node id as if copied from another machine whose counter ran ahead of ours.
-    doc.payload.graph.nodes[0]!.id = 'n-9000001';
-
-    const res = store.materializePaste(serialize(doc), { context: 'graph', mint: testMint() });
-    expect(res.ok).toBe(true);
-    // The global node counter is now past the carried id — the next mint can't duplicate it.
-    expect(Number(nid('n').split('-')[1])).toBeGreaterThan(9000001);
-  });
-
-  it('double-paste of the same graph creates exactly one copy (content reuse)', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = Object.keys(store.graphs)[0]!;
-    const text = serialize(buildGraphClipDoc(key, sourcesOf(store)));
-    store.deleteGraph(key);
-
-    store.materializePaste(text, { context: 'graph', mint: testMint() });
-    const afterFirst = Object.keys(store.graphs).length;
-    store.materializePaste(text, { context: 'graph', mint: testMint() });
-    const afterSecond = Object.keys(store.graphs).length;
-
-    expect(afterSecond).toBe(afterFirst); // the second paste reuses the first's content
-  });
-});
-
 describe('paste materialize — section', () => {
-  it('appends the section to the active song and activates it', () => {
+  it('appends the section, its Effects and Master chain intact, and activates it', () => {
     const store = new TriggerLab(fakeClient);
     const sec = store.resolvedView.songs[0]!.sections[0]!;
     const text = serialize(buildSectionClipDoc(sec, sourcesOf(store)));
@@ -132,10 +63,40 @@ describe('paste materialize — section', () => {
 
     const res = store.materializePaste(text, { context: 'section', mint: testMint() });
 
-    expect(res.ok).toBe(true);
+    expect(res).toEqual({ ok: true, kind: 'section', message: 'Pasted section.' });
     expect(store.activeSong!.sections.length).toBe(sectionsBefore + 1);
     expect(store.activeSectionId).toBe('ts-1');
-    expect(store.activeSong!.sections.some((s) => s.id === 'ts-1')).toBe(true);
+    const pasted = store.activeSong!.sections.find((s) => s.id === 'ts-1')!;
+    expect(pasted.effects).toEqual(sec.effects);
+    expect(pasted.master).toEqual(sec.master);
+  });
+
+  it('is one undo step', () => {
+    const store = new TriggerLab(fakeClient);
+    const sec = store.resolvedView.songs[0]!.sections[0]!;
+    const before = store.activeSong!.sections.map((s) => s.id);
+    store.materializePaste(serialize(buildSectionClipDoc(sec, sourcesOf(store))), { context: 'section', mint: testMint() });
+    store.undo();
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual(before);
+  });
+
+  it('carries a scene the Effects play to another show, reusing it on a second paste', () => {
+    const source = new TriggerLab(fakeClient);
+    const sceneId = source.createCanvasScene('Aurora');
+    const effectId = source.addEffect({ row: 'kit', column: { kind: 'always' } }, 'scene')!;
+    source.setGeneratorParam(effectId, 'sceneId', sceneId);
+    const text = serialize(buildSectionClipDoc(source.activeSection!, sourcesOf(source)));
+
+    const target = new TriggerLab(fakeClient);
+    target.newShow('Other');
+    expect(target.canvasScenes).toEqual([]);
+    const mint = testMint();
+    target.materializePaste(text, { context: 'section', mint });
+    target.materializePaste(text, { context: 'section', mint });
+
+    expect(target.canvasScenes.map((s) => [s.id, s.name])).toEqual([['tsc-1', 'Aurora']]);
+    const pasted = target.activeSection!.effects.find((e) => e.id === effectId)!;
+    expect(pasted.generator.params.sceneId).toBe('tsc-1');
   });
 
   it('rejects a section ClipDoc while a canonical library song is active without minting or selecting', () => {
@@ -145,26 +106,19 @@ describe('paste materialize — section', () => {
     store.setActiveSong(libraryId);
     const section = store.resolvedView.songs.find((song) => song.id === libraryId)!.sections[0]!;
     const text = serialize(buildSectionClipDoc(section, sourcesOf(store)));
-    const before = {
-      activeSectionId: store.activeSectionId,
-      graphCount: Object.keys(store.graphs).length,
-      nameCount: Object.keys(store.graphNames).length,
-      sectionCount: store.activeSong!.sections.length,
-    };
+    const before = { activeSectionId: store.activeSectionId, sectionCount: store.activeSong!.sections.length };
 
     const res = store.materializePaste(text, { context: 'section', mint: testMint() });
 
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.message).toContain('read-only');
     expect(store.activeSectionId).toBe(before.activeSectionId);
-    expect(Object.keys(store.graphs)).toHaveLength(before.graphCount);
-    expect(Object.keys(store.graphNames)).toHaveLength(before.nameCount);
     expect(store.activeSong!.sections).toHaveLength(before.sectionCount);
   });
 });
 
 describe('paste materialize — song', () => {
-  it('into this show: inserts a new song and activates it, closure intact', () => {
+  it('into this show: inserts a new song with its sections re-keyed and activates it', () => {
     const store = new TriggerLab(fakeClient);
     const song = store.resolvedView.songs[0]!;
     const text = serialize(buildSongClipDoc(song, sourcesOf(store)));
@@ -176,8 +130,8 @@ describe('paste materialize — song', () => {
     expect(store.songs.length).toBe(songsBefore + 1);
     expect(store.activeSongId).toBe('tso-1');
     const pasted = store.songs.find((s) => s.id === 'tso-1')!;
-    // every section graph the pasted song references resolves in the show
-    for (const secn of pasted.sections) for (const gk of secn.graphs) expect(store.graphs[gk]).toBeDefined();
+    expect(pasted.sections.map((s) => s.id)).toEqual(song.sections.map((_, i) => `ts-${i + 1}`));
+    expect(pasted.sections.map((s) => s.effects)).toEqual(song.sections.map((s) => s.effects));
   });
 
   it('into the Song Library: adds a self-contained pool entry (not a show song)', () => {
@@ -197,24 +151,31 @@ describe('paste materialize — song', () => {
 describe('paste materialize — friendly errors', () => {
   it('foreign / malformed text ⇒ typed failure, no state change', () => {
     const store = new TriggerLab(fakeClient);
-    const before = Object.keys(store.graphs).length;
+    const before = store.activeSong!.sections.length;
 
-    const res = store.materializePaste('not a clipdoc at all', { context: 'graph' });
+    const res = store.materializePaste('not a clipdoc at all', { context: 'section' });
 
     expect(res.ok).toBe(false);
     expect(res.ok === false && res.message).toMatch(/didn’t contain|isn’t from/i);
-    expect(Object.keys(store.graphs).length).toBe(before);
+    expect(store.activeSong!.sections.length).toBe(before);
   });
 
-  it('wrong context (a graph pasted where a song is expected) ⇒ named mismatch', () => {
+  it('wrong context (an Effect pasted where a song is expected) ⇒ named mismatch', () => {
     const store = new TriggerLab(fakeClient);
-    const key = Object.keys(store.graphs)[0]!;
-    const text = serialize(buildGraphClipDoc(key, sourcesOf(store)));
+    const text = serialize(buildEffectClipDoc(store.activeSection!.effects[0]!, sourcesOf(store)));
 
     const res = store.materializePaste(text, { context: 'song' });
 
-    expect(res.ok).toBe(false);
-    expect(res.ok === false && res.message).toContain('graph');
+    expect(res).toEqual({ ok: false, message: 'Clipboard holds a effect, not a song.' });
+  });
+
+  it('a retired graph ClipDoc is an unknown kind, never pasted', () => {
+    const store = new TriggerLab(fakeClient);
+    const graph = JSON.stringify({ app: 'ledrums', v: 2, kind: 'graph', payload: { key: 'g', graph: { nodes: [], edges: [] } }, deps: {}, meta: {} });
+
+    const res = store.materializePaste(graph, { context: 'section' });
+
+    expect(res).toEqual({ ok: false, message: 'That clipboard content can’t be pasted here.' });
   });
 
   it('a patch ClipDoc is redirected to the Patch view, never remapped', () => {
