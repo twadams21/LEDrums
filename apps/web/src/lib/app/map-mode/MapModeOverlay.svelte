@@ -116,7 +116,9 @@
       measure();
       frame = requestAnimationFrame(tick);
     };
-    tick();
+    // The first measure runs inside this effect: untracked, or its reads of the rects it
+    // writes would make the effect depend on (and re-run from) its own output.
+    untrack(tick);
     return () => cancelAnimationFrame(frame);
   });
 

@@ -5,6 +5,7 @@
    context to look a scoped one up from. A scoped overlay (the styleguide) filters by DOM
    containment instead. */
 
+import { untrack } from 'svelte';
 import type { MappableSpec } from '../../trigger-lab/map-api';
 
 export interface MappableEntry {
@@ -21,14 +22,16 @@ export class MapRegistry {
     return this.list;
   }
 
-  /** Register a control; returns its unregister. */
+  /** Register a control; returns its unregister. Called from an attachment (an effect), so the
+      list is read untracked: otherwise the attachment would depend on the list it writes and
+      re-register itself forever. */
   register(node: HTMLElement, spec: MappableSpec): () => void {
     const entry: MappableEntry = { node, spec };
     this.byNode.set(node, entry);
-    this.list = [...this.list, entry];
+    this.list = [...untrack(() => this.list), entry];
     return () => {
       if (this.byNode.get(node) === entry) this.byNode.delete(node);
-      this.list = this.list.filter((e) => e !== entry);
+      this.list = untrack(() => this.list).filter((e) => e !== entry);
     };
   }
 
