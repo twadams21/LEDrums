@@ -44,7 +44,8 @@
   const canArrange = $derived(store.canEditActiveSong && store.isLocalSong(song.id));
   const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library section is read-only — detach a copy in Objects to edit it');
 
-  const cells = $derived(sectionCellSummaries(section, api.gridRows, api.gridColumns));
+  // The `?? []` only covers the pre-store-wire store (no grid read models yet).
+  const cells = $derived(sectionCellSummaries(section, api.gridRows ?? [], api.gridColumns ?? [])); // TODO(ec-w4): store-wire
   const master = $derived(sectionMasterSummary(section));
   const effectCount = $derived(sectionEffectCount(section));
 
