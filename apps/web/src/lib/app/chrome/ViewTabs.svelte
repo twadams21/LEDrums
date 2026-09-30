@@ -1,6 +1,6 @@
 <script lang="ts">
   /* The workspace view tabs (tabbed chrome): Perform · Objects · Sections ·
-     Trigger Graph · Monitor. Patch is deliberately absent — the whole patch lives
+     Effects · Monitor. Patch is deliberately absent — the whole patch lives
      in Settings now. Drives the shell's view router; the active tab is the one
      surface-raised, bordered pill. */
   import type { ShellStore } from '../shell-store.svelte';
@@ -9,7 +9,7 @@
   import Radio from '@lucide/svelte/icons/radio';
   import Boxes from '@lucide/svelte/icons/boxes';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
-  import Workflow from '@lucide/svelte/icons/workflow';
+  import Blend from '@lucide/svelte/icons/blend';
   import Terminal from '@lucide/svelte/icons/terminal';
 
   let { shell }: { shell: ShellStore } = $props();
@@ -18,7 +18,7 @@
     { id: 'perform', label: 'Perform', icon: Radio },
     { id: 'objects', label: 'Objects', icon: Boxes },
     { id: 'sections', label: 'Sections', icon: LayoutGrid },
-    { id: 'trigger', label: 'Trigger Graph', icon: Workflow },
+    { id: 'trigger', label: 'Effects', icon: Blend },
     { id: 'monitor', label: 'Monitor', icon: Terminal },
   ];
 </script>

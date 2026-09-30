@@ -9,6 +9,7 @@
      settings/SettingsModal, routed by the shell store). */
   import type { TriggerLab } from '../trigger-lab/store.svelte';
   import type { ShellStore } from './shell-store.svelte';
+  import type { EffectsAuthoringApi } from '../trigger-lab/effects-api';
   import TopBar from './chrome/TopBar.svelte';
   import SongsBar from './chrome/SongsBar.svelte';
   import SectionsBar from './chrome/SectionsBar.svelte';
@@ -29,6 +30,10 @@
   import LayersIcon from '@lucide/svelte/icons/layers';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+
+  // The Effects view depends only on the authoring contract, which the store implements once
+  // store-wire lands.
+  const effectsApi = $derived(store as unknown as EffectsAuthoringApi); // TODO(ec-w4): store-wire
 
   // Perform is a chrome-light view: the shell hides the right column and fills the
   // workspace row with PerformView.
@@ -90,9 +95,15 @@
         <Monitor {store} variant="workspace" />
       {:else}
         {#key shell.view}
-          <LazySurface resource={editorViews[shell.view === 'trigger' ? 'trigger' : shell.view === 'objects' ? 'objects' : 'sections']} label={shell.view === 'trigger' ? 'Trigger' : shell.view === 'objects' ? 'Objects' : 'Sections'}>
-            {#snippet children(View)}<View {store} {shell} />{/snippet}
-          </LazySurface>
+          {#if shell.view === 'trigger'}
+            <LazySurface resource={editorViews.trigger} label="Effects">
+              {#snippet children(View)}<View api={effectsApi} panes={store} />{/snippet}
+            </LazySurface>
+          {:else}
+            <LazySurface resource={editorViews[shell.view === 'objects' ? 'objects' : 'sections']} label={shell.view === 'objects' ? 'Objects' : 'Sections'}>
+              {#snippet children(View)}<View {store} {shell} />{/snippet}
+            </LazySurface>
+          {/if}
         {/key}
       {/if}
     </main>

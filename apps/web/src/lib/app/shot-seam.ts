@@ -18,7 +18,8 @@ import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
 import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
-import { defaultProject, voice, withVelocityCurve } from '@ledrums/core';
+import { defaultProject, effectChain, voice, withVelocityCurve } from '@ledrums/core';
+import { MASTER_CELL, type EffectsAuthoringApi } from '../trigger-lab/effects-api';
 import { addDeclaredZone, setZoneLabel } from './docks/patch-inspector';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
 import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
@@ -195,6 +196,15 @@ export interface ShotSeam {
   previewCanonicalReadonly(view?: 'sections' | 'trigger'): void;
   /** Seed a viewer presence state for the disabled-authoring shot. */
   previewViewer(): void;
+  /** Effects grid: select a cell (`cell:<row>:<col>`). `<row>` is a row id or label (`kit`,
+      `kick`, `Snare`); `<col>` is a grid-column index, `always` / `clock` / `cue`, or `z<slot>`. */
+  selectGridCell(spec: string): void;
+  /** Add an Effect of Generator `<kind>[:style]` into the selected cell (`add-effect:wave:radial`). */
+  addEffectToSelected(spec: string): void;
+  /** Fill the selected cell with `n` demo Effects of varied Generators (`effect-stack:3`). */
+  fillEffectStack(count: number): void;
+  /** Select the Master cell (the section's master modifier chain). */
+  selectMaster(): void;
   /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
@@ -851,6 +861,41 @@ class ShotSeamImpl implements ShotSeam {
     for (const t of tones) pushToast(messages[t], { tone: t, ttl: 0 });
   }
 
+  /** The store implements the Effects authoring contract once store-wire lands. */
+  private get effects(): EffectsAuthoringApi {
+    return this.store as unknown as EffectsAuthoringApi; // TODO(ec-w4): store-wire
+  }
+
+  selectGridCell(spec: string): void {
+    const cell = resolveGridCell(this.effects, spec);
+    if (!cell) throw new Error(`cell: no grid cell "${spec}"`);
+    this.effects.selectCell(cell);
+  }
+
+  addEffectToSelected(spec: string): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const cell = this.effects.selectedCell;
+    if (cell === null || cell === MASTER_CELL) throw new Error('add-effect: select a grid cell first (cell:<row>:<col>)');
+    const [kind, style] = splitOnce(spec, ':');
+    this.effects.addEffect(cell, kind as effectChain.GeneratorKind, style);
+  }
+
+  fillEffectStack(count: number): void {
+    if (this.store.canTakeover) this.store.takeover();
+    const cell = this.effects.selectedCell;
+    if (cell === null || cell === MASTER_CELL) throw new Error('effect-stack: select a grid cell first (cell:<row>:<col>)');
+    for (let i = 0; i < count; i++) {
+      const [kind, style] = DEMO_STACK[i % DEMO_STACK.length]!;
+      this.effects.addEffect(cell, kind, style);
+    }
+    // Leave the cell (not its last Effect) as the selection, like a click on it.
+    this.effects.selectCell(cell);
+  }
+
+  selectMaster(): void {
+    this.effects.selectCell(MASTER_CELL);
+  }
+
   async apply(spec: string): Promise<void> {
     for (const token of spec.split(',')) {
       const trimmed = token.trim();
@@ -1035,6 +1080,18 @@ class ShotSeamImpl implements ShotSeam {
       case 'toasts':
         this.previewToasts(arg as ToastTone | undefined);
         break;
+      case 'cell':
+        if (arg) this.selectGridCell(arg);
+        break;
+      case 'add-effect':
+        if (arg) this.addEffectToSelected(arg);
+        break;
+      case 'effect-stack':
+        this.fillEffectStack(Number(arg) || 1);
+        break;
+      case 'master':
+        this.selectMaster();
+        break;
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
@@ -1142,6 +1199,33 @@ class ShotSeamImpl implements ShotSeam {
     return labelled?.key ?? null;
   }
 }
+
+/** The grid cell a `cell:<row>:<col>` spec names, or null (see {@link ShotSeam.selectGridCell}). */
+export function resolveGridCell(api: EffectsAuthoringApi, spec: string): effectChain.EffectCell | null {
+  const [rowSpec, colSpec] = splitOnce(spec, ':');
+  const needle = rowSpec.trim().toLowerCase();
+  const row =
+    api.gridRows.find((r) => r.id.toLowerCase() === needle) ?? api.gridRows.find((r) => r.label.toLowerCase() === needle);
+  if (!row || colSpec === undefined) return null;
+  const c = colSpec.trim().toLowerCase();
+  const zone = /^z(\d+)$/.exec(c);
+  const col = /^\d+$/.test(c)
+    ? api.gridColumns[Number(c)]
+    : api.gridColumns.find((g) =>
+        zone ? g.column.kind === 'zone' && g.column.slot === Number(zone[1]) : g.column.kind === c,
+      );
+  return col ? { row: row.id, column: col.column } : null;
+}
+
+/** The Generators `effect-stack:<n>` cycles through, so a stacked cell shows varied faces. */
+const DEMO_STACK: ReadonlyArray<readonly [effectChain.GeneratorKind, string?]> = [
+  ['wave', 'radial'],
+  ['particles'],
+  ['solid'],
+  ['noise'],
+  ['gradient'],
+  ['lightning'],
+];
 
 /** Attach the seam to `window`. Idempotent; dev-only (guard at the call site). */
 export function installShotSeam(store: TriggerLab, shell: ShellStore): void {

@@ -17,6 +17,9 @@ export interface AppKeyboardNode extends DeleteKeyNode {
 export interface AppKeyboardStore {
   selectedGraph: { nodes: readonly AppKeyboardNode[] } | null;
   fireSectionGraph(index: number): void;
+  /** Keys 1–9 / 0 audition the section's nth Effect in grid order (EffectsAuthoringApi). While the
+      store has it, digits go here instead of {@link fireSectionGraph}; S08 drops the graph path. */
+  fireEffectAt?(index: number): void;
   stepSetlist(axis: voice.NavAxis, delta: number): boolean;
   removeNode(node: AppKeyboardNode): void;
 }
@@ -137,7 +140,8 @@ export function dispatchAppKeyboard({
   });
   claimPerformanceKey(event, decision);
   if (decision.fireGraphIndex !== undefined) {
-    store.fireSectionGraph(decision.fireGraphIndex);
+    if (store.fireEffectAt) store.fireEffectAt(decision.fireGraphIndex);
+    else store.fireSectionGraph(decision.fireGraphIndex);
     return;
   }
   if (decision.sectionStep === undefined) return;
