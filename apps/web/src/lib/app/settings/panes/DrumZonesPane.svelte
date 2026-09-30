@@ -9,7 +9,7 @@
   import DrumVelocityCurve from './DrumVelocityCurve.svelte';
   import DrumZonesList from '../../docks/inspectors/DrumZonesList.svelte';
   import { patchLabel } from '../../docks/inspectors/forms';
-  import { drumZoneId } from '../../patch-zones';
+  import { drumZoneId } from '../../patch-graph';
   import PaneHeader from '../PaneHeader.svelte';
   import Toggle from '../../../ui/Toggle.svelte';
   import { pushToast } from '../../../ui/toast.svelte';

@@ -1,8 +1,8 @@
-/* Shared visual metadata for the Trigger Graph's node kinds — the icon, type tint,
-   label and one-line summary each node card shows. The xyflow TriggerNode, the add
-   palette and (where useful) the Inspector all read ONE source of truth here for
-   "what a Random node looks like". Lucide imports keep this out of `packages/core`;
-   it stays UI-only. */
+/* Shared visual metadata for the graph-era node kinds — the icon, type tint, label and
+   one-line summary. The graph editor that drew node cards from it is gone (effect chains
+   S08); the Buses dock, the section inspector and the Settings option lists still read
+   their icons and tints here. Lucide imports keep this out of `packages/core`; it stays
+   UI-only. */
 import type { Component } from 'svelte';
 import Zap from '@lucide/svelte/icons/zap';
 import Sparkles from '@lucide/svelte/icons/sparkles';

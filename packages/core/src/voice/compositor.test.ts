@@ -519,9 +519,10 @@ describe('Compositor — voice timebase / restart-on-trigger (S25)', () => {
 // looks + textures) must be UNCHANGED: birth-time independent (no phase-snap on recall).
 // These reuse the S25 harness shape, parametrized over the generator id (chaseModel below).
 
-/** The nine effects converted in this slice. All restart on retrigger. */
+/** The effects converted in this slice that still exist (strobe was deleted in S08). All
+    restart on retrigger. */
 const S26_VOICE_EFFECTS = [
-  'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs',
+  'synced-hoops', 'starfield', 'collisions', 'sacred-hogs',
   'gravity-wells', 'orbit-rings', 'comet-trails', 'temp-sweep', 'sparkler', 'flame-flicker',
 ] as const;
 
@@ -652,13 +653,14 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
 
   it('registry timebase classification matches the S26 audit (executable audit of all 41 effects)', () => {
     // Pins the code to docs/handoff/rock-solid/effect-timebase-audit.md so the two can't drift.
+    // S08 deleted strobe, wave-collapse, follow-hoop, burst, colour-melody and sidechain; the
+    // audit's remaining rows still hold.
     const VOICE = new Set([
       // Tier 1 — runtime conversions (this slice)
-      'synced-hoops', 'strobe', 'starfield', 'collisions', 'sacred-hogs', 'gravity-wells',
+      'synced-hoops', 'starfield', 'collisions', 'sacred-hogs', 'gravity-wells',
       'orbit-rings', 'comet-trails', 'temp-sweep', 'sparkler', 'flame-flicker',
       // Tier 2 — intrinsic age-readers declared voice (byte-parity); chase landed in S25
-      'chase', 'radial-wash', 'wave-collapse', 'whole-drum', 'whole-kit', 'follow-hoop',
-      'burst', 'lightning',
+      'chase', 'radial-wash', 'whole-drum', 'whole-kit', 'lightning',
     ]);
     const ABSOLUTE = new Set([
       // base / ambient — must stay free-running
@@ -669,9 +671,9 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
       // free-running washes not in the S26 named set + hybrid (velocity-flames flicker) +
       // hit-driven seq/dt effects + param-driven meter (timebase flag immaterial for these)
       'helix', 'wipe-3d', 'velocity-flames',
-      'confetti-burst', 'pixel-accum', 'colour-melody', 'swing', 'sidechain', 'meter-eq',
+      'confetti-burst', 'pixel-accum', 'swing', 'meter-eq',
     ]);
-    expect(VOICE.size + ABSOLUTE.size).toBe(43);
+    expect(VOICE.size + ABSOLUTE.size).toBe(37);
     for (const id of VOICE) expect(getEffect(id).timebase).toBe('voice');
     for (const id of ABSOLUTE) expect(getEffect(id).timebase ?? 'absolute').toBe('absolute');
   });

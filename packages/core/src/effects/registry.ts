@@ -9,17 +9,12 @@ import { solidColour } from './impl/solid-colour';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
 import { wholeKit } from './impl/whole-kit';
-import { followHoop } from './impl/follow-hoop';
 import { radialWash } from './impl/radial-wash';
 import { wipe3d } from './impl/wipe-3d';
 import { meterEq } from './impl/meter-eq';
 import { pixelAccum } from './impl/pixel-accum';
-import { colourMelody } from './impl/colour-melody';
-import { strobe } from './impl/strobe';
 import { syncedHoops } from './impl/synced-hoops';
-import { burst } from './impl/burst';
 import { swing } from './impl/swing';
-import { sidechain } from './impl/sidechain';
 import { sacredHogs } from './impl/sacred-hogs';
 import { collisions } from './impl/collisions';
 // 2D UV texture fields
@@ -50,7 +45,6 @@ import { velocityFlames } from './impl/velocity-flames';
 import { sparkler } from './impl/sparkler';
 import { flameFlicker } from './impl/flame-flicker';
 import { hueRotateKit } from './impl/hue-rotate-kit';
-import { waveCollapse } from './impl/wave-collapse';
 // Emission-based 3D batch (2026-07-05): per-hit emissions that layer instead of stacking.
 import { chaseBands } from './impl/chase-bands';
 import { ripple3d } from './impl/ripple-3d';
@@ -72,17 +66,12 @@ const ALL: EffectGenerator<any>[] = [
   chase,
   wholeDrum,
   wholeKit,
-  followHoop,
   radialWash,
   wipe3d,
   meterEq,
   pixelAccum,
-  colourMelody,
-  strobe,
   syncedHoops,
-  burst,
   swing,
-  sidechain,
   sacredHogs,
   collisions,
   plasma,
@@ -110,7 +99,6 @@ const ALL: EffectGenerator<any>[] = [
   sparkler,
   flameFlicker,
   hueRotateKit,
-  waveCollapse,
   chaseBands,
   ripple3d,
   sparkArc,

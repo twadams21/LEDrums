@@ -245,7 +245,7 @@ describe('effect-thumb-ticker', () => {
  *
  * Subjects available on this base branch (group/G): chase is the only 'voice'
  * generator (S25); the rest are 'absolute'. Hit-relative decay effects (whole-drum,
- * burst, radial-wash, whole-kit) animate off `trig.ageMs` regardless of the flag, so
+ * radial-wash, whole-kit) animate off `trig.ageMs` regardless of the flag, so
  * they exercise the looping age; plasma is a time-varying 'absolute' texture.
  */
 describe('renderGeneratorThumbFrame — timebase-aware looping (S27)', () => {
@@ -277,7 +277,7 @@ describe('renderGeneratorThumbFrame — timebase-aware looping (S27)', () => {
   it('drum-keyed hit-relative effects find the thumb drum and light up at the hit', () => {
     // Regression: the synthetic trigger's drumId now matches the thumb model's single
     // drum ('thumb'), so these render pixels instead of a black frame.
-    for (const id of ['whole-drum', 'burst', 'radial-wash', 'whole-kit']) {
+    for (const id of ['whole-drum', 'radial-wash', 'whole-kit']) {
       const f = renderGeneratorThumbFrame(id, {}, 0)!;
       expect(litCount(f), id).toBeGreaterThan(0);
     }

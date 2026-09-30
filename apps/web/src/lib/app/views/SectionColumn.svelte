@@ -18,6 +18,7 @@
   import { sectionActions } from '../section-actions';
   import { sectionCellSummaries, sectionEffectCount, sectionMasterSummary } from './section-effects';
   import SectionCellRow from './SectionCellRow.svelte';
+  import { mappable } from '../map-mode/mappable.svelte';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Grid3x3 from '@lucide/svelte/icons/grid-3x3';
 
@@ -77,6 +78,7 @@
     role="group"
     draggable={canArrange && !editing}
     aria-label={`Drag ${section.name}`}
+    {@attach mappable({ target: { kind: 'recallSection', sectionId: section.id, songId: song.id }, kind: 'button', label: `Section · ${section.name}` })}
     ondragstart={onSectionDragStart}
     ondragend={onDragEnd}
   >

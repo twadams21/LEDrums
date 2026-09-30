@@ -7,7 +7,6 @@ export interface PerformanceKeyTarget {
   isEditableTarget: boolean;
   inOpenPopup: boolean;
   inKeyboardControl: boolean;
-  inFlowCanvas: boolean;
   inModal: boolean;
 }
 
@@ -104,7 +103,6 @@ export function performanceKeyTarget(input: TargetOrEvent): PerformanceKeyTarget
         '[data-keyboard-owner="slider"], [data-keyboard-owner="separator"], ' +
         '[role="radio"], [role="switch"], [role="slider"], [role="separator"], [aria-pressed], select',
     ),
-    inFlowCanvas: matches(elements, '.svelte-flow'),
     inModal: matches(elements, MODAL_SELECTOR) || globallyModal,
   };
 }

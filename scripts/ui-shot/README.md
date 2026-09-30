@@ -5,10 +5,10 @@ Headless captures of the running app via system Chrome (playwright-core, `channe
 The interface is **semantic**, not maintenance-driven. You capture a surface by its accessible name and put the app into the state you need with a tiny state string — you do **not** register a screenshot name or hand-write a click chain.
 
 ```bash
-pnpm ui-shot --view trigger --target "Inspector"                         # by accessible name
-pnpm ui-shot --state "view:trigger,add:scope,select:scope" --target "Inspector" --name scope
+pnpm ui-shot --view trigger --target "main.center"                       # by accessible name / CSS
+pnpm ui-shot --state "view:trigger,cell:kick:0,add-effect:wave:radial" --target "main.center" --name wave
 pnpm ui-shot --discover --view trigger                                    # what can I capture here?
-pnpm ui-shot gen3-scope-inspector                                         # a named preset
+pnpm ui-shot grid-selected                                                # a named preset
 pnpm ui-shot --all --strict                                               # sweep, fail on console errors
 ```
 
@@ -26,12 +26,12 @@ A **bare** string walks the whole chain. A **prefix** forces one resolver:
 
 | prefix     | example                                             | resolver |
 | ---------- | --------------------------------------------------- | -------- |
-| `role:`    | `role:region[name='Trigger graph canvas']`          | `getByRole(role, { name })` |
-| `dialog:`  | `dialog:Change effect`                              | dialog by accessible title |
-| `text:`    | `text:Mix`                                          | visible text |
-| `node:`    | `node:controller`                                   | svelte-flow node containing that text |
-| `button:`  | `button:Add Scope`                                  | button by name |
-| _(none)_   | `Inspector`, `main.center`, `.graphbar`             | walk the chain (CSS if all else fails) |
+| `role:`    | `role:grid[name='Effects grid']`                    | `getByRole(role, { name })` |
+| `dialog:`  | `dialog:Settings`                                   | dialog by accessible title |
+| `text:`    | `text:Kick`                                         | visible text |
+| `node:`    | `node:controller`                                   | svelte-flow node containing that text (graph-era: no flow canvas remains, so it resolves nothing) |
+| `button:`  | `button:Add Modifier`                               | button by name |
+| _(none)_   | `main.center`, `.top`, `#device-strip`              | walk the chain (CSS if all else fails) |
 
 If a surface has an accessible name, it is screenshot-able — no registration.
 
@@ -40,34 +40,33 @@ If a surface has an accessible name, it is screenshot-able — no registration.
 The hard part of a screenshot is not cropping the element; it is getting the app into the state where the element exists. Drive that with a comma-separated state string, consumed by the dev-only `window.__LEDRUMS_SHOT__` seam (`apps/web/src/lib/app/shot-seam.ts`):
 
 ```bash
-pnpm ui-shot --state "view:trigger,add:mix" --target "Mix" --name mix-node
+pnpm ui-shot --state "view:trigger,cell:kick:0,effect-stack:3" --target "main.center" --name stacked
 ```
 
 | op          | effect |
 | ----------- | ------ |
-| `view:<v>`  | switch workspace view (`perform` · `objects` · `sections` · `trigger` · `patch` · `monitor`) |
+| `view:<v>`  | switch workspace view (`perform` · `objects` · `sections` · `trigger` (Effects) · `monitor`) |
 | `section:<s>`| activate a section of the active song by 1-based position or name (`section:2`) — the same recall a Sections-bar chip fires |
-| `graph:<g>` | open a trigger graph by key / key-prefix (`snare`) / label; bare `graph` keeps the pre-selected pad |
-| `configured-zones` | Offline fixture: default kit with Kick zone 0 named Head center, opens a Kick graph. Uses the real input-map mutation. |
-| `new-graph` | author a fresh empty graph and select it — a clean slate for `add`/`select` free of authored-graph id clashes |
-| `add:<kind>`| add a node (`scope`, `mix`, `effect`, `random`, `delay`, `lfo`, `cc`, …) to the open graph |
-| `select:<k>`| select the node most recently `add`ed with that kind (opens the Inspector slideover) |
-| `gallery`   | open the effect gallery for the selected / last-added effect node |
-| `effect:<id>`| set that node's effect (`effect:gen:segments`) — no scrolling+clicking a 50-card grid |
-| `mode:<m>`  | set that node's play mode (`mode:loop`) — a `oneshot` fire is gone before the shot lands, so sustained states need this first |
+| `configured-zones` | Offline fixture: default kit with Kick zone 0 named Head center (and zone 2 Rim). Uses the real input-map mutation. |
+| `cell:<row>:<col>`| select an Effects-grid cell — `<row>` is a row id or label (`kit`, `kick`, `Snare`); `<col>` a column index, `always` / `clock` / `cue`, or `z<slot>` |
+| `add-effect:<kind>[:style]`| add an Effect of that Generator into the selected cell (`add-effect:wave:radial`) |
+| `effect-stack:<n>`| fill the selected cell with `n` demo Effects of varied Generators |
+| `master`    | select the Master cell (the section's master modifier chain) |
+| `map-mode[:armed]`| MIDI-map mode on; `:armed` also arms the first visible mappable control |
 | `fire[:<drum>]`| fire a pad hit through the real hit path (`fire:kick`; bare `fire` = the first pad) |
-| `fire:<generatorId>[:k=v[;k=v]]`| author a graph on that generator and fire it (`fire:chase-bands:lifeBeats=8`) — the same op, told apart by whether the arg names a pad |
-| `splice-motion:<mode>` | put the added splice node into a motion mode (`step`/`smooth`/`stagger`) so its MOVE controls render |
-| `splice-through` | switch on all three MOVE THROUGH layers of the added splice (kit, drum, around) with a dragged drum order, so every layer and both order controls render |
-| `slice-motion:<mode>` | the Slice counterpart: put the added slice node into a motion mode (`step`/`smooth`/`stagger`) so its MOVE AROUND rows render |
-| `slice-on:<on>` | set what the added slice cuts (`kit`/`drum`/`space`) — `space` renders the region box controls |
-| `splice-cascade[:<drum>]`| author Trigger → Effect → Splice → Output on its own graph, stagger it a beat per hoop, loop it and hit the pad — the preview showing what a splice IS, not an unwired node card. **Needs the OFFLINE preview**: when a server is linked the kit paints the ENGINE's frame, which this locally-authored graph never reaches, so run it against a web-only dev server |
-| `add-popover`| summon the on-canvas Add-node palette at the canvas centre (drives its own `+` control) |
-| `face-params[:wired\|:mixed]`| author a node with exposed param rows on its FACE — bare = two number rows on an Effect, `:wired` also wires an LFO into the first (driven state), `:mixed` uses a Modifier so a number AND an enum row show on one card |
-| `param-filter:<q>`| type into the effect inspector's param filter (`param-filter:hue`) — narrows the common section + the effect fold |
-| `wire-drop[:<from>]`| the same palette as a wire released in EMPTY canvas summons it — holding that wire, list filtered to what it can reach (`flow` default · `modifier` · `mod-source`) |
-| `settings`  | open the app Settings dialog |
+| `wait:<ms>` | hold the op sequence — for state that lands asynchronously (the debounced show sync) |
+| `settings[:<pane>]`| open the app Settings dialog, optionally on a pane (`settings:outputs`) |
 | `velocity-curve[:<drum>]`| author a non-identity velocity sensitivity curve on a drum and open Settings › Drum trigger zones (`velocity-curve:kick`; bare = the first drum) — pair with `fire:<drum>` to catch the live hit marker |
+| `global-controls` · `global-control-learn[:osc]` | open Settings with representative global-control bindings / with a Learn armed |
+| `controller[:needs\|:discover]` | inject a synthetic PixLite status and open Settings › Controller |
+| `expanded[:off]` | flip the controller's expanded mode (8 / 4 output ports) |
+| `audio-meter[:<state>]` | stage the Settings › Input audio meters without a microphone (`running` · `denied` · `lost` · `unsupported` · `off`) |
+| `backups`   | seed representative local backups and open the Backups dialog |
+| `sections-reorder` | pin the Sections view's section-reorder insert line |
+| `canonical-readonly[:sections]` | switch the active song to a canonical library reference (read-only), on the Effects view or `:sections` |
+| `viewer`    | seed a viewer presence state (authoring disabled) and open Sections |
+| `toast[:<tone>]` | push pinned toast(s) (`info` · `success` · `error`; bare = one of each) |
+| `reset`     | close summoned surfaces, leave map mode, drop the selection |
 
 The seam is a **thin adapter over the existing store API** (no logic duplication) and ships **only in dev** (`import.meta.env.DEV`, dynamically imported in `App.svelte`) — it is dead-code-eliminated from production bundles.
 
@@ -77,7 +76,7 @@ The seam is a **thin adapter over the existing store API** (no logic duplication
 pnpm ui-shot --discover --view trigger
 ```
 
-Lists regions / dialogs / buttons / nodes from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,add:effect,select:effect,gallery"`).
+Lists regions / dialogs / buttons / nodes from the DOM + accessibility tree with ready-to-paste `--target` strings, and writes an overlay (`.ui-shots/discover-<view>.html`) that boxes each target on a screenshot. Combine with `--state` to discover a summoned surface (e.g. `--discover --state "view:trigger,cell:kick:0,add-effect:wave"`).
 
 ## `--click` / `--rightclick` — surfaces that only exist after a gesture
 
@@ -85,8 +84,8 @@ A dialog behind a button and a right-click menu have no store state to summon th
 the way a user does and capture what appears:
 
 ```bash
-pnpm ui-shot --state "view:trigger" --click "button:Add graph" --target "dialog:Add graph" --name add-graph
-pnpm ui-shot --state "view:trigger" --rightclick ".gcard" --target ".lab-ctx-content" --name graph-card-menu
+pnpm ui-shot --route "?style#device-strip" --click "button:Add Modifier" --target ".lab-add-device" --name add-modifier
+pnpm ui-shot --state "view:trigger" --rightclick ".cell" --target ".lab-ctx-content" --name cell-menu
 ```
 
 Both take the same target syntax as `--target`, and both are also preset fields (`click`,
@@ -103,16 +102,16 @@ pnpm ui-shot --click "button:Shows >> button:New" --target "dialog:New show" --n
 Presets are **for CI/sweep stability and locked baselines only** — not a registry you must feed for every new component. Each is a record:
 
 ```json
-{ "gen3-scope-inspector": { "state": "view:trigger,add:scope,select:scope", "target": "Inspector" } }
+{ "grid-selected": { "state": "view:trigger,cell:kick:0,add-effect:wave:radial", "target": "main.center" } }
 ```
 
-Fields: `state`, `target`, optional `name` (defaults to the key), optional `viewport` (`"1280x800"`), optional `settle` (ms — for animated canvases: visualizer, patch, gallery). Run one by name (`pnpm ui-shot gen3-scope-inspector`), list them (`--list`), or sweep all (`--all`).
+Fields: `state`, `target`, optional `name` (defaults to the key), optional `viewport` (`"1280x800"`), optional `settle` (ms — for animated canvases: visualizer, effect thumbnails). Run one by name (`pnpm ui-shot grid-selected`), list them (`--list`), or sweep all (`--all`).
 
 ## Conventions — capturable by convention, not maintenance
 
 The rule is **not** "register every component." It is:
 
-- **Every meaningful UI surface must have an accessible name** — a role + name, or an `aria-label`. If a surface is accessible, it is screenshot-able. (`.slideover` carries `aria-label="Inspector"`; that is all `--target "Inspector"` needs.)
+- **Every meaningful UI surface must have an accessible name** — a role + name, or an `aria-label`. If a surface is accessible, it is screenshot-able. (the Effects grid carries `role="grid"` + `aria-label="Effects grid"`; that is all `--target "role:grid[name='Effects grid']"` needs.)
 - **Reusable primitives may optionally emit `data-ui`** derived from their existing props — a stable hook that costs no new state.
 - **`data-shot` is reserved** for the rare surface that genuinely can't get a stable accessible name. Adding one is a smell — prefer fixing the accessible name.
 - **New app state a shot needs = extend `__LEDRUMS_SHOT__`** with one adapter method (`shot-seam.ts`), never a bespoke click script in a preset.

@@ -11,10 +11,13 @@ edges:
     condition: before writing core or store code
   - target: add-an-effect.md
     condition: when the node hosts or produces effects
-last_updated: 2026-09-25
+last_updated: 2026-09-30
 ---
 
 # Add a Gen3 trigger-graph node kind
+
+> **Superseded (2026-09-30):** the trigger graph is being replaced by Effect chains (`docs/plans/2026-09-30-effect-chains/spec.md`, GH #237; decisions Trent's). This pattern applies only to graph code until effect-chains S08 deletes it. Do not add new graph node kinds.
+
 
 ## Context
 A node kind is not one file — it is a spine through core (types → render plan → eval → voice →

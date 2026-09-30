@@ -29,15 +29,6 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'Any hit lights the entire kit as one body and fades — the whole rig punches together, so a single strike reads across all four drums at once.',
     tags: ['hit', 'kit-wide'],
   },
-  burst: {
-    description: 'A hit lights the whole drum; hit harder and it starts brighter AND lingers longer — the velocity you play is written straight into how long the light hangs.',
-    tags: ['hit', 'per-drum'],
-    deprecated: { replacedBy: 'radial-wash', note: 'Merged into 3D Radial Wash — its per-hit pop is the "Pop" preset (short reach + fast decay).' },
-  },
-  'follow-hoop': {
-    description: 'A hit lights the bottom hoop instantly and each hoop above follows on a delay, so the light visibly climbs the drum — a cascade that turns one strike into vertical motion.',
-    tags: ['hit', 'hoop-aware', 'per-drum'],
-  },
   'pixel-accum': {
     description: 'Each hit sprays a few random pixels to full and everything decays, so fast playing builds a shimmering crust of light across the drum. Seeded — the same groove replays identically.',
     tags: ['hit', 'per-drum', 'sparkle', 'stateful', 'seeded'],
@@ -58,11 +49,6 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'One warm flame breathes across the struck drum from three interlocking waves. Spread moves from one coherent body to pixel variation; Random changes the flame’s steadiness and temporal stepping.',
     tags: ['hit', 'per-drum', 'wash', 'seeded'],
   },
-  'colour-melody': {
-    description: 'Every note maps to its own hue across the kit and holds until the next note — play a melody and the rig walks through the colour wheel with you.',
-    tags: ['hit', 'kit-wide'],
-    deprecated: { replacedBy: 'whole-drum', note: 'Folded into Whole Drum — enable its "Note Hue" toggle to colour each hit by the note played.' },
-  },
   chase: {
     description: 'One hoop lights at a time, arpeggiating up the drum on a beat subdivision — a 16th-note runner that keeps stepping through the hoops in time.',
     tags: ['band', 'hit', 'hoop-aware', 'per-drum', 'beat-synced'],
@@ -71,10 +57,6 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   'chase-bands': {
     description: 'Every hit launches a band of light that races around the struck drum, sized and paced musically. Hits layer — strike four beats running and four evenly-spaced bands chase each other around the hoop.',
     tags: ['band', 'hit', 'hoop-aware', 'per-drum', 'beat-synced', 'emission'],
-  },
-  strobe: {
-    description: 'The whole kit hard-flashes on and off at a fixed rate — a momentary, high-energy strobe that snaps the entire rig in and out in sync.',
-    tags: ['strobe', 'hit', 'kit-wide', 'beat-synced'],
   },
 
   // --- Waves & Ripples: travelling fronts and bands ---------------------------
@@ -85,10 +67,6 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   'ripple-3d': {
     description: 'Every hit detonates a spherical wavefront in WORLD space from the struck drum — it expands through the air and washes across the OTHER drums as it reaches them, so the kit reads as one physical object in a room, not four separate screens.',
     tags: ['wave', '3d', 'kit-wide', 'airspace', 'emission'],
-  },
-  'wave-collapse': {
-    description: 'A hit fires a shell that starts wide, collapses inward to a point, then explodes back out — an implosion-then-burst that gives each strike a wound-up snap of anticipation.',
-    tags: ['wave', '3d', 'kit-wide', 'emission'],
   },
   'wipe-3d': {
     description: 'A plane sweeps through the kit along any axis: a bright band rides the plane while everything it has passed stays lit — a clean directional wipe across real 3D space.',
@@ -215,10 +193,6 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
   'temp-sweep': {
     description: 'A colour-temperature gradient (warm ↔ cool) sweeps along the kit\'s depth over time — a travelling thermal wave washing the rig front to back, blending two hue endpoints rather than one colour.',
     tags: ['ambient', 'wash', '3d', 'kit-wide'],
-  },
-  sidechain: {
-    description: 'A steady full-kit fill that DUCKS to black on every trigger and recovers — the classic sidechain pump, so the base visibly gives way each time you hit and swells back between.',
-    tags: ['ambient', 'wash', 'kit-wide'],
   },
   'sacred-hogs': {
     description: 'A reverent wash with a sparkling halo on the top hoop — a slow, ceremonial glow crowned by twinkle, built as the kit\'s "hymn" look.',

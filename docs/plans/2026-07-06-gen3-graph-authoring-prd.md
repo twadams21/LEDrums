@@ -1,5 +1,7 @@
 # Gen3 Graph Authoring PRD
 
+> **Superseded (2026-09-30).** The trigger graph this document specifies is being replaced by the Effect-chain model: `docs/plans/2026-09-30-effect-chains/spec.md` (GH #237; decisions Trent's). The graph code is deleted in effect-chains S08. Kept as history; do not build from it.
+
 ## Problem Statement
 
 The Trigger graph has outgrown its current node vocabulary and Add Node flow. “Play” nodes are becoming Effect nodes, old Output nodes now represent scope, and new authored graphs need a required terminal Output anchor so routes only render when intentionally wired to output. At the same time, the graph authoring surface needs to support richer modulation sources, route mixing, scoped LED filtering, precise slider entry, and faster section arrangement.

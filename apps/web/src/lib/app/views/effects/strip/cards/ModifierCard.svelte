@@ -22,6 +22,9 @@
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
   import { modifierIcon } from './device-icons';
+  import { mappable } from '../../../../map-mode/mappable.svelte';
+  import type { MappableSpec } from '../../../../../trigger-lab/map-api';
+  import { effectDisplayName } from '../strip-model';
   import {
     DEFAULT_MODIFIER_ENVELOPE,
     MODIFIER_ENVELOPE_PARAMS,
@@ -32,6 +35,7 @@
     modifierParams,
     modulatedKeys,
     pct,
+    type CardParam,
   } from './card-model';
 
   interface Props {
@@ -52,6 +56,20 @@
   const modulated = $derived(modulatedKeys(effect, modifier.uid));
   const disabled = $derived(!api.canEdit);
   const envelope = $derived(modifier.envelope);
+
+  // MIDI-map registrations. Master modifiers belong to no Effect, so an InputMapping (which
+  // addresses an Effect) cannot reach them: they register nothing and dim in map mode.
+  const mapOwner = $derived(effect ? { id: effect.id, label: `${effectDisplayName(effect)} · ${name}` } : null);
+  const bypassMap = $derived<MappableSpec | undefined>(
+    mapOwner ? { target: { kind: 'bypass', effectId: mapOwner.id, modifierUid: modifier.uid }, kind: 'toggle', label: `${mapOwner.label} · On` } : undefined,
+  );
+  const mixMap = $derived<MappableSpec | null>(
+    mapOwner ? { target: { kind: 'modifierMix', effectId: mapOwner.id, modifierUid: modifier.uid }, kind: 'continuous', label: `${mapOwner.label} · Mix` } : null,
+  );
+  const mapParam = (p: CardParam): MappableSpec | null =>
+    mapOwner
+      ? { target: { kind: 'param', effectId: mapOwner.id, device: modifier.uid, param: p.key }, kind: 'continuous', label: `${mapOwner.label} · ${p.label}` }
+      : null;
 
   // View state: whether the envelope section is unfolded. Collapsed by default (S06b).
   let envOpen = $state(false);
@@ -84,7 +102,7 @@
   icon={modifierIcon(category)}
   title={name}
   eyebrow={isMaster ? `Master${category ? ` · ${enumLabel(category)}` : ''}` : category ? enumLabel(category) : 'Modifier'}
-  power={{ on: !modifier.bypass, onToggle: (on) => api.setModifierBypass(effectId, modifier.uid, !on) }}
+  power={{ on: !modifier.bypass, onToggle: (on) => api.setModifierBypass(effectId, modifier.uid, !on), map: bypassMap }}
   {disabled}
 >
   {#snippet actions()}
@@ -99,6 +117,7 @@
     {modulated}
     {disabled}
     labelPrefix={name}
+    {mapParam}
     onChange={(key, v) => api.setModifierParam(effectId, modifier.uid, key, v)}
     onGestureStart={begin}
     onGestureEnd={end}
@@ -106,19 +125,21 @@
 
   <div class="mix">
     <span class="mixlabel">Mix</span>
-    <FaceParamControl
-      kind="number"
-      value={modifier.mix}
-      display={pct(modifier.mix)}
-      min={0}
-      max={1}
-      step={0.01}
-      {disabled}
-      ariaLabel={`${name} mix`}
-      onChange={(v) => api.setModifierMix(effectId, modifier.uid, Number(v))}
-      onGestureStart={begin}
-      onGestureEnd={end}
-    />
+    <span class="mixctl" {@attach mixMap && mappable(mixMap)}>
+      <FaceParamControl
+        kind="number"
+        value={modifier.mix}
+        display={pct(modifier.mix)}
+        min={0}
+        max={1}
+        step={0.01}
+        {disabled}
+        ariaLabel={`${name} mix`}
+        onChange={(v) => api.setModifierMix(effectId, modifier.uid, Number(v))}
+        onGestureStart={begin}
+        onGestureEnd={end}
+      />
+    </span>
   </div>
 
   <div class="env" class:on={!!envelope}>
@@ -177,6 +198,9 @@
     color: var(--ink);
   }
 
+  .mixctl {
+    display: inline-flex;
+  }
   .mix {
     display: flex;
     align-items: center;

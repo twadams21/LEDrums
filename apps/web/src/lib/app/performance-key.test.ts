@@ -14,7 +14,6 @@ const at = (over: Partial<PerformanceKeyInput> = {}): PerformanceKeyInput => ({
   isEditableTarget: false,
   inOpenPopup: false,
   inKeyboardControl: false,
-  inFlowCanvas: false,
   ctrlKey: false,
   metaKey: false,
   altKey: false,
@@ -48,13 +47,8 @@ describe('decidePerformanceKey — accessibility owners', () => {
     ['editable text', { isEditableTarget: true }],
     ['an open combobox/listbox/select', { inOpenPopup: true }],
     ['a radio/toggle/segmented control', { inKeyboardControl: true }],
-    ['the graph canvas', { inFlowCanvas: true, key: 'ArrowRight' }],
   ])('yields to %s', (_surface, input) => {
     expect(decidePerformanceKey(at(input))).toEqual({ claim: false });
-  });
-
-  it('keeps graph-canvas digits available to the live Perform bank', () => {
-    expect(decidePerformanceKey(at({ key: '2', inFlowCanvas: true }))).toEqual({ fireGraphIndex: 1, claim: true });
   });
 
   it('does not claim Enter or Escape, including after a numeric edit', () => {
@@ -76,13 +70,6 @@ describe('decidePerformanceKey — context boundaries', () => {
       expect(decidePerformanceKey(at({ view, key: '1' }))).toEqual({ fireGraphIndex: 0, claim: true });
       expect(decidePerformanceKey(at({ view, key: '0' }))).toEqual({ fireGraphIndex: 9, claim: true });
     }
-  });
-
-  it('fires graph digits over the trigger graph canvas, where authoring actually happens', () => {
-    expect(decidePerformanceKey(at({ view: 'trigger', key: '3', inFlowCanvas: true }))).toEqual({
-      fireGraphIndex: 2,
-      claim: true,
-    });
   });
 
   it('still yields authoring-view digits to any keyboard-native surface', () => {

@@ -5,6 +5,7 @@ import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import type { ApplyResult, EffectsAuthoringApi } from '../../trigger-lab/effects-api';
 import { toastStore } from '../../ui/toast.svelte';
 import SongsBar from './SongsBar.svelte';
+import { mapRegistry } from '../map-mode/registry.svelte';
 import { VIEWING_REASON } from './edit-gate';
 
 /* SongsBar replaces the rail's SongRail in the tabbed chrome. These lock the
@@ -230,5 +231,17 @@ describe('SongsBar — legacy show import', () => {
     await fireEvent.keyDown(getByRole('button', { name: 'Setlist actions' }), { key: 'Enter' });
     const item = await waitFor(() => screen.getByRole('menuitem', { name: /^Import shows — No shows from the previous version/ }));
     expect(item.hasAttribute('data-disabled') || item.getAttribute('aria-disabled') === 'true').toBe(true);
+  });
+});
+
+describe('SongsBar in MIDI-map mode', () => {
+  it('registers the arrows as the song global controls (song chips have no mapping target)', () => {
+    const { container } = render(SongsBar, { props: { store: mockStore() } });
+    const mine = mapRegistry.entries.filter((e) => container.contains(e.node));
+    expect(mine.map((e) => e.spec.target)).toEqual([
+      { kind: 'globalControl', action: 'prevSong' },
+      { kind: 'globalControl', action: 'nextSong' },
+    ]);
+    expect(mine.map((e) => e.spec.label)).toEqual(['Previous song', 'Next song']);
   });
 });

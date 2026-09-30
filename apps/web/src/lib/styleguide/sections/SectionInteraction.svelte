@@ -19,7 +19,7 @@
       <ContextMenu mode="dropdown" label="Section actions demo" actions={[{ label: 'Move left', disabled: true, onSelect: () => {} }, { label: 'Move right', onSelect: () => {} }, { label: 'Rename', onSelect: () => {} }]}>
         <Ellipsis size={16} aria-hidden="true" />
       </ContextMenu>
-      <p>Drum zones always use a dropdown with configured names. Dragging graphs shows an insertion line in both Sections and Trigger.</p>
+      <p>Drum zones always use a dropdown with configured names. Dragging a section shows an insertion line in the gap it would land in; dragging an Effect or Modifier by its grip reorders it in place.</p>
     </div>
 
     <div class="rule">
@@ -33,10 +33,10 @@
     <div class="rule">
       <h3>Keyboard</h3>
       <ul>
-        <li>Keys <code>1–9</code>/<code>0</code> fire the active section's graphs 1–10 (perform surface).</li>
+        <li>Keys <code>1–9</code>/<code>0</code> audition the active section's Effects 1–10 in grid order, in every view.</li>
         <li><code>Enter</code> commits · <code>Esc</code> reverts (CommitInput, EditableRow rename).</li>
         <li>Splitters: arrow keys nudge (<code>step</code> px), <code>Home</code>/<code>End</code> jump to min/max — WAI-ARIA window-splitter semantics.</li>
-        <li><code>Delete</code>/<code>Backspace</code> removes the graph selection.</li>
+        <li><code>Delete</code>/<code>Backspace</code> outside text is claimed by the app (no WebKit history-back); in MIDI-map mode it clears the armed control's binding.</li>
       </ul>
     </div>
 
@@ -63,7 +63,7 @@
       <h3>Composition</h3>
       <ul>
         <li>Compose from <code>lib/ui</code> primitives and the composites above; new panel = existing vocabulary first.</li>
-        <li>Store-bound components read a narrow store surface — keep new ones presentational where possible (NodeCard pattern), with the store adapter at the view edge.</li>
+        <li>Store-bound components read a narrow store surface — keep new ones presentational where possible (the device-card pattern: <code>api</code> in, no store), with the store adapter at the view edge.</li>
         <li>Something new and reusable? Add it to <code>lib/ui</code>, demo it in the styleguide, regenerate this file (<code>pnpm design-system</code>) in the same change.</li>
       </ul>
     </div>

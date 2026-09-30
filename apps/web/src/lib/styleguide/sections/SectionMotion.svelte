@@ -67,7 +67,7 @@
         Rules of thumb: hover/active = <code>--dur-90</code>/<code>--dur-120</code> +
         <code>--ease-control</code>; reveals = <code>--dur-220</code> +
         <code>--ease-out-quart</code>; never animate layout the pointer is working in
-        (the graph's no-lift rule).
+        (the no-lift rule).
       </p>
     </div>
   </div>

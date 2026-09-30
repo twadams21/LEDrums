@@ -46,7 +46,7 @@ describe('effect aliases (U3 populates the map)', () => {
     expect(resolveEffectAlias('rip')).toBe('gen:ripple-3d'); // pattern ripple
     expect(resolveEffectAlias('wash')).toBe('gen:radial-wash'); // pattern radial
     expect(resolveEffectAlias('swirl')).toBe('gen:helix');
-    expect(resolveEffectAlias('strobe')).toBe('gen:strobe');
+    expect(resolveEffectAlias('strobe')).toBe('strobe'); // no generator left to alias to (S08)
     // Retired / merged generators.
     expect(resolveEffectAlias('gen:chase')).toBe('gen:chase-bands');
     expect(resolveEffectAlias('gen:burst')).toBe('gen:radial-wash');

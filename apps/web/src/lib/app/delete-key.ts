@@ -8,39 +8,24 @@
 
    So the rule is: outside editable text, the app owns Backspace/Delete unconditionally —
    whether or not anything is actually deleted. The caller must call `preventDefault()`
-   and must NOT call `stopPropagation()`: xyflow's key handler listens on window in the
-   BUBBLE phase and still needs the event to delete a selected wire. */
-
-/** Node shape this decision cares about — the graph node a 'node' selection resolves to. */
-export interface DeleteKeyNode {
-  kind: string;
-}
-
-/** Selection shape this decision cares about (structurally compatible with shell `Selection`). */
-export interface DeleteKeySelection {
-  kind: string;
-}
+   and must NOT call `stopPropagation()`: a later listener in the event's path may still
+   own the key. */
 
 export interface DeleteKeyInput {
   key: string;
   /** True when the event started inside user-editable text UI (`isEditableShortcutTarget`). */
   isEditableTarget: boolean;
-  selection: DeleteKeySelection | null | undefined;
-  /** The graph node the selection resolves to, or null when it resolves to nothing. */
-  resolvedNode: DeleteKeyNode | null | undefined;
 }
 
 export interface DeleteKeyDecision {
   /** Call `event.preventDefault()` — claims the key from WebKit's history-back default. */
   prevent: boolean;
-  /** Remove `resolvedNode` from the active graph and clear the selection. */
-  removeNode: boolean;
 }
 
-const NONE: DeleteKeyDecision = { prevent: false, removeNode: false };
+const NONE: DeleteKeyDecision = { prevent: false };
 
-/** Backspace and forward-Delete are treated identically — both are "delete" on the canvas,
-    and Backspace alone carries the history-navigation default we have to claim. */
+/** Backspace and forward-Delete are treated identically — both are "delete", and Backspace
+    alone carries the history-navigation default we have to claim. */
 export function isDeleteKey(key: string): boolean {
   return key === 'Backspace' || key === 'Delete';
 }
@@ -49,8 +34,5 @@ export function decideDeleteKey(input: DeleteKeyInput): DeleteKeyDecision {
   if (!isDeleteKey(input.key)) return NONE;
   // Inside a text field the key means "delete a character" — never claim it there.
   if (input.isEditableTarget) return NONE;
-  const node = input.selection?.kind === 'node' ? input.resolvedNode : null;
-  // Trigger nodes are the graph's fixed root and are never removable.
-  const removeNode = !!node && node.kind !== 'trigger';
-  return { prevent: true, removeNode };
+  return { prevent: true };
 }

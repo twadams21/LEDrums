@@ -3,7 +3,7 @@
    The hard part of a UI screenshot is not cropping the element — it is getting
    the app into the state where the element exists. This module is a thin adapter
    over the existing engine + shell stores that drives that state deterministically,
-   so `pnpm ui-shot --state "view:trigger,add:scope,select:scope"` replaces the
+   so `pnpm ui-shot --state "view:trigger,cell:kick:0,add-effect:wave"` replaces the
    fragile Playwright click choreography that used to live in `shots.json`.
 
    It duplicates NO logic: every operation calls the same public store methods the
@@ -16,21 +16,17 @@
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import type { SettingsPane, ShellStore, View } from './shell-store.svelte';
 import { SETTINGS_PANES } from './shell-nav';
-import { makeNode, type GraphNode, type NodeKind, type PlayMode, type TriggerGraph } from '../trigger-lab/sim';
 import type { BackupSnapshotMeta, ControllerStatus } from '../ws/protocol-types';
 import { defaultProject, effectChain, voice, withVelocityCurve } from '@ledrums/core';
 import { MASTER_CELL, type EffectsAuthoringApi } from '../trigger-lab/effects-api';
 import { addDeclaredZone, setZoneLabel } from './docks/patch-inspector';
 import { sectionsDndPreview } from './views/sections-dnd-preview.svelte';
-import { pendingWirePreview, spliceArmedPreview, wireInvalidPreview } from './views/wire-preview.svelte';
-import { lintPreview } from './views/lint-preview.svelte';
-import { canvasDropPreview } from './views/canvas-drop-preview.svelte';
 import { pushToast, toastStore, type ToastTone } from '../ui/toast.svelte';
 import { mapRegistry } from './map-mode/registry.svelte';
 
-/** Let Svelte's reactivity + xyflow flush before the next op reads the DOM. Two
-    animation frames is enough for a rune update to render and the flow canvas to
-    reconcile; ui-shot adds its own settle before capturing. */
+/** Let Svelte's reactivity flush before the next op reads the DOM. Two animation
+    frames is enough for a rune update to render; ui-shot adds its own settle before
+    capturing. */
 function settle(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 }
@@ -46,58 +42,15 @@ export interface ShotSeam {
   reset(): void;
   /** Switch the workspace view (perform · objects · sections · trigger · monitor). */
   setView(view: View): void;
-  /** Open a trigger graph. No arg keeps the pre-selected pad graph; an arg matches a
-      graph by key, key prefix (`snare` → `snare:0`), or label substring. */
-  openGraph(nameOrKey?: string): void;
-  /** Author a fresh empty graph and select it — a clean slate whose only node is the implicit
-      trigger. A source node added here gets a collision-free id, so `add:<kind>,select:<kind>`
-      reliably reaches that kind's inspector even when the authored pad graphs carry ids that a
-      fresh session's id counter would otherwise duplicate. */
-  newGraph(): Promise<void>;
-  /** Add a node of `kind` to the open graph and remember it for a later `selectNode`. */
-  addNode(kind: NodeKind): GraphNode | null;
   /** Stage the Settings › Input audio meters WITHOUT capture (GH #214): `running` (a synthetic
       frame), `denied`, `lost`, `unsupported`, or `off`. Nothing here opens a microphone. */
   previewAudioMeter(state?: string): void;
-  /** Author a one-effect graph, set the named params on it, place it in the active section
-      and FIRE it — so a capture can show what an effect actually renders, at whatever moment
-      `--settle` lands on. The route to "does this effect's Life param do anything" and to any
-      other look-of-the-render shot; without it, proving engine behaviour needs a click chain
-      through the gallery and a slider. */
-  fireEffect(generatorId: string, params: Record<string, number>): void;
-  /** Fire the graph {@link fireEffect} last authored, again. Connected, the show reaches the
-      server asynchronously, so the fire that rides the same tick as the authoring can land
-      before the engine has the graph — sequence `fire:…,refire` to fire once the sync has
-      had a beat. */
-  refire(): void;
   /** Hold the op sequence for `ms` — for state that lands asynchronously (the debounced show
       sync to the engine), which no amount of rAF settling will cover. */
   wait(ms: number): Promise<void>;
-  /** Select a node — by the kind most recently added, by node id, else the first
-      non-trigger node. Flips the Node Editor to its Inspector tab. */
-  selectNode(kindOrId: string): void;
-  /** Put the last-added (else first) splice node into a motion mode, so the MOVE controls —
-      rate, increment, per-unit offset, order, restart/continuous/latched — actually render. */
-  setSpliceMotion(chase: string): void;
-  /** Open the effect gallery for the selected / last-added / first effect node. */
-  openGallery(): void;
-  /** Set that same node's effect (`effect:gen:segments`) through the store seam a gallery
-      card click drives — so any registered effect's params/thumbnail are capturable without
-      choreographing a scroll-and-click through a 50-card grid. */
-  pickEffect(effectId: string): void;
-  /** Set that same node's play mode (`mode:loop`). A `oneshot` fire is gone within a frame or
-      two, so a sustained state — a held loop, and anything keyed off it — is only capturable
-      with the node switched first. */
-  setPlayMode(mode: PlayMode): void;
   /** Fire a pad hit through the store's real hit path (`fire` = the selected pad,
       `fire:kick` = that drum's first pad), so a mid-fire frame is capturable. */
   firePad(drumId?: string): void;
-  /** Author a splice CASCADING on a real trigger graph and fire it, so the preview shows the
-      thing a splice actually is rather than an unwired node card. Builds Trigger → Effect →
-      Splice → Output on its own graph, staggers the splice across hoops, and hits the pad —
-      every step through the store's own mutators, so what the shot proves is the live path.
-      `arg` names the drum (`splice-cascade:snare`, bare = the first pad). */
-  previewSpliceCascade(drumId?: string): void;
   /** Open the Settings modal, optionally on a named section (`settings:outputs`). */
   openSettings(pane?: SettingsPane): void;
   /** Author a non-identity velocity sensitivity curve on a drum (`velocity-curve:kick`,
@@ -107,43 +60,9 @@ export interface ShotSeam {
   /** Seed a representative set of local backups (#123) and open the Backups dialog, so ui-shot can
       capture the snapshot list + reasons + relative times without a live backend history. */
   previewBackups(): void;
-  /** Summon the on-canvas Add-node popover at the canvas centre, via its own `+` control —
-      the popover's open state is TriggerGraphView-local, so this drives the real affordance
-      rather than duplicating the placement math. Opens the Trigger view first. */
-  openAddPopover(): void;
-  /** Type a query into the Effect Gallery's search field. The field's value is
-      component-local, so this drives the real input rather than a store method. */
-  setSearch(query: string): void;
-  /** Type a query into the effect inspector's param filter (S4). Like `setSearch`, the
-      field's value is component-local, so this drives the real input. */
-  filterParams(query: string): void;
-  /** Pin a Sections drop indicator so ui-shot can capture the otherwise drag-only
-      states: `graph` = insertion line at a gap, `section` = reorder target outline. */
-  previewSectionsDnd(kind: 'graph' | 'section'): void;
-  /** Pin the R03 invalid-wire drag state (red/dotted/dull wire-in-progress) so ui-shot can
-      capture it — the live state is drag-only and headless Chrome can't drive the gesture. Opens
-      the Trigger graph and ensures it has a target node the static stand-in wire can end on. */
-  previewWireInvalid(): void;
-  /** Pin the R08 armed-splice indication (the accent/glow a wire wears while a node is dragged
-      over it) so ui-shot can capture it — the live state is drag-only. Opens the Trigger graph,
-      ensures a flow wire exists (a fresh Effect auto-wires to Output), and arms it. */
-  previewSpliceArmed(): void;
-  /** Pin the F8 pending-wire palette — the Add-node popover as it appears when a connection drag
-      is released in EMPTY canvas: holding that wire, its list filtered to the kinds the wire can
-      land on, and a pick adding the node AND the wire. The live state needs a drag headless
-      Chrome can't drive. Opens the Trigger graph and ensures a source node the wire leaves from.
-      `arg` picks the drag's source: `flow` (an Effect's output, the default), `modifier`, or
-      `mod-source` (an envelope) — each filters the list differently. */
-  previewWireDrop(from?: 'flow' | 'modifier' | 'mod-source'): void;
-  /** Pin the R12 canvas drag-over highlight (the accent ring the graph canvas wears while a new
-      node is dragged in from the Add pane) so ui-shot can capture it — the live state is drag-only
-      and headless Chrome can't drive the gesture. Opens the Trigger graph so the canvas is live. */
-  previewCanvasDrop(): void;
-  /** Pin the R05 graph lint strip's issues so ui-shot can capture it — a well-formed authored
-      graph is guaranteed anchors and refuses cycles, so the live strip is otherwise empty. Opens
-      the Trigger graph and pins REAL `compileRenderPlan` issues (from a degenerate graph) so the
-      capture shows genuine compiler output, not a mock. */
-  previewLintIssues(): void;
+  /** Pin the Sections reorder insert line so ui-shot can capture the otherwise drag-only
+      state. */
+  previewSectionsReorder(): void;
   /** Inject a synthetic controller status and open Settings → Controller, so ui-shot can capture
       the controller surface (incl. the R29 admin-password field + the subnet-recommendation card)
       without a live PixLite on the network. `auth` = adopted + authenticated (calm); `needs`
@@ -152,29 +71,6 @@ export interface ShotSeam {
       The Controller pane is an S2 stub until S4d re-homes the panels; the status injection is
       already the shape that pane will render. */
   mockController(kind?: 'auth' | 'needs' | 'discover'): void;
-  /** Author a Mix with two wired layer branches and select it, so the Mix inspector shows
-      its layer rows + the y-order stacking copy (R13). Reaches a state `add`/`select` can't:
-      an empty Mix hides the rows. */
-  mixWithLayers(): void;
-  /** Author a node whose FACE carries exposed param rows (S5) — the state neither `add` nor
-      `select` reaches, since a fresh node's face is bare.
-
-      `face-params` puts the first two number params of a fresh Effect on its face.
-      `face-params:wired` additionally wires an LFO into the first row, so the driven state
-      (modulation badge + live tick beside an editable base value) is capturable.
-      `face-params:mixed` uses a MODIFIER node instead — `trail` declares a number AND an
-      enum, so one capture shows both control types on one card. */
-  faceParams(mode?: 'wired' | 'mixed'): void;
-  /** Author a REAL empty-scope graph so ui-shot can capture the R06 lint surface end to end:
-      an Effect scoped to one drum wired to an Output scoped to a different drum → the effective
-      scope is empty. Lights the node-face lint badge, the lint strip row, AND (Output selected)
-      the inspector's empty-scope row in one capture. Uses genuine `compileRenderPlan` output. */
-  emptyScope(): void;
-  /** Author a REAL no-path-to-Output graph so ui-shot can capture the R07 reachability lint:
-      an Effect whose flow wire to Output is severed → the effect can never reach the terminal
-      anchor. Lights the node-face no-path-to-output badge + the lint strip row (Effect selected).
-      Uses genuine `compileRenderPlan` output. */
-  notReachingOutput(): void;
   /** Push transient toast(s) so ui-shot can capture the top-centre ToastHost stack and its
       per-role tint. `arg` is a single tone (`info`/`success`/`error`); omitted → one of each. */
   previewToasts(tone?: ToastTone): void;
@@ -186,13 +82,9 @@ export interface ShotSeam {
   /** Open Settings with a global control's MIDI (default) or OSC Learn armed, so the
       listening state is capturable without an input device to arm it against. */
   previewGlobalControlLearn(which?: 'midi' | 'osc'): void;
-  /** Seed a linked placement group for the Sections viewer shot. */
-  previewLinkedPlacement(): void;
   /** Activate a section of the active song by 1-based position or name (`section:2`) — the same
       `setActiveSection` a Sections-bar chip fires, so a shot can prove what follows the switch. */
   setSection(positionOrName: string): void;
-  /** Leave one graph unplaced so the Add Graph drawer shows default Copy and explicit Link. */
-  previewGraphPicker(): void;
   /** Switch the active song to a canonical library reference for the read-only shot. */
   previewCanonicalReadonly(view?: 'sections' | 'trigger'): void;
   /** Seed a viewer presence state for the disabled-authoring shot. */
@@ -209,19 +101,12 @@ export interface ShotSeam {
   mapMode(armed?: boolean): Promise<void>;
   /** Select the Master cell (the section's master modifier chain). */
   selectMaster(): void;
-  /** Apply a comma-separated state spec (`view:trigger,add:scope,select:scope`),
+  /** Apply a comma-separated state spec (`view:trigger,cell:kick:0,add-effect:wave`),
       awaiting a render between ops. This is the interface `ui-shot --state` drives. */
   apply(spec: string): Promise<void>;
 }
 
 class ShotSeamImpl implements ShotSeam {
-  /** Nodes this seam added this session, keyed by kind — so `select:scope` can pick
-      the scope node `add:scope` just created without threading its id through the CLI. */
-  private added = new Map<NodeKind, GraphNode>();
-  private lastAdded: GraphNode | null = null;
-  /** The graph {@link fireEffect} authored, so {@link refire} can fire it again. */
-  private firedGraphKey: string | null = null;
-
   constructor(
     private readonly store: TriggerLab,
     private readonly shell: ShellStore,
@@ -234,49 +119,11 @@ class ShotSeamImpl implements ShotSeam {
     this.shell.closeSettings();
     this.shell.clearSelection();
     sectionsDndPreview.clear();
-    wireInvalidPreview.clear();
-    spliceArmedPreview.clear();
-    pendingWirePreview.clear();
-    lintPreview.clear();
-    canvasDropPreview.clear();
     toastStore.clear();
-    this.added.clear();
-    this.lastAdded = null;
   }
 
   setView(view: View): void {
     this.shell.setView(view);
-  }
-
-  openGraph(nameOrKey?: string): void {
-    // Ensure we can author (a live viewer session is otherwise a no-op mutator).
-    if (this.store.canTakeover) this.store.takeover();
-    if (!nameOrKey) return; // a pad graph is pre-selected on boot
-    const key = this.resolveGraphKey(nameOrKey);
-    if (!key) return;
-    const section = this.store.activeSectionId;
-    if (section) this.store.selectGraphInSection(section, key);
-    else this.store.selectGraph(key);
-  }
-
-  async newGraph(): Promise<void> {
-    await this.claimEdit(() => {
-      // Shot presets must author against a local editable song. A fresh dev session can boot on
-      // the canonical library reference, where createGraph is correctly a no-op; detach that
-      // reference through the real store seam before creating the graph the shot will inspect.
-      if (!this.store.activeSongIsLocal) {
-        const librarySongId = this.store.songRefs.includes(this.store.activeSongId)
-          ? this.store.activeSongId
-          : this.store.songRefs[0];
-        if (librarySongId) {
-          const detached = this.store.detachSongReference(librarySongId);
-          if (detached) this.store.setActiveSong(detached);
-        }
-      }
-      this.store.createGraph();
-      this.added.clear();
-      this.lastAdded = null;
-    });
   }
 
   previewAudioMeter(state = 'running'): void {
@@ -287,211 +134,12 @@ class ShotSeamImpl implements ShotSeam {
     else if (state === 'off') this.store.previewAudioMeter('stopped', voice.ZERO_AUDIO_FRAME);
     else {
       this.store.previewAudioMeter('running', frame);
-      this.store.sim.setAudio(frame); // the graph's Audio node faces read the sim table
+      this.store.sim.setAudio(frame); // audio-reactive faces read the sim table
     }
-  }
-
-  addNode(kind: NodeKind): GraphNode | null {
-    if (this.store.canTakeover) this.store.takeover();
-    // Stagger placements so successive adds don't stack on one another in the canvas.
-    const n = this.added.size;
-    const node = this.store.addNode(kind, 360 + n * 48, 200 + n * 48);
-    if (node) {
-      this.added.set(kind, node);
-      this.lastAdded = node;
-    }
-    return node;
-  }
-
-  fireEffect(generatorId: string, params: Record<string, number>): Promise<void> {
-    return this.claimEdit(() => {
-      const section = this.store.activeSection;
-      if (!section) return;
-      const key = this.store.createGraph(`Shot ${generatorId}`);
-      const created = this.store.addNode('effect', 360, 200);
-      if (!created) return;
-      // Keep follow-up `select:effect` / `mode:loop` aimed at this effect, just like addNode.
-      this.added.set('effect', created);
-      this.lastAdded = created;
-      // `addNode` hands back a raw node, not the store's live one (same gotcha `selectNode`
-      // documents) — and pickEffect/setParam MUTATE what they are given, so every call has to
-      // re-resolve through the graph or the edit lands on a detached object.
-      const live = (): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === created.id) ?? null;
-      const target = live();
-      if (target) this.store.pickEffect(target, `gen:${generatorId}`);
-      for (const [paramKey, value] of Object.entries(params)) {
-        const node = live();
-        if (node) this.store.setParam(node, paramKey, value);
-      }
-      // Without this the graph resolves nothing on a fire: a fresh effect node auto-wires to
-      // Output, but nothing drives it.
-      const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
-      if (trigger) this.store.connect(trigger.id, created.id);
-      this.store.addGraphToSection(section.id, key);
-      this.firedGraphKey = key;
-      this.refire();
-    });
   }
 
   wait(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-  }
-
-  refire(): void {
-    const index = this.firedGraphKey ? (this.store.activeSection?.graphs.indexOf(this.firedGraphKey) ?? -1) : -1;
-    if (index >= 0) this.store.fireSectionGraph(index);
-  }
-
-  selectNode(kindOrId: string): void {
-    const graph = this.store.selectedGraph;
-    if (!graph) return;
-    const byKind = this.added.get(kindOrId as NodeKind);
-    const byId = graph.nodes.find((node) => node.id === kindOrId);
-    const byKindLive = byKind && graph.nodes.some((node) => node.id === byKind.id) ? byKind : null;
-    const fallback = graph.nodes.find((node) => node.kind !== 'trigger');
-    const target = byKindLive ?? byId ?? graph.nodes.find((node) => node.kind === kindOrId) ?? fallback;
-    if (target) this.shell.select({ kind: 'node', nodeId: target.id });
-  }
-
-  /** Bind the last-added (else first) sequence node's reset source to a representative value of
-      `kind`, so the bound inspector states screenshot without click choreography. The node is
-      re-resolved THROUGH the store's graph (not the `added` reference): `addNode` returns the raw
-      object, and mutating it directly would bypass the $state proxy — the write would land but
-      never re-render. */
-  private bindSequenceReset(kind: 'drum' | 'midi' | 'osc'): void {
-    const graph = this.store.selectedGraph;
-    const addedId = this.added.get('sequence')?.id;
-    const seq =
-      (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ??
-      graph?.nodes.find((n) => n.kind === 'sequence');
-    if (!seq) return;
-    const source =
-      kind === 'drum'
-        ? ({ kind: 'drum', drumId: this.store.drums[0]?.id ?? 'kick', zone: '0' } as const)
-        : kind === 'osc'
-          ? ({ kind: 'osc', address: '/reset' } as const)
-          : ({ kind: 'midi', note: 61 } as const);
-    this.store.setSequenceResetSource(seq, source);
-  }
-
-  /** `splice-through` — switch on every MOVE THROUGH layer of the added splice (kit, drum, around)
-      with a dragged drum order, so all three layers and both order controls render for a capture. */
-  setSpliceThrough(): void {
-    const graph = this.store.selectedGraph;
-    const addedId = this.added.get('splice')?.id;
-    const node = (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'splice');
-    if (!node) return;
-    const drums = this.store.kitDrumInfos.map((d) => d.id);
-    this.store.setSpliceSetting(node, {
-      spliceWaitMode: 'pulse',
-      spliceDrumOffsetMode: 'beats',
-      spliceDrumOffsetDivision: '1/2',
-      spliceOffsetMode: 'beats',
-      spliceOffsetDivision: '1/16',
-      spliceColorOffsetMode: 'beats',
-      spliceColorOffsetDivision: '1/32',
-      // Reversed, so the chips visibly show a dragged order rather than the model's own.
-      spliceDrumSequence: [...drums].reverse(),
-    });
-  }
-
-  /** The most recently added Slice, re-resolved through the store's graph (see `setSpliceMotion`). */
-  private addedSlice() {
-    const graph = this.store.selectedGraph;
-    const addedId = this.added.get('slice')?.id;
-    return (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'slice');
-  }
-
-  /** `slice-motion:<mode>` — the Slice counterpart of `splice-motion`, so its MOVE AROUND rows render. */
-  setSliceMotion(chase: string): void {
-    const node = this.addedSlice();
-    if (!node) return;
-    this.store.setSpliceSetting(node, {
-      spliceChase: chase as 'off' | 'step' | 'smooth' | 'stagger',
-      spliceOffsetMode: 'beats',
-      spliceOffsetDivision: '1/16',
-    });
-  }
-
-  /** `slice-on:<kit|drum|space>` — what the added Slice cuts, so the SPACE box controls can be captured. */
-  setSliceOn(on: string): void {
-    const node = this.addedSlice();
-    if (node && (on === 'kit' || on === 'drum' || on === 'space')) this.store.setSliceOn(node, on);
-  }
-
-  setSpliceMotion(chase: string): void {
-    const graph = this.store.selectedGraph;
-    const addedId = this.added.get('splice')?.id;
-    // Re-resolve through the store's graph, not the `added` reference — see `bindSequenceReset`.
-    const node = (addedId ? graph?.nodes.find((n) => n.id === addedId) : undefined) ?? graph?.nodes.find((n) => n.kind === 'splice');
-    if (!node) return;
-    this.store.setSpliceSetting(node, {
-      spliceChase: chase as 'off' | 'step' | 'smooth' | 'stagger',
-      // A representative cascade so the offset + order rows render with real values.
-      spliceOffsetMode: 'beats',
-      spliceOffsetDivision: '1/16',
-    });
-  }
-
-  previewSpliceCascade(drumId?: string): void {
-    if (this.store.canTakeover) this.store.takeover();
-    const section = this.store.activeSection;
-    const pad = this.padFor(drumId) ?? this.store.pads[0];
-    if (!section || !pad) return;
-    const key = this.store.createGraph('Shot splice cascade');
-    const effect = this.store.addNode('effect', 360, 200);
-    const splice = this.store.addNode('splice', 620, 200);
-    if (!effect || !splice) return;
-    // Every mutation re-resolves through `graph.nodes`: `addNode` hands back the RAW node, and
-    // writing to that bypasses the `$state` proxy — the value lands and nothing re-renders.
-    const live = (id: string): GraphNode | null => this.store.selectedGraph?.nodes.find((n) => n.id === id) ?? null;
-    const trigger = this.store.selectedGraph?.nodes.find((n) => n.kind === 'trigger');
-    if (trigger) this.store.connect(trigger.id, effect.id);
-    // Bind the graph to the pad we are about to hit, or the hit resolves to some OTHER graph
-    // and the preview shows whatever that one draws.
-    this.store.setTriggerSource(key, { kind: 'drum', drumId: pad.drumId, zone: String(pad.zone) });
-    this.store.connect(effect.id, splice.id);
-    const spliceNode = live(splice.id);
-    // A slow, obvious cascade: one hoop at a time, a beat apart, held long enough that a
-    // single frame catches several units mid-travel rather than one flash.
-    if (spliceNode) {
-      this.store.setSpliceSetting(spliceNode, {
-        spliceChase: 'step',
-        spliceOffsetMode: 'beats',
-        spliceOffsetDivision: '1/4',
-        spliceHoldMs: 1200,
-      });
-      // Loop, not one-shot: a one-shot cascade is over before a screenshot lands (the same
-      // reason `mode:loop` exists — see the ui-shot README).
-      const forLoop = live(splice.id);
-      if (forLoop) this.store.setMode(forLoop, 'loop');
-    }
-    this.store.addGraphToSection(section.id, key);
-    this.firedGraphKey = key;
-    this.store.hit(pad);
-  }
-
-  openGallery(): void {
-    const graph = this.store.selectedGraph;
-    if (!graph) return;
-    const isEffect = (node: GraphNode): boolean => node.kind === 'effect' || node.kind === 'play';
-    const selectedId = this.shell.selection?.kind === 'node' ? this.shell.selection.nodeId : null;
-    const selected = selectedId ? graph.nodes.find((node) => node.id === selectedId) : null;
-    const target =
-      (selected && isEffect(selected) && selected) ||
-      (this.lastAdded && isEffect(this.lastAdded) && this.lastAdded) ||
-      graph.nodes.find(isEffect);
-    if (target) this.store.openGallery(target);
-  }
-
-  pickEffect(effectId: string): void {
-    const target = this.effectTarget();
-    if (target) this.store.pickEffect(target, effectId);
-  }
-
-  setPlayMode(mode: PlayMode): void {
-    const target = this.effectTarget();
-    if (target) this.store.setMode(target, mode);
   }
 
   firePad(drumId?: string): void {
@@ -505,26 +153,6 @@ class ShotSeamImpl implements ShotSeam {
     const wanted = drumId?.toLowerCase();
     if (!wanted) return undefined;
     return this.store.pads.find((p) => p.drumId.toLowerCase() === wanted || p.drumLabel.toLowerCase().startsWith(wanted));
-  }
-
-  /** Does `name` address a pad? Guards `fire:<arg>`'s two meanings. */
-  private isPadId(name: string): boolean {
-    return this.padFor(name) !== undefined;
-  }
-
-  /** The effect/play node an effect op acts on: the selected one, else the last added, else the
-      graph's first. Always re-resolved THROUGH `graph.nodes` — `addNode` hands back the raw
-      object, and passing that to a mutator bypasses the `$state` proxy (the write lands but
-      never re-renders). */
-  private effectTarget(): GraphNode | null {
-    const graph = this.store.selectedGraph;
-    if (!graph) return null;
-    const isEffect = (node: GraphNode): boolean => node.kind === 'effect' || node.kind === 'play';
-    const byId = (id: string | null | undefined): GraphNode | undefined =>
-      id ? graph.nodes.find((node) => node.id === id) : undefined;
-    const selectedId = this.shell.selection?.kind === 'node' ? this.shell.selection.nodeId : null;
-    const candidates = [byId(selectedId), byId(this.lastAdded?.id), graph.nodes.find(isEffect)];
-    return candidates.find((node): node is GraphNode => !!node && isEffect(node)) ?? null;
   }
 
   openSettings(pane?: SettingsPane): void {
@@ -559,100 +187,13 @@ class ShotSeamImpl implements ShotSeam {
     requestAnimationFrame(reassert);
   }
 
-  async openAddPopover(): Promise<void> {
-    if (!this.store.canMutateSelectedGraph) await this.newGraph();
-    this.shell.setView('trigger');
-    document.querySelector<HTMLButtonElement>('button[aria-label="Add node"]')?.click();
-  }
-
-  setSearch(query: string): void {
-    // The Effect Gallery's search value is component-local state (not the store), so drive the
-    // real input and fire `input` for Svelte's bind:value to pick up. (The Add-node popover has
-    // no search since F2 — it is a flat, one-click list of node types.)
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search effects"]');
-    if (!input) return;
-    input.value = query;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-
-  filterParams(query: string): void {
-    const input = document.querySelector<HTMLInputElement>('input[aria-label="Filter parameters"]');
-    if (!input) return;
-    input.value = query;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-
-  previewSectionsDnd(kind: 'graph' | 'section'): void {
+  previewSectionsReorder(): void {
     this.shell.setView('sections');
     const sections = this.store.activeSong?.sections ?? [];
     if (sections.length === 0) return;
-    if (kind === 'graph') {
-      // Land the line one gap in from the top of the first non-empty section (or gap 0).
-      const target = sections.find((s) => s.graphs.length > 0) ?? sections[0]!;
-      sectionsDndPreview.set({ kind: 'graph', sectionId: target.id, index: Math.min(1, target.graphs.length) });
-    } else {
-      // Pin the vertical insert-line in an interior gap (between the first two columns when
-      // there are ≥2, else the leading gap) so it reads as a mid-setlist reorder target.
-      sectionsDndPreview.set({ kind: 'section', index: sections.length >= 2 ? 1 : 0 });
-    }
-  }
-
-  previewWireInvalid(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // The static stand-in wire spans two nodes — make sure the open graph has a non-trigger node
-    // for its far end to land on, so the capture reads as a wire refused AT a target.
-    const graph = this.store.selectedGraph;
-    if (graph && graph.nodes.every((n) => n.kind === 'trigger')) this.addNode('play');
-    wireInvalidPreview.set(true);
-  }
-
-  previewSpliceArmed(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // The armed indication needs a flow wire to sit on; a fresh Effect auto-wires to Output (R04),
-    // so add one if the open graph has no non-trigger nodes yet.
-    const graph = this.store.selectedGraph;
-    if (graph && graph.nodes.every((n) => n.kind === 'trigger' || n.kind === 'output')) this.addNode('effect');
-    spliceArmedPreview.set(true);
-  }
-
-  previewWireDrop(from: 'flow' | 'modifier' | 'mod-source' = 'flow'): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // The palette holds a wire LEAVING a node, so the open graph needs one of that kind. A fresh
-    // Effect auto-wires to Output (R04), which is fine — the pending wire is a second one.
-    const kind: NodeKind = from === 'modifier' ? 'modifier' : from === 'mod-source' ? 'envelope' : 'effect';
-    const graph = this.store.selectedGraph;
-    const source = graph?.nodes.find((n) => n.kind === kind) ?? this.addNode(kind);
-    if (!source) return;
-    pendingWirePreview.set({ nodeId: source.id, type: 'source', handleId: null });
-  }
-
-  previewCanvasDrop(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // The highlight lives on the open Trigger canvas; a pad graph is pre-selected on boot, so no
-    // node is required — the ring wraps the whole surface regardless of graph contents.
-    canvasDropPreview.set(true);
-  }
-
-  previewLintIssues(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // Compile a deliberately degenerate graph so the pinned issues are genuine compiler output,
-    // not hand-written copy: a trigger with two route nodes wired into a cycle and NO Output
-    // anchor → `missing-output` + `flow-cycle`. This exercises both a plain row and the cycle
-    // detail line in one capture.
-    const degenerate: TriggerGraph = {
-      version: 3,
-      nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'a', 200, 0), makeNode('all', 'b', 200, 120)],
-      edges: [
-        { id: 'e1', from: 'a', to: 'b' },
-        { id: 'e2', from: 'b', to: 'a' },
-      ],
-    };
-    lintPreview.set(voice.compileRenderPlan(degenerate).issues);
+    // Pin the vertical insert-line in an interior gap (between the first two columns when
+    // there are ≥2, else the leading gap) so it reads as a mid-setlist reorder target.
+    sectionsDndPreview.set({ kind: 'section', index: sections.length >= 2 ? 1 : 0 });
   }
 
   mockController(kind: 'auth' | 'needs' | 'discover' = 'auth'): void {
@@ -768,30 +309,12 @@ class ShotSeamImpl implements ShotSeam {
     this.openSettings();
   }
 
-  previewLinkedPlacement(): void {
-    const song = this.store.songs[0];
-    const first = song?.sections[0];
-    const second = song?.sections[1];
-    const source = first?.graphs[0];
-    const target = second?.graphs[0];
-    if (!song || !first || !second || !source || !target) return;
-    this.store.linkGraphPlacement(song.id, first.id, source, song.id, second.id, target);
-    this.shell.setView('sections');
-  }
-
   setSection(positionOrName: string): void {
     const sections = this.store.activeSong?.sections ?? [];
     const section = /^\d+$/.test(positionOrName)
       ? sections[Number(positionOrName) - 1]
       : sections.find((candidate) => candidate.name.toLowerCase() === positionOrName.toLowerCase());
     if (section) this.store.setActiveSection(section.id);
-  }
-
-  previewGraphPicker(): void {
-    const section = this.store.activeSong?.sections[0];
-    const key = section?.graphs.at(-1);
-    if (section && key) this.store.removeGraphFromSection(section.id, key);
-    this.shell.setView('sections');
   }
 
   previewCanonicalReadonly(view: 'sections' | 'trigger' = 'trigger'): void {
@@ -801,18 +324,6 @@ class ShotSeamImpl implements ShotSeam {
     if (!libraryId) return;
     this.store.importSongReference(libraryId);
     this.store.setActiveSong(libraryId);
-    const section = this.store.activeSong?.sections[0];
-    const graphKey = section?.graphs.find((key) => this.store.resolvedView.graphs[key]);
-    if (!section || !graphKey) {
-      this.shell.setView(view);
-      return;
-    }
-    this.store.selectGraphInSection(section.id, graphKey);
-    const node = this.store.selectedGraph?.nodes.find(
-      (candidate) =>
-        (candidate.kind === 'effect' || candidate.kind === 'play') && candidate.effectId,
-    ) ?? this.store.selectedGraph?.nodes.find((candidate) => candidate.kind !== 'output');
-    if (node) this.shell.select({ kind: 'node', nodeId: node.id });
     this.shell.setView(view);
   }
 
@@ -925,7 +436,7 @@ class ShotSeamImpl implements ShotSeam {
   private runOp(op: string, arg?: string): void | Promise<void> {
     switch (op) {
       // wait:<ms> — hold the sequence. The show reaches the server on a 300ms debounce, so a
-      // capture that authors a graph and then fires it has to let the sync land in between.
+      // capture that authors an Effect and then fires it has to let the sync land in between.
       case 'wait':
         return this.wait(Number(arg) || 0);
       case 'reset':
@@ -935,71 +446,14 @@ class ShotSeamImpl implements ShotSeam {
         if (this.store.link === 'open') throw new Error('configured-zones requires an offline preview');
         this.store.project = defaultProject();
         this.store.setInputMap(addDeclaredZone(setZoneLabel(this.store.project.inputMap, 'kick', 0, 'Head center'), 'kick', 2, 'Rim'));
-        this.openGraph('Kick');
         break;
       }
       case 'view':
         if (arg) this.setView(arg as View);
         break;
-      case 'graph':
-      case 'open':
-        this.openGraph(arg);
-        break;
-      case 'new-graph':
-        return this.newGraph();
-        break;
-      case 'add':
-        if (arg) this.addNode(arg as NodeKind);
-        break;
-      case 'select':
-        if (arg) this.selectNode(arg);
-        break;
-      case 'splice-motion':
-        if (arg) this.setSpliceMotion(arg);
-        break;
-      case 'splice-through':
-        this.setSpliceThrough();
-        break;
-      case 'slice-motion':
-        if (arg) this.setSliceMotion(arg);
-        break;
-      case 'slice-on':
-        if (arg) this.setSliceOn(arg);
-        break;
-      case 'splice-cascade':
-        this.previewSpliceCascade(arg);
-        break;
-      /* `fire` means two things and always has: `fire[:<drum>]` hits a PAD through the real hit
-         path, and `fire:<generatorId>[:key=value[;key=value]]` authors a graph on that generator
-         and fires it (`fire:chase-bands:lifeBeats=8`). They arrived on different branches and met
-         here as two `case 'fire'` labels, the second of which a switch can never reach — so
-         `fire:kick` silently became `fireEffect('kick')` and both presets that use it captured
-         a dark kit. One case, disambiguated by whether the arg names a PAD (the narrower, older
-         meaning wins on a tie; a generator id is never a drum id). */
-      case 'fire': {
-        const [head, spec] = splitOnce(arg ?? '', ':');
-        if (!head || this.isPadId(head)) {
-          this.firePad(arg || undefined);
-          break;
-        }
-        const params: Record<string, number> = {};
-        for (const pair of (spec ?? '').split(';')) {
-          const [k, v] = splitOnce(pair.trim(), '=');
-          if (k && v !== undefined && Number.isFinite(Number(v))) params[k] = Number(v);
-        }
-        return this.fireEffect(head, params);
-      }
-      case 'refire':
-        this.refire();
-        break;
-      case 'gallery':
-        this.openGallery();
-        break;
-      case 'effect':
-        if (arg) this.pickEffect(arg);
-        break;
-      case 'mode':
-        if (arg === 'oneshot' || arg === 'loop' || arg === 'hold') this.setPlayMode(arg);
+      // fire[:<drum>] — hit a pad through the real hit path (bare = the first pad).
+      case 'fire':
+        this.firePad(arg || undefined);
         break;
       case 'settings':
         // `settings` opens the modal on its default pane; `settings:outputs` deep-links a section.
@@ -1008,60 +462,17 @@ class ShotSeamImpl implements ShotSeam {
       case 'backups':
         this.previewBackups();
         break;
-      case 'add-popover':
-        return this.openAddPopover();
-      case 'search':
-        this.setSearch(arg ?? '');
-        break;
-      case 'param-filter':
-        this.filterParams(arg ?? '');
-        break;
-      case 'sections-insert':
-        this.previewSectionsDnd('graph');
-        break;
       case 'sections-reorder':
-        this.previewSectionsDnd('section');
-        break;
-      case 'wire-invalid':
-        this.previewWireInvalid();
-        break;
-      case 'splice-armed':
-        this.previewSpliceArmed();
-        break;
-      case 'lint-issues':
-        this.previewLintIssues();
-        break;
-      case 'canvas-drop':
-        this.previewCanvasDrop();
-        break;
-      case 'wire-drop':
-        this.previewWireDrop(arg === 'modifier' ? 'modifier' : arg === 'mod-source' ? 'mod-source' : 'flow');
+        this.previewSectionsReorder();
         break;
       case 'controller':
         this.mockController(arg === 'needs' ? 'needs' : arg === 'discover' ? 'discover' : 'auth');
         break;
       case 'expanded':
         // Flip the Advatek expanded/normal controller mode — the ONLY control over the output-port
-        // count (8 expanded / 4 normal). Drives kit.outputs reconcile so the patch graph's output
-        // half can be captured at either count. `expanded` / `expanded:on` → on; `expanded:off` → off.
+        // count (8 expanded / 4 normal). Drives kit.outputs reconcile so Settings › Outputs
+        // can be captured at either count. `expanded` / `expanded:on` → on; `expanded:off` → off.
         this.store.setKitGlobal({ expanded: arg !== 'off' });
-        break;
-      case 'seq-reset':
-        // Bind the last-added sequence node's reset source (`seq-reset:drum|midi|osc`) — thin
-        // adapter over setSequenceResetSource so the bound inspector states are capturable.
-        this.bindSequenceReset(arg === 'drum' ? 'drum' : arg === 'osc' ? 'osc' : 'midi');
-        break;
-      case 'mix-layers':
-        this.mixWithLayers();
-        break;
-      case 'face-params':
-        this.faceParams(arg === 'wired' ? 'wired' : arg === 'mixed' ? 'mixed' : undefined);
-        break;
-      case 'empty-scope':
-        this.emptyScope();
-        break;
-      case 'no-path-to-output':
-        this.notReachingOutput();
         break;
       case 'velocity-curve':
         this.previewVelocityCurve(arg);
@@ -1075,14 +486,8 @@ class ShotSeamImpl implements ShotSeam {
       case 'audio-meter':
         this.previewAudioMeter(arg);
         break;
-      case 'linked-placement':
-        this.previewLinkedPlacement();
-        break;
       case 'section':
         if (arg) this.setSection(arg);
-        break;
-      case 'graph-picker':
-        this.previewGraphPicker();
         break;
       case 'canonical-readonly':
         this.previewCanonicalReadonly(arg === 'sections' ? 'sections' : 'trigger');
@@ -1111,108 +516,6 @@ class ShotSeamImpl implements ShotSeam {
       default:
         console.warn(`[shot-seam] unknown state op "${op}"`);
     }
-  }
-
-  mixWithLayers(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    const mix = this.store.addNode('mix', 620, 200);
-    const top = this.store.addNode('effect', 360, 150);
-    const bottom = this.store.addNode('effect', 360, 300);
-    if (!mix || !top || !bottom) return;
-    // The fresh Effects auto-wired straight to Output (R04); this demo routes them through the
-    // Mix instead, so drop those direct edges before composing top + bottom → mix.
-    const graph = this.store.selectedGraph;
-    if (graph) {
-      for (const e of graph.edges.filter((e) => (e.from === top.id || e.from === bottom.id) && e.to === 'output')) {
-        this.store.disconnect(e.id);
-      }
-    }
-    this.store.connect(top.id, mix.id);
-    this.store.connect(bottom.id, mix.id);
-    this.added.set('mix', mix);
-    this.lastAdded = mix;
-    this.shell.select({ kind: 'node', nodeId: mix.id });
-  }
-
-  faceParams(mode?: 'wired' | 'mixed'): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    // A modifier node is the mixed-TYPE case (`trail`: a number + an enum); an effect node
-    // gives two numbers, the modulatable pair the wired capture needs.
-    const target = mode === 'mixed' ? this.addNode('modifier') : this.addNode('effect');
-    if (!target) return;
-    // The store hands back the RAW node — always re-resolve through the live graph before
-    // mutating, or the value lands but never re-renders (ROUTER gotcha).
-    const live = () => this.store.selectedGraph?.nodes.find((n) => n.id === target.id) ?? null;
-    const node = live();
-    if (!node) return;
-    for (const spec of this.store.faceParamSpecs(node).slice(0, 2)) {
-      const n = live();
-      if (n) this.store.addFaceParam(n, spec.key);
-    }
-    if (mode === 'wired') {
-      // Placed explicitly, well clear of the target — the staggered `addNode` default would
-      // drop the source card ON TOP of the very rows the capture exists to show.
-      const lfo = this.store.addNode('lfo', 60, 420);
-      const n = live();
-      const key = n ? this.store.modDropTarget(n) : undefined;
-      if (lfo && key) this.store.connect(lfo.id, target.id, undefined, `param:${key}`);
-    }
-    this.lastAdded = target;
-    this.shell.select({ kind: 'node', nodeId: target.id });
-  }
-
-  emptyScope(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    const graph = this.store.selectedGraph;
-    if (!graph) return;
-    // Reuse an existing Effect if one is already wired; otherwise a fresh one auto-wires to
-    // Output (R04), giving the Effect → Output flow path the lint walks.
-    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
-    const output = graph.nodes.find((n) => n.kind === 'output');
-    if (!fx || !output) return;
-    // Two distinct drums so the intersection is provably empty for every firing drum. Prefer
-    // real kit drums; fall back to canonical ids if the kit isn't populated in this session.
-    const drums = this.store.kitDrumInfos;
-    const drumA = drums[0]?.id ?? 'kick';
-    const drumB = drums.find((d) => d.id !== drumA)?.id ?? 'snare';
-    this.store.setScope(fx, 'drum');
-    this.store.setTargetId(fx, drumA);
-    this.store.setScope(output, 'drum');
-    this.store.setTargetId(output, drumB);
-    // Select the Output so its inspector (with the empty-scope row) is captured alongside the
-    // canvas badge + strip.
-    this.shell.select({ kind: 'node', nodeId: output.id });
-  }
-
-  notReachingOutput(): void {
-    if (this.store.canTakeover) this.store.takeover();
-    this.shell.setView('trigger');
-    const graph = this.store.selectedGraph;
-    if (!graph) return;
-    // Reuse an existing Effect if one is wired; otherwise a fresh one auto-wires to Output (R04),
-    // giving us an Effect → Output edge to sever.
-    const fx = graph.nodes.find((n) => n.kind === 'effect' || n.kind === 'play') ?? this.addNode('effect') ?? undefined;
-    if (!fx) return;
-    // Cut every outgoing flow wire from the Effect: with no path forward it can never reach the
-    // terminal Output anchor → the R07 no-path-to-output lint (badge + strip). Re-read the graph so
-    // the freshly auto-wired edge is included.
-    const live = this.store.selectedGraph;
-    if (live) for (const e of live.edges.filter((e) => e.from === fx.id)) this.store.disconnect(e.id);
-    // Select the Effect so its inspector + node badge + strip row are captured together.
-    this.shell.select({ kind: 'node', nodeId: fx.id });
-  }
-
-  private resolveGraphKey(nameOrKey: string): string | null {
-    const library = this.store.graphLibrary;
-    const needle = nameOrKey.toLowerCase();
-    const exact = library.find((g) => g.key === nameOrKey);
-    if (exact) return exact.key;
-    const prefixed = library.find((g) => g.key.toLowerCase().startsWith(`${needle}:`));
-    if (prefixed) return prefixed.key;
-    const labelled = library.find((g) => g.label.toLowerCase().includes(needle));
-    return labelled?.key ?? null;
   }
 }
 

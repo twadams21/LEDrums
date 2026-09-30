@@ -23,8 +23,7 @@
   import { outputsToPatch, patchToOutputs, pixelRanges, type HoopRef, type PatchRouting } from '../../patch-routing';
   import { buildPixelOutputTable } from '../../docks/patch-inspector';
   import { patchLabel } from '../../docks/inspectors/forms';
-  import { hoopNodeId } from '../../patch-graph';
-  import { drumZoneId } from '../../patch-zones';
+  import { drumZoneId, hoopNodeId } from '../../patch-graph';
   import { pushToast } from '../../../ui/toast.svelte';
   import { addHoop, dropHoop, moveHoop, newBlockers, removeHoop, unassignedHoops, type HoopDrag } from './chain-editor';
   import { pixelsForHoopIn } from './drums-hoops';

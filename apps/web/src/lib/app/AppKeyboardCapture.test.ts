@@ -7,6 +7,7 @@ import type { TriggerLab } from '../trigger-lab/store.svelte';
 import AppKeyboardCapture from './AppKeyboardCapture.svelte';
 import type { AppKeyboardShell, AppKeyboardStore } from './app-keyboard';
 import type { ShortcutEntry } from './shortcuts';
+import { createAppShortcuts } from './app-shortcuts';
 import BootOverlay from './chrome/BootOverlay.svelte';
 import { initialBootStatus } from './boot-reducer';
 import ShareInfo from './chrome/ShareInfo.svelte';
@@ -58,20 +59,16 @@ function installLaterWindowListener(): ReturnType<typeof vi.fn> {
 function fixture() {
   const stepSetlist = vi.fn(() => true);
   const store: AppKeyboardStore = {
-    selectedGraph: { nodes: [{ id: 'node', kind: 'effect' }] },
     fireSectionGraph: vi.fn(),
     stepSetlist,
-    removeNode: vi.fn(),
   };
   const shell: AppKeyboardShell = {
     view: 'perform',
     settingsPane: null,
-    selection: { kind: 'node', nodeId: 'node' },
-    clearSelection: vi.fn(),
   };
   const duplicate = vi.fn(() => true);
   const shortcuts: ShortcutEntry[] = [
-    { combo: 'mod+d', description: 'Duplicate selected node', run: duplicate },
+    { combo: 'mod+d', description: 'Duplicate selection', run: duplicate },
   ];
   render(AppKeyboardCapture, {
     props: { store, shell, shortcuts, shortcutPlatform: 'mac' },
@@ -86,12 +83,12 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const digit = key(document.body, '1');
     const arrow = key(document.body, 'ArrowRight', { repeat: true });
     const duplicateEvent = key(document.body, 'd', { metaKey: true });
-    key(document.body, 'Backspace');
+    const deleteEvent = key(document.body, 'Backspace');
 
     expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
     expect(store.stepSetlist).toHaveBeenCalledWith('section', 1);
     expect(duplicate).toHaveBeenCalledOnce();
-    expect(store.removeNode).toHaveBeenCalledOnce();
+    expect(deleteEvent.defaultPrevented).toBe(true);
     expect(digit.defaultPrevented).toBe(true);
     expect(arrow.defaultPrevented).toBe(true);
     expect(duplicateEvent.defaultPrevented).toBe(true);
@@ -131,7 +128,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const deleteEvent = key(overlay, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
-    expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -157,7 +153,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const deleteEvent = key(popover, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
-    expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -182,7 +177,6 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const deleteEvent = key(item, 'Backspace');
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
-    expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -218,10 +212,36 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     native.remove();
 
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
-    expect(store.removeNode).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(nativeDelete.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
+  });
+
+  it('consumes Cmd+D inside a modal with the real App registry, so SectionsView cannot duplicate behind it', () => {
+    const store: AppKeyboardStore = { fireSectionGraph: vi.fn(), stepSetlist: vi.fn(() => true) };
+    const shell: AppKeyboardShell = { view: 'sections', settingsPane: null };
+    const shortcuts = createAppShortcuts({ undo: vi.fn(() => false) });
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts, shortcutPlatform: 'mac' } });
+    // Stand-in for SectionsView's window capture listener: it acts only on a non-prevented chord.
+    const sectionDuplicate = vi.fn();
+    const sectionsListener = (e: KeyboardEvent): void => {
+      if (!e.defaultPrevented && e.metaKey && e.key === 'd') sectionDuplicate();
+    };
+    window.addEventListener('keydown', sectionsListener);
+    laterWindowListeners.push(sectionsListener);
+
+    // Outside a modal the no-op entry falls through to the view.
+    const chrome = document.body.appendChild(document.createElement('button'));
+    const open = key(chrome, 'd', { metaKey: true });
+    expect(open.defaultPrevented).toBe(false);
+    expect(sectionDuplicate).toHaveBeenCalledTimes(1);
+
+    const children = createRawSnippet(() => ({ render: () => '<button>dialog action</button>' }));
+    render(Dialog, { props: { open: true, title: 'Dialog', children } });
+    const content = document.querySelector('[data-keyboard-owner="modal"]')!;
+    const inModal = key(content, 'd', { metaKey: true });
+    expect(inModal.defaultPrevented).toBe(true);
+    expect(sectionDuplicate).toHaveBeenCalledTimes(1);
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {
@@ -268,37 +288,18 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(store.fireSectionGraph).not.toHaveBeenCalled();
   });
 
-  it('keeps ordinary Perform canvas arrows with the canvas and still fires a digit', () => {
-    const { store } = fixture();
-    const canvas = document.body.appendChild(document.createElement('div'));
-    canvas.className = 'svelte-flow';
-    let bubbled = 0;
-    canvas.addEventListener('keydown', () => bubbled++);
-
-    const arrow = key(canvas, 'ArrowRight');
-    const digit = key(canvas, '1');
-
-    expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
-    expect(arrow.defaultPrevented).toBe(false);
-    expect(digit.defaultPrevented).toBe(true);
-    expect(bubbled).toBe(1); // ArrowRight reaches the canvas; the claimed digit stops in capture.
-  });
-
-  it('keeps intended delete propagation on the canvas and in normal editable text', () => {
-    const { store } = fixture();
-    const canvas = document.body.appendChild(document.createElement('div'));
-    canvas.className = 'svelte-flow';
+  it('claims Backspace outside text without stopping it, and leaves editable text alone', () => {
+    fixture();
+    const surface = document.body.appendChild(document.createElement('div'));
     const laterWindow = installLaterWindowListener();
 
-    const canvasDelete = key(canvas, 'Backspace');
-    expect(canvasDelete.defaultPrevented).toBe(true);
-    expect(store.removeNode).toHaveBeenCalledOnce();
+    const surfaceDelete = key(surface, 'Backspace');
+    expect(surfaceDelete.defaultPrevented).toBe(true);
     expect(laterWindow).toHaveBeenCalledOnce();
 
     const input = document.body.appendChild(document.createElement('input'));
     const textDelete = key(input, 'Backspace');
     expect(textDelete.defaultPrevented).toBe(false);
-    expect(store.removeNode).toHaveBeenCalledOnce();
     expect(laterWindow).toHaveBeenCalledTimes(2);
   });
 });

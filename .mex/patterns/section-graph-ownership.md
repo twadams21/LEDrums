@@ -1,8 +1,11 @@
 ---
-last_updated: 2026-09-25
+last_updated: 2026-09-30
 ---
 
 # Section graph ownership
+
+> **Superseded (2026-09-30):** the trigger graph is being replaced by Effect chains (`docs/plans/2026-09-30-effect-chains/spec.md`, GH #237; decisions Trent's). This pattern applies only to graph code until effect-chains S08 deletes it. Do not add new graph placement behaviour.
+
 
 ## Contract
 

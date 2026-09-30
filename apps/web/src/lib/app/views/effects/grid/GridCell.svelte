@@ -10,6 +10,8 @@
   import Plus from '@lucide/svelte/icons/plus';
   import PowerOff from '@lucide/svelte/icons/power-off';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import type { MappableSpec } from '../../../../trigger-lab/map-api';
+  import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICONS, generatorLabel } from './generator-icons';
 
   type Props = {
@@ -32,6 +34,8 @@
     onactivate?: () => void;
     onfocus?: () => void;
     oncontextmenu?: (event: MouseEvent) => void;
+    /** MIDI-map registration (fire this cell); absent for the Master and disabled cells. */
+    map?: MappableSpec;
   };
 
   let {
@@ -51,6 +55,7 @@
     onactivate,
     onfocus,
     oncontextmenu,
+    map,
   }: Props = $props();
 
   const master = $derived(variant === 'master');
@@ -98,6 +103,7 @@
   aria-disabled={enabled ? undefined : true}
   data-row={row}
   data-col={col}
+  {@attach map && mappable(map)}
   onclick={() => enabled && onselect?.()}
   ondblclick={() => enabled && onactivate?.()}
   onfocus={() => enabled && onfocus?.()}

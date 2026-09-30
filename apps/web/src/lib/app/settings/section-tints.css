@@ -1,8 +1,8 @@
 /* Settings section colours — one block per section id, consumed by `SettingsNav` (sidebar
    rows) and `PaneHeader` (pane titles) through `[data-settings-section]`.
 
-   The hues are the patch node-role colours the app already draws these objects in
-   (`patch-zones.ts` / `patch-topology.ts`): a section reads as the thing it edits. System
+   The hues are the signal-flow role colours (`--role-*` in tokens.css) of the objects each
+   section edits: a section reads as the thing it edits. System
    has no block — it falls back to the hueless default, because it is the app, not a stage
    of the signal path.
 

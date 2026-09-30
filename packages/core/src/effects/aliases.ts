@@ -37,8 +37,9 @@ export const EFFECT_ALIASES: Readonly<Record<string, string>> = {
   sparkle: 'gen:pixel-accum',
   rip: 'gen:ripple-3d', // pattern 'ripple'
   wash: 'gen:radial-wash', // pattern 'radial'
-  strobe: 'gen:strobe',
   haze: 'gen:lava-lamp',
+  // `strobe` (pattern) had aliased to `gen:strobe`; the strobe generator is gone (S08: it is the
+  // Strobe Modifier only), so a stale `strobe` id now resolves to nothing, like any unknown id.
 };
 
 /**

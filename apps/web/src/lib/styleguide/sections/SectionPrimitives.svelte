@@ -177,7 +177,7 @@
   const mdTypes = [
     { id: 'songs', label: 'Songs', icon: ListMusic },
     { id: 'effects', label: 'Effects', icon: Sparkles },
-    { id: 'graphs', label: 'Graphs', icon: Activity },
+    { id: 'scenes', label: 'Scenes', icon: Activity },
   ];
   // OrderList demo — a live order the card really reorders, as the MOVE THROUGH chips do.
   let demoOrder = $state([

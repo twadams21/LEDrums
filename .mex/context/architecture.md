@@ -12,11 +12,80 @@ edges:
     condition: when specific technology details are needed
   - target: context/decisions.md
     condition: when understanding why the architecture is structured this way
-last_updated: 2026-09-14
+last_updated: 2026-09-30
 note: External Dependencies below (Art-Net/sACN controller, OSC source, MIDI source) are external runtime endpoints, not npm packages — `mex check` flags them as missing-from-manifest; that is expected.
 ---
 
 # Architecture
+
+## Effect chains replace the trigger graph (2026-09-30, GH #237)
+
+Source: `docs/plans/2026-09-30-effect-chains/spec.md`. Its decisions are Trent's (2026-09-29/30
+planning session on Trent's MacBook Pro), building on Tim's voice note relayed by Trent (two-colour
+strobe, strobe fade, per-modifier envelopes, Splice behaviour). Items the spec marks
+**(agent-chosen)** are not Trent's or Tim's. State on the `feat/effect-chains-*` stack, not yet
+merged to `main` or shipped: waves 1–5a are integrated; the graph model is still present and is
+deleted last (S08 / wave 6, expand → contract). Terms: `CONTEXT.md`.
+
+Authoring is a per-section **grid** of **Cells** (rows Kit + one per drum; columns = the drum's
+zone slots, then Always / Clock / Cue). Each Cell holds a **Stack** of **Effects**; each Effect is
+a linear chain Trigger → Generator → Modifiers → Target, plus Control devices and an amp envelope.
+A section also has a **Master chain** of Modifiers. Only authoring changed: kit, patch, outputs,
+input map, songs / sections and transport carry over.
+
+```
+AuthoredV3 (show library v3 / song library v2)       packages/core/src/effect-chain/library.ts
+  songs → sections { effects: Effect[], master: ModifierDevice[] }, mappings: InputMapping[]
+        │  buildRuntimeShow()   ← ONE builder: web show-builder.ts AND server project-show.ts
+        ▼
+Runtime Show ──► createVoiceBusEngine (packages/core/src/voice/engine.ts)
+        │   input → InputMapping match (global control > mapping > zone / cue; consumed)
+        │         → resolver.ts matchSectionEffects / alwaysEffects / clockEffectsCrossed
+        │         → effectPlayAction(effect) → the EXISTING PlayAction → voice pool
+        ▼
+voice pool → generator bridge → modifier chain (per-link mix + envelope) → compositor
+   (per-Effect blend + opacity, section order) → applySectionMaster → blackout / brightness → Frame
+```
+
+- **One seam.** `effect-chain/resolver.ts` is the only code that turns authored Effects into
+  `PlayAction`s. Everything below `PlayAction` (pool, envelopes, generator bridge, modifier chain,
+  compositor, output) is reused. The server engine and the offline web Sim cannot disagree: the
+  Sim plays Effect shows through a private core `createVoiceBusEngine` (`trigger-lab/sim.ts`),
+  and `runtime-parity.test.ts` proves it frame for frame.
+- **No buses / EffectDefs in the authored model.** `effect-chain/runtime.ts` synthesises one
+  internal poly bus (`@effect-chain`) and one internal EffectDef per hosted generator id
+  (`@chain:<id>`). Retrigger (overlap / restart / ignore) is applied by the engine before spawn.
+- **Generators are facades.** `effect-chain/generators/` holds 9 Generators + Splice / Slice. Each
+  Style names ONE existing implementation in `effects/registry.ts`; the implementations stay,
+  internal and tested. `generators/coverage.test.ts` fails if an effect is reachable through no
+  Style (unless it is in `EXCLUDED`) or through more than one. Pattern: `../patterns/add-generator-style.md`.
+- **Modifiers.** Unchanged registry in `packages/core/src/modifiers/`. The chain runner gained
+  per-link `mix` and envelope; at `mix` = 1 with no envelope it is identical to before. Strobe
+  gained an off state (black / dimmed input / second colour) and a fade; its defaults are identical to before.
+  Pattern: `../patterns/add-modifier.md`.
+- **Always / Clock / Cue.** Always Effects spawn in `loop` mode on section recall and release on
+  leave (this replaces section "looks"). Clock Effects fire inside the engine tick when the
+  transport crosses their beat grid. Cue sources take part in the binding-claims guard.
+- **MIDI-map mode.** `InputMapping` (`effect-chain/input-mappings.ts`) is stored on the show.
+  Note / CC / OSC mappings resolve in the core engine at global-control precedence; a matched
+  input is consumed. Continuous targets (`param`, `opacity`, `modifierMix`) become per-frame
+  modulation on the matching Effect's live voices. Key mappings and `bypass` toggles resolve in the
+  web store. `voice/binding-claims.ts` refuses a mapping that collides with a zone, a global
+  control, the reserved CC, a Cue or another mapping. Global-control buttons write
+  `inputMap.globalControls`, so Settings stays their source of truth.
+- **Web.** The UI depends only on two contracts implemented by `TriggerLab`:
+  `trigger-lab/effects-api.ts` (`EffectsAuthoringApi`: grid, strip, sections / objects views) and
+  `trigger-lab/map-api.ts` (`MapModeApi`). UI: `app/views/effects/grid/**` (grid, Generator picker),
+  `app/views/effects/strip/**` (device strip and cards), `app/map-mode/**` (overlay, `mappable`
+  attachment, registry). Protocol: `fireEffect` joins `fireGraph`, which S08 removes.
+- **Persistence and import.** Show library v3 / song library v2 (`model/library-versions.ts`,
+  `*_VERSION_EFFECTS`), browser keys `ledrums:shows:v3` / `ledrums:songs:v2`. Old keys and server
+  blobs are left untouched. `trigger-lab/legacy-import.ts` imports an old show's songs, sections,
+  canvas scenes and transport, with empty grids and graphs dropped. ClipDoc files gain `effect` /
+  `cell` / `device` kinds.
+
+Everything below about trigger graphs, graph eval, buses, Scope / Mix / Output nodes and section
+looks describes the model being removed. It stays true of `main` until S08 merges.
 
 ## Stage, richer fields and named local inputs (2026-09-14)
 
@@ -101,7 +170,8 @@ path. The cycle period is the authored effect life; an exponential voice-tail fa
 of material regeneration.
 
 The sections below were written for the original Composition engine and are **historical**, not
-an accurate complete map of current `main`. Current authoring uses show-global trigger graphs,
+an accurate complete map of current `main`. Current authoring on `main` uses show-global trigger graphs
+(superseded by Effect chains, above),
 setlist sections, voice buses and graph-based effects/modulation. `packages/core/src/voice/`
 owns the voice engine/compositor; `apps/server/src/voice-engine-host.ts` hosts it, while the
 legacy `EngineHost` still exists. The web's `trigger-lab` store/sim is production authoring and

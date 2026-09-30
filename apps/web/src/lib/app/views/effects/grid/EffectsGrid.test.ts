@@ -189,13 +189,11 @@ describe('EffectsGrid keyboard audition (app keyboard seam)', () => {
   function withKeyboard(effects: effectChain.Effect[]) {
     const m = mount(effects);
     const store: AppKeyboardStore = {
-      selectedGraph: null,
       fireSectionGraph: vi.fn(),
       stepSetlist: vi.fn(() => true),
-      removeNode: vi.fn(),
       fireEffectAt: (i) => m.api.fireEffectAt(i),
     };
-    const shell: AppKeyboardShell = { view: 'trigger', settingsPane: null, selection: null, clearSelection: vi.fn() };
+    const shell: AppKeyboardShell = { view: 'trigger', settingsPane: null };
     render(AppKeyboardCapture, { props: { store, shell, shortcuts: [], shortcutPlatform: 'mac' } });
     return { ...m, store };
   }

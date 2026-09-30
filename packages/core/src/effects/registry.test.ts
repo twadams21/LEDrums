@@ -10,14 +10,15 @@ describe('effect registry', () => {
 
   it('ships the full catalog across every category', () => {
     const categories = new Set(listEffects().map((e) => e.category));
-    expect(categories).toEqual(new Set(['base', 'trigger', 'wash', 'meter', 'utility', 'texture', 'particle']));
+    // 'utility' held only strobe and sidechain, both deleted in S08.
+    expect(categories).toEqual(new Set(['base', 'trigger', 'wash', 'meter', 'texture', 'particle']));
     for (const id of [
       // original catalog
-      'solid-base', 'chase', 'whole-drum', 'whole-kit', 'follow-hoop', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'colour-melody', 'strobe', 'synced-hoops', 'burst', 'swing', 'sidechain', 'sacred-hogs', 'collisions',
+      'solid-base', 'chase', 'whole-drum', 'whole-kit', 'radial-wash', 'wipe-3d', 'meter-eq', 'pixel-accum', 'synced-hoops', 'swing', 'sacred-hogs', 'collisions',
       // 2D UV textures
       'plasma', 'fire', 'ripple-pond', 'rainbow-flow', 'tunnel', 'checker-pulse', 'perlin-clouds', 'lava-lamp', 'interference', 'caustics', 'spiral', 'grid-glow',
       // particles / spatial / musical
-      'starfield', 'comet-trails', 'lightning', 'confetti-burst', 'helix', 'orbit-rings', 'gravity-wells', 'breathing-kit', 'temp-sweep', 'velocity-flames', 'hue-rotate-kit', 'wave-collapse',
+      'starfield', 'comet-trails', 'lightning', 'confetti-burst', 'helix', 'orbit-rings', 'gravity-wells', 'breathing-kit', 'temp-sweep', 'velocity-flames', 'hue-rotate-kit',
       // emission-based 3D batch
       'chase-bands', 'ripple-3d', 'spark-arc', 'rain-3d',
       // U6 gap-fill natives
@@ -33,7 +34,15 @@ describe('effect registry', () => {
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(54);
+    expect(listEffects().length).toBe(48);
+  });
+
+  it('no longer registers the effects merged away by the effect-chains model (S08)', () => {
+    // wave-collapse → radial-wash collapse, follow-hoop → whole-drum hoopDelayMs, strobe → the
+    // Strobe Modifier, sidechain → a future Duck modifier, burst / colour-melody → deprecated.
+    for (const id of ['wave-collapse', 'follow-hoop', 'strobe', 'sidechain', 'burst', 'colour-melody']) {
+      expect(tryGetEffect(id), id).toBeUndefined();
+    }
   });
 
   it('paramSpec defaults sit within declared min/max', () => {

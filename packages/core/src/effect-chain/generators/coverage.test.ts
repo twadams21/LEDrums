@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { effectIds, tryGetEffect } from '../../effects/registry';
 import { listGenerators } from './index';
 
-/** Effect ids deliberately reachable through no Style (spec "Dropped as generators" + merges). */
+/** Effect ids still registered but deliberately reachable through no Style (spec "Dropped as
+    generators"). The rest of that list (wave-collapse, follow-hoop, strobe, sidechain, burst,
+    colour-melody) was deleted from the registry in S08, so it needs no exclusion. */
 const EXCLUDED = new Set([
-  'wave-collapse', // merged: radial-wash `mode: 'collapse'` (Wave / Radial)
-  'follow-hoop', // merged: whole-drum `hoopDelayMs` (Solid / Simple)
-  'strobe', // the Strobe Modifier only
-  'sidechain', // future "Duck" modifier
-  'chase', 'burst', 'colour-melody', // already deprecated
+  // Deprecated, but kept: the legacy Composition engine's `defaultProject()` trigger clip still
+  // renders `effectId: 'chase'`. It goes when that engine is removed (spec "Out of scope").
+  'chase',
 ]);
 
 describe('Generator Style coverage (spec "Style mapping")', () => {

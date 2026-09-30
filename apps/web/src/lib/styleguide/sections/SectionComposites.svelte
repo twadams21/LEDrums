@@ -1,16 +1,9 @@
 <script lang="ts">
-  /* Key app composites, rendered from the REAL components: the shared NodeCard face
-     (both graphs), live EffectThumbs (same sampler as the 3D kit), the OutputPill,
+  /* Key app composites, rendered from the REAL components: live EffectThumbs (same
+     sampler as the 3D kit), the OutputPill,
      the Monitor log, and the inspector control rows. Store-bound components
      (OutputPill, Monitor, RenameField) run on minimal reactive stubs — they read a
      tiny store surface, so the stub drives the real component, not a copy of it. */
-  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-  import Link2 from '@lucide/svelte/icons/link-2';
-  import NodeCard from '../../app/views/NodeCard.svelte';
-  import NodeIconChip from '../../app/views/NodeIconChip.svelte';
-  import GraphLintStrip from '../../app/views/GraphLintStrip.svelte';
-  import { voice } from '@ledrums/core';
-  import { makeNode } from '../../trigger-lab/sim';
   import EffectThumb from '../../trigger-lab/EffectThumb.svelte';
   import OutputPill from '../../app/chrome/OutputPill.svelte';
   import ViewTabs from '../../app/chrome/ViewTabs.svelte';
@@ -40,12 +33,8 @@
   import Field from '../../ui/Field.svelte';
   import Slider from '../../ui/Slider.svelte';
   import DemoCard from '../DemoCard.svelte';
-  import ParamLabel from '../../app/docks/inspectors/ParamLabel.svelte';
-  import SubtypeSwitcher from '../../app/docks/inspectors/SubtypeSwitcher.svelte';
-  import { subtypeOptions, EFFECT_GROUP_KEY } from '../../app/views/add-node-taxonomy';
-  import { kindIcon, tint, kindLabel } from '../../app/views/trigger-node-meta';
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
-  import type { EffectDef, NodeKind, ParamValues } from '../../trigger-lab/sim';
+  import type { EffectDef, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus } from '../../ws/protocol-types';
   import type { InputBadgeView } from '../../trigger-lab/input-activity';
@@ -97,34 +86,6 @@
   };
   const noop = () => {};
 
-  /* ---- NodeCard faces ------------------------------------------------------- */
-  const faceSubs: Record<NodeKind, string> = {
-    trigger: 'kick · center',
-    play: 'Soft strike',
-    effect: 'Soft strike',
-    splice: '4 per hoop · chase 1/8',
-    slice: '4 along X · kit · sweep 1/8',
-    all: 'all at once',
-    random: 'no-repeat',
-    sequence: 'in order',
-    switch: 'on value',
-    chance: '45%',
-    toggle: 'on · off',
-    delay: '1/8 dotted',
-    modifier: 'Trail',
-    audio: 'Audio · bass',
-    mix: 'normal',
-    scope: 'Snare',
-    output: 'Hoop',
-    envelope: 'modulation source',
-    lfo: 'sine · 1Hz',
-    cc: 'CC 74 · ch 1',
-    note: 'Note 60 · gate',
-    osc: 'OSC /fader/1',
-    randomMod: 'per trigger',
-  };
-  const faceKinds = Object.keys(faceSubs) as NodeKind[];
-
   /* ---- EffectThumb ------------------------------------------------------------ */
   const defaults = (eff: EffectDef): ParamValues =>
     Object.fromEntries(eff.params.map((p) => [p.key, p.default]));
@@ -133,7 +94,6 @@
     .map((id) => GENERATOR_EFFECTS.find((e) => e.id === id))
     .filter((e): e is EffectDef => !!e);
   const genThumb = GENERATOR_EFFECTS[0];
-  const playFace = patternThumbs[1] ?? patternThumbs[0];
 
   /* ---- OutputPill (reads store.link + store.output) ---------------------------- */
   const outStatus = (o: Partial<OutputStatus>): OutputStatus => ({
@@ -266,23 +226,6 @@
 
   let inspectorGain = $state(0.7);
 
-  /* ---- GraphLintStrip — pure props (compileRenderPlan issues) ------------------- */
-  // Real compiler output: compile deliberately degenerate graphs so the demo can never drift
-  // from what the render-plan linter actually emits.
-  const lintDegenerate = voice.compileRenderPlan({
-    version: 3,
-    nodes: [makeNode('trigger', 'trigger', 0, 0), makeNode('all', 'a', 200, 0), makeNode('all', 'b', 200, 120)],
-    edges: [
-      { id: 'e1', from: 'a', to: 'b' },
-      { id: 'e2', from: 'b', to: 'a' },
-    ],
-  }).issues;
-  const lintMissingTrigger = voice.compileRenderPlan({
-    version: 3,
-    nodes: [makeNode('output', 'output', 400, 0)],
-    edges: [],
-  }).issues;
-
   /* ---- BootOverlay — pure props (status + active) ------------------------------ */
   const boot = (patch: Partial<BootStatus>): BootStatus => ({ ...initialBootStatus, ...patch });
 
@@ -336,7 +279,6 @@
     createSong(): void {}
   }
   const setlistStub = new SetlistStub() as unknown as TriggerLab;
-  let demoCollection = $state('ambient');
 </script>
 
 <section class="block" id="composites">
@@ -352,7 +294,7 @@
     <DemoCard
       title="View tabs"
       src="lib/app/chrome/ViewTabs"
-      note="The nav bar's workspace router (tabbed chrome): Perform · Objects · Sections · Trigger Graph · Monitor — no Patch tab, the patch lives in Settings. Active tab is the surface-raised bordered pill; hover is colour + background only, no motion."
+      note="The nav bar's workspace router (tabbed chrome): Perform · Objects · Sections · Effects · Monitor — no Patch tab, the patch lives in Settings. Active tab is the surface-raised bordered pill; hover is colour + background only, no motion."
       wide
     >
       <ViewTabs shell={shellStub} />
@@ -379,103 +321,6 @@
       <div class="bar-stack">
         <SongsBar store={setlistStub} />
         <SectionsBar store={setlistStub} />
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Node icon chip"
-      src={['lib/app/views/NodeIconChip', 'lib/app/views/trigger-node-meta']}
-      note="The tinted glyph chip that carries a node's role/kind colour — the atom of every node face. Reused wherever a node reads as itself: the NodeCard, and the Add pane's category tiles. `size` scales chip + glyph together (30 on cards, 26 on category tiles)."
-      wide
-    >
-      <div class="chip-row">
-        {#each faceKinds as k (k)}
-          <NodeIconChip icon={kindIcon[k]} tint={tint[k]} />
-        {/each}
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Inspector param row — label, unit, subtype switcher"
-      src={[
-        'lib/app/docks/inspectors/ParamLabel',
-        'lib/app/docks/inspectors/SubtypeSwitcher',
-        'lib/app/views/add-node-taxonomy',
-      ]}
-      note="The two pieces F3 added to every inspector row. ParamLabel puts a param's UNIT in an (i) tooltip on the LABEL (with its declared range) instead of after the number input — a unit suffix made each row's input start at a different x, and now every number field in a section shares one column. SubtypeSwitcher re-types a node IN PLACE — the same subtype list the flat Add-node menu adds from, read through subtypeOptions() so the two can never drift, drawn with the palette's own icons and tints. It never segments: a segmented control renders an icon INSTEAD of its label, and the switcher needs both."
-      wide
-    >
-      <div class="prow-demo">
-        <SubtypeSwitcher
-          label="Collection"
-          value={demoCollection}
-          options={subtypeOptions(EFFECT_GROUP_KEY)}
-          onChange={(v) => (demoCollection = v)}
-          ariaLabel="Demo effect collection"
-        />
-        <div class="prow-rows">
-          <div class="prow-row">
-            <ParamLabel label="Hue" unit="°" min={0} max={360} />
-            <Slider value={210} min={0} max={360} showUnit={false} format={(v) => `${v}°`} ariaLabel="Demo hue" />
-          </div>
-          <div class="prow-row">
-            <ParamLabel label="Decay" unit="ms" min={0} max={2000} />
-            <Slider value={250} min={0} max={2000} showUnit={false} format={(v) => `${v}ms`} ariaLabel="Demo decay" />
-          </div>
-          <div class="prow-row">
-            <ParamLabel label="Noise" />
-            <Slider value={0.6} min={0} max={1} step={0.01} showUnit={false} format={(v) => v.toFixed(2)} ariaLabel="Demo noise" />
-          </div>
-        </div>
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Node card — every kind"
-      src={['lib/app/views/NodeCard', 'lib/app/views/trigger-node-meta']}
-      note="The ONE face both graphs render. Kind icon + tint from trigger-node-meta; title bold, sub mono-faint."
-      wide
-    >
-      <div class="face-grid">
-        {#each faceKinds as k (k)}
-          <NodeCard icon={kindIcon[k]} title={kindLabel[k]} sub={faceSubs[k]} tint={tint[k]} />
-        {/each}
-        {#if playFace}
-          <NodeCard icon={kindIcon.play} title={playFace.name} sub="with EffectThumb" tint={tint.play}>
-            {#snippet thumb()}
-              <EffectThumb params={defaults(playFace)} generatorId={playFace.generatorId} w={56} h={32} />
-            {/snippet}
-          </NodeCard>
-        {/if}
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Node card — states"
-      src="lib/app/views/NodeCard"
-      note="Hover = accent border only, pure CSS + instant (NO lift/motion). Selected adds a crisp ring; wires do not light. Drop target = wider soft ring while a wire hovers the node. Stale = dashed warn card when a node's live model can't be resolved (blank-proof placeholder, incident 09)."
-      wide
-    >
-      <div class="face-grid">
-        <NodeCard icon={kindIcon.play} title="Resting" sub="default" tint={tint.play} />
-        <NodeCard icon={kindIcon.play} title="Selected" sub="ring · in Inspector" tint={tint.play} selected />
-        <NodeCard icon={kindIcon.play} title="Drop target" sub="wire over node" tint={tint.play} dropTarget />
-        <NodeCard icon={TriangleAlert} title="Stale node" sub="model missing" tint="var(--warn)" stale />
-      </div>
-    </DemoCard>
-
-    <DemoCard
-      title="Node card — drum-link badge"
-      src="lib/app/views/NodeCard"
-      note="A trigger node whose MIDI/OSC source is ALSO zone-mapped to a drum fires both paths per hit (by design). The corner badge slot flags it with a link glyph; in the app it carries a naming tooltip (“also drum trigger: kick · center”) and the same hint shows in the trigger + zone inspectors."
-      wide
-    >
-      <div class="face-grid">
-        <NodeCard icon={kindIcon.trigger} title="Trigger" sub="MIDI D2" tint={tint.trigger}>
-          {#snippet badge()}
-            <Link2 size={11} aria-hidden="true" />
-          {/snippet}
-        </NodeCard>
       </div>
     </DemoCard>
 
@@ -553,17 +398,6 @@
     </DemoCard>
 
     <DemoCard
-      title="Graph lint strip"
-      src={['lib/app/views/GraphLintStrip', 'lib/app/views/graph-lint']}
-      note="Persistent strip on the trigger-graph surface rendering the render-plan compiler's issues (R05) — each row states the problem plainly and names the next step, with the compiler's specific detail (cycle path) beneath. Warn family (amber), not the red output fault: it guides authoring, it doesn't alarm. Absent entirely when the graph compiles clean. Complementary to R03's transient wire toasts."
-    >
-      <div class="lint-demo">
-        <GraphLintStrip issues={lintMissingTrigger} />
-        <GraphLintStrip issues={lintDegenerate} />
-      </div>
-    </DemoCard>
-
-    <DemoCard
       title="Controller status panel (PixLite)"
       src={['lib/app/docks/inspectors/ControllerStatusPanel', 'lib/app/docks/inspectors/output-status']}
       note="The confidence chain's last link (S48), extending the output panel below the fault row: identity, per-universe rx (good/bad, priority), frame rates + health, and Discover / Adopt-IP / Identify, plus the S49 built-in test patterns (solid-colour swatches / RGBW cycle / colour fade). The LOST and 'not receiving' states borrow the S03 fault tone (live-red) so a controller that isn't hearing us is unmissable. The TAKEOVER state (a test pattern running) is the amber warn family — a loud but deliberate 'the box is showing test data, not your live show', with one-click Back-to-live. Un-adopted shows the Discover affordance + ranked candidates."
@@ -602,7 +436,7 @@
     <DemoCard
       title="Inspector control rows"
       src={['lib/app/docks/inspectors/ReadRow', 'lib/app/docks/inspectors/RenameField']}
-      note="The per-node editor vocabulary: RenameField (label override), Field-wrapped controls, ReadRow read-outs (mono, right-aligned, tabular)."
+      note="The inspector vocabulary: RenameField (label override), Field-wrapped controls, ReadRow read-outs (mono, right-aligned, tabular)."
     >
       <div class="insp-demo">
         <RenameField store={renameStub} nodeId="demo:hoop-3" fallback="Hoop 3" />
@@ -682,11 +516,6 @@
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--space-5) var(--space-6);
   }
-  .face-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-  }
   /* the songs/sections bars fill their row height in the shell; pin it here */
   /* The modal's own split: a 200px section column beside the pane it opens. */
   .secnav-demo {
@@ -708,12 +537,6 @@
   }
   .bar-stack > :global(.bar) {
     height: 38px;
-  }
-  .chip-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
   }
   .thumb-row {
     display: flex;
@@ -762,16 +585,6 @@
     gap: var(--space-4);
     max-width: 360px;
   }
-  /* Sit the strip on a canvas-like inset so it reads as it does over the graph surface. */
-  .lint-demo {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    max-width: 440px;
-    padding: var(--space-3);
-    border-radius: var(--radius-3);
-    background: var(--surface-inset);
-  }
   .readrows {
     display: flex;
     flex-direction: column;
@@ -802,23 +615,5 @@
     /* Establish a containing block so the overlay's position:fixed scopes to this frame, not the
        viewport — lets the REAL component render inside the styleguide (no markup copy). */
     transform: translateZ(0);
-  }
-  /* inspector param-row demo — the app's own row metrics */
-  .prow-demo {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    max-width: 340px;
-  }
-  .prow-rows {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-  .prow-row {
-    display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-2);
   }
 </style>

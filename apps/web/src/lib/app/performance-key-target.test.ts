@@ -142,11 +142,4 @@ describe('performanceKeyTarget — DOM ownership adapter', () => {
     surface.setAttribute('data-keyboard-open', 'true');
     expect(performanceKeyTarget(document.body).inOpenPopup).toBe(true);
   });
-
-  it('recognises an xyflow canvas without relying on focus blur', () => {
-    const canvas = document.body.appendChild(document.createElement('div'));
-    canvas.className = 'svelte-flow';
-    const node = canvas.appendChild(document.createElement('div'));
-    expect(performanceKeyTarget(node).inFlowCanvas).toBe(true);
-  });
 });
