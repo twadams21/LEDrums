@@ -219,6 +219,17 @@ describe('MIDI-map mode overlay', () => {
     expect(api.inputMappings[0]).toMatchObject({ rangeMax: 0.5, rangeMin: undefined });
   });
 
+  it('an unset range shows the target’s own range (defaultRange), a set bound shows itself', () => {
+    const { enter } = setup({
+      mappings: [{ id: 'm2', source: { midiCc: 21 }, target: faderSpec.target as effectChain.InputMappingTarget, rangeMax: 0.4 }],
+    });
+    enter();
+    press(screen.getByRole('slider', { name: 'Opacity' }));
+    flushSync();
+    expect((screen.getByRole('spinbutton', { name: 'Range minimum' }) as HTMLInputElement).value).toBe('0');
+    expect((screen.getByRole('spinbutton', { name: 'Range maximum' }) as HTMLInputElement).value).toBe('0.4');
+  });
+
   it('a viewer cannot arm', () => {
     const { api, enter } = setup({ canEdit: false });
     enter();
