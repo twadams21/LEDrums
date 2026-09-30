@@ -56,7 +56,6 @@
   // Roving focus over the kind buttons: arrows move focus, Enter / Space picks. Arrows do
   // NOT pick — a pick swaps the Generator (one undo step, params reset), so browsing with the
   // keyboard must not author on every step.
-  let kindEls: HTMLButtonElement[] = $state([]);
   const activeIndex = $derived(Math.max(0, kinds.findIndex((k) => k.kind === device.kind)));
   let focusIndex = $state<number | null>(null);
   const tabIndexOf = (i: number): number => (i === (focusIndex ?? activeIndex) ? 0 : -1);
@@ -71,7 +70,8 @@
     if (next === null) return;
     e.preventDefault();
     focusIndex = next;
-    kindEls[next]?.focus();
+    const group = (e.currentTarget as HTMLElement).closest('.kinds');
+    group?.querySelectorAll<HTMLButtonElement>('button.kind')[next]?.focus();
   }
 
   function pickKind(kind: effectChain.GeneratorKind): void {
@@ -96,7 +96,6 @@
           aria-label={k.label}
           tabindex={tabIndexOf(i)}
           {disabled}
-          bind:this={kindEls[i]}
           onfocus={() => (focusIndex = i)}
           onkeydown={(e) => onKindKey(e, i)}
           onclick={() => pickKind(k.kind)}
@@ -108,7 +107,7 @@
   </div>
 
   {#if !slotted}
-    <div class="thumb" class:missing={!thumb}>
+    <div class="preview" class:missing={!thumb}>
       {#if thumb}
         <EffectThumb generatorId={thumb.generatorId} params={thumb.params} w={254} h={72} />
       {:else}
@@ -207,7 +206,7 @@
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
 
-  .thumb {
+  .preview {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -219,7 +218,7 @@
     outline-offset: -1px;
     overflow: hidden;
   }
-  .thumb.missing {
+  .preview.missing {
     font-size: var(--text-2xs);
     color: var(--text-faint);
   }
