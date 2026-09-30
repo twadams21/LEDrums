@@ -46,11 +46,9 @@ function setup(options: ConstructorParameters<typeof MemoryMapModeApi>[0] = {}) 
   const onFire = vi.fn();
   const fireEffectAt = vi.fn();
   const store: AppKeyboardStore = {
-    selectedGraph: null,
     fireSectionGraph: vi.fn(),
     fireEffectAt,
     stepSetlist: vi.fn(() => true),
-    removeNode: vi.fn(),
   };
   render(Harness, { api, shell, registry, cell: cellSpec, fader: faderSpec, onFire, store });
   const enter = (): void => {

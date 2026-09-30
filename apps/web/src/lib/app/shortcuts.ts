@@ -47,7 +47,7 @@ export interface KeyEventLike {
 export interface ShortcutEntry {
   /** Chord as a `+`-joined string: `'mod'`, `'shift'`, `'alt'` + a single key, e.g. `'mod+d'`. */
   combo: string;
-  /** Human label for a help sheet ("Duplicate node", "Undo"). */
+  /** Human label for a help sheet ("Undo"). */
   description: string;
   /** Fire even while focus is in an editable surface. Default false. */
   global?: boolean;

@@ -52,13 +52,13 @@ describe('setView', () => {
 
 describe('select', () => {
   it('loads the selection and keeps the view', () => {
-    const next = select(initialNav(), { kind: 'node', nodeId: 'n-1' });
+    const next = select(initialNav(), { kind: 'bus', busId: 'base' });
     expect(next.view).toBe('trigger');
-    expect(next.selection).toEqual({ kind: 'node', nodeId: 'n-1' });
+    expect(next.selection).toEqual({ kind: 'bus', busId: 'base' });
   });
 
   it('clearSelection drops the selection', () => {
-    let nav = select(initialNav(), { kind: 'patch', nodeId: 'output' });
+    let nav = select(initialNav(), { kind: 'bus', busId: 'base' });
     nav = clearSelection(nav);
     expect(nav.selection).toBeNull();
   });
@@ -107,10 +107,9 @@ describe('SETTINGS_PANES', () => {
 
 describe('isSelected', () => {
   const cases: Array<[Selection, Selection, boolean]> = [
-    [{ kind: 'node', nodeId: 'a' }, { kind: 'node', nodeId: 'a' }, true],
-    [{ kind: 'node', nodeId: 'a' }, { kind: 'node', nodeId: 'b' }, false],
     [{ kind: 'bus', busId: 'base' }, { kind: 'bus', busId: 'base' }, true],
-    [{ kind: 'patch', nodeId: 'midi' }, { kind: 'bus', busId: 'midi' }, false],
+    [{ kind: 'bus', busId: 'base' }, { kind: 'bus', busId: 'fx' }, false],
+    [{ kind: 'section', sectionId: 'base' }, { kind: 'bus', busId: 'base' }, false],
     [{ kind: 'section', sectionId: 's1' }, { kind: 'section', sectionId: 's1' }, true],
     [{ kind: 'section', sectionId: 's1' }, { kind: 'section', sectionId: 's2' }, false],
   ];

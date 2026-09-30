@@ -1,6 +1,6 @@
-/* Patch routing compiler — a PURE, order-preserving translation between the Patch
-   graph's output half (Output → Hoop → Hoop … physical data run) and core's
-   physical-output topology (`OutputConfig[]`). No xyflow / Svelte / DOM here so the
+/* Patch routing compiler — a PURE, order-preserving translation between the Outputs &
+   Chains editor's routing (Output → Hoop → Hoop … physical data run) and core's
+   physical-output topology (`OutputConfig[]`). No Svelte / DOM here so the
    wiring math is trivially unit-testable and shares core's pure-module discipline
    (S2/S6 of the "Patch Graph authoritative" mission).
 
@@ -10,7 +10,7 @@
    Line). `patchToOutputs` coalesces each output's hoops → `segments`; `outputsToPatch`
    expands each Output's segments back into its hoops — a straight, level-for-level map.
 
-   The Patch graph authors PIXEL TRANSMIT ORDER, not universes — the controller owns
+   The routing authors PIXEL TRANSMIT ORDER, not universes — the controller owns
    universe/channel offsets, packing pixels channel-dense in transmit order. An optional
    per-output `startUniverse` snaps a run to a universe boundary (blank = dense/auto).
    `patchToOutputs` coalesces each output's hoops into ascending-contiguous
@@ -19,7 +19,7 @@
    `pixelRanges` derives the Inspector's first/last global pixel read-outs by sweeping the
    same transmit order. */
 
-import { checkRoutingIntegrity, type HoopRef, type KitConfig, type OutputConfig, type OutputSegment, type RgbOrder } from '@ledrums/core';
+import { type HoopRef, type OutputConfig, type OutputSegment, type RgbOrder } from '@ledrums/core';
 
 /** A single hoop on a drum, addressed by drum id + **1-based** hoop index within that drum
     (A1) — matches core `OutputSegment.hoopStart/End`, core's own `HoopRef`, and the
@@ -44,11 +44,6 @@ export type PatchRouting = { outputs: PatchOutput[] };
 
 /** A first/last global pixel-index span (inclusive). */
 export type PixelSpan = { first: number; last: number };
-
-/** Default hoops-per-output used by `defaultRouting` (patch-graph.ts) when synthesizing a
-    fresh routing from a kit with no authored outputs. A tidy display default, not a wiring
-    constraint. */
-export const DEFAULT_HOOPS_PER_OUTPUT = 6;
 
 /** Coalesce an ordered hoop list into `OutputSegment` runs: a run extends while the next
     hoop is the SAME drum and exactly one greater than the previous (ascending-contiguous).
@@ -113,21 +108,6 @@ export function outputsToPatch(outputs: OutputConfig[]): PatchRouting {
   }));
 
   return { outputs: patchOutputs };
-}
-
-/**
- * True when `routing` would drive a single physical hoop from more than one OUTPUT —
- * the "fan-out" corruption (that hoop's pixels get silently overwritten, last write wins).
- *
- * This does NOT restate the rule: it compiles the routing to core's `OutputConfig[]` and
- * asks S07's ONE definition ({@link checkRoutingIntegrity}'s `hoop-fan-out` class), the
- * same predicate the server write-gate enforces. Two enforcement points (this editor's
- * connect-time guard + the server backstop), one rule. Other issue classes (unknown-drum,
- * out-of-range) are ignored here — the editor's hoops are always real kit hoops; only the
- * fan-out is reachable by a connect gesture.
- */
-export function hasHoopFanOut(kit: KitConfig, routing: PatchRouting): boolean {
-  return checkRoutingIntegrity(kit, patchToOutputs(routing)).some((i) => i.code === 'hoop-fan-out');
 }
 
 /**

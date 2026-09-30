@@ -40,26 +40,11 @@
     typeof navigator !== 'undefined' ? navigator.platform : '',
   );
 
-  /** Duplicate the node selected on the Trigger canvas; a no-op (returns false, so the seam
-      lets the key fall through) unless a real, selected graph node exists — this lets the
-      Sections view keep its own Cmd/Ctrl+D (duplicate section) when a section is selected. */
-  function duplicateSelectedNode(): boolean {
-    const sel = shell.selection;
-    if (sel?.kind !== 'node') return false;
-    const node = store.selectedGraph?.nodes.find((n) => n.id === sel.nodeId);
-    if (!node) return false;
-    const clone = store.duplicateNode(node);
-    if (!clone) return false;
-    shell.select({ kind: 'node', nodeId: clone.id });
-    return true;
-  }
-
   // The app-level shortcut registry (data → action + description; see lib/app/shortcuts.ts).
   // Browser-default combos are CLAIMED here in capture phase. Undo lives here now rather than
-  // as an inline branch below. Ctrl/Cmd+D duplicates the selected trigger-graph node.
+  // as an inline branch below.
   const shortcuts: ShortcutEntry[] = [
     { combo: 'mod+z', description: 'Undo', run: () => store.undo() },
-    { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
   ];
 
 </script>

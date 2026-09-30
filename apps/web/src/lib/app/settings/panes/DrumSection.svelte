@@ -14,7 +14,7 @@
   import RenameField from '../../docks/inspectors/RenameField.svelte';
   import { onNum, patchLabel } from '../../docks/inspectors/forms';
   import { boundTriggerFor, hoopPixelSpan } from '../../docks/patch-inspector';
-  import { drumZoneId } from '../../patch-zones';
+  import { drumZoneId } from '../../patch-graph';
   import type { PatchRouting } from '../../patch-routing';
   import { drumPixelTotal, hoopIndices, pixelsForHoopIn } from './drums-hoops';
   import HoopRow from './HoopRow.svelte';
