@@ -1,7 +1,7 @@
 /**
  * Splice and Slice as Generators: a {@link GeneratorDevice} of kind `splice` / `slice` resolves
  * through the EXISTING splice machinery (`voice/splice.ts` `resolveSplices`, `voice/slice.ts`
- * `resolveSlice`), so every behaviour Tim built into the graph splice node — chases (MOVE
+ * `resolveSlice`), so every behaviour Tim built into the splice node — chases (MOVE
  * AROUND), hoop / drum / colour cascades and wait modes (MOVE THROUGH), orders and dragged
  * sequences, smudge, rotation, tint, motion modes, material regeneration — is the same code on
  * the Effect path. This module only translates device data into the node fields that machinery
@@ -19,7 +19,7 @@
  *
  * **Slots.** A slot is a colour, a nested non-splice Generator, or blank (`muted`, or neither).
  * A slot with both a colour and a Generator is the Generator tinted by the colour, exactly as a
- * graph splice with a colour and an effect. A nested Splice / Slice, or a nested Generator that
+ * splice slot with a colour and an effect always did. A nested Splice / Slice, or a nested Generator that
  * does not resolve, makes the slot blank. Fewer slots than `count` cycle, as today.
  *
  * **Members** name the Effect runtime's internal EffectDefs (`chainEffectDefId(generatorId)`,
@@ -36,13 +36,13 @@
 import { canvasEffectId } from '../canvas/ids';
 import { tryGetEffect } from '../effects/registry';
 import type { ParamSpec } from '../effects/types';
-import type { MixInputDraft } from '../voice/eval-graph';
+import type { MixInputDraft } from '../voice/play-action';
 import { SPLICE_FILL_GENERATOR_ID, resolveSplices, type ResolvedSplices } from '../voice/splice';
 import { resolveSlice } from '../voice/slice';
 import type {
   EaseDir,
   EaseFn,
-  GraphNode,
+  SpliceNode,
   SliceAxis,
   SpliceChaseMode,
   SpliceDef,
@@ -109,13 +109,13 @@ function csv(p: Params, key: string): string[] | undefined {
   return v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
-function attackEase(p: Params): GraphNode['spliceAttackEase'] {
+function attackEase(p: Params): SpliceNode['spliceAttackEase'] {
   const fn = oneOf(p, 'attackEaseFn', EASE_FNS);
   if (!fn || fn === 'linear') return undefined;
   return { fn, dir: oneOf(p, 'attackEaseDir', EASE_DIRS) ?? 'in' };
 }
 
-function region(p: Params): GraphNode['sliceRegion'] {
+function region(p: Params): SpliceNode['sliceRegion'] {
   const cx = num(p, 'regionCx');
   const cy = num(p, 'regionCy');
   const cz = num(p, 'regionCz');
@@ -152,34 +152,13 @@ function slotDef(slot: NonNullable<GeneratorDevice['slots']>[number]): SpliceDef
 }
 
 /**
- * The graph-node view of a Splice / Slice device: exactly the fields `resolveSplices` /
- * `resolveSlice` read. The structural fields are inert placeholders; nothing else reads them.
+ * The {@link SpliceNode} view of a Splice / Slice device: exactly the fields `resolveSplices` /
+ * `resolveSlice` read.
  */
-export function spliceDeviceNode(device: GeneratorDevice): GraphNode {
+export function spliceDeviceNode(device: GeneratorDevice): SpliceNode {
   const p = device.params;
   const direction = num(p, 'direction');
-  const node: GraphNode = {
-    id: 'effect-chain-splice',
-    kind: device.kind === 'slice' ? 'slice' : 'splice',
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: true,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 0.5,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
+  const node: SpliceNode = {
     splices: (device.slots ?? []).map(slotDef),
     spliceCount: num(p, 'count'),
     // A slice has no partition: leaving it unset keeps the drum offset live (see `resolveSlice`).
@@ -246,7 +225,7 @@ export function resolveSpliceGenerator(device: GeneratorDevice, opts: SpliceReso
 
   const envelope = opts.envelope ? { ...opts.envelope } : resolved.envelope;
   const members = resolved.members.map((member) => {
-    // Colour fills come back as the graph's reserved fill id; on the Effect path they host
+    // Colour fills come back as the reserved fill id; on the Effect path they host
     // `solid-colour` through its chain def, carrying the fill colour as their param.
     const isFill = !member.def.effectId;
     const effectId = isFill ? chainEffectDefId(SPLICE_FILL_GENERATOR_ID) : member.effectId;

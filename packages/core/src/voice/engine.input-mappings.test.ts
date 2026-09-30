@@ -39,7 +39,7 @@ function solid(over: Partial<EffectInput> & Pick<EffectInput, 'id' | 'cell'>): E
 const zone = (row: string, slot = 0) => ({ row, column: { kind: 'zone' as const, slot } });
 
 function section(id: string, effects: Effect[]): SongSection {
-  return { id, name: id, slots: {}, effects };
+  return { id, name: id, effects };
 }
 
 function showOf(sections: SongSection[], mappings: unknown[]): Show {

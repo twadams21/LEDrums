@@ -17,10 +17,7 @@
  * Pure: no Node/DOM/IO.
  */
 import { z } from 'zod';
-import { canvasEffectId } from '../canvas/ids';
-import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
 import type { CanvasScene } from '../canvas/types';
-import { canvasVoiceDefaultPreset, canvasVoiceEffectDef } from '../canvas/voice-definition';
 import { SHOWS_VERSION_EFFECTS, SONGS_VERSION_EFFECTS } from '../model/library-versions';
 import type { Show, SongSection } from '../voice/types';
 import { effectSchema, modifierDeviceSchema, type Effect, type ModifierDevice } from './types';
@@ -150,8 +147,7 @@ export interface RuntimeShowBuild {
  *   as-is (no second prefixing here).
  * - Every section carries its validated `effects` (unique ids, first wins) and `master`.
  * - Canvas scenes: the show's, then any a library song carries that the show does not already
- *   have (by id). Each scene, and each built-in scene, gets its EffectDef + default preset.
- * - The legacy graph containers (`graphs`, `buses`, looks `sections`) are empty.
+ *   have (by id). The engine registers them; an Effect hosts one as `canvas:<sceneId>`.
  * - `mappings` carries the show's valid InputMappings (unique ids, first wins); each invalid
  *   one is dropped with an `invalid-mapping` diagnostic.
  *
@@ -203,18 +199,7 @@ export function buildRuntimeShow(showLib: ShowLibraryV3, songLib: SongLibraryV2 
     diagnostics.push({ kind: 'invalid-mapping', songId: '', sectionId: '', index: d.index, id: d.id, message: d.message });
   }
 
-  const show: Show = {
-    buses: [], graphs: {}, sections: [], effects: [], presets: [],
-    songs: runtimeSongs,
-    canvasScenes: scenes,
-    mappings,
-  };
-  for (const scene of [...scenes, ...BUILTIN_CANVAS_SCENES]) {
-    const id = canvasEffectId(scene.id);
-    if (show.effects.some((e) => e.id === id)) continue;
-    show.effects.push(canvasVoiceEffectDef(scene));
-    show.presets.push(canvasVoiceDefaultPreset(scene));
-  }
+  const show: Show = { songs: runtimeSongs, canvasScenes: scenes, mappings };
   return { show, diagnostics };
 }
 
@@ -242,7 +227,7 @@ function runtimeSection(songId: string, section: LibrarySectionV3, diagnostics: 
     if (parsed.success) master.push(parsed.data);
     else diagnostics.push({ kind: 'invalid-master-modifier', songId, sectionId: section.id, index, id: readId(raw, 'uid'), message: issueText(parsed.error) });
   });
-  return { id: section.id, name: section.name, slots: {}, effects, master };
+  return { id: section.id, name: section.name, effects, master };
 }
 
 function readId(raw: unknown, key: 'id' | 'uid'): string | undefined {

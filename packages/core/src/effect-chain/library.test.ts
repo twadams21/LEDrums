@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
-import { canvasEffectId } from '../canvas/ids';
 import { buildRuntimeShow, parseShowLibraryV3, parseSongLibraryV2, type LibraryDiagnostic } from './library';
 import { parseEffect } from './types';
 
@@ -68,17 +66,15 @@ function fixture() {
 }
 
 describe('buildRuntimeShow (v3 library → runtime Show)', () => {
-  it('builds the active show: own + referenced songs, effect sections with master, scenes and their defs', () => {
+  it('builds the active show: own + referenced songs, effect sections with master, and scenes', () => {
     const { showLibrary, songLibrary } = fixture();
     const { show } = buildRuntimeShow(parseShowLibraryV3(showLibrary), parseSongLibraryV2(songLibrary));
     expect(show).not.toBeNull();
-    expect(show!.graphs).toEqual({});
-    expect(show!.buses).toEqual([]);
-    expect(show!.sections).toEqual([]);
+    expect(Object.keys(show!).sort()).toEqual(['canvasScenes', 'mappings', 'songs']);
 
     expect(show!.songs).toEqual([
       { id: 'own', name: 'Own song', sections: [{
-        id: 'verse', name: 'Verse', slots: {},
+        id: 'verse', name: 'Verse',
         effects: [
           parseEffect(zoneEffect('kick-hit', 'kick', 0)),
           parseEffect({ id: 'wash', cell: { row: 'kit', column: { kind: 'always' } }, generator: { kind: 'scene', params: { sceneId: 'mine' } } }),
@@ -88,16 +84,13 @@ describe('buildRuntimeShow (v3 library → runtime Show)', () => {
       // Referenced once despite the duplicate ref; the dangling ref resolves to nothing; the
       // library section whose id clashes with the show's own `verse` is skipped.
       { id: 'shared', name: 'Shared song', sections: [{
-        id: 'lib:shared/chorus', name: 'Chorus', slots: {},
+        id: 'lib:shared/chorus', name: 'Chorus',
         effects: [parseEffect(zoneEffect('lib-snare', 'snare', 0))], master: [],
       }] },
     ]);
 
     // The show's own scene wins over the library's same-id copy; the library-only scene is added.
     expect(show!.canvasScenes!.map((s) => [s.id, s.name])).toEqual([['mine', 'mine'], ['lib:shared/sky', 'lib:shared/sky']]);
-    const expectedDefs = ['mine', 'lib:shared/sky', ...BUILTIN_CANVAS_SCENES.map((s) => s.id)].map(canvasEffectId);
-    expect(show!.effects.map((e) => e.id)).toEqual(expectedDefs);
-    expect(show!.presets.map((p) => p.id)).toEqual(expectedDefs.map((id) => `${id}:default`));
   });
 
   it('drops an invalid Effect, a duplicate Effect id and an invalid master modifier with diagnostics, never throwing', () => {

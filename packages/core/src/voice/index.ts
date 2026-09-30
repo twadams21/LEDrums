@@ -1,13 +1,13 @@
 /**
- * Voice-bus lighting brain — the trigger-graph / voice-bus model ported from the
- * throwaway `trigger-lab` simulation into pure core, behind a clean deep-module seam.
+ * Voice-bus lighting brain — the voice engine that plays authored Effects, behind a clean
+ * deep-module seam.
  *
  * - {@link RenderEngine} (outer seam): host ↔ brain.
  * - {@link Compositor} (inner seam): voices → pixels (the perf hotspot).
- * - {@link Show}: the authored content aggregate.
+ * - {@link Show}: the runtime content aggregate (songs → sections → Effects).
  *
  * Pure + deterministic: no Node/DOM/IO, no `Math.random` / `Date.now` (a seeded
- * {@link Prng} carries all randomness). Additive, not yet wired into anything.
+ * {@link Prng} carries all randomness).
  */
 export * from './types';
 export * from './diagnostics';
@@ -20,9 +20,7 @@ export { shapeCascadeVoice, advanceLatchedSpliceMotion } from './runtime-policy'
 export * from './modulation';
 export * from './audio-features';
 export * from './scope';
-export * from './graph-integrity';
 export * from './navigation';
-export * from './render-plan';
 export {
   MODULATION_PARITY_CASES,
   PARITY_PHASES,
@@ -32,7 +30,6 @@ export {
 } from './modulation-parity';
 export * from './prng';
 export { computeDelayMs, DELAY_DIVISIONS, type DelayDivision } from './delay';
-export * from './reset-source';
 export * from './binding-claims';
 export {
   DEFAULT_SPLICE_ATTACK_MS,
@@ -48,7 +45,6 @@ export {
   MIN_SPLICE_COUNT,
   SPLICE_FILL_EFFECT_ID,
   SPLICE_FILL_GENERATOR_ID,
-  spliceFillEffectDef,
   chasePixelShift,
   chaseStaggerShift,
   chaseStepOffset,
@@ -84,20 +80,8 @@ export {
   spliceUnitOrder,
 } from './splice';
 export * from './slice';
-export {
-  evalGraph,
-  evalChildren,
-  type Action,
-  type EvalState,
-  type PendingDescriptor,
-  type PlayAction,
-  type PlayDraft,
-  type MixInputDraft,
-  type TriggerCtx as EvalTriggerCtx,
-} from './eval-graph';
-export { graphAt } from './graph-lookup';
-export { runtimeSectionFromGraphKeys, triggerSourceOf } from './runtime-setlist';
-// S36 — LFO source node
+export type { PlayAction, PlayDraft, MixInputDraft } from './play-action';
+// S36 — LFO (a Control device's shape)
 export {
   LFO_WAVEFORMS,
   defaultLfoSettings,
@@ -107,15 +91,6 @@ export {
   type LfoRateMode,
   type LfoSettings,
 } from './lfo';
-export { resolveModifierChain, resolveModifierNode } from './modifier-graph';
-export {
-  resolveNodeModulations,
-  nodeModSource,
-  paramKeyOf,
-  isModSourceKind,
-  ENVELOPE_NODE_KEY,
-  MOD_SOURCE_KINDS,
-} from './modulation-graph';
 export {
   createDefaultCompositor,
   applyEffectiveParams,

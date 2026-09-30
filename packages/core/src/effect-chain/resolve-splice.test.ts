@@ -238,7 +238,7 @@ function effectFrames(gen: GeneratorDevice): number[][] {
     amp: { attackMs: 10, decayMs: 0, sustainLevel: 1, length: { ms: 410 }, releaseMs: 300 },
     target: { kind: 'kit' },
   });
-  const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', slots: {}, effects: [effect] }] }] };
+  const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] };
   // Stand-in for the engine hook reported for merge: the engine lazily builds only the HOST's
   // chain EffectDef; the hook also ensures one per splice member (see the commit report).
   const ensureMemberDefs = (engine: RenderEngine): void => {

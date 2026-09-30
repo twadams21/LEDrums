@@ -19,8 +19,8 @@
    value tables the engine feeds from downstream see the shaped velocity too:
    the drum's sensitivity is a property of the drum, not of one consumer.
 
-   Deliberately NOT shaped: `fireGraph` (the keyboard's n-th-graph performance
-   intent). That path carries a graph key, never an input-map identity — the
+   Deliberately NOT shaped: `fireEffect` (the keyboard / MIDI-map audition
+   intent). That path carries an Effect id, never an input-map identity — the
    engine's own contract is "no zone-map, no source re-resolution" — and it must
    behave identically online and offline, so it is uncurved on both.
 

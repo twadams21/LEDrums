@@ -9,7 +9,7 @@
  */
 import { canvasEffectId } from '../canvas/ids';
 import { materialCycleMs as resolveMaterialCycleMs, resolveVoiceLife } from '../effects/voice-life';
-import type { MixInputDraft, PlayAction } from './eval-graph';
+import type { MixInputDraft, PlayAction } from './play-action';
 import { deriveSeed } from './prng';
 import type { Bus, EffectDef, MixInput, ParamSpec, Voice } from './types';
 

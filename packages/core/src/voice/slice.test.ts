@@ -11,7 +11,7 @@ import {
   slicePhase,
 } from './slice';
 import { maxCascadeDelayMs } from './splice';
-import type { GraphNode, SpliceConfig } from './types';
+import type { SpliceNode, SpliceConfig } from './types';
 
 /* Slice cuts the kit into parallel slabs through space. The geometry is the only new idea —
    everything else is a splice's — so these pin the geometry hard (which slab a pixel is in, how
@@ -31,18 +31,15 @@ function model(): PixelModel {
   );
 }
 
-function sliceNode(over: Partial<GraphNode> = {}): GraphNode {
+function sliceNode(over: Partial<SpliceNode> = {}): SpliceNode {
   return {
-    id: 'sl1', kind: 'slice', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false,
-    bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8',
     splices: [{ color: '#ff0000' }, { color: '#0000ff' }],
     spliceCount: 2,
     ...over,
   };
 }
 
-function config(over: Partial<GraphNode> = {}): SpliceConfig {
+function config(over: Partial<SpliceNode> = {}): SpliceConfig {
   const resolved = resolveSlice(sliceNode(over), 120);
   if (!resolved) throw new Error('slice resolved to nothing');
   return resolved.config;

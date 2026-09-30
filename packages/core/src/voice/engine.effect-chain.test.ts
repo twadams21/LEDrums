@@ -34,8 +34,8 @@ function solid(over: Partial<EffectInput> & Pick<EffectInput, 'id' | 'cell'>, co
   });
 }
 
-function section(id: string, effects: Effect[] | undefined): SongSection {
-  return { id, name: id, slots: {}, ...(effects ? { effects } : {}) };
+function section(id: string, effects: Effect[]): SongSection {
+  return { id, name: id, effects };
 }
 
 function showOf(...sections: SongSection[]): Show {
@@ -111,11 +111,10 @@ describe('Effect path — zone triggers', () => {
     expect(litDrums(h)).toEqual(['kick']);
   });
 
-  it('a hit that matches no Effect reports effect-missed, not a graph miss', () => {
+  it('a hit that matches no Effect reports effect-missed', () => {
     const h = harness(showOf(section('s', [])));
     h.send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 });
     expect(h.diags.map((d) => d.kind)).toContain('effect-missed');
-    expect(h.diags.map((d) => d.kind)).not.toContain('graph-missed');
   });
 });
 
@@ -216,10 +215,10 @@ describe('Effect path — Clock', () => {
     expect(b.frames).toEqual(a.frames);
   });
 
-  it('fires at the offset grid points and only on the active Effect section', () => {
+  it('fires at the offset grid points and only on the active section', () => {
     const offset = showOf(
       section('s', [solid({ id: 'o', cell: { row: 'kit', column: { kind: 'clock' } }, trigger: { kind: 'clock', every: { bars: 1 }, offsetBeats: 1 } })]),
-      section('g', undefined),
+      section('g', []),
     );
     const h = harness(offset);
     h.send(recall('s'), 0);

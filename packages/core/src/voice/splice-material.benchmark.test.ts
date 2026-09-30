@@ -11,7 +11,7 @@ import { materialCycleMs } from '../effects/voice-life';
 import type { ModSampleCtx } from './modulation';
 import type { TransportState } from '../engine/render-context';
 import { runtimeAction, runtimeBus, runtimeFrame, runtimeEffect, runtimeVoice } from './runtime-test-fixtures';
-import type { MixInputDraft, PlayAction } from './eval-graph';
+import type { MixInputDraft, PlayAction } from './play-action';
 import type { GraphNode, Show, SpliceConfig, TriggerGraph } from './types';
 import { padKey } from './types';
 import { VoicePool } from './voice-pool';

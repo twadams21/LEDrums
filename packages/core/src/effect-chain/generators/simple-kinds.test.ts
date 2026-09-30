@@ -158,7 +158,7 @@ describe('Scene', () => {
       generator: { kind: 'scene', params: { sceneId: 'checker-spin' } },
       amp: { attackMs: 0, length: { ms: 2000 }, releaseMs: 100 },
     });
-    const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 'A', name: 'A', slots: {}, effects: [effect] }] }] };
+    const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 'A', name: 'A', effects: [effect] }] }] };
     const engine = createVoiceBusEngine();
     engine.setModel(m);
     engine.setShow(show);

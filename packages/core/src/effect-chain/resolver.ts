@@ -17,7 +17,7 @@ import type { ResolvedModifier } from '../modifiers/types';
 import { canvasEffectId } from '../canvas/ids';
 import type { CurveValue } from '../model/curve';
 import { defaultEnvelope } from '../voice/envelope';
-import type { PlayAction } from '../voice/eval-graph';
+import type { PlayAction } from '../voice/play-action';
 import { quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type ModParamSpec, type ModSource } from '../voice/modulation';
 import type { ParamValues, PlayMode, Scope } from '../voice/types';
 import { resolveGenerator } from './generators';

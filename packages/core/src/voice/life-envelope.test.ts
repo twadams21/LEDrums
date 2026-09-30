@@ -4,7 +4,7 @@ import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { lifeEnvelopeGain, resolveVoiceLife, resolveVoiceSustainMs } from '../effects/voice-life';
 import { EXP_TAIL_FACTOR } from '../effects/visibility';
 import { evalCurve, type CurveValue } from '../model/curve';
-import type { PlayAction } from './eval-graph';
+import type { PlayAction } from './play-action';
 import type { Bus, EffectDef, Voice } from './types';
 
 /* S6b — a voice's life authored as a SHAPE rather than a number. The scalar path (#182) still
