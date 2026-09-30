@@ -1,5 +1,5 @@
-/* U4 gates — byte-determinism at the COMPOSITOR SEAM per playType: a canvas voice
-   (playType 'canvas', scene doc through the canvas:<sceneId> adapter) renders
+/* U4 gates — byte-determinism at the COMPOSITOR SEAM: a canvas voice (a Scene Effect, scene
+   doc through the canvas:<sceneId> adapter) renders
    byte-identically across engine runs given (time, inputs, model), exactly the seam
    guarantee the hosted path has (mirrors voice/determinism.test.ts), and a mixed
    canvas+hosted show holds the same guarantee. Plus the 5ms per-effect perf budget on
@@ -11,7 +11,9 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { RenderContext, TransportState } from '../engine/render-context';
 import { defaultParams } from '../effects/types';
 import { createVoiceBusEngine, type InputEvent } from '../voice/engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type TriggerGraph } from '../voice/types';
+import type { Show } from '../voice/types';
+import { effectShowOf, sectionOf, zoneEffect } from '../voice/effect-test-fixtures';
+import type { Effect } from '../effect-chain/types';
 import { registerCanvasScene } from './registry';
 import { createCanvasSceneEffect } from './scene';
 import type { CanvasScene } from './types';
@@ -28,8 +30,6 @@ function testModel(): PixelModel {
   );
 }
 
-const BUSES: Bus[] = [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
-
 const detScene: CanvasScene = {
   id: 'det-scene',
   name: 'Det Scene',
@@ -43,39 +43,11 @@ const detScene: CanvasScene = {
 };
 registerCanvasScene(detScene);
 
-function effect(id: string, over: Partial<EffectDef> = {}): EffectDef {
-  return {
-    id,
-    name: id,
-    generatorId: 'breathing-kit',
-    busId: 'base',
-    scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 10,
-    sustainMs: 400,
-    releaseMs: 200,
-    ...over,
-  };
-}
+/** A kit-target kick-zone Effect with a short hit envelope (10ms attack, 400ms, 200ms release). */
+const HIT_AMP = { amp: { attackMs: 10, length: { ms: 400 }, releaseMs: 200 }, target: { kind: 'kit' } };
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5,
-    invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8',
-    ...over,
-  } as GraphNode;
-}
-
-function graphOf(plays: GraphNode[]): TriggerGraph {
-  return {
-    nodes: [node('trigger', 'trigger'), ...plays],
-    edges: plays.map((p, i) => ({ id: `e${i}`, from: 'trigger', to: p.id })),
-  };
-}
-
-function showOf(graph: TriggerGraph, effects: EffectDef[]): Show {
-  return { buses: BUSES, graphs: { [padKey('kick', '')]: graph }, sections: [], effects, presets: [] };
+function showOf(effects: Effect[]): Show {
+  return effectShowOf(sectionOf('s', effects));
 }
 
 function transport(now: number, bpm = 120): TransportState {
@@ -103,14 +75,12 @@ function run(show: Show, script: Array<{ t: number; hit?: boolean }>): Float32Ar
 const script = Array.from({ length: 30 }, (_, i) => ({ t: (i + 1) * 16, hit: i === 0 || i === 8 }));
 const bytes = (f: Float32Array): Buffer => Buffer.from(f.buffer, f.byteOffset, f.byteLength);
 
-/** A canvas play node — the scene resolves through the SAME voice/bridge path. */
-const canvasNode = (): GraphNode =>
-  node('play', 'p1', { effectId: 'cfx', playType: 'canvas', canvasScene: 'det-scene' });
-const canvasEffect = (): EffectDef => effect('cfx', { generatorId: undefined });
+/** A Scene Effect — the scene resolves through the SAME voice/bridge path as a hosted generator. */
+const canvasEffect = (): Effect => zoneEffect('cfx', { kind: 'scene', params: { sceneId: 'det-scene' } }, HIT_AMP);
 
-describe('byte-determinism at the compositor seam — canvas playType', () => {
+describe('byte-determinism at the compositor seam — canvas scene Effects', () => {
   it('two engines fed identical (time, inputs, model) render byte-identical canvas frames', () => {
-    const s = (): Show => showOf(graphOf([canvasNode()]), [canvasEffect()]);
+    const s = (): Show => showOf([canvasEffect()]);
     const a = run(s(), script);
     const b = run(s(), script);
     expect(a.some((f) => f.some((x) => x > 0))).toBe(true); // the scene actually lights pixels
@@ -119,10 +89,7 @@ describe('byte-determinism at the compositor seam — canvas playType', () => {
 
   it('a mixed show (canvas voice + hosted generator voice) replays byte-identically', () => {
     const s = (): Show =>
-      showOf(
-        graphOf([canvasNode(), node('play', 'p2', { y: 100, effectId: 'hosted', playType: 'textures' })]),
-        [canvasEffect(), effect('hosted', { generatorId: 'plasma' })],
-      );
+      showOf([canvasEffect(), zoneEffect('hosted', { kind: 'noise', style: 'plasma' }, HIT_AMP)]);
     const a = run(s(), script);
     const b = run(s(), script);
     expect(a.some((f) => f.some((x) => x > 0))).toBe(true);

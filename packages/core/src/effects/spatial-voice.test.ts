@@ -6,7 +6,8 @@ import { applyEffectiveParams, createDefaultCompositor } from '../voice/composit
 import { advanceEnvelopes, reapDeadVoices } from '../voice/envelope-tick';
 import { VoicePool, releaseVoice } from '../voice/voice-pool';
 import { runtimeAction, runtimeBus, runtimeFrame, runtimeVoice } from '../voice/runtime-test-fixtures';
-import { padKey, type EffectDef, type GraphNode, type Show, type Voice } from '../voice/types';
+import type { EffectDef, Show, Voice } from '../voice/types';
+import { effectShowOf, sectionOf, zoneEffect } from '../voice/effect-test-fixtures';
 import type { SpatialFieldState } from './impl/spatial-field';
 import { getEffect } from './registry';
 import { spatialFixtureKit } from './spatial-field-fixture';
@@ -21,37 +22,17 @@ function effect(): EffectDef {
     attackMs: 0, sustainMs: 100, releaseMs: 60,
   };
 }
-function node(kind: GraphNode['kind'], id: string, overrides: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'loop', scope: 'kit', effectId: '', presetId: '', busId: 'b',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5,
-    invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8', ...overrides,
-  };
-}
+/** A Wave / Field Effect on d0's first zone. `targetId` is a `drum#hoop,hoop` selection. */
 function show(options: { audio?: boolean; warp?: number; targetId?: string; mode?: 'loop' | 'oneshot' } = {}): Show {
-  return {
-    buses: [runtimeBus], effects: [effect()], presets: [], sections: [],
-    graphs: {
-      [padKey('d0', '0')]: {
-        version: 3,
-        nodes: [
-          node('trigger', 'trigger'),
-          node('effect', 'field', { effectId: 'fx', mode: options.mode ?? 'loop',
-            params: { ...rich, warp: options.warp ?? 0.6 }, modInputs: [{ param: 'warp' }] }),
-          node('audio', 'audio', { audioBand: 'bass' }),
-          node('scope', 'scope', { scope: options.targetId ? 'hoop' : 'kit', targetId: options.targetId }),
-          node('output', 'output'),
-        ],
-        edges: [
-          { id: 'a', from: 'trigger', to: 'field' },
-          { id: 'b', from: 'field', to: 'scope' },
-          { id: 'c', from: 'scope', to: 'output' },
-          ...(options.audio ? [{ id: 'mod', from: 'audio', to: 'field', toPort: 'param:warp' as const,
-            amount: 1, invert: false, rangeMin: 0, rangeMax: 0.9 }] : []),
-        ],
-      },
-    },
-  };
+  const [drumId, hoops] = options.targetId?.split('#') ?? [];
+  const field = zoneEffect('field', { kind: 'wave', style: 'field', params: { ...rich, warp: options.warp ?? 0.6 } }, {
+    amp: { attackMs: 0, length: options.mode === 'oneshot' ? { ms: 1600 } : 'loop', releaseMs: 60 },
+    target: drumId ? { kind: 'select', drums: [{ drumId, hoops: hoops!.split(',').map(Number) }] } : { kind: 'kit' },
+    controls: options.audio
+      ? [{ uid: 'audio', kind: 'audio', settings: { band: 'bass' }, mappings: [{ device: 'generator', param: 'warp', amount: 1, invert: false, rangeMin: 0, rangeMax: 0.9 }] }]
+      : [],
+  }, 'd0', 0);
+  return effectShowOf(sectionOf('s', [field]));
 }
 function engine(options: Parameters<typeof show>[0] = {}) {
   const e = createVoiceBusEngine();
@@ -130,7 +111,7 @@ describe('Spatial Field through the normal registry/voice engine', () => {
     } finally { spy.mockRestore(); }
   });
 
-  it('one-shot sustain includes authored wave life; show replacement clears all voices', () => {
+  it('a one-shot lives for its amp length; show replacement clears all voices', () => {
     const e = engine({ mode: 'oneshot' });
     expect(energy(paint(e, 1000, 975))).toBeGreaterThan(1);
     expect(e.stats().voiceCount).toBe(1);
