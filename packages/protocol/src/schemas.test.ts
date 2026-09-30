@@ -37,13 +37,9 @@ const output = outputSchema.parse({ id: 'o1', segments: [{ drumId: 'kick', hoopS
 const patch = projectPatchSchema.parse({ kit: minimalKit });
 const project = projectSchema.parse({ name: 'P', kit: minimalKit });
 
-const showFixture = {
-  buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 0 }],
-  graphs: { 'kick:': { version: 3, nodes: [{ id: 'n1', kind: 'trigger' }], edges: [] } },
-  sections: [],
-  effects: [],
-  presets: [],
-} as unknown as import('@ledrums/core').voice.Show;
+const showFixture: import('@ledrums/core').voice.Show = {
+  songs: [{ id: 'song-1', name: 'Song', sections: [{ id: 'sec-1', name: 'Verse', effects: [] }] }],
+};
 
 const clientSamples: ClientMessage[] = [
   { t: 'midi', note: 38, velocity: 100, on: true, channel: 1 },
@@ -80,7 +76,6 @@ const clientSamples: ClientMessage[] = [
   { t: 'setShowLibrary', library: { version: 1, data: { any: 'blob' } } },
   { t: 'setSongLibrary', library: { version: 2, data: [1, 2, 3] } },
   { t: 'key', drumId: 'kick', zone: 'center', velocity: 0.8 },
-  { t: 'fireGraph', graphKey: 'kick:', velocity: 1 },
   { t: 'fireEffect', effectId: 'fx-1' },
   { t: 'recallSection', songId: 's1', sectionId: 'sec1' },
   { t: 'takeover' },
@@ -122,7 +117,7 @@ const serverSamples: ServerMessage[] = [
     recallSequence: 4,
     sessionId: 'server-session-1',
   },
-  { t: 'stats', stats: { timeMs: 0, beat: 0, bar: 0, activeTriggers: 0, tickCount: 1, pixelCount: 2 }, latencyMs: 5, fps: 60, output: outputStatus, voice: { voiceCount: 1, busLevels: { main: 0.5 }, voices: [{ id: 'v1', busId: 'main', effectId: 'swirl', mode: 'oneshot', level: 0.5, hue: 200, releasing: false, via: 'kick', pad: 'graph:1#0' }] } },
+  { t: 'stats', stats: { timeMs: 0, beat: 0, bar: 0, activeTriggers: 0, tickCount: 1, pixelCount: 2 }, latencyMs: 5, fps: 60, output: outputStatus, voice: { voiceCount: 1, busLevels: { main: 0.5 }, voices: [{ id: 'v1', busId: 'main', effectId: 'swirl', mode: 'oneshot', level: 0.5, hue: 200, releasing: false, via: 'kick', pad: 'effect:swirl' }] } },
   { t: 'input', kind: 'midi', label: 'note', value: 100, note: 38, channel: 1 },
   { t: 'recalled', songId: 'song-1', sectionId: 'section-2', showRevision: 1, recallSequence: 4, sessionId: 'server-session-1' },
   { t: 'monitor', event: { id: 1, time: 1, type: 'input', direction: 'in', source: 'ws', label: 'MIDI' } },
@@ -274,23 +269,18 @@ describe('opaque + authored passthrough', () => {
     expect(showLibraryBlobSchema.safeParse({ version: 'x', data: {} }).success).toBe(false);
   });
 
-  it('validates the Show envelope but preserves unknown authored node fields', () => {
-    const withCustomNodeField = {
-      buses: [],
-      graphs: { 'kick:': { nodes: [{ id: 'n1', kind: 'effect', futureField: 42 }], edges: [] } },
-      sections: [],
-      effects: [],
-      presets: [],
-    };
-    const decoded = showSchema.parse(withCustomNodeField) as unknown as {
-      graphs: Record<string, { nodes: Array<Record<string, unknown>> }>;
-    };
-    expect(decoded.graphs['kick:']!.nodes[0]).toHaveProperty('futureField', 42);
+  it('validates the Show envelope but preserves unknown authored fields', () => {
+    const withCustomField = { songs: [], futureField: 42, canvasScenes: [{ id: 'sc', name: 'Scene', futureField: 1 }] };
+    const decoded = showSchema.parse(withCustomField) as unknown as Record<string, unknown>;
+    expect(decoded).toHaveProperty('futureField', 42);
+    expect(decoded).toEqual(withCustomField);
   });
 
-  it('rejects a Show missing its required containers', () => {
-    expect(showSchema.safeParse({ buses: [] }).success).toBe(false);
+  it('rejects a Show missing its songs, or a retired graph-model Show', () => {
+    expect(showSchema.safeParse({}).success).toBe(false);
+    expect(showSchema.safeParse({ buses: [], graphs: {}, sections: [], effects: [], presets: [] }).success).toBe(false);
   });
+
 });
 
 describe('fireEffect client message', () => {
@@ -317,10 +307,8 @@ describe('Show effect-chain sections (songs → sections → effects / master)',
     modifiers: [{ uid: 'm1', modifierId: 'strobe' }],
   });
   const masterDevice = effectChain.modifierDeviceSchema.parse({ uid: 'mst-1', modifierId: 'strobe' });
-  const legacyContainers = { buses: [], graphs: {}, sections: [], effects: [], presets: [] };
   const showWith = (section: Record<string, unknown>) => ({
-    ...legacyContainers,
-    songs: [{ id: 'song-1', name: 'Song', sections: [{ id: 'sec-1', name: 'Verse', slots: {}, ...section }] }],
+    songs: [{ id: 'song-1', name: 'Song', sections: [{ id: 'sec-1', name: 'Verse', effects: [], ...section }] }],
   });
   const accepts = (show: unknown) => showSchema.safeParse(show).success;
   const wire = (v: unknown) => JSON.parse(JSON.stringify(v));
@@ -333,10 +321,10 @@ describe('Show effect-chain sections (songs → sections → effects / master)',
     expect(clientMessageSchema.parse(msg)).toStrictEqual(msg);
   });
 
-  it('accepts an empty effect stack and graph-path sections that carry neither field', () => {
+  it('accepts an empty effect stack and an empty setlist, and requires the effects field', () => {
     expect(accepts(showWith({ effects: [], master: [] }))).toBe(true);
-    expect(accepts(showWith({ slots: { 'kick:center': ['g1', null] } }))).toBe(true);
-    expect(accepts(legacyContainers)).toBe(true); // no songs at all
+    expect(accepts({ songs: [] })).toBe(true);
+    expect(accepts({ songs: [{ id: 'song-1', name: 'Song', sections: [{ id: 'sec-1', name: 'Verse' }] }] })).toBe(false);
   });
 
   it('preserves unknown authored fields on an Effect (no key stripping)', () => {
@@ -369,10 +357,9 @@ describe('Show effect-chain sections (songs → sections → effects / master)',
   it('rejects duplicate Effect ids within one section, but not across sections', () => {
     expect(accepts(showWith({ effects: [zoneEffect, { ...clockEffect, id: zoneEffect.id }] }))).toBe(false);
     const twoSections = {
-      ...legacyContainers,
       songs: [{ id: 'song-1', name: 'Song', sections: [
-        { id: 'a', name: 'A', slots: {}, effects: [zoneEffect] },
-        { id: 'b', name: 'B', slots: {}, effects: [zoneEffect] },
+        { id: 'a', name: 'A', effects: [zoneEffect] },
+        { id: 'b', name: 'B', effects: [zoneEffect] },
       ] }],
     };
     expect(accepts(twoSections)).toBe(true);
@@ -385,8 +372,8 @@ describe('Show effect-chain sections (songs → sections → effects / master)',
   });
 
   it('rejects songs / sections missing their ids or section list', () => {
-    expect(accepts({ ...legacyContainers, songs: [{ id: 'song-1', name: 'Song' }] })).toBe(false);
-    expect(accepts({ ...legacyContainers, songs: [{ id: 'song-1', sections: [{ name: 'no id', effects: [] }] }] })).toBe(false);
-    expect(accepts({ ...legacyContainers, songs: 'nope' })).toBe(false);
+    expect(accepts({ songs: [{ id: 'song-1', name: 'Song' }] })).toBe(false);
+    expect(accepts({ songs: [{ id: 'song-1', sections: [{ name: 'no id', effects: [] }] }] })).toBe(false);
+    expect(accepts({ songs: 'nope' })).toBe(false);
   });
 });
