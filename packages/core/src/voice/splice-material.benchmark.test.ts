@@ -12,34 +12,19 @@ import type { ModSampleCtx } from './modulation';
 import type { TransportState } from '../engine/render-context';
 import { runtimeAction, runtimeBus, runtimeFrame, runtimeEffect, runtimeVoice } from './runtime-test-fixtures';
 import type { MixInputDraft, PlayAction } from './play-action';
-import type { GraphNode, Show, SpliceConfig, TriggerGraph } from './types';
-import { padKey } from './types';
+import type { Show, SpliceConfig } from './types';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 import { VoicePool } from './voice-pool';
 
-function graphNode(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'loop', scope: 'kit', effectId: '', presetId: '', busId: '', params: {}, env: {},
-    noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 0.5,
-    delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
-}
-
-function engineBenchmarkGraph(): TriggerGraph {
-  return {
-    version: 3,
-    nodes: [
-      graphNode('trigger', 'trigger'),
-      graphNode('splice', 'splice', {
-        spliceCount: 8,
-        splicePartition: 'hoop',
-        spliceOffsetMode: 'time', spliceOffsetMs: 40,
-        spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 125,
-        splices: Array.from({ length: 8 }, () => ({ effectId: 'fx' })),
-      }),
-      graphNode('output', 'output'),
-    ],
-    edges: [{ id: 'trigger-splice', from: 'trigger', to: 'splice' }, { id: 'splice-output', from: 'splice', to: 'output' }],
-  };
+/** A looping Splice Effect on d0: eight confetti slots cut per hoop, with hoop and drum
+    cascade offsets. */
+function engineBenchmarkShow(): Show {
+  const effect = zoneEffect('splice', {
+    kind: 'splice', style: '',
+    params: { count: 8, partition: 'hoop', offsetMode: 'time', offsetMs: 40, drumOffsetMode: 'time', drumOffsetMs: 125 },
+    slots: Array.from({ length: 8 }, () => ({ generator: { kind: 'particles', style: 'confetti', params: {} } })),
+  }, { amp: { attackMs: 10, length: 'loop', releaseMs: 300 }, target: { kind: 'kit' } }, 'd0', 0);
+  return effectShowOf(sectionOf('s', [effect]));
 }
 
 // Opt in with LEDRUMS_HEALTH_BENCH=1; ordinary tests do not run timing workloads.
@@ -205,13 +190,7 @@ it.runIf(process.env.LEDRUMS_HEALTH_BENCH === '1')('reports sparse splice materi
   }
 
   const engine = createVoiceBusEngine();
-  const engineShow: Show = {
-    buses: [runtimeBus],
-    graphs: { [padKey('d0', '')]: engineBenchmarkGraph() },
-    sections: [],
-    effects: [runtimeEffect('confetti-burst')],
-    presets: [],
-  };
+  const engineShow = engineBenchmarkShow();
   engine.setModel(model);
   engine.setShow(engineShow);
   engine.applyInput({ kind: 'noteOn', drumId: 'd0', zone: '', velocity: 1, timeMs: 0 });
