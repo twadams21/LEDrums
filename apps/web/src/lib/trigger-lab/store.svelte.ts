@@ -15,7 +15,7 @@
    (via `buildEffectsShow`), sent to the server and loaded into the offline Sim's core engine. */
 
 import { Sim, type LogEntry } from './sim';
-import { DRUMS, PADS, ZONE_LABELS, type Pad } from './fixtures';
+import { DRUMS, PADS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
@@ -32,7 +32,7 @@ import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smooth
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
 // SAME shape the zones editor does (one mutation path, mutation parity), not a second one.
-import { setZoneOscAddress, zoneSlotsForDrum, zoneLabel, defaultZoneName } from '../app/docks/patch-inspector';
+import { setZoneOscAddress, zoneSlotsForDrum, zoneLabel } from '../app/docks/patch-inspector';
 import type {
   CanvasScene,
   GlobalControlAction,
