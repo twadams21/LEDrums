@@ -1,8 +1,14 @@
 ---
-last_updated: 2026-09-14
+last_updated: 2026-09-30
 ---
 
 # Pattern: Add a lighting effect
+
+> **Effect chains (2026-09-30):** an effect implementation is no longer listed to users on its own.
+> Users reach it through a Generator **Style** (`add-generator-style.md`), and
+> `effect-chain/generators/coverage.test.ts` fails until a Style hosts the new id. Build the
+> implementation here, then add its Style. "Effect" in `CONTEXT.md` now means the whole chain;
+> this file's "effect" is the underlying `EffectGenerator`.
 
 Effects are the main extension point. Each is a pure `EffectGenerator` registered in one place; the UI picks it up automatically (effect specs flow to the client over WS at runtime — only a **server restart** is needed, no web rebuild).
 
