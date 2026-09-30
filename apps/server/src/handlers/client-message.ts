@@ -17,7 +17,7 @@ import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
 
 /**
  * Engine inputs come from the drummer's local hardware (MIDI notes, OSC, transport recalls) or
- * the Perform computer keyboard (`fireGraph`) and always drive the engine regardless of who holds
+ * the Perform computer keyboard (`fireEffect`) and always drive the engine regardless of who holds
  * the editor slot — they are NOT authoring. The editor lock never gates them, so a performer can
  * play while someone else edits.
  */
@@ -28,7 +28,6 @@ const ENGINE_INPUTS: ReadonlySet<HandledMessage['t']> = new Set([
   'programChange',
   'key',
   'recallSection',
-  'fireGraph',
   'fireEffect',
 ]);
 
@@ -228,7 +227,7 @@ export function createClientMessageHandler<S extends HandlerSocket>(
       return;
     }
 
-    // Effect audition (effect chains): an engine input like `fireGraph`, so it is never
+    // Effect audition (effect chains): an engine input, so it is never
     // editor-gated. The active-section rule is the engine's — it resolves the id against the
     // ACTIVE section only — so a viewer and the editor get the same authority. Legacy mode has
     // no Effect path: a no-op.

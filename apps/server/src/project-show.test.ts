@@ -1,22 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { selectionFromLibrary, showFromLibraries } from './project-show';
-import { CANVAS_PARAM_SPEC, defaultProject, type CanvasScene } from '@ledrums/core';
+import { defaultProject, type CanvasScene } from '@ledrums/core';
 import { VoiceEngineHost } from './voice-engine-host';
 
 describe('persisted library → runtime Show restore boundary', () => {
   it('restores canvas CC brightness through the real host: CC 0 is dark, CC 127 is lit', async () => {
     const scene: CanvasScene = { id: 'restore-cc', name: 'CC canvas', sampler: { kind: 'cylinder' }, lenses: [],
       elements: [{ kind: 'stripes', angleDeg: 0, widthU: 1, duty: 1, speedUps: 0, hue: 0, sat: 1, softness: 0 }] };
-    const library = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
-      buses: [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 0 }],
-      graphs: { 'graph:canvas': { version: 3, nodes: [
-        { id: 'trigger', kind: 'trigger', source: { kind: 'midi', note: 70 } },
-        { id: 'effect', kind: 'effect', effectId: 'canvas:restore-cc', presetId: 'canvas:restore-cc:default', mode: 'loop',
-          modInputs: [{ param: 'brightness', inMin: 0, inMax: 1, outMin: 0, outMax: 1 }] },
-        { id: 'cc', kind: 'cc', ccController: 1 }, { id: 'output', kind: 'output' },
-      ], edges: [{ id: 'a', from: 'trigger', to: 'effect' }, { id: 'b', from: 'effect', to: 'output' },
-        { id: 'c', from: 'cc', to: 'effect', toPort: 'param:brightness' }] } },
-      effects: [], presets: [], songs: [], canvasScenes: [scene],
+    // A looping Scene Cue on note 70 whose brightness follows CC 1.
+    const effect = {
+      id: 'canvas', cell: { row: 'kit', column: { kind: 'cue' } }, trigger: { kind: 'cue', source: { midiNote: 70 } },
+      generator: { kind: 'scene', params: { sceneId: 'restore-cc' } }, amp: { attackMs: 0, length: 'loop' },
+      controls: [{ uid: 'cc', kind: 'cc', settings: { controller: 1 }, mappings: [{ device: 'generator', param: 'brightness', rangeMin: 0, rangeMax: 1 }] }],
+    };
+    const library = { version: 3, data: { activeShowId: 'show', shows: { show: { authored: {
+      songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 'S', effects: [effect], master: [] }] }],
+      canvasScenes: [scene],
     } } } } };
     const show = showFromLibraries(library, null)!;
     const project = defaultProject(); project.output.state = 'disabled';
@@ -31,8 +30,6 @@ describe('persisted library → runtime Show restore boundary', () => {
       expect(peak()).toBe(0);
       host.applyInput({ kind: 'cc', controller: 1, value: 127 }); host.step(5);
       expect(peak()).toBeGreaterThan(0.9);
-      const params = show.effects.find((effect) => effect.id === 'canvas:restore-cc')!.params;
-      expect(params.map((param) => param.key)).toEqual(CANVAS_PARAM_SPEC.map((param) => param.key));
     } finally { await host.stop(); }
   });
 
@@ -42,88 +39,24 @@ describe('persisted library → runtime Show restore boundary', () => {
   it.each([undefined, 0, 3, 1.5, NaN, Infinity, '1', '2'])('rejects unsupported song version %s even without a show', (version) => {
     expect(() => showFromLibraries(null, { version, data: { songs: {} } })).toThrow(/Unsupported song library version/);
   });
-  it('accepts exactly current versions without shifting a 1-based hoop target', () => {
-    const library = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
-      graphs: { g: { version: 3, nodes: [{ id: 'scope', kind: 'scope', scope: 'hoop', targetId: 'kick#1' }], edges: [] } },
+  it('stores an archived graph-model (v2) library but never runs it: no Show, no selection', () => {
+    const graphModel = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
+      graphs: { g: { version: 3, nodes: [], edges: [] } }, songs: [{ id: 'song', name: 'Song', sections: [] }],
+      activeSongId: 'song', activeSectionId: null,
     } } } } };
-    expect(showFromLibraries(library, { version: 1, data: { songs: {} } })!.graphs.g!.nodes[0]!.targetId).toBe('kick#1');
-    expect(() => showFromLibraries({ ...library, version: 1 }, null)).toThrow(/Unsupported show library version/);
-  });
-
-  it('resolves song-library closures, pad slots and active selection without changing the saved blobs', () => {
-    const graphs = { 'lib:g': { nodes: [{ id: 'trigger', kind: 'trigger', source: { kind: 'drum', drumId: 'snare', zone: '2' } }], edges: [] } };
-    const showLibrary = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
-      graphs: {}, buses: [], effects: [], presets: [], songs: [], songRefs: ['song', 'song', 'missing'], activeSongId: 'song', activeSectionId: 'section',
-    } } } } };
-    const songLibrary = { version: 1, data: { songs: { song: { id: 'song', name: 'Library song',
-      graphs, effects: [], presets: [], sections: [{ id: 'section', name: 'Section', graphs: ['lib:g'], looks: {} }] } } } };
-    const before = structuredClone({ showLibrary, songLibrary });
-    const runtime = showFromLibraries(showLibrary, songLibrary)!;
-    expect(runtime.songs).toEqual([{ id: 'song', name: 'Library song', sections: [{ id: 'section', name: 'Section',
-      performanceGraphKeys: ['lib:g'], slots: { 'snare:2': ['lib:g'] } }] }]);
-    expect(selectionFromLibrary(showLibrary)).toEqual({ songId: 'song', sectionId: 'section' });
-    expect(runtime.graphs['lib:g']).not.toBe(graphs['lib:g']);
-    expect({ showLibrary, songLibrary }).toEqual(before);
-  });
-
-  it('cold-restored sections authorize direct MIDI/OSC graphs while retaining drum slots', async () => {
-    const graph = (source: { kind: 'drum'; drumId: string; zone: string } | { kind: 'midi'; note: number } | { kind: 'osc'; address: string }) => ({
-      version: 3,
-      nodes: [
-        { id: 'trigger', kind: 'trigger', source },
-        { id: 'play', kind: 'play', mode: 'oneshot', scope: 'kit', effectId: 'fx-flash', presetId: '', busId: 'main', params: { brightness: 1 } },
-      ],
-      edges: [{ id: 'e1', from: 'trigger', to: 'play' }],
-    });
-    const showLibrary = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
-      buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 0 }],
-      graphs: {
-        'graph:midi': graph({ kind: 'midi', note: 60 }),
-        'graph:osc': graph({ kind: 'osc', address: '/lights' }),
-        'graph:drum': graph({ kind: 'drum', drumId: 'kick', zone: '0' }),
-        'graph:other': graph({ kind: 'midi', note: 61 }),
-        'graph:unassigned': graph({ kind: 'midi', note: 62 }),
-      },
-      effects: [{ id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: 'main', scope: 'kit', params: [
-        { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
-      ], attackMs: 0, sustainMs: 200, releaseMs: 200 }],
-      presets: [], songs: [{ id: 'song', name: 'Song', sections: [
-        { id: 'active', name: 'Active', graphs: ['graph:midi', 'graph:osc', 'graph:drum'], looks: {} },
-        { id: 'other', name: 'Other', graphs: ['graph:other'], looks: {} },
-      ] }], activeSongId: 'song', activeSectionId: 'active',
-    } } } } };
-
-    const runtime = showFromLibraries(showLibrary, null)!;
-    expect(runtime.songs).toEqual([{ id: 'song', name: 'Song', sections: [
-      { id: 'active', name: 'Active', performanceGraphKeys: ['graph:midi', 'graph:osc', 'graph:drum'], slots: { 'kick:0': ['graph:drum'] } },
-      { id: 'other', name: 'Other', performanceGraphKeys: ['graph:other'], slots: {} },
-    ] }]);
-
-    const project = defaultProject();
-    project.output.state = 'disabled';
-    const host = new VoiceEngineHost(project);
-    const events: Array<{ label?: string }> = [];
-    host.setMonitor((event) => events.push(event as { label?: string }));
-    host.prepareProject(project, runtime, selectionFromLibrary(showLibrary)).commit();
-    try {
-      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:midi', viewerOnly: true });
-      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:osc', viewerOnly: true });
-      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:other', viewerOnly: true });
-      host.applyInput({ kind: 'fireGraph', graphKey: 'graph:unassigned', viewerOnly: true });
-      host.step(1000 / 120);
-
-      expect(events.filter((event) => event.label === 'Graph fired graph:midi')).toHaveLength(1);
-      expect(events.filter((event) => event.label === 'Graph fired graph:osc')).toHaveLength(1);
-      expect(events.filter((event) => event.label === 'Graph fired graph:other')).toHaveLength(0);
-      expect(events.filter((event) => event.label === 'Graph fired graph:unassigned')).toHaveLength(0);
-    } finally {
-      await host.stop();
-    }
+    const before = structuredClone(graphModel);
+    expect(showFromLibraries(graphModel, { version: 1, data: { songs: {} } })).toBeNull();
+    expect(selectionFromLibrary(graphModel)).toBeUndefined();
+    // Even a malformed archive is not parsed: the server keeps it, the web import reads it.
+    expect(showFromLibraries({ version: 2, data: 'invalid' }, null)).toBeNull();
+    expect(graphModel).toEqual(before);
+    // The v1 format (0-based hoop ids) is still refused outright.
+    expect(() => showFromLibraries({ ...graphModel, version: 1 }, null)).toThrow(/Unsupported show library version/);
   });
 
   it('preserves a persisted zero-section active selection through restore', async () => {
-    const showLibrary = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: {
-      graphs: {}, buses: [], effects: [], presets: [], songs: [{ id: 'empty-song', name: 'Empty', sections: [] }],
+    const showLibrary = { version: 3, data: { activeShowId: 'show', shows: { show: { authored: {
+      songs: [{ id: 'empty-song', name: 'Empty', sections: [] }],
       activeSongId: 'empty-song', activeSectionId: null,
     } } } } };
     const selection = selectionFromLibrary(showLibrary);
@@ -139,9 +72,8 @@ describe('persisted library → runtime Show restore boundary', () => {
       expect(host.getActiveSelection()).toEqual({ activeSongId: 'empty-song', activeSectionId: null });
     } finally { await host.stop(); }
   });
-  it('null means no show, but malformed opaque envelopes are rejected rather than reusing an old show', () => {
+  it('null means no show', () => {
     expect(showFromLibraries(null, null)).toBeNull();
-    expect(() => showFromLibraries({ version: 2, data: 'invalid' }, null)).toThrow('Invalid authored');
   });
 
   describe('v3 (effect chains) restore', () => {
@@ -181,7 +113,7 @@ describe('persisted library → runtime Show restore boundary', () => {
       expect(reported).toEqual([expect.objectContaining({ kind: 'invalid-effect', id: 'bad', sectionId: 'a' })]);
     });
 
-    it('resolves v3 song references only from a v2 song library, and a v2 show only from a v1 one', () => {
+    it('resolves v3 song references only from a v2 song library; an archived v2 show runs nothing', () => {
       const showLibrary = v3([], { songRefs: ['lib'] });
       const librarySong = { id: 'lib', name: 'Library', sections: [{ id: 'lib:lib/s', name: 'S', effects: [zoneEffect('x', 'kick', 0)], master: [] }] };
       const effectSongs = { version: 2, data: { songs: { lib: librarySong } } };
@@ -189,7 +121,7 @@ describe('persisted library → runtime Show restore boundary', () => {
       expect(showFromLibraries(showLibrary, effectSongs)!.songs!.map((s) => s.id)).toEqual(['song', 'lib']);
       expect(showFromLibraries(showLibrary, graphSongs)!.songs!.map((s) => s.id)).toEqual(['song']);
       const graphShow = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: { songs: [], songRefs: ['lib'] } } } } };
-      expect(showFromLibraries(graphShow, effectSongs)!.songs).toEqual([]);
+      expect(showFromLibraries(graphShow, effectSongs)).toBeNull();
     });
 
     it('rejects a structurally unusable v3 envelope before any live mutation', () => {

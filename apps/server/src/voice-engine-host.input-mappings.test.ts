@@ -36,8 +36,8 @@ function show(mappings: effectChain.InputMapping[]): voice.Show {
   return {
     ...voice.emptyShow(),
     songs: [{ id: 'song', name: 'Song', sections: [
-      { id: 'A', name: 'A', slots: {}, effects },
-      { id: 'B', name: 'B', slots: {}, effects },
+      { id: 'A', name: 'A', effects },
+      { id: 'B', name: 'B', effects },
     ] }],
     mappings,
   };

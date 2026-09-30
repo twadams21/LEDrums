@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { defaultProject, voice } from '@ledrums/core';
+import { defaultProject, effectChain, type voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
 import { serverMessageSchema, type ServerMessage } from '@ledrums/protocol';
 import { OutputManager } from '../output-manager';
@@ -8,8 +8,7 @@ import { handleVoiceInput, type VoiceInputDeps } from './voice-input';
 
 /* S12 — the server is the sole authoritative resolver when a client is connected. This asserts
    the count that the authority principle promises: ONE MIDI hit produces exactly ONE input echo
-   broadcast and exactly ONE graph-fired diagnostic per resolved graph — no re-fire, no duplicate
-   broadcast. (The old duplicate fires were client-side echo, not the server; this locks the
+   broadcast and exactly ONE voice per matching Effect — no re-fire, no duplicate broadcast. (The old duplicate fires were client-side echo, not the server; this locks the
    server end down so later E slices can rely on it.) */
 
 class FakeOutput implements PixelOutput {
@@ -18,36 +17,18 @@ class FakeOutput implements PixelOutput {
   close(): void {}
 }
 
-const node = (id: string, kind: voice.NodeKind, extra: Partial<voice.GraphNode> = {}): voice.GraphNode =>
-  ({
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: false, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 1, delayMode: 'time', ms: 0, division: '1/8',
-    ...extra,
-  }) as voice.GraphNode;
-
-/** One graph bound DIRECTLY to a raw MIDI note (no zone-map), playing a kit-wide flash on the
-    `main` bus. An unmapped note therefore resolves exactly one graph. */
-function directNoteShow(note: number): voice.Show {
-  const flash: voice.EffectDef = {
-    id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: 'main', scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 0, sustainMs: 200, releaseMs: 200,
-  };
-  const graph: voice.TriggerGraph = {
-    nodes: [
-      node('trig', 'trigger', { source: { kind: 'midi', note } }),
-      node('play', 'play', { effectId: 'fx-flash', busId: 'main', params: { brightness: 1 } }),
-    ],
-    edges: [{ id: 'e1', from: 'trig', to: 'play' }],
-  };
-  return {
-    buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }],
-    graphs: { 'graph:1': graph },
-    sections: [],
-    effects: [flash],
-    presets: [],
-  };
+/** One Cue Effect bound DIRECTLY to a raw MIDI note (no zone-map), a kit-wide solid flash. An
+    unmapped note therefore fires exactly one Effect. `over` merges into the authored Effect. */
+function cueShow(note: number, over: Record<string, unknown> = {}): voice.Show {
+  const flash = effectChain.parseEffect({
+    id: 'fx-flash',
+    cell: { row: 'kit', column: { kind: 'cue' } },
+    trigger: { kind: 'cue', source: { midiNote: note } },
+    generator: { kind: 'solid', style: 'swirl', params: { brightness: 1 } },
+    amp: { attackMs: 0, length: { ms: 200 }, releaseMs: 200 },
+    ...over,
+  });
+  return { songs: [{ id: 'song', name: 'Song', sections: [{ id: 'section', name: 'Section', effects: [flash] }] }] };
 }
 
 function makeHost(): VoiceEngineHost {
@@ -55,12 +36,9 @@ function makeHost(): VoiceEngineHost {
 }
 
 describe('handleVoiceInput — one connected MIDI hit fires once (S12)', () => {
-  it('a single MIDI note broadcasts exactly one input echo and fires exactly one graph', () => {
+  it('a single MIDI note broadcasts exactly one input echo and fires exactly one Effect', () => {
     const host = makeHost();
-    host.setShow(directNoteShow(60)); // note 60 is unmapped in defaultProject → direct binding only
-
-    const monitorEvents: Array<{ label?: string }> = [];
-    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
+    host.setShow(cueShow(60)); // note 60 is unmapped in defaultProject → the Cue only
 
     const broadcasts: ServerMessage[] = [];
     const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
@@ -75,21 +53,16 @@ describe('handleVoiceInput — one connected MIDI hit fires once (S12)', () => {
     expect(inputBroadcasts).toHaveLength(1);
     expect(inputBroadcasts[0]).toMatchObject({ t: 'input', kind: 'midi', note: 60 });
 
-    // Exactly one graph-fired diagnostic — one authoritative fire, no re-fire.
-    const graphFired = monitorEvents.filter((e) => e.label?.startsWith('Graph fired'));
-    expect(graphFired).toHaveLength(1);
-
-    // And exactly one bus is lit by that single fire.
+    // Exactly one voice — one authoritative fire, no re-fire — and it is lit.
+    expect(host.getStats().engine.voiceCount).toBe(1);
     const litBuses = Object.values(host.getStats().engine.busLevels).filter((l) => l > 0);
     expect(litBuses).toHaveLength(1);
   });
 
-  it('the note-off for the same hit adds no extra graph fire', () => {
+  it('the note-off for the same hit adds no extra fire', () => {
     const host = makeHost();
-    host.setShow(directNoteShow(60));
+    host.setShow(cueShow(60));
 
-    const monitorEvents: Array<{ label?: string }> = [];
-    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
     const broadcasts: ServerMessage[] = [];
     const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
 
@@ -97,9 +70,9 @@ describe('handleVoiceInput — one connected MIDI hit fires once (S12)', () => {
     handleVoiceInput({ t: 'midi', note: 60, velocity: 0, on: false, channel: 0 }, deps);
     for (let i = 0; i < 4; i++) host.step(1000 / 120);
 
-    // Note-on + note-off each echo once; only the note-on fires a graph.
+    // Note-on + note-off each echo once; only the note-on fires.
     expect(broadcasts.filter((m) => m.t === 'input')).toHaveLength(2);
-    expect(monitorEvents.filter((e) => e.label?.startsWith('Graph fired'))).toHaveLength(1);
+    expect(host.getStats().engine.voiceCount).toBe(1);
   });
 });
 
@@ -107,10 +80,9 @@ describe('handleVoiceInput — transport recall stays engine-authoritative', () 
   it('resolves queued PC then CC#0 against the processed engine position', () => {
     const host = makeHost();
     const show: voice.Show = {
-      ...directNoteShow(60),
       songs: [
-        { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }, { id: 'a1', name: 'A1', slots: {} }] },
-        { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', slots: {} }, { id: 'b1', name: 'B1', slots: {} }] },
+        { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [] }, { id: 'a1', name: 'A1', effects: [] }] },
+        { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [] }, { id: 'b1', name: 'B1', effects: [] }] },
       ],
     };
     host.setShow(show);
@@ -131,82 +103,13 @@ describe('handleVoiceInput — transport recall stays engine-authoritative', () 
 
   it('does not acknowledge an out-of-range indexed recall', () => {
     const host = makeHost();
-    host.setShow({ ...directNoteShow(60), songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }] }] });
+    host.setShow({ songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [] }] }] });
     const recalled = vi.fn();
     host.onSectionRecalled = recalled;
     const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
     handleVoiceInput({ t: 'cc', controller: 0, value: 99 }, deps);
     host.step(1000 / 120);
     expect(recalled).not.toHaveBeenCalled();
-  });
-
-  it('requires null song identity for a legacy top-level section recall', () => {
-    const host = makeHost();
-    host.setShow({
-      ...directNoteShow(60),
-      sections: [{ id: 'legacy-section', name: 'Legacy', looks: {} }],
-    });
-    const recalled = vi.fn();
-    host.onSectionRecalled = recalled;
-    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
-
-    handleVoiceInput({ t: 'recallSection', songId: 'arbitrary-song', sectionId: 'legacy-section' }, deps);
-    host.step(1000 / 120);
-    expect(recalled).not.toHaveBeenCalled();
-
-    handleVoiceInput({ t: 'recallSection', songId: null, sectionId: 'legacy-section' }, deps);
-    host.step(1000 / 120);
-    expect(recalled).toHaveBeenCalledWith(null, 'legacy-section', expect.any(Number), 1);
-  });
-});
-
-/* S13 — the keyboard performance path sends a `fireGraph` INTENT (the exact graph key) instead
-   of a synthetic MIDI/OSC source. The server plays precisely that graph — once — with no
-   re-resolution (so no zone-map / direct-binding both-fire), and validates the key: an unknown
-   key fires nothing and surfaces the normal graph-missed diagnostic. */
-describe('handleVoiceInput — fireGraph intent fires the exact graph once (S13)', () => {
-  it('fires exactly the named graph, once, and lights only its bus', () => {
-    const host = makeHost();
-    host.setShow(directNoteShow(60)); // graph:1 → flash on the `main` bus
-
-    const monitorEvents: Array<{ label?: string }> = [];
-    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
-    const broadcasts: ServerMessage[] = [];
-    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
-
-    const handled = handleVoiceInput({ t: 'fireGraph', graphKey: 'graph:1', velocity: 1 }, deps);
-    for (let i = 0; i < 4; i++) host.step(1000 / 120);
-
-    expect(handled).toBe(true);
-
-    // Exactly one graph-fired diagnostic, for the exact key — one authoritative fire, no re-fire.
-    const graphFired = monitorEvents.filter((e) => e.label?.startsWith('Graph fired'));
-    expect(graphFired).toHaveLength(1);
-    expect(graphFired[0]?.label).toBe('Graph fired graph:1');
-
-    // Exactly one bus lit by that single fire.
-    const litBuses = Object.values(host.getStats().engine.busLevels).filter((l) => l > 0);
-    expect(litBuses).toHaveLength(1);
-
-    // No `input` echo broadcast — the fire is surfaced by the graph diagnostics, not a note echo.
-    expect(broadcasts.filter((m) => m.t === 'input')).toHaveLength(0);
-  });
-
-  it('validates the key — an unknown graph key fires nothing and reports a miss', () => {
-    const host = makeHost();
-    host.setShow(directNoteShow(60));
-
-    const monitorEvents: Array<{ label?: string }> = [];
-    host.setMonitor((e) => monitorEvents.push(e as { label?: string }));
-    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: () => {} };
-
-    const handled = handleVoiceInput({ t: 'fireGraph', graphKey: 'graph:does-not-exist', velocity: 1 }, deps);
-    for (let i = 0; i < 4; i++) host.step(1000 / 120);
-
-    expect(handled).toBe(true);
-    expect(monitorEvents.filter((e) => e.label?.startsWith('Graph fired'))).toHaveLength(0);
-    expect(monitorEvents.filter((e) => e.label === 'No graph resolved')).toHaveLength(1);
-    expect(Object.values(host.getStats().engine.busLevels).filter((l) => l > 0)).toHaveLength(0);
   });
 });
 
@@ -305,30 +208,13 @@ describe('handleVoiceInput — the input echo names the drum', () => {
 /* GH #214 — audio feature frames reach the engine's audio table through the voice host (stamped
    with the engine clock, never a trigger), only from the editor, and never as monitor traffic. */
 describe('handleVoiceInput — audioFeatures', () => {
+  /** A looping Cue on note 60 whose brightness (base 0) follows the audio level. */
   function audioShow(): voice.Show {
-    const fx: voice.EffectDef = {
-      id: 'fx', name: 'fx', generatorId: 'solid-base', busId: 'main', scope: 'kit',
-      params: [
-        { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 0 },
-        { key: 'saturation', label: 'Saturation', kind: 'number', min: 0, max: 1, default: 1 },
-        { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
-        { key: 'speed', label: 'Speed', kind: 'number', min: 0, max: 4, default: 0 },
-        { key: 'noise', label: 'Noise', kind: 'number', min: 0, max: 1, default: 0 },
-      ],
-      attackMs: 0, sustainMs: 100000, releaseMs: 100,
-    };
-    const graph: voice.TriggerGraph = {
-      nodes: [
-        node('trig', 'trigger', { source: { kind: 'midi', note: 60 } }),
-        node('play', 'play', { effectId: 'fx', busId: 'main', mode: 'loop', params: { hue: 0, saturation: 1, brightness: 0, speed: 0, noise: 0 }, modInputs: [{ param: 'brightness' }] }),
-        node('a1', 'audio', { audioBand: 'level' }),
-      ],
-      edges: [
-        { id: 'e1', from: 'trig', to: 'play' },
-        { id: 'e2', from: 'a1', to: 'play', toPort: 'param:brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 },
-      ],
-    };
-    return { buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }], graphs: { 'graph:1': graph }, sections: [], effects: [fx], presets: [] };
+    return cueShow(60, {
+      generator: { kind: 'solid', style: 'swirl', params: { hue: 0, saturation: 1, brightness: 0, speed: 0, noise: 0 } },
+      amp: { attackMs: 0, length: 'loop', releaseMs: 100 },
+      controls: [{ uid: 'a1', kind: 'audio', settings: { band: 'level' }, mappings: [{ device: 'generator', param: 'brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 }] }],
+    });
   }
 
   const STEP = 1000 / 120;
