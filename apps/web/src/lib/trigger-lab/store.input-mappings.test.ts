@@ -262,7 +262,7 @@ describe('key mappings (resolved in the web)', () => {
 
   it('a recallSection key re-points the active section', () => {
     const { store } = setup();
-    const first = store.activeSectionId;
+    const first = store.activeSectionId!;
     store.addSongSection('Chorus');
     const chorus = store.activeSong!.sections.at(-1)!.id;
     store.setActiveSection(first);
