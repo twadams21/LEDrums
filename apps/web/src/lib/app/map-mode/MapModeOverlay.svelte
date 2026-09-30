@@ -30,9 +30,11 @@
     /** Supply the controller (demos pre-arm a control); default: one of its own. */
     controller?: MapModeController;
     registry?: MapRegistry;
+    /** Show the hint bar (default true; the styleguide's single-control state demos omit it). */
+    bar?: boolean;
   };
 
-  let { api, shell, scope = null, controller: given, registry = mapRegistry }: Props = $props();
+  let { api, shell, scope = null, controller: given, registry = mapRegistry, bar = true }: Props = $props();
 
   const controller = untrack(() => given ?? new MapModeController(() => api));
 
@@ -63,7 +65,7 @@
 
   let bounds = $state.raw<Rect>({ x: 0, y: 0, w: 0, h: 0 });
   let boxes = $state.raw<readonly Box[]>([]);
-  /** Map-mode chrome (the TopBar toggle) left undimmed by the scrim. */
+  /** Map-mode chrome (the TopBar toggle, the hint bar) left undimmed by the scrim. */
   let chrome = $state.raw<readonly Rect[]>([]);
 
   const inScope = (node: Node): boolean => scope === null || scope.contains(node);
@@ -97,11 +99,9 @@
     }
 
     const holes: Rect[] = [];
-    if (scope === null) {
-      for (const el of document.querySelectorAll('[data-map-mode-chrome]')) {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0) holes.push({ x: r.left, y: r.top, w: r.width, h: r.height });
-      }
+    for (const el of (scope ?? document).querySelectorAll('[data-map-mode-chrome]')) {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) holes.push({ x: r.left, y: r.top, w: r.width, h: r.height });
     }
     if (!sameRects(holes, chrome)) chrome = holes;
   }
@@ -197,12 +197,13 @@
       {@const label = controller.bindingLabel(box.entry.spec.target)}
       <div class="target" data-state={state} style="left:{box.x}px; top:{box.y}px; width:{box.w}px; height:{box.h}px;">
         {#if label || state === 'armed' || state === 'conflict'}
-          <span class="badge">{label ?? 'Learn'}</span>
+          <span class="badge">{label ?? (state === 'conflict' ? 'Refused' : 'Learn')}</span>
         {/if}
       </div>
     {/each}
   </div>
 
+  {#if bar}
   <div class="map-bar" class:scoped={scope !== null} data-map-mode-chrome role="region" aria-label="MIDI map mode">
     <span class="mode"><span class="dot" aria-hidden="true"></span>MIDI map</span>
     <span class="msg" aria-live="polite">
@@ -213,7 +214,7 @@
         <span class="binding" class:unbound={!armedBinding}>{armedBinding ?? 'Unmapped'}</span>
         {#if refusal}
           <span class="refusal" role="alert">{refusal}</span>
-        {:else}
+        {:else if !armedMapping}
           <span class="quiet">{LEARN_HINT[armed.spec.kind]}</span>
         {/if}
       {:else}
@@ -241,6 +242,7 @@
       </button>
     </span>
   </div>
+  {/if}
 {/if}
 
 <style>
@@ -415,8 +417,9 @@
     gap: var(--space-1);
     flex: none;
   }
-  .range :global(input) {
+  .range :global(.ci) {
     width: 64px;
+    flex: none;
   }
   .range-label {
     color: var(--text-faint);
