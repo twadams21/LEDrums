@@ -244,7 +244,9 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(sectionDuplicate).toHaveBeenCalledTimes(1);
   });
 
-  it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {
+  it('outside a modal, a focused control keeps its arrows but a digit auditions its Effect', () => {
+    // Clicking a slider / segmented / dropdown leaves it focused; the 1–9,0 bank must still work
+    // (Tim, 2026-09-28). None of those controls uses a digit.
     const { store } = fixture();
     const control = document.body.appendChild(document.createElement('button'));
     control.setAttribute('data-keyboard-owner', 'slider');
@@ -254,10 +256,38 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const arrow = key(control, 'ArrowRight');
     const digit = key(control, '1');
 
-    expect(received).toHaveBeenCalledTimes(2);
+    expect(received).toHaveBeenCalledTimes(1); // the arrow only
     expect(arrow.defaultPrevented).toBe(false);
-    expect(digit.defaultPrevented).toBe(false);
-    expect(store.fireEffectAt).not.toHaveBeenCalled();
+    expect(digit.defaultPrevented).toBe(true);
+    expect(store.fireEffectAt).toHaveBeenCalledWith(0);
+  });
+
+  it('outside a modal, Backspace on a focused control is still suppressed — it never reaches the view', () => {
+    fixture();
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'roving');
+    expect(key(control, 'Backspace').defaultPrevented).toBe(true);
+  });
+
+  it('outside a modal, a mapped key performs through a focused control — but not the keys it navigates by', () => {
+    const performKey = vi.fn((code: string) => code === 'KeyQ' || code === 'ArrowRight');
+    const session = { learnKey: vi.fn(), clearArmed: vi.fn(), performKey, isKeyMapped: vi.fn(() => true), reset: vi.fn() };
+    const store: AppKeyboardStore = { fireEffectAt: vi.fn(), stepSetlist: vi.fn(() => true) };
+    const shell: AppKeyboardShell = { view: 'perform', settingsPane: null, mapMode: false, mapSession: session };
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts: [], shortcutPlatform: 'mac' } });
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'slider');
+    const received = vi.fn();
+    control.addEventListener('keydown', received);
+
+    const mapped = key(control, 'q', { code: 'KeyQ' });
+    const arrow = key(control, 'ArrowRight', { code: 'ArrowRight' });
+
+    expect(performKey).toHaveBeenCalledWith('KeyQ');
+    expect(mapped.defaultPrevented).toBe(true);
+    expect(performKey).not.toHaveBeenCalledWith('ArrowRight'); // the slider's own key
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(received).toHaveBeenCalledTimes(1); // only the arrow reached the control
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits inside a modal and popup', () => {

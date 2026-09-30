@@ -68,9 +68,12 @@ export function dispatchAppKeyboard({
     }
   }
 
-  // A marked control gets first refusal for the Perform keys that would otherwise be claimed by
-  // the app. This check must precede modal/popup suppression: a slider/select/segmented/radio/
-  // toggle may be portalled inside one of those surfaces and still needs its own arrow or digit.
+  // A marked control gets first refusal for the ARROWS the app would otherwise claim — a slider/
+  // select/segmented/radio/toggle moves by them. This check must precede modal/popup suppression:
+  // the control may be portalled inside one of those surfaces and still needs its arrows.
+  // Digits are NOT the control's: none of these uses one, and clicking a control leaves it
+  // focused, so yielding digits left the 1–9,0 audition bank dead until you clicked away
+  // (Tim, 2026-09-28). A digit falls through to the audition bank below.
   if (target.inKeyboardControl) {
     const performance = decidePerformanceKey({
       key: event.key,
@@ -85,7 +88,9 @@ export function dispatchAppKeyboard({
       inOpenPopup: false,
       inKeyboardControl: false,
     });
-    if (performance.claim) return;
+    // Inside a dialog or an open list nothing fires behind it, so there the control keeps the
+    // digit too, exactly as before.
+    if (performance.sectionStep !== undefined || (performance.claim && (modalOpen || target.inOpenPopup))) return;
   }
 
   const backgroundSurface = modalOpen || target.inOpenPopup || target.inKeyboardControl;
@@ -103,6 +108,27 @@ export function dispatchAppKeyboard({
       inOpenPopup: false,
       inKeyboardControl: false,
     });
+    // A focused control on the workspace itself (no dialog, no open list over it) passes the
+    // performance keys through: a mapped key performs its mapping and an audition digit fires
+    // its Effect, and neither reaches the control. The keys the control NAVIGATES by stay its own,
+    // and Delete and the registered chords stay suppressed below — Backspace on a focused slider
+    // must not act on what it edits. Same order as the unfocused path: mappings first.
+    if (target.inKeyboardControl && !modalOpen && !target.inOpenPopup) {
+      const session = shell.mapSession;
+      if (session && isBindableKey(event) && !CONTROL_NAVIGATION_CODES.has(event.code)) {
+        const took = event.repeat ? session.isKeyMapped(event.code) : session.performKey(event.code);
+        if (took) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
+      if (performance.fireEffectIndex !== undefined) {
+        claimPerformanceKey(event, performance);
+        store.fireEffectAt(performance.fireEffectIndex);
+        return;
+      }
+    }
     // Non-editable modal/popup chrome still owns the app shortcut boundary, before later
     // SectionsView/window listeners can act on the hidden surface. A marked control only
     // bypasses this guard for its relevant Perform key; Backspace/Delete and registered chords
@@ -167,6 +193,13 @@ export function dispatchAppKeyboard({
 }
 
 const ACTIVATION_CODES = new Set(['Enter', 'NumpadEnter', 'Space']);
+
+/** The keys a focused slider / segmented / radio / toggle / closed select moves or activates by.
+    A mapping on one of these stays inert while such a control has focus; every other mapped key,
+    and every audition digit, passes the control (Tim, 2026-09-28). */
+const CONTROL_NAVIGATION_CODES = new Set([
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Space', 'Enter', 'NumpadEnter',
+]);
 
 /** Enter / Space whose target is map-mode chrome (`[data-map-mode-chrome]`): the browser's
     native button activation, which map mode's key learn must not claim. */
