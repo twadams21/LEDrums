@@ -22,7 +22,7 @@ function cloneJson<T>(value: T): T {
 }
 
 /** A store (setlist) section as its v3 effect section: the graph-era fields are dropped. */
-export function toEffectSection(section: SetlistSection): EffectSection {
+function toEffectSection(section: SetlistSection): EffectSection {
   const out: EffectSection = {
     id: section.id,
     name: section.name,
@@ -41,7 +41,7 @@ export function toEffectSong(song: Song): EffectSong {
 
 /** A v3 effect section as a store section. The store keeps the graph-era `graphs` / `looks`
     fields (always empty now) until S08 deletes the graph model; a store section passes through. */
-export function toStoreSection(section: EffectSection | SetlistSection): SetlistSection {
+function toStoreSection(section: EffectSection | SetlistSection): SetlistSection {
   const legacy = section as Partial<SetlistSection>;
   const out: SetlistSection = {
     id: section.id,
@@ -116,7 +116,7 @@ export function resolveEffectSongRefs(songs: readonly Song[], refs: readonly str
 }
 
 /** A library song detached into a show: a local song plus the scenes it brings. */
-export interface DetachedEffectSong {
+interface DetachedEffectSong {
   song: Song;
   canvasScenes: CanvasScene[];
 }
