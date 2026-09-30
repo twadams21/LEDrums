@@ -126,8 +126,8 @@
   }
   .chip.on {
     color: var(--ink);
-    background: color-mix(in oklch, var(--drum) 14%, var(--surface-inset));
-    border-color: color-mix(in oklch, var(--drum) 55%, var(--border));
+    background: color-mix(in srgb, var(--drum) 14%, var(--surface-inset));
+    border-color: color-mix(in srgb, var(--drum) 55%, var(--border));
   }
   .dot {
     width: 8px;
@@ -167,7 +167,7 @@
   }
   .hoop.lit {
     color: var(--ink);
-    border-color: color-mix(in oklch, var(--drum) 55%, var(--border));
+    border-color: color-mix(in srgb, var(--drum) 55%, var(--border));
   }
   .chip:disabled,
   .hoop:disabled {

@@ -33,6 +33,8 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     removeSong: vi.fn(),
     removeSongReference: vi.fn(),
     detachSongReference: vi.fn(),
+    // The bar's default authoring api (import surface): nothing to import.
+    effectsApi: { legacyImportAvailable: false, legacyShowNames: [] },
     ...over,
   } as unknown as TriggerLab;
 }
