@@ -22,7 +22,8 @@ import { quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type Mod
 import type { ParamValues, PlayMode, Scope } from '../voice/types';
 import { resolveGenerator } from './generators';
 import { CHAIN_BUS_ID, chainEffectDefId } from './runtime';
-import { KIT_ROW, type ControlDevice, type Effect, type EffectTarget } from './types';
+import { KIT_ROW, type ControlDevice, type Effect, type EffectCell, type EffectTarget } from './types';
+import { isContinuousTarget, type InputMapping } from './input-mappings';
 
 /** The authored slice of a section the resolver reads. */
 export interface EffectSectionLike {
@@ -70,6 +71,18 @@ function matchesInput(effect: Effect, event: EffectInputEvent): boolean {
       || (src.oscAddress !== undefined && src.oscAddress === event.oscAddress);
   }
   return false;
+}
+
+/** Is `cell` the same grid cell as `other` (row + column kind, and the slot for a zone)? */
+export function sameEffectCell(cell: EffectCell, other: EffectCell): boolean {
+  if (cell.row !== other.row || cell.column.kind !== other.column.kind) return false;
+  return cell.column.kind !== 'zone' || (other.column.kind === 'zone' && cell.column.slot === other.column.slot);
+}
+
+/** The Effects stacked in `cell` of `section` (a `fireCell` mapping), in section order,
+    bypassed excluded. */
+export function cellEffects(section: EffectSectionLike, cell: EffectCell): Effect[] {
+  return (section.effects ?? []).filter((e) => !e.bypass && sameEffectCell(e.cell, cell));
 }
 
 /** Always Effects of `section`, in section order, bypassed excluded. */
@@ -138,11 +151,9 @@ const MS_PER_MINUTE = 60000;
  * - **Target** → scope / targetId, or an explicit `targets` list for chosen drums and hoops.
  */
 export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction | null {
-  const gen = resolveGenerator(effect.generator);
-  if (!gen) return null;
-  const hostedId = gen.canvasScene ? canvasEffectId(gen.canvasScene) : gen.effectId;
-  const hosted = tryGetEffect(hostedId);
-  if (!hosted) return null;
+  const resolved = hostedGenerator(effect);
+  if (!resolved) return null;
+  const { gen, hostedId, hosted } = resolved;
 
   const params: ParamValues = {};
   for (const spec of hosted.paramSpec) params[spec.key] = spec.default as ParamValues[string];
@@ -205,6 +216,15 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     lifeSpanMs: shape.spanMs,
   };
   return action;
+}
+
+/** An Effect's Generator resolved to the hosted effect implementation it plays, or `null`. */
+function hostedGenerator(effect: Effect) {
+  const gen = resolveGenerator(effect.generator);
+  if (!gen) return null;
+  const hostedId = gen.canvasScene ? canvasEffectId(gen.canvasScene) : gen.effectId;
+  const hosted = tryGetEffect(hostedId);
+  return hosted ? { gen, hostedId, hosted } : null;
 }
 
 /** The drum a `hitDrum` target (or a Kit-row fire) lights: the struck drum, else the row's. */
@@ -295,4 +315,81 @@ function toMapping(
     rangeMin: mapping.rangeMin ?? spec?.min ?? 0,
     rangeMax: mapping.rangeMax ?? spec?.max ?? 1,
   };
+}
+
+// ---- Continuous input mappings (MIDI-map, effect chains wave 5) -----------------------------
+
+/**
+ * Where a continuous {@link InputMapping} writes on a live voice of its Effect:
+ *
+ * - `generator` — `voice.params[param]`;
+ * - `modifier`  — `voice.modifiers[modifierIndex].params[param]`;
+ * - `opacity`   — `voice.opacity` (the Effect layer's opacity);
+ * - `mix`       — `voice.modifiers[modifierIndex].mix`.
+ */
+export type ContinuousInputSlot = 'generator' | 'modifier' | 'opacity' | 'mix';
+
+/**
+ * A continuous mapping resolved against one section's Effect, ready for the engine's per-frame
+ * write. `rangeMin` / `rangeMax` default to the target's own range; `lo` / `hi` is that range,
+ * the clamp every written value obeys.
+ */
+export interface ContinuousInputBinding {
+  mappingId: string;
+  effectId: string;
+  slot: ContinuousInputSlot;
+  /** The modifier's index in the Effect's chain (== the voice's `modifiers` index); -1 otherwise. */
+  modifierIndex: number;
+  /** The param key for `generator` / `modifier`; empty for `opacity` / `mix`. */
+  param: string;
+  rangeMin: number;
+  rangeMax: number;
+  lo: number;
+  hi: number;
+}
+
+/**
+ * Resolve every continuous mapping (`param`, `opacity`, `modifierMix`) whose Effect is in
+ * `section`. A mapping is left out when its Effect, modifier or param is not there, or the
+ * param is not a number. The engine re-resolves on every show load and section recall, so a
+ * mapping always follows the ACTIVE section's authored Effect.
+ */
+export function resolveContinuousInputMappings(
+  mappings: readonly InputMapping[],
+  section: EffectSectionLike | null,
+): ContinuousInputBinding[] {
+  const out: ContinuousInputBinding[] = [];
+  if (!section?.effects?.length) return out;
+  for (const mapping of mappings) {
+    const target = mapping.target;
+    if (!isContinuousTarget(target) || !('effectId' in target)) continue;
+    const effect = section.effects.find((e) => e.id === target.effectId);
+    if (!effect) continue;
+    const bind = (slot: ContinuousInputSlot, modifierIndex: number, param: string, lo: number, hi: number): void => {
+      out.push({
+        mappingId: mapping.id, effectId: effect.id, slot, modifierIndex, param,
+        rangeMin: mapping.rangeMin ?? lo, rangeMax: mapping.rangeMax ?? hi, lo, hi,
+      });
+    };
+    if (target.kind === 'opacity') {
+      bind('opacity', -1, '', 0, 1);
+      continue;
+    }
+    if (target.kind === 'modifierMix') {
+      const index = effect.modifiers.findIndex((m) => m.uid === target.modifierUid);
+      if (index >= 0) bind('mix', index, '', 0, 1);
+      continue;
+    }
+    if (target.kind !== 'param') continue;
+    if (target.device === 'generator') {
+      const spec = hostedGenerator(effect)?.hosted.paramSpec.find((s) => s.key === target.param);
+      if (spec?.type === 'number') bind('generator', -1, spec.key, spec.min ?? 0, spec.max ?? 1);
+      continue;
+    }
+    const index = effect.modifiers.findIndex((m) => m.uid === target.device);
+    if (index < 0) continue;
+    const spec = tryGetModifier(effect.modifiers[index]!.modifierId)?.paramSpec.find((s) => s.key === target.param);
+    if (spec?.type === 'number') bind('modifier', index, spec.key, spec.min ?? 0, spec.max ?? 1);
+  }
+  return out;
 }
