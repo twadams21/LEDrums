@@ -121,7 +121,7 @@ describe('bus levels follow the same authority rule (S17)', () => {
     expect(store.busLevels).toEqual({});
 
     store.fireEffect(store.activeSection!.effects[0]!.id);
-    store.sim.tick(16);
+    for (let i = 0; i < 10; i++) store.sim.tick(16); // past the attack
     statsDue(store);
     internals(store).snapshot();
     const levels = Object.values(store.busLevels);

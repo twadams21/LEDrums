@@ -13,8 +13,8 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
     id: 's1',
     name: 'Song One',
     sections: [
-      { id: 'sec-1', name: 'Intro', graphs: ['g1', 'g2'] },
-      { id: 'sec-2', name: 'Chorus', graphs: ['g1'] },
+      { id: 'sec-1', name: 'Intro', effects: [{ id: 'e1' }, { id: 'e2' }], master: [] },
+      { id: 'sec-2', name: 'Chorus', effects: [{ id: 'e3' }], master: [] },
     ],
   };
   const configuredActiveSong = 'activeSong' in over ? over.activeSong : activeSong;
@@ -34,7 +34,7 @@ function mockStore(over: Partial<Record<string, unknown>> = {}): TriggerLab {
 }
 
 describe('SectionsBar', () => {
-  it('renders one chip per section with its name and graph count', () => {
+  it('renders one chip per section with its name and Effect count', () => {
     const { container } = render(SectionsBar, { props: { store: mockStore() } });
     const chips = [...container.querySelectorAll('.chip')];
     expect(chips.map((c) => c.textContent)).toEqual(['Intro2', 'Chorus1']);

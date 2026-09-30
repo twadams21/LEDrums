@@ -324,6 +324,8 @@ describe('key mappings (resolved in the web)', () => {
     expect(store.bindTarget({ kind: 'recallSection', sectionId: chorus }, { midiCc: 22 })).toEqual({ ok: true });
     cc(store, 22, 127);
     expect(store.activeSectionId).toBe(chorus);
+    store.sim.tick(16); // the Sim's engine recalled the same section: store and Sim agree
+    expect(store.sim.effectSelection.sectionId).toBe(chorus);
     store.setActiveSection(first);
     cc(store, 22, 127); // still held: no new press edge
     expect(store.activeSectionId).toBe(first);

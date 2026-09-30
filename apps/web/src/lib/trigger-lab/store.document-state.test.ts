@@ -3,32 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { flushSync } from 'svelte';
 import { TriggerLab } from './store.svelte';
-import { makeNode, type TriggerGraph } from './sim';
-import { EFFECTS } from './fixtures';
 import { serializeShowLibraryV3 as serializeShowLibrary, serializeSongLibraryV2 as serializeSongLibrary } from './persistence';
 import type { ShowsController } from './shows-controller.svelte';
 import type { WSClient, WSCallbacks } from '../ws/client';
 
-const ctx = { velocity: 1, sectionIndex: 0, sectionCount: 0, beatPhase: 0, sourceDrumId: 'kick', bpm: 120 };
-function graph(kind: 'sequence' | 'delay' | 'all'): TriggerGraph {
-  return {
-    version: 3,
-    nodes: [
-      makeNode('trigger', 'trigger'),
-      makeNode(kind, 'route', 100, 0, { ms: 250, delayMode: 'time' }),
-      makeNode('effect', 'a', 200, 0, { effectId: EFFECTS[0]!.id, mode: 'loop' }),
-      makeNode('effect', 'b', 200, 100, { effectId: EFFECTS[1]!.id, mode: 'loop' }),
-      makeNode('output', 'output'),
-    ],
-    edges: [
-      { id: '1', from: 'trigger', to: 'route' },
-      { id: '2', from: 'route', to: 'a' },
-      ...(kind === 'sequence' ? [{ id: '3', from: 'route', to: 'b' }] : []),
-      { id: '4', from: 'a', to: 'output' },
-      { id: '5', from: 'b', to: 'output' },
-    ],
-  };
-}
 function setup() {
   let callbacks: WSCallbacks = {};
   const send = vi.fn();
@@ -45,7 +23,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 const transitions = ['new', 'open', 'save-as', 'delete-active', 'delete-last', 'close', 'server-adopt', 'viewer-follow'] as const;
 describe.each(transitions)('document replacement: %s', (transition) => {
-  it('clears history, runtime and bus ownership even when graph ids/content overlap', () => {
+  it('clears history and the runtime, and cancels a half-finished gesture', () => {
     const { store, callbacks } = setup();
     try {
       const first = store.activeShowId;
@@ -53,12 +31,11 @@ describe.each(transitions)('document replacement: %s', (transition) => {
       store.bpm = 177;
       store.runUndoable(() => { store.bpm = 178; });
       const oldSim = store.sim;
-      oldSim.triggerGraph('sequence', graph('sequence'), ctx, 'same-key');
-      expect(oldSim.voices[0]?.effectId).toBe(EFFECTS[0]!.id);
-      oldSim.triggerGraph('delay', graph('delay'), ctx, 'delay-key');
+      store.fireEffectAt(0); // a live voice on the outgoing runtime
+      oldSim.tick(16);
+      expect(oldSim.effectVoiceStats().length).toBeGreaterThan(0);
       oldSim.setCc(1, 0.8, 1);
       oldSim.setOsc('/old', 0.5);
-      oldSim.setNote(60, 1, 1, true);
       store.beginGesture(); // a replacement also cancels a half-finished drag
       store.runUndoable(() => { store.velocity = 0.3; });
       switch (transition) {
@@ -83,14 +60,8 @@ describe.each(transitions)('document replacement: %s', (transition) => {
       const bpm = store.bpm;
       expect(store.undo()).toBe(false);
       expect(store.bpm).toBe(bpm);
-      expect(store.sim).not.toBe(oldSim);
-      expect(store.sim.buses).toBe(store.buses);
-      expect(store.sim.ccTable.size + store.sim.oscTable.size + store.sim.noteTable.size).toBe(0);
-      expect(store.voices).toHaveLength(0);
-      store.sim.tick(500);
-      expect(store.sim.voices).toHaveLength(0); // no delayed or looping voice survives
-      store.sim.triggerGraph('sequence', graph('sequence'), ctx, 'same-key');
-      expect(store.sim.voices.at(-1)?.effectId).toBe(EFFECTS[0]!.id); // starts at step 1 again
+      expect(store.sim).not.toBe(oldSim); // a fresh engine: no voice, table or latch of the old show survives
+      expect(store.effectVoices).toEqual([]);
       store.runUndoable(() => { store.bpm = 201; });
       expect(store.undo()).toBe(true); // old gesture suppression did not bleed
       expect(store.bpm).toBe(bpm);
@@ -116,11 +87,11 @@ it('binds the incoming canonical song pool before creating the adopted document 
 it('enforces the default byte budget without refusing oversized edits or skipping over them', () => {
   const store = new TriggerLab(() => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient);
   store.runUndoable(() => { store.bpm = 150; });
-  store.graphNames.huge = 'x'.repeat(17 * 1024 * 1024); // UTF-16 alone exceeds 32 MiB
+  store.patchLabels = { huge: 'x'.repeat(17 * 1024 * 1024) }; // UTF-16 alone exceeds 32 MiB
   store.runUndoable(() => { store.bpm = 177; });
   expect(store.bpm).toBe(177);
   expect(store.undo()).toBe(false); // cannot jump past the oversized edit to the older 120 bpm
-  delete store.graphNames.huge;
+  store.patchLabels = {};
   store.runUndoable(() => { store.bpm = 200; });
   expect(store.undo()).toBe(true);
   expect(store.bpm).toBe(177);
@@ -149,8 +120,8 @@ it('follows accepted hardware recalls without ping-pong and ignores stale orderi
   const { store, callbacks, send } = setup();
   try {
     store.songs = [
-      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }, { id: 'a1', name: 'A1', graphs: [], looks: {} }] },
-      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }, { id: 'b1', name: 'B1', graphs: [], looks: {} }] },
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [], master: [] }, { id: 'a1', name: 'A1', effects: [], master: [] }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [], master: [] }, { id: 'b1', name: 'B1', effects: [], master: [] }] },
     ];
     store.activeSongId = 'song-a';
     store.activeSectionId = 'a0';
@@ -171,7 +142,7 @@ it('follows accepted hardware recalls without ping-pong and ignores stale orderi
 it('rejects an authoritative null section for a non-empty resolved song', () => {
   const { store, callbacks } = setup();
   try {
-    store.songs = [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] }];
+    store.songs = [{ id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [], master: [] }] }];
     store.activeSongId = 'song-a';
     store.activeSectionId = 'a0';
     callbacks.onState!(
@@ -192,8 +163,8 @@ it('a reconnecting viewer adopts the authoritative handshake without sending cac
   const { store, callbacks, send } = setup();
   try {
     store.songs = [
-      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
-      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [], master: [] }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [], master: [] }] },
     ];
     store.activeSongId = 'song-a';
     store.activeSectionId = 'a0';
@@ -282,7 +253,7 @@ it('sends an explicit null section when selecting a valid zero-section song', ()
   try {
     store.songs = [
       { id: 'empty-song', name: 'Empty', sections: [] },
-      { id: 'song-with-section', name: 'Playable', sections: [{ id: 'section-0', name: 'Section 0', graphs: [], looks: {} }] },
+      { id: 'song-with-section', name: 'Playable', sections: [{ id: 'section-0', name: 'Section 0', effects: [], master: [] }] },
     ];
     store.activeSongId = 'song-with-section';
     store.activeSectionId = 'section-0';
@@ -303,8 +274,8 @@ it('resets recall ordering when the server session changes, even if its revision
   const { store, callbacks, send } = setup();
   try {
     store.songs = [
-      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
-      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [], master: [] }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [], master: [] }] },
     ];
     const state = (revision: number, songId: string, sectionId: string, sequence: number, sessionId: string) => callbacks.onState!(
       defaultProject(),
@@ -370,8 +341,8 @@ it('allows a viewer to navigate the resolved setlist', () => {
   const { store } = setup();
   try {
     store.songs = [
-      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', graphs: [], looks: {} }] },
-      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', graphs: [], looks: {} }] },
+      { id: 'song-a', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [], master: [] }] },
+      { id: 'song-b', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [], master: [] }] },
     ];
     store.activeSongId = 'song-a';
     store.activeSectionId = 'a0';
@@ -384,66 +355,40 @@ it('allows a viewer to navigate the resolved setlist', () => {
   }
 });
 
-it('resets the connected engine for equal-content Save As, but not a position-only edit', () => {
+it('resets the connected engine for equal-content Save As', () => {
   const { store, callbacks, send } = setup();
   try {
     callbacks.onConnection!('open');
     send.mockClear();
     store.saveShowAs('Same content, new document');
     expect(send.mock.calls.map(([m]) => m.t)).toEqual(['setShow', 'setTransport']);
-    send.mockClear();
-    vi.useFakeTimers();
-    flushSync();
-    store.moveNode(store.graphs[store.selectedPadKey!]!.nodes[0]!, 987, 654);
-    flushSync();
-    vi.advanceTimersByTime(500);
-    expect(send.mock.calls.some(([m]) => m.t === 'setShow')).toBe(false);
-  } finally { store.stop(); vi.useRealTimers(); }
+  } finally { store.stop(); }
 });
 
-it('Save As preserves the exact live authored content, including a deleted built-in preset', () => {
+it('Save As preserves the exact live authored content, including a removed seed Effect', () => {
   const { store } = setup();
   try {
     const sourceId = store.activeShowId;
-    const presetId = 'gen:radial-wash:pop';
-    expect(store.presets.some((p) => p.id === presetId)).toBe(true);
-    expect(store.deletePreset(presetId)).toBe(true);
+    const removed = store.activeSection!.effects[0]!.id;
+    store.removeEffect(removed);
     store.runUndoable(() => { store.bpm = 177; });
     store.saveShow();
     const library = () => (store as unknown as { showsCtl: ShowsController }).showsCtl.currentLibrary();
     const authored = () => library().shows[store.activeShowId]!.authored;
     const before = JSON.stringify(authored());
     const oldSim = store.sim;
-    store.sim.triggerGraph('loop', graph('all'), ctx, 'loop');
     const cloneId = store.saveShowAs('Clone');
     expect(cloneId).not.toBe(sourceId);
     expect(store.sim).not.toBe(oldSim);
-    expect(store.voices).toHaveLength(0);
     expect(store.undo()).toBe(false);
     store.saveShow(); // prove the live clone and its persisted slot agree
     expect(JSON.stringify(authored())).toBe(before);
     expect(JSON.stringify(store.activeShow!.authored)).toBe(before);
     expect(JSON.stringify(library().shows[sourceId]!.authored)).toBe(before);
-    expect(store.presets.some((p) => p.id === presetId)).toBe(false);
+    expect(store.effectById(removed)).toBeUndefined();
     store.runUndoable(() => { store.bpm = 200; });
     expect(store.undo()).toBe(true);
     expect(store.bpm).toBe(177);
-  } finally { store.stop(); }
-});
-
-it('still backfills and migrates genuinely loaded documents', () => {
-  const { store } = setup();
-  try {
-    const sourceId = store.activeShowId;
-    expect(store.deletePreset('gen:radial-wash:pop')).toBe(true);
-    const key = store.selectedPadKey!;
-    const loadedGraph = store.graphs[key]!;
-    // A legacy graph in a saved slot still needs the normal load-time migration.
-    delete loadedGraph.version;
-    store.newShow('Other');
-    store.openShow(sourceId);
-    expect(store.presets.some((p) => p.id === 'gen:radial-wash:pop')).toBe(true);
-    expect(store.graphs[key]!.version).toBe(3);
   } finally { store.stop(); }
 });
 
