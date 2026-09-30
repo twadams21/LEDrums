@@ -38,13 +38,21 @@
   const items = (): HTMLButtonElement[] => [...(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
 
   onMount(() => {
-    items()[0]?.focus();
+    items()[0]?.focus({ preventScroll: true });
     const outside = (event: PointerEvent): void => {
       if (menu && !event.composedPath().includes(menu)) onclose();
     };
     // Capture: a click on another cell must close this menu before it selects that cell.
     window.addEventListener('pointerdown', outside, true);
-    return () => window.removeEventListener('pointerdown', outside, true);
+    // Anchored in viewport px: a scroll of anything but the menu itself would detach it from its cell.
+    const scrolled = (event: Event): void => {
+      if (!(event.target instanceof Node && menu?.contains(event.target))) onclose();
+    };
+    window.addEventListener('scroll', scrolled, true);
+    return () => {
+      window.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('scroll', scrolled, true);
+    };
   });
 
   function onkeydown(event: KeyboardEvent): void {

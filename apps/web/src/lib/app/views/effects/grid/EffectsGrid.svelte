@@ -233,18 +233,30 @@
     grid-template-columns: var(--row-head-w) repeat(var(--cols), minmax(96px, 1fr));
     gap: 4px;
     min-width: max-content;
-    padding: var(--space-2) var(--space-3) var(--space-3);
+    padding: 0 var(--space-3) var(--space-3) 0;
     outline: none;
   }
   .row {
     display: contents;
   }
+  /* Headers stay put while a tall / wide grid scrolls under them (the view's scroller). The fill
+     covers the gap strip too, so cells never peek through between headers. */
   .corner,
   .colhead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
     display: flex;
     align-items: flex-end;
     min-width: 0;
-    padding: 0 var(--space-1) 2px;
+    height: 30px;
+    padding: 0 var(--space-1) 4px;
+    background: var(--grid-bg, var(--surface));
+    box-shadow: 0 4px 0 var(--grid-bg, var(--surface));
+  }
+  .corner {
+    left: 0;
+    z-index: 2;
   }
   .collabel {
     overflow: hidden;
@@ -270,12 +282,17 @@
     background: var(--border-faint);
   }
   .rowhead {
+    position: sticky;
+    left: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
     height: var(--grid-cell-h);
-    padding-left: var(--space-1);
+    padding-left: var(--space-3);
+    background: var(--grid-bg, var(--surface));
+    box-shadow: 4px 0 0 var(--grid-bg, var(--surface));
   }
   .rowlabel {
     min-width: 0;
