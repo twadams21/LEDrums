@@ -1,22 +1,20 @@
 <script lang="ts">
-  /* Sections / Setlist — the real model: each section is a FLAT ORDERED LIST of reusable
-     GRAPHS. Columns = the active song's sections; each column (SectionColumn) is that section's
-     ordered graph list. A row references a trigger graph by key, so the same graph can appear in
-     many sections (reuse). Clicking a section header makes it the active section; clicking a graph
-     row activates its section AND opens it in the Trigger canvas. The "+ graph" button opens the
-     GraphPickerDrawer to add a graph (existing or new) to that section. This view owns the
-     multi-column layout + the picker state; the column/row/picker chrome lives in sub-components. */
+  /* Sections / Setlist (effect chains S06c). Columns = the active song's sections; each column
+     (SectionColumn) summarises that section's Effect grid — one row per occupied cell with its
+     Effect names, plus the Master chain. Clicking a cell row activates its section, selects the
+     cell and opens the Effects view. Section arrangement (reorder by drag, move / copy / paste
+     via the section menu, rename, duplicate) is unchanged. The graph linking UI is gone (v1 has
+     no linked placements; copy / paste replaces them). This view owns the multi-column layout,
+     the section drag and the inline section detail. */
   import { type TriggerLab } from '../../trigger-lab/store.svelte';
+  import type { EffectsAuthoringApi } from '../../trigger-lab/effects-api';
   import type { ShellStore } from '../shell-store.svelte';
   import { sectionRecall } from '../recall';
   import { hasPrimaryModifier, isEditableShortcutTarget, platformShortcutModifier, type ShortcutPlatform } from '../primary-shortcut';
   import SectionColumn from './SectionColumn.svelte';
   import { columnGapIndexAt } from './sections-dnd';
   import { sectionsDndPreview } from './sections-dnd-preview.svelte';
-  import GraphPickerDrawer from './GraphPickerDrawer.svelte';
   import SectionInspector from '../docks/inspectors/SectionInspector.svelte';
-  import LinkPlacementDialog from './LinkPlacementDialog.svelte';
-  import type { SetlistSection, Song } from '../setlist';
   import PanelHeader from '../../ui/PanelHeader.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import LayoutGrid from '@lucide/svelte/icons/layout-grid';
@@ -24,34 +22,27 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import X from '@lucide/svelte/icons/x';
 
-  let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
+  let {
+    store,
+    shell,
+    api = store as unknown as EffectsAuthoringApi, // TODO(ec-w4): store-wire
+  }: { store: TriggerLab; shell: ShellStore; api?: EffectsAuthoringApi } = $props();
 
   const song = $derived(store.activeSong);
   const sections = $derived(song?.sections ?? []);
   const shortcutPlatform: ShortcutPlatform = platformShortcutModifier(globalThis.navigator?.platform ?? '');
 
-  type SectionDrag = { kind: 'section'; sectionId: string };
-  type GraphDrag = { kind: 'graph'; sectionId: string; graphKey: string };
-  type DragItem = SectionDrag | GraphDrag;
-  let dragging = $state<DragItem | null>(null);
+  /** The section being dragged (reorder), or null. */
+  let draggingId = $state<string | null>(null);
 
-  // Drop-target indicators: the gap a dragged graph row would land in (horizontal
-  // insert-line, in-column), and the gap between columns a dragged section would land
-  // in (vertical insert-line — R11b, replacing the old section-target column wash).
-  // Both clear on drop/cancel (via clearDrag, wired to dragend). In dev, the screenshot
-  // seam can pin one so ui-shot can capture these otherwise drag-only states.
-  let graphGap = $state<{ sectionId: string; index: number } | null>(null);
+  // Drop-target indicator: the gap between columns a dragged section would land in (vertical
+  // insert-line). Clears on drop / cancel (via clearDrag, wired to dragend). In dev, the
+  // screenshot seam can pin one so ui-shot can capture this otherwise drag-only state.
   let sectionGap = $state<number | null>(null);
   let colsEl = $state<HTMLDivElement | null>(null);
 
   const preview = $derived(import.meta.env.DEV ? sectionsDndPreview.current : null);
-  const draggingKind = $derived(dragging?.kind ?? preview?.kind ?? null);
-
-  function gapFor(sectionId: string): number | null {
-    if (graphGap?.sectionId === sectionId) return graphGap.index;
-    if (preview?.kind === 'graph' && preview.sectionId === sectionId) return preview.index;
-    return null;
-  }
+  const draggingSection = $derived(draggingId != null || preview?.kind === 'section');
 
   // The section-reorder gap index (0..sections.length), from live drag state or the
   // pinned preview. `??` is nullish so gap 0 (drop before the first column) survives.
@@ -64,7 +55,7 @@
   // spans the row. Recomputed on each dragover (sectionGap changes) and for the preview.
   let sectionLine = $state<{ x: number; top: number; height: number } | null>(null);
   $effect(() => {
-    const gap = draggingKind === 'section' ? sectionGapIdx : null;
+    const gap = draggingSection ? sectionGapIdx : null;
     if (gap == null || !colsEl) {
       sectionLine = null;
       return;
@@ -104,43 +95,6 @@
     return { song: owner, section, sectionIdx, recall: sectionRecall(songIdx, sectionIdx) };
   });
 
-  // graph picker: the section awaiting a graph (or null when closed)
-  let pendingSectionId = $state<string | null>(null);
-  let linkSource = $state<{ song: Song; section: SetlistSection; graphKey: string } | null>(null);
-  const pendingSection = $derived(
-    pendingSectionId ? (sections.find((s) => s.id === pendingSectionId) ?? null) : null,
-  );
-
-  function copyAndPlace(graphKey: string): void {
-    if (!pendingSectionId) return;
-    const key = store.copyGraphToSection(pendingSectionId, graphKey);
-    if (!key) return;
-    store.selectGraphInSection(pendingSectionId, key);
-    shell.setView('trigger');
-    pendingSectionId = null;
-  }
-  function linkAndPlace(graphKey: string): void {
-    if (!pendingSectionId) return;
-    if (!store.addGraphToSection(pendingSectionId, graphKey)) return;
-    pendingSectionId = null;
-  }
-
-  function openLinkDialog(songId: string, sectionId: string, graphKey: string): void {
-    const sourceSong = store.songs.find((candidate) => candidate.id === songId);
-    const sourceSection = sourceSong?.sections.find((candidate) => candidate.id === sectionId);
-    if (sourceSong && sourceSection) linkSource = { song: sourceSong, section: sourceSection, graphKey };
-  }
-  /** Author a fresh graph, add it to the pending section, activate + open it for editing. */
-  function createAndPlace(): void {
-    if (!pendingSectionId) return;
-    const sectionId = pendingSectionId;
-    const key = store.createGraphInSection(sectionId);
-    if (!key) return;
-    store.selectGraphInSection(sectionId, key);
-    pendingSectionId = null;
-    shell.setView('trigger'); // land on the canvas to edit the new graph
-  }
-
   function onKey(e: KeyboardEvent): void {
     if (!store.canEdit || e.defaultPrevented || isEditableShortcutTarget(e.target)) return;
     if (e.key.toLowerCase() !== 'd' || !hasPrimaryModifier(e, shortcutPlatform)) return;
@@ -153,29 +107,15 @@
 
   function startSectionDrag(sectionId: string, event: DragEvent): void {
     if (!store.canEdit) return;
-    dragging = { kind: 'section', sectionId };
+    draggingId = sectionId;
     event.dataTransfer?.setData('text/plain', sectionId);
     event.dataTransfer?.setData('application/x-ledrums-section', sectionId);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
-  function startGraphDrag(sectionId: string, graphKey: string, event: DragEvent): void {
-    if (!store.canEdit) return;
-    dragging = { kind: 'graph', sectionId, graphKey };
-    event.dataTransfer?.setData('text/plain', graphKey);
-    event.dataTransfer?.setData('application/x-ledrums-graph', JSON.stringify({ sectionId, graphKey }));
-    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-  }
-
   function clearDrag(): void {
-    dragging = null;
-    graphGap = null;
+    draggingId = null;
     sectionGap = null;
-  }
-
-  function allowDrop(event: DragEvent): void {
-    event.preventDefault();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
   }
 
   /** The gap index (0..sections.length) the pointer X sits at across the columns row. */
@@ -191,43 +131,28 @@
       pointer's gap. Handled at the `.cols` level so hovering the empty inter-column gaps
       (not just a column) still resolves a target. */
   function onColsDragOver(event: DragEvent): void {
-    if (!store.canEdit || dragging?.kind !== 'section') return;
-    allowDrop(event);
+    if (!store.canEdit || draggingId == null) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     sectionGap = sectionGapAt(event.clientX);
   }
 
-  /** A graph row is being dragged over `sectionId` at gap `index`: arm the insertion line. */
-  function graphDragOver(sectionId: string, index: number, event: DragEvent): void {
-    if (!store.canEdit || dragging?.kind !== 'graph') return;
-    allowDrop(event);
-    graphGap = { sectionId, index };
-  }
-
   function onColsDrop(event: DragEvent): void {
-    if (!store.canEdit || dragging?.kind !== 'section') return;
+    if (!store.canEdit || draggingId == null) return;
     event.preventDefault();
     event.stopPropagation();
-    store.moveSection(dragging.sectionId, sectionGapAt(event.clientX));
-    store.setActiveSection(dragging.sectionId);
-    shell.select({ kind: 'section', sectionId: dragging.sectionId });
+    const id = draggingId;
+    store.moveSection(id, sectionGapAt(event.clientX));
+    store.setActiveSection(id);
+    shell.select({ kind: 'section', sectionId: id });
     clearDrag();
   }
 
-  function dropOnGraph(sectionId: string, index: number, event: DragEvent): void {
-    if (!store.canEdit || dragging?.kind !== 'graph') return;
-    event.preventDefault();
-    event.stopPropagation();
-    store.moveGraphPlacement(dragging.sectionId, dragging.graphKey, sectionId, index);
-    store.selectGraphInSection(sectionId, dragging.graphKey);
-    clearDrag();
-  }
-
-  /** Clear indicators when the pointer leaves the columns region (not just one
-      column) mid-drag, so a stale line/outline doesn't linger over the detail pane. */
+  /** Clear the indicator when the pointer leaves the columns region (not just one
+      column) mid-drag, so a stale line doesn't linger over the detail pane. */
   function onColsDragLeave(event: DragEvent): void {
     const related = event.relatedTarget as Node | null;
     if (related && event.currentTarget instanceof Node && event.currentTarget.contains(related)) return;
-    graphGap = null;
     sectionGap = null;
   }
 </script>
@@ -268,21 +193,15 @@
         {#each sections as sec (sec.id)}
           <SectionColumn
             {store}
+            {api}
             {shell}
             {song}
             section={sec}
-            {draggingKind}
-            dropIndex={gapFor(sec.id)}
-            onAddGraph={(id) => (pendingSectionId = id)}
             onSectionDragStart={(event) => startSectionDrag(sec.id, event)}
-            onGraphDragStart={(graphKey, event) => startGraphDrag(sec.id, graphKey, event)}
             onDragEnd={clearDrag}
-            onGraphDragOver={(index, event) => graphDragOver(sec.id, index, event)}
-            onGraphDrop={(index, event) => dropOnGraph(sec.id, index, event)}
-            onLinkGraph={openLinkDialog}
           />
         {/each}
-        {#if draggingKind === 'section' && sectionLine}
+        {#if draggingSection && sectionLine}
           <div
             class="section-insert-line"
             aria-hidden="true"
@@ -317,26 +236,6 @@
     </div>
   {/if}
 </div>
-
-<GraphPickerDrawer
-  {store}
-  section={pendingSection}
-  disabled={!store.canEditActiveSong}
-  disabledReason={store.activeSongEditBlockReason ?? undefined}
-  onCopy={copyAndPlace}
-  onLink={linkAndPlace}
-  onCreate={createAndPlace}
-  onClose={() => (pendingSectionId = null)}
-/>
-
-<LinkPlacementDialog
-  {store}
-  open={!!linkSource}
-  sourceSong={linkSource?.song ?? null}
-  sourceSection={linkSource?.section ?? null}
-  sourceGraphKey={linkSource?.graphKey ?? null}
-  onClose={() => (linkSource = null)}
-/>
 
 <style>
   .sections-view {
@@ -422,8 +321,7 @@
     align-items: flex-start;
     padding-bottom: var(--space-2);
   }
-  /* Section-reorder insert-line: the vertical twin of the graph row insert-line
-     (SectionColumn .insert-line). A 2px accent bar pinned in the gap between the
+  /* Section-reorder insert-line. A 2px accent bar pinned in the gap between the
      columns the section would land between; positioned absolutely (no layout shift)
      from geometry so it also reaches the leading/trailing gaps. */
   .section-insert-line {

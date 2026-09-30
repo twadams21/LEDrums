@@ -25,8 +25,39 @@
   import Unlink from '@lucide/svelte/icons/unlink';
   import X from '@lucide/svelte/icons/x';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
+  import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
+  import type { ApplyResult, EffectsAuthoringApi } from '../../trigger-lab/effects-api';
+  import { pushToast } from '../../ui/toast.svelte';
+  import { legacyImportView } from '../import/legacy-import-view';
+  import LegacyImportNotice from '../import/LegacyImportNotice.svelte';
+  import LegacyImportDialog from '../import/LegacyImportDialog.svelte';
 
-  let { store }: { store: TriggerLab } = $props();
+  let {
+    store,
+    api = store as unknown as EffectsAuthoringApi, // TODO(ec-w4): store-wire
+  }: { store: TriggerLab; api?: EffectsAuthoringApi } = $props();
+
+  // ---- import from the previous version (effect chains S06c) --------------------------------
+  // The notice offers it once; the setlist menu keeps it on demand; both open one confirm dialog.
+  const legacy = $derived(legacyImportView(api, store.canEdit, VIEWING_REASON));
+  let importOpen = $state(false);
+
+  function runImport(): ApplyResult {
+    const count = legacy.names.length;
+    const result = api.importLegacyShows();
+    if (result.ok) pushToast(`Imported ${count} ${count === 1 ? 'show' : 'shows'} from the previous version.`, { tone: 'success' });
+    return result;
+  }
+
+  const setlistActions = $derived<ContextMenuAction[]>([
+    {
+      label: legacy.canImport ? 'Import shows from the previous version…' : `Import shows — ${legacy.reason}`,
+      icon: ArchiveRestore,
+      disabled: !legacy.canImport,
+      onSelect: () => (importOpen = true),
+    },
+  ]);
 
   const songRows = $derived(showSongRows(store.songs, store.resolvedSongs));
   // The last-song guard counts LOCAL songs only — removing a reference drops the
@@ -128,7 +159,25 @@
     />
   </div>
   <NavArrow direction="next" unit="song" disabled={!store.canStepSetlist('song', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('song', 1)} />
+  <span class="menu">
+    <ContextMenu mode="dropdown" label="Setlist actions" actions={setlistActions}>
+      <Ellipsis size={15} aria-hidden="true" />
+    </ContextMenu>
+  </span>
 </div>
+
+{#if legacy.notice && !importOpen}
+  <LegacyImportNotice names={legacy.names} onReview={() => (importOpen = true)} onDismiss={() => api.dismissLegacyImport()} />
+{/if}
+
+<LegacyImportDialog
+  open={importOpen}
+  names={legacy.names}
+  canImport={legacy.canImport}
+  reason={legacy.reason}
+  onImport={runImport}
+  onClose={() => (importOpen = false)}
+/>
 
 <style>
   .bar {
@@ -201,6 +250,13 @@
     display: inline-flex;
     flex: none;
     width: 140px;
+  }
+  /* Setlist menu: pinned to the bar's end, past the next-song arrow. */
+  .menu {
+    display: inline-flex;
+    flex: none;
+    margin-inline-start: auto;
+    color: var(--text-muted);
   }
   .none {
     font-size: var(--text-xs);

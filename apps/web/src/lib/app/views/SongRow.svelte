@@ -4,6 +4,8 @@
      the live song, and Delete is gated to keep at least one song. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
   import type { Song } from '../setlist';
+  import { songSubline } from './objects-view';
+  import { songEffectCount } from './section-effects';
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import StatusDot from '../../ui/StatusDot.svelte';
@@ -33,9 +35,7 @@
   let editing = $state(false);
   const active = $derived(store.activeSongId === song.id);
   const canDelete = $derived(store.songs.length > 1);
-  const sub = $derived(
-    `${song.sections.length} ${song.sections.length === 1 ? 'section' : 'sections'}`,
-  );
+  const sub = $derived(songSubline(song.sections.length, songEffectCount(song)));
 
   function remove(): void {
     store.removeSong(song.id);

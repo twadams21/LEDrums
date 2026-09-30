@@ -1,17 +1,27 @@
 /* Pure view-models for the Objects view — the master-detail index of authored objects
-   (Songs · Effects · Graphs · Presets). DOM-free / rune-free so the joins + sort order +
+   (Songs · Song Library · Canvas Scenes; the graph-era effect / preset / graph row builders
+   below are no longer mounted since effect chains S06c and go with the graph model in S08). DOM-free / rune-free so the joins + sort order +
    the preset delete-gating are unit-testable in isolation (the .svelte file is thin UI over
    these). Each builder takes plain arrays (the store's reactive lists snapshot fine) and the
    store's `presetUsageCount` as a pure callback, and returns sorted row records. */
 import type { CanvasScene } from '@ledrums/core';
 import type { EffectDef, Preset } from '../../trigger-lab/sim';
 import type { Song } from '../setlist';
+import { songEffectCount } from './section-effects';
 
 /** The object types the Objects view indexes, in rail order. (Icons live in the
     .svelte; this module is DOM-free.) */
-export type ObjectTypeId = 'songs' | 'library' | 'effects' | 'graphs' | 'presets' | 'canvas-scenes';
+export type ObjectTypeId = 'songs' | 'library' | 'canvas-scenes';
 
-export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'effects', 'graphs', 'presets', 'canvas-scenes'];
+export const OBJECT_TYPE_IDS: readonly ObjectTypeId[] = ['songs', 'library', 'canvas-scenes'];
+
+/** A song row's sub-line: its section count, plus its Effect total when it has any
+    ("3 sections · 12 effects"). */
+export function songSubline(sectionCount: number, effectCount: number): string {
+  const sections = `${sectionCount} ${sectionCount === 1 ? 'section' : 'sections'}`;
+  if (effectCount === 0) return sections;
+  return `${sections} · ${effectCount} ${effectCount === 1 ? 'effect' : 'effects'}`;
+}
 
 /** Stable name-then-id comparator, so equal names keep a deterministic order across reloads. */
 function byNameThenId(a: { name: string; id: string }, b: { name: string; id: string }): number {
@@ -30,6 +40,8 @@ export interface ShowSongRow {
   id: string;
   name: string;
   sectionCount: number;
+  /** Effects across the song's sections. */
+  effectCount: number;
   origin: 'local' | 'reference';
 }
 
@@ -43,6 +55,7 @@ export function showSongRows(local: readonly Song[], resolved: readonly Song[]):
     id: s.id,
     name: s.name,
     sectionCount: s.sections.length,
+    effectCount: songEffectCount(s),
     origin: localIds.has(s.id) ? 'local' : 'reference',
   }));
 }
