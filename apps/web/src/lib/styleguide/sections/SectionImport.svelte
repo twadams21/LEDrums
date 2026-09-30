@@ -1,7 +1,7 @@
 <script lang="ts">
   /* Effect-chain setlist composites (effect chains S06c): the Sections-view column's per-cell
-     Effect summary (SectionColumn + SectionCellRow) and the "import from the previous version"
-     notice + confirm dialog. Rendered from the REAL components over a standalone authoring api
+     Effect summary (SectionColumn + SectionCellRow) and the legacy-show notice + confirm
+     dialog. Rendered from the REAL components over a standalone authoring api
      and a minimal store stub (section arrangement only). Not registered in Styleguide.svelte by
      this piece — the orchestrator registers it at merge. */
   import { DEFAULT_KIT, effectChain, type KitConfig } from '@ledrums/core';
