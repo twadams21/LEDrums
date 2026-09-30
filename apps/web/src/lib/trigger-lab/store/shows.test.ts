@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { nextShowName, planDeleteShow, renameShowIn, withShow, type ShowMap } from './shows';
-import type { AuthoredState, Show } from '../persistence';
+import type { AuthoredStateV3, ShowV3 as Show } from '../persistence';
 
 /* Pure show-library decisions (the map arithmetic + delete re-point). The rune-level
    behaviour is covered in store.shows.test.ts; this locks the decision tree in isolation. */
 
-const show = (id: string, name: string): Show => ({ id, name, authored: {} as AuthoredState });
+const show = (id: string, name: string): Show => ({ id, name, authored: {} as AuthoredStateV3 });
 const lib = (...ids: [string, string][]): ShowMap => Object.fromEntries(ids.map(([id, n]) => [id, show(id, n)]));
 
 describe('nextShowName', () => {

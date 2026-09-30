@@ -541,7 +541,7 @@ describe('hit resolution = the active section’s zone Effects on the pad’s dr
     store.hit(kickCentre(store));
     expect(store.effectFireAt(base.id)).toBeGreaterThan(0);
     expect(store.effectFireAt(layer)).toBeGreaterThan(0);
-    expect(localFires(store)[0]!.detail.split(' | ')).toHaveLength(2);
+    expect(localFires(store)[0]!.detail?.split(' | ')).toHaveLength(2);
   });
 
   it('fires nothing when there is NO active section (the graph-era pad fallback is gone)', () => {

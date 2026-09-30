@@ -143,6 +143,7 @@ function stubHost(over: Partial<MidiControllerHost> = {}): MidiControllerHost & 
     // learn armed and quietly invert what these tests are asserting.
     setInputMap: () => true,
     setTriggerSource: () => true,
+    setCueMidiSource: () => true,
     setSequenceResetSource: (nodeId, source) => {
       bound.push([nodeId, source]);
       return true;
