@@ -7,6 +7,7 @@ import type { TriggerLab } from '../trigger-lab/store.svelte';
 import AppKeyboardCapture from './AppKeyboardCapture.svelte';
 import type { AppKeyboardShell, AppKeyboardStore } from './app-keyboard';
 import type { ShortcutEntry } from './shortcuts';
+import { createAppShortcuts } from './app-shortcuts';
 import BootOverlay from './chrome/BootOverlay.svelte';
 import { initialBootStatus } from './boot-reducer';
 import ShareInfo from './chrome/ShareInfo.svelte';
@@ -214,6 +215,33 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(duplicate).not.toHaveBeenCalled();
     expect(nativeDelete.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
+  });
+
+  it('consumes Cmd+D inside a modal with the real App registry, so SectionsView cannot duplicate behind it', () => {
+    const store: AppKeyboardStore = { fireSectionGraph: vi.fn(), stepSetlist: vi.fn(() => true) };
+    const shell: AppKeyboardShell = { view: 'sections', settingsPane: null };
+    const shortcuts = createAppShortcuts({ undo: vi.fn(() => false) });
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts, shortcutPlatform: 'mac' } });
+    // Stand-in for SectionsView's window capture listener: it acts only on a non-prevented chord.
+    const sectionDuplicate = vi.fn();
+    const sectionsListener = (e: KeyboardEvent): void => {
+      if (!e.defaultPrevented && e.metaKey && e.key === 'd') sectionDuplicate();
+    };
+    window.addEventListener('keydown', sectionsListener);
+    laterWindowListeners.push(sectionsListener);
+
+    // Outside a modal the no-op entry falls through to the view.
+    const chrome = document.body.appendChild(document.createElement('button'));
+    const open = key(chrome, 'd', { metaKey: true });
+    expect(open.defaultPrevented).toBe(false);
+    expect(sectionDuplicate).toHaveBeenCalledTimes(1);
+
+    const children = createRawSnippet(() => ({ render: () => '<button>dialog action</button>' }));
+    render(Dialog, { props: { open: true, title: 'Dialog', children } });
+    const content = document.querySelector('[data-keyboard-owner="modal"]')!;
+    const inModal = key(content, 'd', { metaKey: true });
+    expect(inModal.defaultPrevented).toBe(true);
+    expect(sectionDuplicate).toHaveBeenCalledTimes(1);
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {

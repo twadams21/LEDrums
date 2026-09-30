@@ -8,7 +8,7 @@
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
-  import type { ShortcutEntry } from './lib/app/shortcuts';
+  import { createAppShortcuts } from './lib/app/app-shortcuts';
   import AppKeyboardCapture from './lib/app/AppKeyboardCapture.svelte';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
@@ -40,12 +40,9 @@
     typeof navigator !== 'undefined' ? navigator.platform : '',
   );
 
-  // The app-level shortcut registry (data → action + description; see lib/app/shortcuts.ts).
-  // Browser-default combos are CLAIMED here in capture phase. Undo lives here now rather than
-  // as an inline branch below.
-  const shortcuts: ShortcutEntry[] = [
-    { combo: 'mod+z', description: 'Undo', run: () => store.undo() },
-  ];
+  // The app-level shortcut registry (see lib/app/app-shortcuts.ts). Browser-default combos are
+  // CLAIMED in capture phase; registered combos are also consumed inside modals.
+  const shortcuts = createAppShortcuts(store);
 
 </script>
 
