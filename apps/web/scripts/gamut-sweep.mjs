@@ -4,7 +4,7 @@
  *
  * The static checks (tokens-gamut.test.ts, color-mix-audit.mjs) only see colours we
  * author. This sees every colour that actually reaches the screen — including ones from
- * third-party CSS (@xyflow/svelte, bits-ui) and anything computed at runtime — by walking
+ * third-party CSS (bits-ui) and anything computed at runtime — by walking
  * the live DOM and reading resolved computed styles.
  *
  * It runs each view twice, with Chrome's `color-gamut` media feature emulated to `p3` and

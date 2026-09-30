@@ -4,7 +4,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPixelModel,
-  canvasEffectId,
   effectChain,
   parseKit,
   SHOWS_VERSION_EFFECTS,
@@ -78,7 +77,7 @@ describe('buildShow — v3 effect-chain source', () => {
     expect(buildShow(src)).toEqual(server);
   });
 
-  it('carries own then referenced songs with their effects and master chain; no graph containers', () => {
+  it('carries own then referenced songs with their effects and master chain, and their scenes', () => {
     const show = buildShow(source());
 
     expect(show.songs!.map((s) => [s.id, s.sections.map((sec) => sec.id)])).toEqual([
@@ -88,12 +87,8 @@ describe('buildShow — v3 effect-chain source', () => {
     const verse = show.songs![0]!.sections[0]!;
     expect(verse.effects?.map((e) => e.id)).toEqual(['kick-hit', 'wash']);
     expect(verse.master?.map((m) => m.modifierId)).toEqual(['strobe']);
-    expect(show.graphs).toEqual({});
-    expect(show.buses).toEqual([]);
-    expect(show.sections).toEqual([]);
-    // Scenes: the show's, then the library song's; each gets its virtual canvas EffectDef.
+    // Scenes: the show's, then the library song's.
     expect(show.canvasScenes?.map((s) => s.id)).toEqual(['mine', 'lib:shared/sky']);
-    expect(show.effects.map((e) => e.id)).toEqual(expect.arrayContaining([canvasEffectId('mine'), canvasEffectId('lib:shared/sky')]));
   });
 
   it('builds without a song library: referenced songs resolve to nothing', () => {

@@ -10,7 +10,6 @@ const DRUMS: readonly DrumRef[] = [
   { id: 'kick', label: 'Kick' },
   { id: 'snare', label: 'Snare' },
 ];
-const graphLabel = (key: string): string => (key === 'g1' ? 'Kick Flash' : key);
 
 describe('describeBindingAddress', () => {
   it('renders each namespace in the same phrasing the source labels use', () => {
@@ -24,46 +23,34 @@ describe('describeBindingAddress', () => {
 
 describe('describeBindingClaim', () => {
   it('names a drum zone by its drum and zone', () => {
-    const text = describeBindingClaim({ group: 'pad-trigger', kind: 'zone', drumId: 'kick', slot: 0 }, DRUMS, graphLabel);
+    const text = describeBindingClaim({ group: 'pad-trigger', kind: 'zone', drumId: 'kick', slot: 0 }, DRUMS);
     expect(text).toContain('Kick');
     expect(text).toContain('center');
   });
 
-  it('names a trigger node by its graph', () => {
-    expect(
-      describeBindingClaim({ group: 'pad-trigger', kind: 'triggerNode', graphKey: 'g1', nodeId: 't' }, DRUMS, graphLabel),
-    ).toBe('the trigger for Kick Flash');
-  });
-
-  it('names a sequence reset by its graph', () => {
-    expect(
-      describeBindingClaim({ group: 'sequence-reset', kind: 'reset', graphKey: 'g1', nodeId: 'n' }, DRUMS, graphLabel),
-    ).toBe('a sequence reset in Kick Flash');
-  });
-
   it('names a global control by its catalogue label, not its id', () => {
-    const text = describeBindingClaim({ group: 'global-control', kind: 'global', action: 'nextSong' }, DRUMS, graphLabel);
+    const text = describeBindingClaim({ group: 'global-control', kind: 'global', action: 'nextSong' }, DRUMS);
     expect(text).toContain('Next song');
     expect(text).not.toContain('nextSong');
   });
 
   it('names a Cue Effect trigger', () => {
-    expect(describeBindingClaim({ group: 'pad-trigger', kind: 'cue', effectId: 'e1' }, DRUMS, graphLabel)).toBe(
+    expect(describeBindingClaim({ group: 'pad-trigger', kind: 'cue', effectId: 'e1' }, DRUMS)).toBe(
       'the trigger for a Cue Effect',
     );
   });
 
   it('names a MIDI-map mapping by what its target drives', () => {
     expect(
-      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'fireCell:snare:zone0' }, DRUMS, graphLabel),
+      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'fireCell:snare:zone0' }, DRUMS),
     ).toBe('the MIDI-map mapping for a grid cell');
     expect(
-      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'modifierMix:e1:m1' }, DRUMS, graphLabel),
+      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'modifierMix:e1:m1' }, DRUMS),
     ).toBe('the MIDI-map mapping for a Modifier’s mix');
   });
 
   it('explains the reserved CC rather than naming a phantom owner', () => {
-    expect(describeBindingClaim({ group: 'reserved', kind: 'reservedCc', controller: 0 }, DRUMS, graphLabel)).toBe(
+    expect(describeBindingClaim({ group: 'reserved', kind: 'reservedCc', controller: 0 }, DRUMS)).toBe(
       'reserved for global section recall',
     );
   });
@@ -75,12 +62,11 @@ describe('bindingRejectionMessage', () => {
       {
         address: { kind: 'note', note: 60 },
         self: { group: 'global-control', kind: 'global', action: 'nextSong' },
-        conflicts: [{ group: 'sequence-reset', kind: 'reset', graphKey: 'g1', nodeId: 'n' }],
+        conflicts: [{ group: 'pad-trigger', kind: 'cue', effectId: 'e1' }],
       },
       DRUMS,
-      graphLabel,
     );
-    expect(message).toBe('MIDI C4 is already a sequence reset in Kick Flash — clear that binding first, or pick another input.');
+    expect(message).toBe('MIDI C4 is already the trigger for a Cue Effect — clear that binding first, or pick another input.');
   });
 
   it('names only the first blocker when several hold the address', () => {
@@ -90,13 +76,12 @@ describe('bindingRejectionMessage', () => {
         self: { group: 'global-control', kind: 'global', action: 'nextSong' },
         conflicts: [
           { group: 'pad-trigger', kind: 'zone', drumId: 'snare', slot: 0 },
-          { group: 'sequence-reset', kind: 'reset', graphKey: 'g1', nodeId: 'n' },
+          { group: 'pad-trigger', kind: 'cue', effectId: 'e1' },
         ],
       },
       DRUMS,
-      graphLabel,
     );
     expect(message).toContain('Snare');
-    expect(message).not.toContain('sequence reset');
+    expect(message).not.toContain('Cue Effect');
   });
 });

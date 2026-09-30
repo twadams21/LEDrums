@@ -33,7 +33,7 @@ function effectParityShow(master = true): voice.Show {
       generator: { kind: 'solid', style: 'solid', params: { color: '#ff0000' } }, amp: { attackMs: 0, length: { ms: 100 }, releaseMs: 50 }, blend: 'screen' }),
   ];
   const masterChain = master ? effectChain.masterChainSchema.parse([{ uid: 'lv', modifierId: 'levels', params: { brightness: 0.8 } }]) : [];
-  return { ...voice.emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 'A', name: 'A', slots: {}, effects, master: masterChain }] }] };
+  return { ...voice.emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 'A', name: 'A', effects, master: masterChain }] }] };
 }
 
 function effectPair(show: voice.Show) {

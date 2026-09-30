@@ -326,24 +326,33 @@ await ensureServer();
 mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT, deviceScaleFactor: 2 });
 
-// Explicit offline preview for isolated authoring checks, with no server or hardware input.
-if (process.env.UI_SHOT_OFFLINE === '1') {
-  await context.addInitScript(() => {
-    class OfflineSocket extends EventTarget {
-      static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
-      readyState = 0;
-      send() {}
-      close() { this.readyState = 3; }
-    }
-    window.WebSocket = OfflineSocket;
-    navigator.requestMIDIAccess = async () => ({ inputs: new Map(), outputs: new Map(), addEventListener() {}, removeEventListener() {} });
-  });
+/** A fresh browser context per shot. Every preset starts from the app's clean state: a
+    context's storage (the offline show library, the active song / section, the last view)
+    otherwise carries one preset's authoring into the next — `canonical-section-readonly`
+    leaves a library song active, and the next `section-detail` captured "Library song is
+    read-only". The seam's `reset` op only clears in-page UI state, not what the app persists. */
+async function newContext() {
+  const context = await browser.newContext({ viewport: DEFAULT_VIEWPORT, deviceScaleFactor: 2 });
+  // Explicit offline preview for isolated authoring checks, with no server or hardware input.
+  if (process.env.UI_SHOT_OFFLINE === '1') {
+    await context.addInitScript(() => {
+      class OfflineSocket extends EventTarget {
+        static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+        readyState = 0;
+        send() {}
+        close() { this.readyState = 3; }
+      }
+      window.WebSocket = OfflineSocket;
+      navigator.requestMIDIAccess = async () => ({ inputs: new Map(), outputs: new Map(), addEventListener() {}, removeEventListener() {} });
+    });
+  }
+  return context;
 }
 
 let totalErrors = 0;
 for (const shot of shots) {
+  const context = await newContext();
   const page = await context.newPage();
   const errors = [];
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
@@ -400,6 +409,7 @@ for (const shot of shots) {
     for (const err of [...new Set(errors)].slice(0, 10)) console.error(`   ${err.slice(0, 300)}`);
   }
   await page.close();
+  await context.close();
 }
 
 await browser.close();
