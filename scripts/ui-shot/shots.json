@@ -334,5 +334,59 @@
     "state": "configured-zones,view:trigger",
     "click": "button:Add graph",
     "target": "dialog:Add graph"
+  },
+  "grid-empty": {
+    "state": "view:trigger",
+    "target": "role:grid[name='Effects grid']"
+  },
+  "grid-populated": {
+    "state": "view:trigger,cell:kick:0,effect-stack:3,cell:snare:0,add-effect:lightning,cell:kit:always,add-effect:noise",
+    "target": "role:grid[name='Effects grid']"
+  },
+  "grid-selected": {
+    "state": "view:trigger,cell:kick:0,add-effect:wave:radial",
+    "target": "main.center"
+  },
+  "grid-master": {
+    "state": "view:trigger,master",
+    "target": "main.center"
+  },
+  "strip-section": {
+    "route": "?style",
+    "target": "#device-strip",
+    "viewport": "1600x3400"
+  },
+  "strip-effect-row": {
+    "route": "?style#device-strip",
+    "target": ".effect-row"
+  },
+  "strip-add-modifier": {
+    "route": "?style#device-strip",
+    "click": "button:Add Modifier",
+    "target": ".lab-add-device"
+  },
+  "strip-cards-chain": {
+    "route": "?style",
+    "target": "Device cards chain demo",
+    "viewport": "1800x1100",
+    "settle": 800
+  },
+  "strip-cards-splice": {
+    "route": "?style",
+    "target": "Device cards splice demo",
+    "viewport": "1800x1100",
+    "settle": 800
+  },
+  "sections-effects": {
+    "state": "view:sections",
+    "target": "main.center"
+  },
+  "objects-effects": {
+    "state": "view:objects",
+    "target": "main.center"
+  },
+  "import-prompt": {
+    "route": "?style",
+    "target": "#setlist-effects"
   }
 }

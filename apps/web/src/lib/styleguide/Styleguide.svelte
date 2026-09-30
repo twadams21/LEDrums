@@ -14,6 +14,10 @@
   import SectionStagePreview from './sections/SectionStagePreview.svelte';
   import SectionGraph from './sections/SectionGraph.svelte';
   import SectionInteraction from './sections/SectionInteraction.svelte';
+  import SectionEffectsGrid from './sections/SectionEffectsGrid.svelte';
+  import SectionDeviceStrip from './sections/SectionDeviceStrip.svelte';
+  import SectionDeviceCards from './sections/SectionDeviceCards.svelte';
+  import SectionImport from './sections/SectionImport.svelte';
   import CopyChip from './CopyChip.svelte';
   import { srcPath } from './source-pointer';
 
@@ -25,6 +29,10 @@
     ['#primitives', 'Primitives'],
     ['#composites', 'Composites'],
     ['#graph', 'Graph'],
+    ['#effects-grid', 'Effects grid'],
+    ['#device-strip', 'Device strip'],
+    ['#device-cards', 'Device cards'],
+    ['#setlist-effects', 'Import'],
     ['#interaction', 'Interaction'],
   ] as const;
 </script>
@@ -65,6 +73,10 @@
   <SectionComposites />
   <SectionStagePreview />
   <SectionGraph />
+  <SectionEffectsGrid />
+  <SectionDeviceStrip />
+  <SectionDeviceCards />
+  <SectionImport />
   <SectionInteraction />
 
   <footer class="sg-foot">
