@@ -1,6 +1,6 @@
 <script lang="ts">
   /* A drum's VELOCITY SENSITIVITY — the transfer curve from how hard the trigger was hit to
-     the velocity every graph on that drum sees. Per DRUM, not per zone (Trent, 2026-08-17:
+     the velocity every Effect on that drum sees. Per DRUM, not per zone (Trent, 2026-08-17:
      "Kick has 1 sensitivity curve, not each zone of the kick drum"), so it sits beside the
      drum's zone list rather than inside it.
 
@@ -81,7 +81,7 @@
     ariaLabel={`Velocity sensitivity — ${drumLabel ?? drumId}`}
   />
   <p class="hint">
-    How hard a hit reads: <b>hit</b> is what the trigger sent, <b>out</b> is what every graph on
+    How hard a hit reads: <b>hit</b> is what the trigger sent, <b>out</b> is what every Effect on
     this drum sees. The dashed line is no change; hits plot live while you play.
   </p>
 </div>

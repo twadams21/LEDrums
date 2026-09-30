@@ -2,10 +2,8 @@
    no DOM, no store). The authoring api only reads the ACTIVE section, but the Sections view shows
    every section of the song side by side, so these helpers read a section value directly and
    group its `effects` by cell in grid order, using the api's (section-independent) grid rows and
-   columns for order and labels.
-
-   A section value may still be graph-shaped until the store moves to v3 (no `effects` / `master`
-   fields): it then reads as an empty grid rather than throwing. */
+   columns for order and labels. A section value without `effects` / `master` reads as an empty
+   grid rather than throwing. */
 
 import { tryGetModifier, type effectChain } from '@ledrums/core';
 import type { GridColumn, GridRow } from '../../trigger-lab/effects-api';
@@ -31,7 +29,7 @@ export interface SectionCellSummary {
   allBypassed: boolean;
 }
 
-/** The section's Effects view (`effects` / `master`), tolerating a graph-shaped section. */
+/** The section's Effects view (`effects` / `master`), tolerating a section without them. */
 export function sectionEffectsOf(section: unknown): EffectsSection {
   const s = (section ?? {}) as Partial<EffectsSection>;
   return {

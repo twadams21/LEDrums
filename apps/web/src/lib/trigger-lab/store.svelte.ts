@@ -373,8 +373,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
 
   // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
   /** The ONE active section (U4 merged the old look-recall + arrange focus): the section you're
-      playing IS the one you're editing. Drives hit-resolution (its graphs fire, in the play
-      surface below), the look-morph recall, and the Sections / Trigger views' highlight. */
+      playing IS the one you're editing. Drives hit-resolution (its Effects fire, in the play
+      surface below), the recall, and the Sections / Effects views' highlight. */
   get activeSectionId(): string | null {
     return this.sectionsCtl.activeSectionId;
   }
@@ -524,7 +524,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   set activeShowId(id: string) {
     this.showsCtl.activeShowId = id;
   }
-  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS. */
+  /** authored arrangement: songs, each with sections that hold an Effect stack + Master chain. */
   get songs(): Song[] {
     return this.showsCtl.songs;
   }
@@ -588,13 +588,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   // --- shows / setlist / song-library forwarders (R23) — thin, API-preserving ------------------
-  /** Create a show and switch to it. With a `template`, it starts blank (one empty section) or
-      from the kit's drum zones (a graph per zone, and every later new section gets its own set);
-      without one, from the demo seed. */
+  /** Create a show and switch to it. With a `template`, it starts one song with one EMPTY section
+      (both templates: the grid already lays out every declared zone, so `zones` needs no per-zone
+      content); without one, from the demo seed. */
   newShow(name?: string, template?: ShowTemplate): string {
-    // Effect chains: both templates start one song with one EMPTY section (the grid already lays
-    // out every declared zone, so the `zones` template needs no per-zone content). The graph-era
-    // `templateAuthored` stays for the legacy sandbox's zone-graph fill until S08.
     return this.showsCtl.newShow(name, template ? blankAuthoredV3() : undefined);
   }
   openShow(id: string): void {
@@ -1240,8 +1237,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return this.project?.inputMap ?? OFFLINE_PROJECT.inputMap;
   }
 
-  /** The active section as the pure ops' {@link EffectsSection}. Graph-era sections (and ones a
-      setlist op made) carry no Effect fields yet; they read as an empty stack. */
+  /** The active section as the pure ops' {@link EffectsSection}. */
   private get activeEffectsSection(): (EffectsSection & SetlistSection) | null {
     const section = this.activeSection;
     if (!section) return null;
@@ -2011,7 +2007,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
             // double the hit (the echo loop). Authority principle, doc 03.
             //
-            // A note bound to a global control is CONSUMED and must not fire a pad/graph —
+            // A note bound to a global control is CONSUMED and must not fire an Effect —
             // the same precedence the server pins in `toInputEvent`, mirrored here so the two
             // modes agree on what a bound note does NOT do. The action itself stays
             // server-resolved (like Program Change / CC#0 recall), so offline it is inert.
@@ -2031,8 +2027,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
-        // S37: a CC source node can MIDI-learn the next incoming controller; the live value
-        // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
+        // A CC learn (global control, Cue, map mode) binds the next incoming controller; the live
+        // value feeds the offline Sim's engine so Controls and mappings track it.
         // Controller 0 is reserved for section recall and never learns/binds here.
         if (this.acceptsMidiChannel(ev.channel)) {
           const learning = this.midiMapLearnArmed;
@@ -2107,10 +2103,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.snapshot();
   }
 
-  /** One field list for dependency tracking, history and persistence (the v3 document). The
-      songs are re-shaped to v3 sections (the store keeps graph-era `graphs` / `looks` on its
-      sections until S08); Effect / master arrays stay LIVE references — only
-      toAuthored/History materialize detached data, at their respective commit boundaries. */
+  /** One field list for dependency tracking, history and persistence (the v3 document). Effect /
+      master arrays stay LIVE references — only toAuthored/History materialize detached data, at
+      their respective commit boundaries. */
   private get authoredSource(): AuthoredStateV3 {
     const out: AuthoredStateV3 = {
       songs: this.songs.map(toEffectSong),
@@ -2591,17 +2586,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     }
   }
 
-  /** Re-send the authored Show to the engine when it actually changed, so edits
-      (swap effect, tweak params/preset, rewire a graph, edit slots/buses) take
-      effect live — without this the server runs whatever Show it got at connect
-      time and keeps firing the original effects. Driven off the debounced autosave
-      tick. The {@link EngineLinkSync} signature guard skips no-op fires AND pure
-      node-position (x/y) drags, so dragging the graph doesn't needlessly reset engine
-      voices; transport lives on a separate message so tempo edits never resend the
-      Show. NOTE: setShow reseeds the engine (voices clear) — acceptable for authoring;
-      a finer-grained live-update message is a future refinement. */
   /** The engine's Show source with library references RESOLVED IN (S42): the sent Show carries the
-      referenced songs' graphs/effects/presets/sections (namespaced, collision-free) so the engine can
+      referenced songs' sections (namespaced, collision-free) so the engine can
       recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
@@ -2742,10 +2728,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.monitorEvents = [];
   }
 
-  /** Surface a client-side editor fault on the Monitor as an `error` event, so a
-      live-show failure (a thrown xyflow callback, a failed graph projection) is visible
-      in the Monitor timeline instead of silently corrupting the canvas. `source` groups
-      the fault (e.g. `trigger-graph`), `label` names it, `detail` carries the message. */
+  /** Surface a client-side editor fault on the Monitor as an `error` event, so a live-show
+      failure is visible in the Monitor timeline instead of failing silently. `source` groups the
+      fault, `label` names it, `detail` carries the message. */
   reportError(source: string, label: string, detail?: string): void {
     this.addMonitor({ type: 'error', direction: 'local', source, label, detail });
   }
@@ -2999,10 +2984,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   /** Who uses a drum zone (the zone-delete guard + the zones list): every Effect in that zone's
-      cell, in any show (the live one, inactive ones) or library song — `"<Effect> · <section>"`.
-      Effect chains replaced the graph users (the graph runes are an unpersisted sandbox now). The
-      name is kept for its callers. */
-  zoneGraphUsers(drumId: string, slot: number): string[] {
+      cell, in any show (the live one, inactive ones) or library song — `"<Effect> · <section>"`. */
+  zoneEffectUsers(drumId: string, slot: number): string[] {
     const songs: { sections: readonly { name: string; effects?: readonly effectChain.Effect[] }[] }[] = [
       ...this.songs,
       ...Object.values(this.showsCtl.showLibrary).filter((show) => show.id !== this.activeShowId).flatMap((show) => show.authored.songs ?? []),
@@ -3039,7 +3022,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         const remaining = zoneSlotsForDrum(inputMap, drum.id);
         for (const slot of zoneSlotsForDrum(this.project.inputMap, drum.id)) {
           if (remaining.includes(slot)) continue;
-          const users = this.zoneGraphUsers(drum.id, slot);
+          const users = this.zoneEffectUsers(drum.id, slot);
           if (users.length) {
             pushToast(`Remove this zone’s Effects before deleting it: ${users.join(', ')}`, { tone: 'error' });
             return false;
@@ -3538,7 +3521,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.finishPaste(this.materializePaste(text, { context: 'section' }));
   }
 
-  /** Submit manually-pasted text from the graph/section fallback dialog. */
+  /** Submit manually-pasted text from the section fallback dialog. */
   submitPasteFallback(text: string): void {
     const ctx = this.pasteFallback;
     this.pasteFallback = null;

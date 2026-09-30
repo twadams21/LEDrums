@@ -15,7 +15,6 @@
    to a null binding (no badge) — honest by construction. Channel is the GLOBAL MIDI
    channel filter (Settings), not a per-binding field (mirrors the engine's model).
    ============================================================================= */
-import type { voice } from '@ledrums/core';
 import { formatMidiNote } from '../midi/midi-note';
 
 /** A last-heard input event, timestamped on receipt (the web mirror of the wire
@@ -75,16 +74,6 @@ export function activityKey(x: InputBinding): string {
     gate so a badge appears iff the event would also have fired. */
 export function acceptsChannel(filter: number | null, channel: number | undefined): boolean {
   return filter === null || channel === filter;
-}
-
-/** Map a graph's trigger source to the field's input binding: a MIDI note or an OSC
-    address. Drum sources (pad-bound), CC sources (no matchable wire field), and an
-    unset note/empty address all resolve to `null` — no badge. */
-export function bindingFromSource(src: voice.TriggerSource | undefined): InputBinding | null {
-  if (!src) return null;
-  if (src.kind === 'midi' && src.note !== undefined) return { kind: 'midi', note: src.note };
-  if (src.kind === 'osc' && src.address) return { kind: 'osc', address: src.address };
-  return null;
 }
 
 /** Compact, monotonic age label — coarsens with age so it never jitters per-frame. */

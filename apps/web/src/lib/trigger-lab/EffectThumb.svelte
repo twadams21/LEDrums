@@ -20,7 +20,6 @@
   import { getThumbProjection, representativeAgeMs, type DotTable } from './thumb-projection';
   import { tryGetEffect } from '@ledrums/core';
   import { ticker } from './effect-thumb-ticker';
-  import { triggerClock } from './signal-preview';
 
   interface Props {
     params: ParamValues;
@@ -30,14 +29,8 @@
     labModel?: LabModel;
     w?: number;
     h?: number;
-    /** Live-on-trigger mode (node faces): STATIC until the node's graph fires, then plays live
-        from t=0 for one hit, then settles. Off by default → the continuous loop the effect
-        library/gallery browses with. */
-    triggered?: boolean;
-    /** The graph's fire epoch (`performance.now()` ms) when `triggered`; null until it fires. */
-    triggerAt?: number | null;
   }
-  let { params, generatorId, w = 64, h = 36, triggered = false, triggerAt = null }: Props = $props();
+  let { params, generatorId, w = 64, h = 36 }: Props = $props();
 
   const num = (v: number | boolean | string | undefined, d: number) => (typeof v === 'number' ? v : d);
 
@@ -64,19 +57,6 @@
     } else if (!generatorId) {
       genState = null;
       genStateId = null;
-    }
-  });
-
-  // Per-fire reset (live-on-trigger): each new fire replays the effect from a clean state, so a
-  // stateful generator (confetti / accumulators) restarts on the hit instead of drifting across
-  // fires. Reads triggerAt (the dep) + generatorId and WRITES genState — never reads genState, so
-  // it cannot form the self-referential-$effect loop that halts the app.
-  $effect(() => {
-    if (!triggered) return;
-    triggerAt; // re-run on each fire
-    if (generatorId) {
-      const gen = tryGetEffect(generatorId);
-      if (gen?.createState) genState = gen.createState(buildThumbPixelModel());
     }
   });
 
@@ -183,16 +163,8 @@
       if (proj.baseLayer) ctx.drawImage(proj.baseLayer as CanvasImageSource, 0, 0);
 
       // Time base: reduced-motion → a static frame at the effect's representative age
-      // (35% of its dominant life param); live-on-trigger → local time since the node's
-      // graph fired (static until it does); else the continuous gallery loop.
-      let effectiveTms: number;
-      if (prefersReduced) {
-        effectiveTms = representativeAgeMs(gen?.paramSpec, p, THUMB_LOOP_MS);
-      } else if (triggered) {
-        effectiveTms = triggerClock(triggerAt, tMs).localMs;
-      } else {
-        effectiveTms = tMs;
-      }
+      // (35% of its dominant life param); else the continuous gallery loop.
+      const effectiveTms = prefersReduced ? representativeAgeMs(gen?.paramSpec, p, THUMB_LOOP_MS) : tMs;
 
       // Every effect is generator-backed (U3): render the core generator on the internal
       // 26×13 thumb model. pixels[i] is [r,g,b] in 0..1, directly from the Framebuffer.

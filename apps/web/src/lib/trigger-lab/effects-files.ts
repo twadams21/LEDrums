@@ -45,7 +45,7 @@ type EffectCell = effectChain.EffectCell;
 type ModifierDevice = effectChain.ModifierDevice;
 type ControlDevice = effectChain.ControlDevice;
 
-/** Effect / cell / device files end in their own double extension (like graph / node files). */
+/** Effect / cell / device files end in their own double extension. */
 export const EFFECT_FILE_EXT = '.ledrums-effect.json';
 export const CELL_FILE_EXT = '.ledrums-cell.json';
 export const DEVICE_FILE_EXT = '.ledrums-device.json';
@@ -326,8 +326,8 @@ export function applyDeviceFile<S extends EffectsFileSection>(section: S, effect
 /**
  * Load an Effect or a device file onto an existing Effect — the Effect header's "Load" action.
  * A device file goes through {@link applyDeviceFile}. An Effect file replaces the Effect's
- * contents in place: it keeps its id, its cell and its position in the stack (like loading a
- * graph file onto a graph), the rest follows the placement rules.
+ * contents in place: it keeps its id, its cell and its position in the stack; the rest follows
+ * the placement rules.
  */
 export function applyFileToEffect<S extends EffectsFileSection>(section: S, effectId: string, text: string, ctx: EffectsFileContext = {}): EffectsFileApplied<S> {
   const doc = readDoc(text, ['effect', 'device']);
