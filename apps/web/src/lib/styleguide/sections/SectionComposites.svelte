@@ -316,6 +316,8 @@
     activeSectionId = $state('sec-1');
     canEdit = true;
     globalControls = {};
+    /** The bar's authoring api (only its import surface is read): nothing to import. */
+    effectsApi = { legacyImportAvailable: false, legacyShowNames: [] };
     get activeSong() {
       return this.songs.find((s) => s.id === this.activeSongId) ?? null;
     }
