@@ -40,7 +40,7 @@ function litPixelIds(buf: Uint8Array, count: number): number[] {
 describe('generator bridge — registry coverage', () => {
   it('surfaces every core generator as a selectable, generator-backed effect', () => {
     const gens = listEffects();
-    expect(gens.length).toBe(54); // all core effects accounted for (+ Sparkler and Flame Flicker)
+    expect(gens.length).toBe(48); // all core effects accounted for (S08 deleted the six merged-away generators)
     expect(GENERATOR_EFFECTS.length).toBe(gens.length);
 
     for (const gen of gens) {
