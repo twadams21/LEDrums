@@ -21,8 +21,21 @@ export function describeBindingAddress(address: voice.BindingAddress): string {
       return `MIDI CC ${address.controller}`;
     case 'osc':
       return `OSC ${address.address.trim()}`;
+    case 'key':
+      return `Key ${address.code.replace(/^Key|^Digit/, '')}`;
   }
 }
+
+/** What a MIDI-map mapping drives, from its target id's kind prefix (core `inputMappingTargetId`). */
+const MAPPING_TARGET_NOUNS: Record<string, string> = {
+  fireCell: 'a grid cell',
+  fireEffect: 'firing an Effect',
+  recallSection: 'a section recall',
+  param: 'an Effect parameter',
+  opacity: 'an Effect’s opacity',
+  modifierMix: 'a Modifier’s mix',
+  bypass: 'a bypass toggle',
+};
 
 /** Who holds the address — a noun phrase that slots into "… is already {this}". */
 export function describeBindingClaim(claim: voice.BindingClaim, drums: readonly DrumRef[], graphLabel: GraphLabeller): string {
@@ -33,8 +46,12 @@ export function describeBindingClaim(claim: voice.BindingClaim, drums: readonly 
       return `the trigger for ${graphLabel(claim.graphKey)}`;
     case 'reset':
       return `a sequence reset in ${graphLabel(claim.graphKey)}`;
+    case 'cue':
+      return 'the trigger for a Cue Effect';
     case 'global':
       return `the “${globalControlDef(claim.action).label}” global control`;
+    case 'mapping':
+      return `the MIDI-map mapping for ${MAPPING_TARGET_NOUNS[claim.targetId.split(':')[0] ?? ''] ?? 'another control'}`;
     case 'reservedCc':
       return 'reserved for global section recall';
   }

@@ -97,3 +97,88 @@ export function inputMappingSourceLabel(source: InputMappingSource): string {
   if ('oscAddress' in source) return source.oscAddress;
   return `Key ${source.key.replace(/^Key|^Digit/, '')}`;
 }
+
+// ---- Matching (core-mappings, effect chains wave 5) -------------------------------------------
+
+/**
+ * One input, in the terms a mapping source matches on. The engine builds it from a note / CC /
+ * OSC event; the web builds `key` from a key press (key mappings resolve in the web).
+ */
+export interface InputMappingEvent {
+  midiNote?: number;
+  midiCc?: number;
+  oscAddress?: string;
+  key?: string;
+}
+
+/** Does `source` match `event`? Only the source's own kind is compared. */
+export function inputMappingSourceMatches(source: InputMappingSource, event: InputMappingEvent): boolean {
+  if ('midiNote' in source) return event.midiNote !== undefined && source.midiNote === event.midiNote;
+  if ('midiCc' in source) return event.midiCc !== undefined && source.midiCc === event.midiCc;
+  if ('oscAddress' in source) return event.oscAddress !== undefined && source.oscAddress === event.oscAddress;
+  return event.key !== undefined && source.key === event.key;
+}
+
+/**
+ * The mapping `event` performs, or `null`. The first match in authored order wins; the
+ * binding-claims guard refuses a second mapping on one source, so a tie only exists in
+ * hand-edited data. Pure and allocation-free (the engine calls it per input).
+ */
+export function matchInputMapping(mappings: readonly InputMapping[], event: InputMappingEvent): InputMapping | null {
+  for (const mapping of mappings) {
+    if (inputMappingSourceMatches(mapping.source, event)) return mapping;
+  }
+  return null;
+}
+
+/**
+ * Scale a 0..1 input into `[rangeMin, rangeMax]` (a reversed range runs the control
+ * backwards), then clamp to the target's own `[lo, hi]`. A non-finite input reads as 0, so a
+ * malformed value can never poison a param.
+ */
+export function scaleInputMappingValue(value01: number, rangeMin: number, rangeMax: number, lo: number, hi: number): number {
+  const v = Number.isFinite(value01) ? (value01 < 0 ? 0 : value01 > 1 ? 1 : value01) : 0;
+  const out = rangeMin + v * (rangeMax - rangeMin);
+  return out < lo ? lo : out > hi ? hi : out;
+}
+
+/** A stored mapping {@link parseInputMappings} left out, and why. */
+export interface DroppedInputMapping {
+  /** Index in the stored array (-1 when the field itself is not an array). */
+  index: number;
+  id?: string;
+  message: string;
+}
+
+/**
+ * Validate stored mappings one by one (the library keeps the field lenient, like Effects): an
+ * invalid entry is dropped and reported, never fatal. Ids are unique (first wins). Absent
+ * (`undefined` / `null`) reads as no mappings.
+ */
+export function parseInputMappings(raw: unknown): { mappings: InputMapping[]; dropped: DroppedInputMapping[] } {
+  const mappings: InputMapping[] = [];
+  const dropped: DroppedInputMapping[] = [];
+  if (raw === undefined || raw === null) return { mappings, dropped };
+  if (!Array.isArray(raw)) {
+    dropped.push({ index: -1, message: 'mappings is not an array' });
+    return { mappings, dropped };
+  }
+  const ids = new Set<string>();
+  raw.forEach((entry: unknown, index) => {
+    const rawId = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
+    const id = typeof rawId === 'string' ? rawId : undefined;
+    const parsed = inputMappingSchema.safeParse(entry);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]!;
+      dropped.push({ index, id, message: `${issue.path.join('.') || '(root)'}: ${issue.message}` });
+      return;
+    }
+    if (ids.has(parsed.data.id)) {
+      dropped.push({ index, id, message: `duplicate mapping id '${parsed.data.id}'` });
+      return;
+    }
+    ids.add(parsed.data.id);
+    mappings.push(parsed.data);
+  });
+  return { mappings, dropped };
+}
