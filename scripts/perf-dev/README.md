@@ -27,11 +27,14 @@ stale-stats limits are ten seconds. A normal Node event-loop stall can delay any
 
 Inputs are synthetic public `midi` and `audioFeatures` messages. Stable existing kit MIDI
 mappings supply real drum origins; global-control-bound notes are excluded (especially transmit
-and tempo controls). One kit-wide Spatial Field per mono bus, eight sustained lanes by default,
-receives a deterministic retrigger burst each second. Core's minimum release ramp temporarily
-adds outgoing voices; JSON reports actual total voice counts rather than claiming exactly eight
-at every instant. Four deterministic bands modulate brightness at 30 Hz. Client timer delays
-skip to the current sequence index and count skipped emissions; no burst catch-up is hidden.
+and tempo controls). The runtime Show is one song with one section of Effects (the effect-chain
+model). Each lane, eight sustained lanes by default, is one looping kit-wide Spatial Field (Wave
+Generator, Field Style) in its source drum's zone cell with retrigger `restart`; it receives a
+deterministic hit each second. Restart releases the previous voice, and core's minimum release
+ramp temporarily adds those outgoing voices; JSON reports actual total voice counts rather than
+claiming exactly eight at every instant. Each lane's Audio Control maps one of four deterministic
+bands onto the Generator's brightness (0.25..0.9) at 30 Hz. Live voices are attributed to the
+workload by their `effect:<id>` pad. Client timer delays skip to the current sequence index and count skipped emissions; no burst catch-up is hidden.
 No MIDI clock messages or audio capture are involved. Show/kit/input-map hashes, source mappings,
 parameter defaults and the transport snapshot identify the actual workload.
 
@@ -75,8 +78,8 @@ node --test scripts/perf-dev/*.test.mjs
 ```
 
 Node tests use an injected fake WS and clock for safety/lifecycle coverage. One behavior test
-loads the existing server's `tsx` dependency and drives the real host through 49 fixed steps,
-with an output factory that throws if any physical adapter is requested. It does not run the
+loads the existing server's `tsx` dependency and drives the real host, through the protocol Show
+gate (`decodeClient`), for 59 fixed steps, with an output factory that throws if any physical adapter is requested. It does not run the
 host's timers or assert wall durations. The executable resolves `ws` through
 `createRequire(new URL('../../apps/server/package.json', import.meta.url))`.
 

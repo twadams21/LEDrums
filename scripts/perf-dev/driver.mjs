@@ -1,5 +1,5 @@
 import { arch, cpus, platform, release } from 'node:os';
-import { buildWorkload, audioMessage, midiMessages, emptyShow, fingerprint, AUDIO_HZ, MIDI_BURST_MS } from './workload.mjs';
+import { buildWorkload, audioMessage, midiMessages, emptyShow, fingerprint, workloadEffects, AUDIO_HZ, MIDI_BURST_MS } from './workload.mjs';
 import { Observations, assertTiming } from './observations.mjs';
 import { assertPresenceSafe, assertStateSafe, validateOptions } from './options.mjs';
 
@@ -31,6 +31,7 @@ export async function runBenchmark(options, {
     let projectHash = null;
     let libraryHash = null;
     let workload = null;
+    let benchmarkPads = new Set();
     let baselineEpoch = null;
     let epoch = null;
     let baseRevision = null;
@@ -132,6 +133,7 @@ export async function runBenchmark(options, {
         throw new Error(`--warmup must be at least ${(latestTiming.warmupMs + latestTiming.windowMs) / 1000}s to cover recorder warmup plus a full window`);
       }
       workload = buildWorkload(state, options.voices);
+      benchmarkPads = new Set(workloadEffects(workload.show).map((e) => `effect:${e.id}`));
       baselineEpoch = latestTiming.recordingStartedAtMs;
       baseRevision = state.showRevision;
       projectHash = fingerprint(state.project);
@@ -240,7 +242,9 @@ export async function runBenchmark(options, {
               epoch = message.timing.recordingStartedAtMs;
             }
             if (message.stats?.pixelCount !== state.model.count) throw new Error('Stats pixel count changed');
-            if (message.voice.voices.some((v) => !workload.show.effects.some((e) => e.id === v.effectId))) {
+            // An Effect-path voice names its authored Effect only through its spawn key `effect:<id>`
+            // (`effectId` is the engine-internal hosted def, shared by every Effect with that Style).
+            if (message.voice.voices.some((v) => !benchmarkPads.has(v.pad))) {
               cleanupAllowed = false;
               throw new Error('Unexpected non-benchmark voice; isolation lost');
             }

@@ -36,7 +36,7 @@ export function timingFixture(end = 100, epoch = 0) {
 export function statsFixture(end = 100, epoch = 0) {
   return {
     t: 'stats', output: { state: 'disabled' }, stats: { pixelCount: 12 }, fps: 120,
-    voice: { voiceCount: 8, voices: Array.from({ length: 8 }, (_, i) => ({ effectId: `perf-dev-${i}` })) },
+    voice: { voiceCount: 8, voices: Array.from({ length: 8 }, (_, i) => ({ effectId: '@chain:spatial-field', pad: `effect:perf-dev-${i}` })) },
     timing: timingFixture(end, epoch),
   };
 }

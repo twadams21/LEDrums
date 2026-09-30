@@ -117,7 +117,7 @@ test('successful fake run uses only public synthetic inputs, records real snapsh
   assert.ok(h.ws.sent.some((m) => m.t === 'midi'));
   assert.ok(h.ws.sent.some((m) => m.t === 'audioFeatures' && m.level > 0));
   assert.ok(h.ws.sent.every((m) => ['setShow', 'midi', 'audioFeatures'].includes(m.t)));
-  assert.deepEqual(h.ws.sent.at(-1).show.graphs, {});
+  assert.deepEqual(h.ws.sent.at(-1).show, { songs: [] });
   assert.equal(result.metadata.cleanup, 'cleared-ephemeral-runtime');
   assert.equal(h.ws.closed, true);
   assert.equal(h.clock.tasks.size, 0);
@@ -166,7 +166,7 @@ test('continued ordinary stats do not hide missing timing and still enforce fore
   assert.equal(h.clock.tasks.size, 0);
   const other = setup(); other.handshake();
   const message = other.stats(); delete message.timing;
-  message.voice.voices[0].effectId = 'someone-elses-voice';
+  message.voice.voices[0].pad = 'effect:someone-elses-effect';
   const before = other.ws.sent.length; other.ws.message(message);
   assert.match((await other.result).error, /non-benchmark voice/);
   assert.equal(other.ws.sent.length, before);
