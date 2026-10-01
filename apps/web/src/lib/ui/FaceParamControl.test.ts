@@ -313,3 +313,73 @@ describe('typing a value', () => {
     expect(onChange).toHaveBeenCalledWith(0.33);
   });
 });
+
+describe('Shift and the arrows (Tim, 2026-10-02: "the shift key doesn\u2019t work")', () => {
+  function rail(view: ReturnType<typeof render>): HTMLElement {
+    const el = view.container.querySelector<HTMLElement>('.rail')!;
+    el.setPointerCapture = () => {};
+    el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 16, right: 100, bottom: 16, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    return el;
+  }
+
+  it('Shift on the rail creeps from the current value at a quarter speed — it never jumps to the pointer', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 0.1, ariaLabel: 'Depth', onChange } });
+    const r = rail(view);
+    await fireEvent.pointerDown(r, { button: 0, clientX: 90, pointerId: 1, shiftKey: true });
+    expect(onChange).not.toHaveBeenCalled(); // no jump to 90
+    await fireEvent.pointerMove(r, { clientX: 98, pointerId: 1, shiftKey: true }); // 8% of the rail
+    expect(onChange).toHaveBeenLastCalledWith(52); // 50 + 8 × ¼
+  });
+
+  it('without Shift the rail still jumps to where it is pressed', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    await fireEvent.pointerDown(rail(view), { button: 0, clientX: 20, pointerId: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(20);
+  });
+
+  it('a fine creep smaller than one step is not rounded away', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    const r = rail(view);
+    await fireEvent.pointerDown(r, { button: 0, clientX: 10, pointerId: 1, shiftKey: true });
+    for (let x = 11; x <= 18; x++) await fireEvent.pointerMove(r, { clientX: x, pointerId: 1, shiftKey: true }); // 8 × ¼ = 2
+    expect(onChange).toHaveBeenLastCalledWith(52);
+  });
+
+  it('pressing the rail focuses the value, so the arrows work straight after', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    await fireEvent.pointerDown(rail(view), { button: 0, clientX: 50, pointerId: 1 });
+    expect(document.activeElement).toBe(view.getByRole('slider', { name: 'Depth' }));
+  });
+
+  it('Up / Down step the typed box (Shift: ten); Enter commits it', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    const field = view.getByRole('slider', { name: 'Depth' });
+    field.setPointerCapture = () => {};
+    await fireEvent.pointerDown(field, { button: 0, clientX: 5, pointerId: 1 });
+    await fireEvent.pointerUp(field, { button: 0, clientX: 5, pointerId: 1 });
+    await tick();
+    const box = view.getByRole('textbox', { name: 'Depth value' }) as HTMLInputElement;
+    await fireEvent.keyDown(box, { key: 'ArrowUp', shiftKey: true });
+    await fireEvent.keyDown(box, { key: 'ArrowDown' });
+    expect(box.value).toBe('59');
+    await fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith(59);
+  });
+
+  it('a param with no declared step steps by 1 on a wide range and a hundredth on a narrow one', async () => {
+    const onChange = vi.fn();
+    const wide = render(FaceParamControl, { props: { kind: 'number', value: 120, display: '120', min: 0, max: 360, ariaLabel: 'Hue', onChange } });
+    await fireEvent.keyDown(wide.getByRole('slider', { name: 'Hue' }), { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(121);
+    await fireEvent.keyDown(wide.getByRole('slider', { name: 'Hue' }), { key: 'ArrowRight', shiftKey: true });
+    expect(onChange).toHaveBeenLastCalledWith(130);
+    const narrow = render(FaceParamControl, { props: { kind: 'number', value: 0.5, display: '0.50', min: 0, max: 1, ariaLabel: 'Amount', onChange } });
+    await fireEvent.keyDown(narrow.getByRole('slider', { name: 'Amount' }), { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(0.51);
+  });
+});
