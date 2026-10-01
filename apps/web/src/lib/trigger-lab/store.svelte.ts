@@ -188,6 +188,8 @@ export type AddNodeOptions = {
 /** Re-exported from the extracted MIDI controller (R21) so `MidiLearnTarget` stays importable from
     the store — the inspectors that arm a learn keep their import path unchanged. */
 export type { MidiLearnTarget };
+/** The Effect-chain authoring contract this store implements (effect chains S05). */
+export type { EffectsAuthoringApi } from './effects-api';
 
 /** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
     The param/envelope mutators + inspector share one editing surface across both. */

@@ -36,10 +36,10 @@ describe('persisted library → runtime Show restore boundary', () => {
     } finally { await host.stop(); }
   });
 
-  it.each([undefined, 0, 1, 3, 2.5, NaN, Infinity, '2'])('rejects unsupported show version %s even for an empty library', (version) => {
+  it.each([undefined, 0, 1, 4, 2.5, NaN, Infinity, '2', '3'])('rejects unsupported show version %s even for an empty library', (version) => {
     expect(() => showFromLibraries({ version, data: { shows: {} } }, null)).toThrow(/Unsupported show library version/);
   });
-  it.each([undefined, 0, 2, 1.5, NaN, Infinity, '1'])('rejects unsupported song version %s even without a show', (version) => {
+  it.each([undefined, 0, 3, 1.5, NaN, Infinity, '1', '2'])('rejects unsupported song version %s even without a show', (version) => {
     expect(() => showFromLibraries(null, { version, data: { songs: {} } })).toThrow(/Unsupported song library version/);
   });
   it('accepts exactly current versions without shifting a 1-based hoop target', () => {
@@ -142,5 +142,58 @@ describe('persisted library → runtime Show restore boundary', () => {
   it('null means no show, but malformed opaque envelopes are rejected rather than reusing an old show', () => {
     expect(showFromLibraries(null, null)).toBeNull();
     expect(() => showFromLibraries({ version: 2, data: 'invalid' }, null)).toThrow('Invalid authored');
+  });
+
+  describe('v3 (effect chains) restore', () => {
+    const zoneEffect = (id: string, row: string, slot: number) => ({
+      id, cell: { row, column: { kind: 'zone', slot } },
+      generator: { kind: 'solid' }, amp: { attackMs: 0, length: { ms: 1000 } },
+    });
+    const v3 = (effects: unknown[], extra: Record<string, unknown> = {}) => ({ version: 3, data: { activeShowId: 'show', shows: { show: { authored: {
+      songs: [{ id: 'song', name: 'Song', sections: [
+        { id: 'a', name: 'A', effects, master: [] },
+        { id: 'b', name: 'B', effects: [zoneEffect('other', 'snare', 0)], master: [] },
+      ] }],
+      activeSongId: 'song', activeSectionId: 'a', ...extra,
+    } } } } });
+
+    it('restores a v3 library into a running engine: a zone hit renders its Effect', async () => {
+      const showLibrary = v3([zoneEffect('kick-hit', 'kick', 0)]);
+      const project = defaultProject(); project.output.state = 'disabled';
+      const host = new VoiceEngineHost(project);
+      host.prepareProject(project, showFromLibraries(showLibrary, null), selectionFromLibrary(showLibrary)).commit();
+      try {
+        const lit = () => host.engine.frame().some((v, i) => i % 4 !== 3 && v > 0);
+        for (let i = 0; i < 4; i++) host.step(5);
+        expect(lit()).toBe(false);
+        host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
+        for (let i = 0; i < 4; i++) host.step(5);
+        expect(host.getStats().engine.voiceCount).toBe(1);
+        expect(lit()).toBe(true);
+      } finally { await host.stop(); }
+    });
+
+    it('drops an invalid Effect through the diagnostic sink and keeps the rest', () => {
+      const reported: unknown[] = [];
+      const showLibrary = v3([{ id: 'bad', cell: { row: 'kit', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'solid' } }, zoneEffect('ok', 'kick', 0)]);
+      const runtime = showFromLibraries(showLibrary, null, (d) => reported.push(...d))!;
+      expect(runtime.songs![0]!.sections[0]!.effects!.map((e) => e.id)).toEqual(['ok']);
+      expect(reported).toEqual([expect.objectContaining({ kind: 'invalid-effect', id: 'bad', sectionId: 'a' })]);
+    });
+
+    it('resolves v3 song references only from a v2 song library, and a v2 show only from a v1 one', () => {
+      const showLibrary = v3([], { songRefs: ['lib'] });
+      const librarySong = { id: 'lib', name: 'Library', sections: [{ id: 'lib:lib/s', name: 'S', effects: [zoneEffect('x', 'kick', 0)], master: [] }] };
+      const effectSongs = { version: 2, data: { songs: { lib: librarySong } } };
+      const graphSongs = { version: 1, data: { songs: { lib: { ...librarySong, graphs: {}, effects: [], presets: [] } } } };
+      expect(showFromLibraries(showLibrary, effectSongs)!.songs!.map((s) => s.id)).toEqual(['song', 'lib']);
+      expect(showFromLibraries(showLibrary, graphSongs)!.songs!.map((s) => s.id)).toEqual(['song']);
+      const graphShow = { version: 2, data: { activeShowId: 'show', shows: { show: { authored: { songs: [], songRefs: ['lib'] } } } } };
+      expect(showFromLibraries(graphShow, effectSongs)!.songs).toEqual([]);
+    });
+
+    it('rejects a structurally unusable v3 envelope before any live mutation', () => {
+      expect(() => showFromLibraries({ version: 3, data: 'invalid' }, null)).toThrow(/Invalid show library v3/);
+    });
   });
 });

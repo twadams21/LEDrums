@@ -49,7 +49,7 @@ describe('enum params — authoring (render + edit)', () => {
     expect(store.effectOf(node)?.id).toBe('gen:radial-wash');
     const modeSpec = store.effectOf(node)!.params.find((p) => p.key === 'mode')!;
     expect(modeSpec.kind).toBe('enum');
-    expect(modeSpec.options).toEqual(['out', 'in', 'bounce']);
+    expect(modeSpec.options).toEqual(['out', 'in', 'bounce', 'collapse']);
     // The default preset seeds the generator's own default enum value.
     expect(store.liveParams(node).mode).toBe('out');
   });

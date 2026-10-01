@@ -7,7 +7,8 @@
 // REUSE the core schema value rather than writing a second definition — the protocol package
 // already depends on core, so importing its schema VALUES is the same dependency edge as its
 // types. Deliberately-opaque payloads (the versioned show/song library blobs) and the authored
-// voice Show pass through structurally validated but never deep-inspected or key-stripped.
+// voice Show pass through structurally validated but never key-stripped (a Show's effect-chain
+// sections are the one deep gate — see `showSchema`).
 import { z } from 'zod';
 import { trackInputsStatusSchema, trackInputIdSchema } from './track-input';
 import { frameTimingSchema } from './frame-timing';
@@ -33,7 +34,7 @@ import {
   triggerBindingSchema,
   vec3Schema,
 } from '@ledrums/core';
-import { voice } from '@ledrums/core';
+import { effectChain, voice } from '@ledrums/core';
 import type { CurveValue, EngineStats } from '@ledrums/core';
 import type {
   BackupSnapshotMeta,
@@ -79,7 +80,57 @@ const showBusesShape = z.object({
   effects: z.array(z.object({ id: z.string() }).passthrough()),
   presets: z.array(z.object({ id: z.string() }).passthrough()),
 });
-export const showSchema = z.custom<voice.Show>((v) => showBusesShape.safeParse(v).success);
+
+// Effect-chain sections (songs → sections → `effects` / `master`). Unlike graph nodes, the engine
+// runs a section's Effects WITHOUT re-validating them (there is no integrity pass below the
+// resolver), so these are shape-gated with core's own Effect / ModifierDevice schemas — fail
+// closed. The gate still never rewrites: the object passes through unchanged, so unknown authored
+// fields survive, and because nothing is defaulted on the way in, each Effect / master device must
+// already be CANONICAL (every field core's schema would default is present — what the core show
+// builder emits). A non-canonical Effect would reach the engine missing a field it reads.
+// Effect ids are unique per section (`fireEffect` addresses one by id). Sections without
+// `effects` / `master` are graph-path sections and are left exactly as before.
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Whether `raw` already carries every value of `canonical` (a schema's parsed output). Extra keys
+    in `raw` are allowed (unknown authored fields pass through); a key the schema would have
+    defaulted, or any differing value, is not. */
+function carriesCanonical(canonical: unknown, raw: unknown): boolean {
+  if (Array.isArray(canonical)) {
+    return Array.isArray(raw) && raw.length === canonical.length
+      && canonical.every((item, i) => carriesCanonical(item, raw[i]));
+  }
+  if (isRecord(canonical)) {
+    return isRecord(raw) && Object.entries(canonical).every(
+      ([key, value]) => value === undefined || (key in raw && carriesCanonical(value, raw[key])),
+    );
+  }
+  return Object.is(canonical, raw);
+}
+
+const canonicalBy = (schema: z.ZodTypeAny) => (v: unknown): boolean => {
+  const parsed = schema.safeParse(v);
+  return parsed.success && carriesCanonical(parsed.data, v);
+};
+const isCanonicalEffect = canonicalBy(effectChain.effectSchema);
+const isCanonicalMasterDevice = canonicalBy(effectChain.modifierDeviceSchema);
+
+const showSectionShape = z
+  .object({
+    id: z.string(),
+    effects: z.array(z.custom<effectChain.Effect>(isCanonicalEffect)).optional(),
+    master: z.array(z.custom<effectChain.ModifierDevice>(isCanonicalMasterDevice)).optional(),
+  })
+  .passthrough()
+  .refine(
+    (section) => !section.effects || new Set(section.effects.map((e) => e.id)).size === section.effects.length,
+    'Effect ids must be unique within a section',
+  );
+const showSongShape = z.object({ id: z.string(), sections: z.array(showSectionShape) }).passthrough();
+const showShape = showBusesShape.extend({ songs: z.array(showSongShape).optional() });
+
+export const showSchema = z.custom<voice.Show>((v) => showShape.safeParse(v).success);
 
 // ---------------------------------------------------------------------------
 // Reused core enums (single-source with the domain model)
@@ -203,6 +254,10 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('setSongLibrary'), library: songLibraryBlobSchema }).strict(),
   z.object({ t: z.literal('key'), drumId: z.string(), zone: z.string().optional(), velocity: z.number().optional() }).strict(),
   z.object({ t: z.literal('fireGraph'), graphKey: z.string(), velocity: z.number() }).strict(),
+  // Audition one authored Effect of the ACTIVE section by id (keyboard audition, MIDI-map mode) —
+  // an authoritative intent like `fireGraph`, no input re-resolution. Authorised like `fireGraph`:
+  // a viewer may fire it, and the engine only ever looks the id up in the active section.
+  z.object({ t: z.literal('fireEffect'), effectId: z.string().min(1) }).strict(),
   z.object({ t: z.literal('recallSection'), songId: z.string().nullable(), sectionId: z.string().nullable() }).strict(),
   // Release every active voice on a bus (the dock's stop button); absent busId = all buses.
   z.object({ t: z.literal('releaseBus'), busId: z.string().optional() }).strict(),

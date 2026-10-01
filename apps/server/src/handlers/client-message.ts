@@ -21,7 +21,7 @@ import { handleVoiceInput, propagateToVoiceHost } from './voice-input';
  * the editor slot — they are NOT authoring. The editor lock never gates them, so a performer can
  * play while someone else edits.
  */
-const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
+const ENGINE_INPUTS: ReadonlySet<HandledMessage['t']> = new Set([
   'midi',
   'osc',
   'cc',
@@ -29,7 +29,14 @@ const ENGINE_INPUTS: ReadonlySet<ClientMessage['t']> = new Set([
   'key',
   'recallSection',
   'fireGraph',
+  'fireEffect',
 ]);
+
+/** Effect-chains audition intent (`{ t: 'fireEffect', effectId }`). Declared locally so this
+ * handler compiles beside the protocol change that adds it to {@link ClientMessage}; once both
+ * are merged the union below is the protocol type plus a duplicate member, and this can go. */
+interface FireEffectMessage { t: 'fireEffect'; effectId: string }
+type HandledMessage = ClientMessage | FireEffectMessage;
 
 function isMidiChannelMessage(msg: ClientMessage): msg is Extract<ClientMessage, { t: 'midi' | 'cc' | 'programChange' }> {
   return msg.t === 'midi' || msg.t === 'cc' || msg.t === 'programChange';
@@ -218,6 +225,16 @@ export function createClientMessageHandler<S extends HandlerSocket>(
     if (msg.t === 'midiClock') {
       if (!clients.canMutate(ws)) return;
       voiceHost?.applyMidiClock(msg, 'browser');
+      return;
+    }
+
+    // Effect audition (effect chains): an engine input like `fireGraph`, so it is never
+    // editor-gated. The active-section rule is the engine's — it resolves the id against the
+    // ACTIVE section only — so a viewer and the editor get the same authority. Legacy mode has
+    // no Effect path: a no-op.
+    const handled = msg as HandledMessage;
+    if (handled.t === 'fireEffect') {
+      voiceHost?.applyInput({ kind: 'fireEffect', effectId: handled.effectId });
       return;
     }
 

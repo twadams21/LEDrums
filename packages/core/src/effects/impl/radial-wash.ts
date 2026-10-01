@@ -4,11 +4,14 @@ import { pnum, pstr, type EffectGenerator } from '../types';
 import { EXP_TAIL_FACTOR } from '../visibility';
 import { lifeFade } from '../life-fade';
 
-export type WashMode = 'out' | 'in' | 'bounce';
+export type WashMode = 'out' | 'in' | 'bounce' | 'collapse';
 
 /**
  * The expanding wave radius (mm) for a given hit age. `out` grows from the origin,
- * `in` collapses from `reach`, `bounce` goes out then back. Exported for testing.
+ * `in` collapses from `reach`, `bounce` goes out then back. `collapse` is the merged-in
+ * Wave Collapse motion (effect chains S03): start at `reach`, implode to the origin, then
+ * explode back out to `reach`, repeating — `in` then `out`, where `bounce` is `out` then `in`.
+ * Exported for testing.
  */
 export function waveRadius(mode: WashMode, ageMs: number, speed: number, reach: number): number {
   const d = ageMs * speed; // speed in mm/ms
@@ -21,6 +24,12 @@ export function waveRadius(mode: WashMode, ageMs: number, speed: number, reach: 
       const phase = d % (2 * reach);
       return phase <= reach ? phase : 2 * reach - phase;
     }
+    case 'collapse': {
+      // Same guard as wave-collapse's `reach` read: a zero reach would make the modulo NaN.
+      const r = Math.max(1, reach);
+      const phase = d % (2 * r);
+      return phase <= r ? r - phase : phase - r;
+    }
   }
 }
 
@@ -32,6 +41,11 @@ export function waveRadius(mode: WashMode, ageMs: number, speed: number, reach: 
  * function of `trig.ageMs`, so it restarts on retrigger without any bridge clock swap. The
  * `timebase:'voice'` flag is a byte-parity declaration that records this and lets the
  * thumbnail renderer (S27) drive it with a looping age. (Doc 06 §A reference effect.)
+ *
+ * `mode: 'collapse'` absorbs Wave Collapse (Trent-approved merge). At matched params it is
+ * bit-identical to wave-collapse at brightness 1. Below 1 the lit pixels' RGB still match,
+ * but this effect keeps its own alpha (intensity before brightness) and its own 0.004 cut on
+ * that intensity, where wave-collapse folded brightness into both — see `merges.test.ts`.
  */
 export const radialWash: EffectGenerator = {
   id: 'radial-wash',
@@ -45,7 +59,7 @@ export const radialWash: EffectGenerator = {
     { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
     { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
     { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
-    { key: 'mode', label: 'Mode', type: 'enum', default: 'out', options: ['out', 'in', 'bounce'] },
+    { key: 'mode', label: 'Mode', type: 'enum', default: 'out', options: ['out', 'in', 'bounce', 'collapse'] },
     { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms' },
     { key: 'width', label: 'Width', type: 'number', default: 180, min: 10, max: 800, unit: 'mm' },
     { key: 'reach', label: 'Reach', type: 'number', default: 1200, min: 100, max: 4000, unit: 'mm' },
