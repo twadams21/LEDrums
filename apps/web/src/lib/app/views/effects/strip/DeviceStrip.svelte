@@ -1,11 +1,9 @@
 <script lang="ts">
   /* The device strip (effect chains, S06b) — Ableton's Device View for the selected grid cell.
 
-     - A cell: its Effect stack, side by side left to right in stack order (Tim, 2026-10-01: Effects
-       "go sideways across the panel" instead of stacking downwards). Each Effect is a column — its
-       header over its device chain — and the whole stack scrolls sideways. Drag a header's grip to
-       reorder (or ← / → on the grip); the drop is one `moveEffect`, one undo step. "Add Effect"
-       picks a Generator.
+     - A cell: its Effect stack, one chain row per Effect in stack order (a header + a
+       horizontally scrolling chain). Drag a header's grip to reorder the stack (or ↑ / ↓ on the
+       grip); the drop is one `moveEffect`, one undo step. "Add Effect" picks a Generator.
      - The Master cell: the section's master modifier chain, modifiers only.
      - Nothing selected / a disabled cell: a short explanation instead of an empty panel.
 
@@ -49,7 +47,7 @@
     if (zoneCell) api.addEffect(zoneCell, kind);
   }
 
-  // ---- stack reorder (horizontal) ------------------------------------------------------
+  // ---- stack reorder (vertical) --------------------------------------------------------
   const DRAG_TYPE = 'application/x-ledrums-effect';
   let dragFrom = $state<number | null>(null);
   let dropGap = $state<number | null>(null);
@@ -65,9 +63,8 @@
     if (!event.dataTransfer) return;
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData(DRAG_TYPE, effects[index]!.id);
-    // The column's header is the drag image: the whole column can be wider than the screen.
-    const head = (event.currentTarget as HTMLElement).closest('.head');
-    if (head) event.dataTransfer.setDragImage(head, 16, 16);
+    const row = (event.currentTarget as HTMLElement).closest('.effect-row');
+    if (row) event.dataTransfer.setDragImage(row, 16, 16);
   }
 
   function onRowDragOver(event: DragEvent, index: number): void {
@@ -75,7 +72,7 @@
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    dropGap = gapAt(index, event.clientX, rect.left, rect.width);
+    dropGap = gapAt(index, event.clientY, rect.top, rect.height);
   }
 
   function onRowDrop(event: DragEvent): void {
@@ -91,20 +88,6 @@
     dragFrom = null;
     dropGap = null;
   }
-
-  // Bring the selected Effect's column into view — a selection made elsewhere (the grid, a paste,
-  // a keyboard move) must not leave it scrolled off the side of the panel.
-  $effect(() => {
-    const id = api.selectedEffectId;
-    if (!id || !stackEl) return;
-    const column = stackEl.querySelector<HTMLElement>(`[data-effect="${id}"]`);
-    if (!column) return;
-    // Sideways only: scrollIntoView would also scroll the panel down and hide the Play bar.
-    const left = column.getBoundingClientRect().left - stackEl.getBoundingClientRect().left + stackEl.scrollLeft;
-    const right = left + column.offsetWidth;
-    if (left < stackEl.scrollLeft) stackEl.scrollLeft = left;
-    else if (right > stackEl.scrollLeft + stackEl.clientWidth) stackEl.scrollLeft = Math.min(left, right - stackEl.clientWidth);
-  });
 
   function nudge(index: number, delta: -1 | 1): void {
     const id = effects[index]!.id;
@@ -263,42 +246,13 @@
     text-align: center;
     text-wrap: pretty;
   }
-  /* Effects side by side; the stack — not each chain — scrolls sideways. */
   .stack {
     display: flex;
-    align-items: stretch;
-    /* Fill the panel's height, so the columns use the space the panel has instead of growing
-       downwards; never shorter than one device card (+ the chain padding and a wrapped header). */
-    flex: 1 0 auto;
-    min-height: calc(var(--device-h) + 72px);
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: thin;
-    overscroll-behavior-x: contain;
+    flex-direction: column;
   }
   .effect-row {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    flex: none;
-    border-right: 1px solid var(--border);
-  }
-  /* The chain sets the column's width; the header takes that width and wraps inside it. */
-  .effect-row :global(.head) {
-    width: 0;
-    min-width: 100%;
-  }
-  /* Every card in a chain is the chain's height; a card with more controls scrolls its face. */
-  .effect-row :global(.chain) {
-    flex: 1 1 0;
-    min-height: calc(var(--device-h) + 16px);
-    overflow: visible;
-  }
-  /* The fixed-height shells (Trigger, Target, the + slots) stretch with the rest of the row. */
-  .effect-row :global(.chain .device),
-  .effect-row :global(.chain .add-slot) {
-    height: auto;
-    min-height: var(--device-h);
+    border-bottom: 1px solid var(--border);
   }
   .effect-row.dragging {
     opacity: 0.45;
@@ -307,17 +261,17 @@
   .effect-row.gap-after::after {
     content: '';
     position: absolute;
-    top: 0;
-    bottom: 0;
+    left: 0;
+    right: 0;
     z-index: 2;
-    width: 2px;
+    height: 2px;
     background: var(--accent);
   }
   .effect-row.gap-before::before {
-    left: -1px;
+    top: -1px;
   }
   .effect-row.gap-after::after {
-    right: -1px;
+    bottom: -1px;
   }
   .master {
     display: flex;
