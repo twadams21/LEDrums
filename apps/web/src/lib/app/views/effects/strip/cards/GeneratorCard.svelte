@@ -25,6 +25,7 @@
     generatorKinds,
     generatorLabel,
     generatorParams,
+    isLandscape,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -45,6 +46,7 @@
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
   const params = $derived(generatorParams(device));
+  const landscape = $derived(isLandscape(params.length));
   const thumb = $derived(thumbSource(device));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
@@ -90,11 +92,13 @@
   }
 </script>
 
-<DeviceCard role="generator" icon={GENERATOR_ICON[device.kind]} title={label} eyebrow="Generator" width={272} {disabled}>
+<DeviceCard role="generator" icon={GENERATOR_ICON[device.kind]} title={label} eyebrow="Generator" width={272} landscape={landscape} {disabled}>
   {#snippet actions()}
     <IconButton icon={Download} label="Save generator to file…" size={14} onclick={() => void api.saveDeviceToFile(effect.id, 'generator')} />
   {/snippet}
 
+  <!-- The lead column: kind, preview, style, slots. Landscape, the params run in columns beside it. -->
+  <div class="lead">
   <div class="kinds" role="group" aria-label="Generator kind" data-keyboard-owner="roving">
     {#each kinds as k, i (k.kind)}
       {@const Icon = GENERATOR_ICON[k.kind]}
@@ -161,6 +165,7 @@
   {#if slotted}
     <SlotsEditor {api} {effect} />
   {/if}
+  </div>
 
   <ParamRows
     {params}
@@ -218,6 +223,17 @@
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
 
+  .lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: none;
+    min-width: 0;
+  }
+  /* Landscape: the lead keeps the portrait card's inner width as its own column. */
+  :global(.card.landscape) .lead {
+    width: 256px;
+  }
   .preview {
     display: flex;
     align-items: center;

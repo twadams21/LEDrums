@@ -71,6 +71,20 @@ export function enumLabel(v: string): string {
 }
 
 /** A 0..1 ratio as a whole percent. */
+/** A card face lists at most this many param rows top to bottom before it starts another column to
+    the right (Tim, 2026-10-01: "something like 10 rows down as a maximum, then go across"). */
+export const PARAM_ROWS_MAX = 10;
+
+/** How `count` param rows lay out: as few columns as keep each under {@link PARAM_ROWS_MAX}, the
+    rows spread evenly across them (22 → 3 columns of 8, 7, 7 — not 10, 10, 2). */
+export function paramColumns(count: number): { columns: number; rows: number } {
+  const columns = Math.max(1, Math.ceil(count / PARAM_ROWS_MAX));
+  return { columns, rows: Math.max(1, Math.ceil(count / columns)) };
+}
+
+/** Does a card with this many param rows go landscape (more than one column)? */
+export const isLandscape = (count: number): boolean => paramColumns(count).columns > 1;
+
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
 // ---- Generator ------------------------------------------------------------------------------

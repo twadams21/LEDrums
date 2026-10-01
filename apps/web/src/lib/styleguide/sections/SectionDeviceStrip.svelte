@@ -11,6 +11,7 @@
   import TargetCard from '../../app/views/effects/strip/TargetCard.svelte';
   import AddDeviceSlot from '../../app/views/effects/strip/AddDeviceSlot.svelte';
   import DeviceCard from '../../app/views/effects/strip/DeviceCard.svelte';
+  import GeneratorCard from '../../app/views/effects/strip/cards/GeneratorCard.svelte';
   import type { StripKitInfo } from '../../app/views/effects/strip/strip-model';
   import DemoCard from '../DemoCard.svelte';
 
@@ -85,6 +86,13 @@
   const cue = $derived(api.effectById('fx-cue')!);
 
   const viewer = createStandaloneEffectsApi(section, DEFAULT_KIT, { canEdit: false });
+
+  /* A many-param device (Splice) — the landscape card. */
+  const spliceApi = createStandaloneEffectsApi(
+    { effects: [fx({ id: 'fx-splice', name: 'Splice', cell: kickHead, generator: { kind: 'splice' } })], master: [] },
+    DEFAULT_KIT,
+  );
+  const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -111,6 +119,15 @@
 
     <DemoCard title="Device strip — Master" src="lib/app/views/effects/strip/DeviceStrip" note="The section's master modifier chain: modifiers only." wide>
       <div class="frame short"><DeviceStrip {api} cell={MASTER_CELL} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Device card — landscape (many params)"
+      src={['lib/app/views/effects/strip/cards/DeviceCard', 'lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
+      note="Past 10 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 10 rows — 22 → 8 · 8 · 6 — so the card grows wider, not taller. Ten or fewer stays portrait."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}

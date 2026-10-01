@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Session Bootstrap
@@ -79,6 +79,8 @@ Bugs found and fixed along the way:
 Process: built in waves with dynamic Workflows (opus/medium implementers and reviewers, isolated worktrees, pool of 5) against two orchestrator-written contracts: `trigger-lab/effects-api.ts` and `map-api.ts`.
 
 Verification: each wave's integration branch passed typecheck, the full serial sweep and `ui-shot --all --strict` offline. Merge through gh-stack only, after Trent's review.
+
+**Landscape device cards (2026-10-01, branch `feat/landscape-cards`, stacked on #253):** Tim (this machine, `scutil` = "Timothy’s MacBook Pro"): plugins with a lot of information, "for example, splice", should show their parameters "in more of a landscape visual than in portrait ... something like 10 rows down as a maximum, then go across the screen from left to right". (An earlier reading — Effects side by side in the strip — was built, tried and reverted at Tim's request; the strip stays top-to-bottom.) `card-model.ts` `PARAM_ROWS_MAX = 10` / `paramColumns(n)`: past 10 rows a card's params run in balanced columns of ≤ 10 (22 → 8 · 8 · 6; agent choice over filling 10 · 10 · 2) via a column-flow grid in `ParamRows`; `DeviceCard` `landscape` lays the face left to right and lets the card grow to `max-content`. The Generator card keeps its lead (kind picker, preview, style, slots) as a 256px first column; the Modifier card puts Mix + Envelope in a side column. Ten rows or fewer: unchanged. Splice went 272×816 → 1040×274.
 
 **Section and graph authoring fixes (2026-09-25, branch `fix/section-authoring`):**
 Requested by Trent in this session on Trent's MacBook Pro (machine identity checked), based on

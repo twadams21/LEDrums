@@ -31,6 +31,21 @@ function demo(extra: Record<string, unknown> = {}, opts: { canEdit?: boolean } =
 }
 
 describe('GeneratorCard', () => {
+  it('a Splice (many params) goes landscape: params in columns of at most 10 rows; a Wave stays portrait', () => {
+    const splice = demo({ generator: { kind: 'splice' } });
+    const { container } = render(GeneratorCard, { props: { api: splice.api, effect: splice.effect() } });
+    const card = container.querySelector('.card')!;
+    expect(card.classList.contains('landscape')).toBe(true);
+    const rows = card.querySelector<HTMLElement>('.rows')!;
+    expect(rows.classList.contains('cols')).toBe(true);
+    const count = rows.querySelectorAll('.row').length;
+    expect(Number(rows.style.getPropertyValue('--param-rows'))).toBeLessThanOrEqual(10);
+    expect(Number(rows.style.getPropertyValue('--param-rows'))).toBe(Math.ceil(count / Math.ceil(count / 10)));
+    const wave = demo();
+    const portrait = render(GeneratorCard, { props: { api: wave.api, effect: wave.effect() } });
+    expect(portrait.container.querySelector('.card')!.classList.contains('landscape')).toBe(false);
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });

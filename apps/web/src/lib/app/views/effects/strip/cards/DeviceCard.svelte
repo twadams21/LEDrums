@@ -33,6 +33,9 @@
     disabled?: boolean;
     /** Panel width in px (the chain scrolls; cards never squeeze). */
     width?: number;
+    /** Landscape: the face lays out left to right (a lead column, then the param columns) and the
+        card grows wider to fit, instead of taller — for devices with many params (Splice). */
+    landscape?: boolean;
     /** Start folded (the fold is view state, local to the card). */
     initiallyFolded?: boolean;
     /** Extra title-bar controls (a menu, a save button). */
@@ -49,6 +52,7 @@
     power,
     disabled = false,
     width = 248,
+    landscape = false,
     initiallyFolded = false,
     actions,
     children,
@@ -65,6 +69,7 @@
   class={['card', `role-${role}`, klass]}
   class:folded
   class:bypassed
+  class:landscape
   style:--card-w={`${width}px`}
   aria-label={`${eyebrow ? `${eyebrow}: ` : ''}${title}`}
 >
@@ -141,6 +146,10 @@
   .role-modifier { --role: var(--role-effect); }
   .role-control { --role: var(--role-mod); }
 
+  .card.landscape:not(.folded) {
+    width: max-content;
+    min-width: var(--card-w);
+  }
   .card.folded {
     width: 36px;
   }
@@ -244,6 +253,11 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
+  }
+  .card.landscape .face {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-4);
   }
   /* A bypassed device still edits — it just reads as out of the signal path. */
   .card.bypassed .face {
