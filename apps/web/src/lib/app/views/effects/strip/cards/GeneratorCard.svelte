@@ -95,7 +95,18 @@
   }
 </script>
 
-<DeviceCard role="generator" icon={GENERATOR_ICON[device.kind]} title={label} eyebrow="Generator" width={272} landscape={landscape} {disabled}>
+<DeviceCard
+  role="generator"
+  icon={GENERATOR_ICON[device.kind]}
+  title={label}
+  eyebrow="Generator"
+  width={272}
+  {landscape}
+  {disabled}
+  selected={api.selectedDevice?.kind === 'stage' && api.selectedDevice.effectId === effect.id && api.selectedDevice.stage === 'generator'}
+  onSelect={() => api.selectDevice({ kind: 'stage', effectId: effect.id, stage: 'generator' })}
+  onDeselect={() => api.selectDevice(null)}
+>
   {#snippet actions()}
     <IconButton icon={Download} label="Save generator to file…" size={14} onclick={() => void api.saveDeviceToFile(effect.id, 'generator')} />
   {/snippet}

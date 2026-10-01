@@ -97,7 +97,7 @@
     <DemoCard
       title="Grid cell — states"
       src="lib/app/views/effects/grid/GridCell"
-      note="Face: the first Effect's generator icon (--role-content) + name, stack pips (a number past four), the generator on the second line. Empty cells show a + on hover / focus. All-bypassed strikes the name and greys the pips. Selected is an accent ring; keyboard focus adds --accent-ring. Disabled (a zone the drum doesn't have, zones on the Kit row) is sunken, hatched and inert. Fire is an overlay flash — instant on, --dur-220 decay, no layout shift. Hover is instant."
+      note="Face: the first Effect's generator icon (--role-content) + name, stack pips (a number past four), the generator on the second line. Empty cells show a + on hover / focus. All-bypassed strikes the name and greys the pips. Selected is an accent ring; keyboard focus adds --accent-ring. Disabled (a zone the drum doesn't have, zones on the Kit row) is sunken, hatched and inert. A Sequence / Random cell carries a play badge — “Seq 2/3” (the step it played last), or “Seq · 3” before it has fired. Fire is an overlay flash — instant on, --dur-220 decay, no layout shift. Hover is instant."
       wide
     >
       <div class="states">
@@ -109,6 +109,9 @@
         <figure><GridCell label="Selected" count={1} firstName="Crack" firstGenerator="lightning" selected /><figcaption>selected</figcaption></figure>
         <figure><GridCell label="Disabled" count={0} enabled={false} /><figcaption>disabled</figcaption></figure>
         <figure><GridCell label="Master" variant="master" count={2} /><figcaption>Master</figcaption></figure>
+        <figure><GridCell label="Sequence" count={3} firstName="Ripple" firstGenerator="wave" playMode="sequence" steps={3} /><figcaption>sequence, not yet fired</figcaption></figure>
+        <figure><GridCell label="Sequence step" count={3} firstName="Ripple" firstGenerator="wave" playMode="sequence" steps={3} playedStep={1} /><figcaption>sequence, played step 2</figcaption></figure>
+        <figure><GridCell label="Random" count={4} firstName="Sparks" firstGenerator="particles" playMode="random" steps={4} playedStep={3} /><figcaption>random, played step 4</figcaption></figure>
         <figure>
           <GridCell label="Fire" count={1} firstName="Hit me" firstGenerator="lightning" {fireAt} onselect={() => (fireAt = performance.now())} />
           <figcaption>click → fire flash</figcaption>

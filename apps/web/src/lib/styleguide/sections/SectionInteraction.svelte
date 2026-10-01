@@ -33,7 +33,7 @@
     <div class="rule">
       <h3>Keyboard</h3>
       <ul>
-        <li>Keys <code>1–9</code>/<code>0</code> audition the active section's Effects 1–10 in grid order, in every view.</li>
+        <li>Keys <code>1–9</code>/<code>0</code> audition the active section's Effects 1–10 in grid order, in every view. A Sequence / Random cell takes ONE key: pressing it again plays the next step, as a real hit on its zone.</li>
         <li><code>Enter</code> commits · <code>Esc</code> reverts (CommitInput, EditableRow rename).</li>
         <li>Splitters: arrow keys nudge (<code>step</code> px), <code>Home</code>/<code>End</code> jump to min/max — WAI-ARIA window-splitter semantics.</li>
         <li><code>Delete</code>/<code>Backspace</code> outside text is claimed by the app (no WebKit history-back); in MIDI-map mode it clears the armed control's binding.</li>

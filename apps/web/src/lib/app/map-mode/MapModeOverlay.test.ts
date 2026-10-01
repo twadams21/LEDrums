@@ -261,14 +261,20 @@ describe('key mappings outside map mode', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
-  it('yields to a keyboard-owning control', () => {
-    const { performed } = setup(keyed);
+  it('performs through a focused keyboard-owning control — clicking one must not disable mappings', () => {
+    // Tim, 2026-09-28: clicking a slider / segmented / dropdown leaves it focused, and keys that
+    // should perform went dead until he clicked away. The control keeps only the keys it
+    // navigates by (arrows, Space, Enter, Home/End, Page Up/Down).
+    const arrowKeyed = { mappings: [...keyed.mappings, { id: 'mk2', source: { key: 'ArrowRight' }, target: cellTarget }] };
+    const { performed } = setup(arrowKeyed);
     const owner = document.createElement('div');
     owner.setAttribute('data-keyboard-owner', 'roving');
     owner.tabIndex = 0;
     document.body.append(owner);
     keydown(owner, 'KeyQ');
-    expect(performed).toEqual([]);
+    expect(performed).toEqual([cellTarget]);
+    keydown(owner, 'ArrowRight');
+    expect(performed).toEqual([cellTarget]); // the control's own arrow: not performed
   });
 
   it('an unmapped key falls through to the Perform digits', () => {

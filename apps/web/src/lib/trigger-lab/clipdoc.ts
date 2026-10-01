@@ -133,6 +133,7 @@ function sectionPayload(section: SetlistSection): SetlistSection {
   const out: SetlistSection = { id: section.id, name: section.name, effects: cloneJson(section.effects), master: cloneJson(section.master) };
   if (section.bars !== undefined) out.bars = section.bars;
   if (section.bpm !== undefined) out.bpm = section.bpm;
+  if (section.cellPlay?.length) out.cellPlay = cloneJson(section.cellPlay);
   return out;
 }
 
