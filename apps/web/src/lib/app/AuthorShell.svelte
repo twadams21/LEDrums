@@ -28,12 +28,17 @@
   import PasteSongDialog from './views/PasteSongDialog.svelte';
   import PasteFallbackDialog from './views/PasteFallbackDialog.svelte';
   import LayersIcon from '@lucide/svelte/icons/layers';
+  import MapModeOverlay from './map-mode/MapModeOverlay.svelte';
+  import type { MapModeApi } from '../trigger-lab/map-api';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
   // The Effects view depends only on the authoring contract, which the store implements once
   // store-wire lands.
   const effectsApi = $derived(store.effectsApi);
+
+  // MIDI-map mode depends only on the map contract, which the store implements in wave 5b.
+  const mapApi = $derived(store as unknown as MapModeApi); // TODO(ec-w5): store-mappings
 
   // Perform is a chrome-light view: the shell hides the right column and fills the
   // workspace row with PerformView.
@@ -152,6 +157,13 @@
       label="Resize visualiser"
       style="left:calc(100% - var(--pad) - var(--col2-w)); right:var(--pad); top:calc(var(--content-top) + var(--viz-h) + var(--gap) / 2); transform:translateY(-50%);"
     />
+  {/if}
+
+  <!-- MIDI-map mode: outlines, scrim, capture layer and hint bar; nothing until the mode is on. -->
+  <!-- Until store-mappings lands the store has no map methods; mounting over it would throw on
+       the first key press (performKeyMapping). TODO(ec-w5): store-mappings — drop the guard. -->
+  {#if 'performKeyMapping' in mapApi}
+    <MapModeOverlay api={mapApi} {shell} />
   {/if}
 
   <!-- Transient notifications (paste errors, confirmations) — one host for the whole shell. -->

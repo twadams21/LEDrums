@@ -24,6 +24,7 @@ import { canvasVoiceDefaultPreset, canvasVoiceEffectDef } from '../canvas/voice-
 import { SHOWS_VERSION_EFFECTS, SONGS_VERSION_EFFECTS } from '../model/library-versions';
 import type { Show, SongSection } from '../voice/types';
 import { effectSchema, modifierDeviceSchema, type Effect, type ModifierDevice } from './types';
+import { parseInputMappings } from './input-mappings';
 
 // ---- Persisted shapes ------------------------------------------------------------
 
@@ -63,7 +64,8 @@ export const authoredV3Schema = z.object({
   activeSectionId: z.string().nullable().optional(),
   bpm: optionalNumber,
   beatsPerBar: optionalNumber,
-  /** MIDI-map mappings — opaque passthrough until effect-chains S07a gives them a shape. */
+  /** MIDI-map mappings (`InputMapping[]`). Lenient here: {@link buildRuntimeShow} validates each
+      one on its own and drops the invalid ones with a diagnostic, like Effects. */
   mappings: z.unknown().optional(),
 }).passthrough();
 
@@ -118,10 +120,12 @@ function parseOrThrow<T extends z.ZodTypeAny>(schema: T, raw: unknown, what: str
 
 /** Why an authored entry was left out of the runtime Show. */
 export interface LibraryDiagnostic {
-  kind: 'invalid-effect' | 'duplicate-effect-id' | 'invalid-master-modifier';
+  kind: 'invalid-effect' | 'duplicate-effect-id' | 'invalid-master-modifier' | 'invalid-mapping';
+  /** Empty for a show-level entry (`invalid-mapping`). */
   songId: string;
+  /** Empty for a show-level entry (`invalid-mapping`). */
   sectionId: string;
-  /** Index of the entry in the authored `effects` / `master` array. */
+  /** Index of the entry in the authored `effects` / `master` / `mappings` array. */
   index: number;
   /** The entry's id / uid when it had a readable one. */
   id?: string;
@@ -148,6 +152,8 @@ export interface RuntimeShowBuild {
  * - Canvas scenes: the show's, then any a library song carries that the show does not already
  *   have (by id). Each scene, and each built-in scene, gets its EffectDef + default preset.
  * - The legacy graph containers (`graphs`, `buses`, looks `sections`) are empty.
+ * - `mappings` carries the show's valid InputMappings (unique ids, first wins); each invalid
+ *   one is dropped with an `invalid-mapping` diagnostic.
  *
  * Never throws for a bad Effect. The input objects are not mutated.
  */
@@ -192,10 +198,16 @@ export function buildRuntimeShow(showLib: ShowLibraryV3, songLib: SongLibraryV2 
     sections: song.sections.map((section) => runtimeSection(song.id, section, diagnostics)),
   }));
 
+  const { mappings, dropped } = parseInputMappings(authored.mappings);
+  for (const d of dropped) {
+    diagnostics.push({ kind: 'invalid-mapping', songId: '', sectionId: '', index: d.index, id: d.id, message: d.message });
+  }
+
   const show: Show = {
     buses: [], graphs: {}, sections: [], effects: [], presets: [],
     songs: runtimeSongs,
     canvasScenes: scenes,
+    mappings,
   };
   for (const scene of [...scenes, ...BUILTIN_CANVAS_SCENES]) {
     const id = canvasEffectId(scene.id);

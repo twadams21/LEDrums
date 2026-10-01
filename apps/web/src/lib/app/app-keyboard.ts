@@ -9,6 +9,7 @@ import { dispatchShortcut, matchesShortcut, type ShortcutEntry } from './shortcu
 import type { voice } from '@ledrums/core';
 import type { Selection, SettingsPane, View } from './shell-nav';
 import type { ShortcutPlatform } from './primary-shortcut';
+import { decideMapModeKey, isBindableKey, isMapModeToggle, type MapKeySession } from './map-mode/map-keys';
 
 export interface AppKeyboardNode extends DeleteKeyNode {
   id: string;
@@ -29,6 +30,11 @@ export interface AppKeyboardShell {
   settingsPane: SettingsPane | null;
   selection: Selection | null;
   clearSelection(): void;
+  /** MIDI-map mode (S07b). Optional so keyboard fixtures without map mode stay minimal. */
+  mapMode?: boolean;
+  setMapMode?(on: boolean): void;
+  /** The mounted map-mode controller: key learn while mapping, key mappings otherwise. */
+  mapSession?: MapKeySession | null;
 }
 
 export interface AppKeyboardDispatcherOptions {
@@ -52,6 +58,25 @@ export function dispatchAppKeyboard({
   // Native text editing wins before any modal/popup suppression. This keeps Backspace/Delete and
   // platform editing chords inside a dialog or popover in the browser's native path.
   if (target.isEditableTarget) return;
+
+  // MIDI-map mode learns first (S07b): after the editable-target check, but an open modal or
+  // popup keeps its keys. Every bindable key is claimed — the app is inert while mapping, and a
+  // key with nothing armed is dropped rather than firing a cell behind the overlay. Modified
+  // chords pass through so Undo still works.
+  if (shell.mapMode && !modalOpen && !target.inOpenPopup) {
+    // Map mode's own chrome (hint bar Clear / Done, the TopBar toggle) stays keyboard-operable:
+    // Enter / Space on a focused chrome control is native activation, never a key to learn.
+    if (isChromeActivation(event)) return;
+    const map = decideMapModeKey(event, shortcutPlatform);
+    if (map.kind !== 'pass') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (map.kind === 'toggle' || map.kind === 'exit') shell.setMapMode?.(false);
+      else if (map.kind === 'clear') shell.mapSession?.clearArmed();
+      else if (map.kind === 'learn') shell.mapSession?.learnKey(map.code);
+      return;
+    }
+  }
 
   // A marked control gets first refusal for the Perform keys that would otherwise be claimed by
   // the app. This check must precede modal/popup suppression: a slider/select/segmented/radio/
@@ -105,6 +130,26 @@ export function dispatchAppKeyboard({
   // not let a portalled menu/popover duplicate or delete the graph hidden behind it.
   if (dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
 
+  if (shell.setMapMode && isMapModeToggle(event, shortcutPlatform)) {
+    event.preventDefault();
+    event.stopPropagation();
+    shell.setMapMode(!shell.mapMode);
+    return;
+  }
+
+  // Key mappings (S07b) fire outside map mode. Editable targets, modals, popups and keyboard-
+  // owning controls already returned above, so a mapped key never steals a field's typing or a
+  // slider's arrows. A held key fires once: its repeats are swallowed, not re-performed.
+  const session = shell.mapSession;
+  if (session && isBindableKey(event)) {
+    const took = event.repeat ? session.isKeyMapped(event.code) : session.performKey(event.code);
+    if (took) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+  }
+
   if (isDeleteKey(event.key)) {
     const selection = shell.selection;
     const node =
@@ -146,4 +191,13 @@ export function dispatchAppKeyboard({
   }
   if (decision.sectionStep === undefined) return;
   store.stepSetlist('section', decision.sectionStep);
+}
+
+const ACTIVATION_CODES = new Set(['Enter', 'NumpadEnter', 'Space']);
+
+/** Enter / Space whose target is map-mode chrome (`[data-map-mode-chrome]`): the browser's
+    native button activation, which map mode's key learn must not claim. */
+function isChromeActivation(event: KeyboardEvent): boolean {
+  if (!ACTIVATION_CODES.has(event.code)) return false;
+  return event.target instanceof Element && event.target.closest('[data-map-mode-chrome]') !== null;
 }

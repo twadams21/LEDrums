@@ -388,5 +388,18 @@
   "import-prompt": {
     "route": "?style",
     "target": "#setlist-effects"
+  },
+  "map-mode-ui-section": {
+    "route": "?style",
+    "target": "#map-mode"
+  },
+  "map-mode-ui-armed": {
+    "route": "?style",
+    "click": "#map-mode .fader",
+    "target": "#map-mode .surface"
+  },
+  "map-mode-ui-topbar": {
+    "state": "view:trigger,map-mode",
+    "target": ".topbar"
   }
 }

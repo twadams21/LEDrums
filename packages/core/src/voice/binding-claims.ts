@@ -25,16 +25,36 @@
      C `global-control`  unique. Two actions on one address is never intent; today it
                         silently resolves by catalogue order.
 
-   ACROSS groups, all three block each other.
+     D `mapping`        a MIDI-map InputMapping (effect chains S07) — unique, like a
+                        global control. A matched mapping is CONSUMED at global-control
+                        precedence (after globals, before zones and cues), so anything
+                        else on its address would silently starve.
+
+   Cue Effects (effect chains) join group A: a Cue shares addresses with zones by
+   design, exactly as a graph trigger-node source did. A mapping on a Cue's address IS
+   refused — the mapping would consume the input before the Cue ever saw it.
+
+   ACROSS groups, all of them block each other.
+
+   The KEY namespace (`KeyboardEvent.code`) is only ever claimed by mappings — zones,
+   cues and global controls have no key bindings — so a key mapping collides only with
+   another key mapping.
 
    The DRUM namespace is deliberately untouched. A `drum` source names a pad
    (`drumId`/`zone`), not an input address, so it claims nothing here — which is what
    preserves issue #159's "one pad hit both fires the graph AND resets its sequencer".
    That feature lives entirely in the drum namespace and never collides with a note.
 
-   Purity: pure resolution over (inputMap, graphs). No engine state, no IO, no DOM.
+   Purity: pure resolution over (inputMap, graphs, mappings, effects). No engine state,
+   no IO, no DOM.
    ============================================================================= */
 import { GLOBAL_CONTROL_CATALOG, RESERVED_SECTION_RECALL_CC, type GlobalControlAction } from '../model/global-controls';
+import {
+  inputMappingTargetId,
+  type InputMapping,
+  type InputMappingSource,
+} from '../effect-chain/input-mappings';
+import type { Effect } from '../effect-chain/types';
 import type { InputMap } from '../model/project-schema';
 import type { TriggerGraph, TriggerSource } from './types';
 
@@ -43,11 +63,12 @@ import type { TriggerGraph, TriggerSource } from './types';
  * the app's own claim (today: CC 0 for global section recall), and it blocks everyone
  * including itself, because nothing a user types can win against it.
  */
-export type BindingGroup = 'pad-trigger' | 'sequence-reset' | 'global-control' | 'reserved';
+export type BindingGroup = 'pad-trigger' | 'sequence-reset' | 'global-control' | 'mapping' | 'reserved';
 
 /**
- * An input address, in the namespace it actually collides in. Three separate spaces:
- * note 60 and CC 60 are unrelated, and neither relates to `/ledrums/next`.
+ * An input address, in the namespace it actually collides in. Four separate spaces:
+ * note 60 and CC 60 are unrelated, neither relates to `/ledrums/next`, and none of them
+ * relates to the computer key `KeyQ` (a `KeyboardEvent.code`, compared exactly).
  *
  * OSC addresses compare TRIMMED — the editors trim on commit, and an untrimmed
  * comparison would let " /a" slip past a guard and then match "/a" at runtime.
@@ -55,7 +76,8 @@ export type BindingGroup = 'pad-trigger' | 'sequence-reset' | 'global-control' |
 export type BindingAddress =
   | { kind: 'note'; note: number }
   | { kind: 'cc'; controller: number }
-  | { kind: 'osc'; address: string };
+  | { kind: 'osc'; address: string }
+  | { kind: 'key'; code: string };
 
 /**
  * One existing owner of an address. Carries enough identity to (a) recognise a claim
@@ -69,13 +91,23 @@ export type BindingClaim =
   | { group: 'pad-trigger'; kind: 'zone'; drumId: string; slot: number }
   | { group: 'pad-trigger'; kind: 'triggerNode'; graphKey: string; nodeId: string }
   | { group: 'sequence-reset'; kind: 'reset'; graphKey: string; nodeId: string }
+  | { group: 'pad-trigger'; kind: 'cue'; effectId: string }
   | { group: 'global-control'; kind: 'global'; action: GlobalControlAction }
+  /** An InputMapping, identified by its target (`inputMappingTargetId`) — one mapping per target. */
+  | { group: 'mapping'; kind: 'mapping'; targetId: string }
   | { group: 'reserved'; kind: 'reservedCc'; controller: number };
 
-/** Everything a claim search reads: the patch input map plus every authored graph. */
+/**
+ * Everything a claim search reads: the patch input map, every authored graph and, for the
+ * effect-chain show, its InputMappings and its Effects (every section's — a Cue in any
+ * section would be starved when that section plays). `mappings` / `effects` are optional so
+ * graph-era callers keep compiling unchanged; absent means "nothing claimed there".
+ */
 export interface BindingScope {
   inputMap: InputMap;
   graphs: Record<string, TriggerGraph>;
+  mappings?: readonly InputMapping[];
+  effects?: readonly Pick<Effect, 'id' | 'trigger'>[];
 }
 
 /**
@@ -92,15 +124,55 @@ export function sourceClaimsAddress(src: TriggerSource, address: BindingAddress)
       return src.kind === 'midi' && src.cc !== undefined && src.cc === address.controller;
     case 'osc':
       return src.kind === 'osc' && src.address.trim() === address.address.trim();
+    case 'key':
+      return false; // no trigger source binds a computer key
+  }
+}
+
+/** Does a Cue Effect's source bind THIS address? A Cue may carry a note, a CC and an OSC address. */
+function cueClaimsAddress(source: { midiNote?: number; midiCc?: number; oscAddress?: string }, address: BindingAddress): boolean {
+  switch (address.kind) {
+    case 'note':
+      return source.midiNote !== undefined && source.midiNote === address.note;
+    case 'cc':
+      return source.midiCc !== undefined && source.midiCc === address.controller;
+    case 'osc': {
+      const own = source.oscAddress?.trim();
+      return !!own && own === address.address.trim();
+    }
+    case 'key':
+      return false;
+  }
+}
+
+/** The one address an InputMapping source occupies (a source is exactly one of the four kinds). */
+export function addressForMappingSource(source: InputMappingSource): BindingAddress {
+  if ('midiNote' in source) return { kind: 'note', note: source.midiNote };
+  if ('midiCc' in source) return { kind: 'cc', controller: source.midiCc };
+  if ('oscAddress' in source) return { kind: 'osc', address: source.oscAddress.trim() };
+  return { kind: 'key', code: source.key };
+}
+
+function sameAddress(a: BindingAddress, b: BindingAddress): boolean {
+  switch (a.kind) {
+    case 'note':
+      return b.kind === 'note' && a.note === b.note;
+    case 'cc':
+      return b.kind === 'cc' && a.controller === b.controller;
+    case 'osc':
+      return b.kind === 'osc' && a.address.trim() === b.address.trim();
+    case 'key':
+      return b.kind === 'key' && a.code === b.code;
   }
 }
 
 /**
- * Every existing owner of `address`, across all four editable surfaces.
+ * Every existing owner of `address`, across every editable surface.
  *
  * Order is stable and meaningful: reserved first (it outranks everything), then zone
- * map, then graph nodes in graph-key order, then globals in catalogue order — so a
- * refusal message names the most authoritative blocker first.
+ * map, then graph nodes in graph-key order, then Cue Effects in scope order, then globals
+ * in catalogue order, then mappings in show order — so a refusal message names the most
+ * authoritative blocker first.
  */
 export function claimsForAddress(scope: BindingScope, address: BindingAddress): BindingClaim[] {
   const out: BindingClaim[] = [];
@@ -139,6 +211,13 @@ export function claimsForAddress(scope: BindingScope, address: BindingAddress): 
     }
   }
 
+  // Cue Effects (group A, like a trigger-node source).
+  for (const effect of scope.effects ?? []) {
+    if (effect.trigger.kind === 'cue' && cueClaimsAddress(effect.trigger.source, address)) {
+      out.push({ group: 'pad-trigger', kind: 'cue', effectId: effect.id });
+    }
+  }
+
   // Global controls, in catalogue order — the same order resolution ties break in.
   for (const def of GLOBAL_CONTROL_CATALOG) {
     const b = inputMap.globalControls[def.id];
@@ -148,8 +227,17 @@ export function claimsForAddress(scope: BindingScope, address: BindingAddress): 
         ? b.midiNote !== undefined && b.midiNote === address.note
         : address.kind === 'cc'
           ? b.midiCc !== undefined && b.midiCc === address.controller
-          : !!b.oscAddress && b.oscAddress.trim() === address.address.trim();
+          : address.kind === 'osc'
+            ? !!b.oscAddress && b.oscAddress.trim() === address.address.trim()
+            : false; // global controls have no key bindings
     if (hit) out.push({ group: 'global-control', kind: 'global', action: def.id });
+  }
+
+  // InputMappings, in show order.
+  for (const m of scope.mappings ?? []) {
+    if (sameAddress(addressForMappingSource(m.source), address)) {
+      out.push({ group: 'mapping', kind: 'mapping', targetId: inputMappingTargetId(m.target) });
+    }
   }
 
   return out;
@@ -171,8 +259,12 @@ export function isSameClaim(a: BindingClaim, b: BindingClaim): boolean {
       return b.kind === 'triggerNode' && a.graphKey === b.graphKey && a.nodeId === b.nodeId;
     case 'reset':
       return b.kind === 'reset' && a.graphKey === b.graphKey && a.nodeId === b.nodeId;
+    case 'cue':
+      return b.kind === 'cue' && a.effectId === b.effectId;
     case 'global':
       return b.kind === 'global' && a.action === b.action;
+    case 'mapping':
+      return b.kind === 'mapping' && a.targetId === b.targetId;
     case 'reservedCc':
       return b.kind === 'reservedCc';
   }
@@ -183,7 +275,7 @@ export function isSameClaim(a: BindingClaim, b: BindingClaim): boolean {
  *
  * The whole rule, in three lines below: a reserved claim blocks everyone; a claim from
  * another group always blocks; a claim from your OWN group blocks only if your group is
- * unique (globals). `self` is excluded throughout, so re-saving an unchanged binding is
+ * unique (globals, mappings). `self` is excluded throughout, so re-saving an unchanged binding is
  * never a conflict.
  *
  * Callers pass the claim they are about to WRITE as `self` — its group is the group the
@@ -195,7 +287,7 @@ export function bindingConflicts(scope: BindingScope, address: BindingAddress, s
     if (isSameClaim(claim, self)) return false;
     if (claim.group === 'reserved') return true;
     if (claim.group !== self.group) return true;
-    return self.group === 'global-control';
+    return self.group === 'global-control' || self.group === 'mapping';
   });
 }
 
@@ -229,8 +321,9 @@ export function inputMapBindingRejections(
   current: InputMap,
   next: InputMap,
   graphs: Record<string, TriggerGraph>,
+  showClaims: Pick<BindingScope, 'mappings' | 'effects'> = {},
 ): BindingRejection[] {
-  const scope: BindingScope = { inputMap: next, graphs };
+  const scope: BindingScope = { inputMap: next, graphs, ...showClaims };
   const out: BindingRejection[] = [];
   const check = (address: BindingAddress, self: BindingClaim): void => {
     const conflicts = bindingConflicts(scope, address, self);
@@ -290,6 +383,26 @@ export function sourceBindingRejections(
     if (conflicts.length > 0) out.push({ address, self, conflicts });
   }
   return out;
+}
+
+/**
+ * Check an InputMapping write: may the control `selfTargetId` (core `inputMappingTargetId`)
+ * take `source`? Empty = allowed. At most one rejection, since a mapping source is exactly
+ * one address.
+ *
+ * `scope` must hold the CURRENT mappings (and the show's Effects, so Cues are seen). The
+ * target's own existing mapping is excluded as `self`, so re-binding a control — or
+ * re-learning the source it already has — never refuses itself; the new source replaces it.
+ */
+export function inputMappingConflicts(
+  scope: BindingScope,
+  source: InputMappingSource,
+  selfTargetId: string,
+): BindingRejection[] {
+  const address = addressForMappingSource(source);
+  const self: BindingClaim = { group: 'mapping', kind: 'mapping', targetId: selfTargetId };
+  const conflicts = bindingConflicts(scope, address, self);
+  return conflicts.length > 0 ? [{ address, self, conflicts }] : [];
 }
 
 /**

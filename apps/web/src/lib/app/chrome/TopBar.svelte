@@ -21,6 +21,10 @@
   import ListMusic from '@lucide/svelte/icons/list-music';
   import History from '@lucide/svelte/icons/history';
   import Settings from '@lucide/svelte/icons/settings';
+  import KeyboardMusic from '@lucide/svelte/icons/keyboard-music';
+  import Tooltip from '../../ui/Tooltip.svelte';
+  import { MAP_MODE_COMBO } from '../shortcuts';
+  import { platformShortcutModifier } from '../primary-shortcut';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -29,6 +33,13 @@
   let browserOpen = $state(false);
   let backupsOpen = $state(false);
   let editingName = $state(false);
+
+  // "⌘M" on macOS, "Ctrl+M" elsewhere — read off the one combo the dispatcher matches.
+  const mapChord = (() => {
+    const key = MAP_MODE_COMBO.split('+').at(-1)!.toUpperCase();
+    const mac = platformShortcutModifier(typeof navigator !== 'undefined' ? navigator.platform : '') === 'mac';
+    return mac ? `⌘${key}` : `Ctrl+${key}`;
+  })();
 
   function commitName(name: string): void {
     editingName = false;
@@ -81,6 +92,21 @@
         <span class="presence-label">You're editing</span>
       </div>
     {/if}
+    <!-- MIDI-map mode toggle. It stays live and undimmed while mapping (data-map-mode-chrome):
+         the capture layer lets it through, so it is how you leave the mode as well. -->
+    <Tooltip text={shell.mapMode ? `Leave MIDI map mode (${mapChord} / Esc)` : `MIDI map mode (${mapChord})`} side="bottom">
+      <button
+        type="button"
+        class="map-toggle"
+        class:on={shell.mapMode}
+        aria-pressed={shell.mapMode}
+        data-map-mode-chrome
+        onclick={() => shell.toggleMapMode()}
+      >
+        <KeyboardMusic size={15} aria-hidden="true" />
+        <span>MIDI</span>
+      </button>
+    </Tooltip>
     <IconButton icon={History} label="Backups" size={15} onclick={() => (backupsOpen = true)} />
     <!-- The update flow lives in Settings › System — land the badge there, not the default pane. -->
     <UpdateBadge onOpen={() => shell.openSettings('system')} />
@@ -166,6 +192,48 @@
     display: block;
     flex: 1;
     min-width: 120px;
+  }
+
+  /* MIDI-map toggle: a labelled icon button, --map orange while the mode is on. */
+  .map-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1_5);
+    height: var(--control-icon-size);
+    padding: 0 var(--space-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--text-faint);
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: var(--tracking-label);
+    cursor: pointer;
+    transition:
+      background-color var(--dur-120) ease,
+      border-color var(--dur-120) ease,
+      color var(--dur-120) ease,
+      scale var(--dur-120) ease;
+  }
+  .map-toggle:hover {
+    background: var(--surface-inset);
+    color: var(--ink);
+  }
+  .map-toggle:active {
+    scale: 0.96;
+  }
+  .map-toggle:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+  }
+  .map-toggle.on {
+    background: var(--map);
+    border-color: var(--map-bright);
+    color: var(--on-map);
+  }
+  .map-toggle.on:hover {
+    background: var(--map-bright);
+    color: var(--on-map);
   }
 
   /* Multi-client editing indicator: who holds the single authoring slot. */

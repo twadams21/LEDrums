@@ -17,6 +17,8 @@ describe('describeBindingAddress', () => {
     expect(describeBindingAddress({ kind: 'note', note: 60 })).toBe('MIDI C4');
     expect(describeBindingAddress({ kind: 'cc', controller: 7 })).toBe('MIDI CC 7');
     expect(describeBindingAddress({ kind: 'osc', address: '  /go  ' })).toBe('OSC /go');
+    expect(describeBindingAddress({ kind: 'key', code: 'KeyQ' })).toBe('Key Q');
+    expect(describeBindingAddress({ kind: 'key', code: 'Digit1' })).toBe('Key 1');
   });
 });
 
@@ -43,6 +45,21 @@ describe('describeBindingClaim', () => {
     const text = describeBindingClaim({ group: 'global-control', kind: 'global', action: 'nextSong' }, DRUMS, graphLabel);
     expect(text).toContain('Next song');
     expect(text).not.toContain('nextSong');
+  });
+
+  it('names a Cue Effect trigger', () => {
+    expect(describeBindingClaim({ group: 'pad-trigger', kind: 'cue', effectId: 'e1' }, DRUMS, graphLabel)).toBe(
+      'the trigger for a Cue Effect',
+    );
+  });
+
+  it('names a MIDI-map mapping by what its target drives', () => {
+    expect(
+      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'fireCell:snare:zone0' }, DRUMS, graphLabel),
+    ).toBe('the MIDI-map mapping for a grid cell');
+    expect(
+      describeBindingClaim({ group: 'mapping', kind: 'mapping', targetId: 'modifierMix:e1:m1' }, DRUMS, graphLabel),
+    ).toBe('the MIDI-map mapping for a Modifier’s mix');
   });
 
   it('explains the reserved CC rather than naming a phantom owner', () => {

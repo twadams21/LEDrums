@@ -18,6 +18,7 @@
   import SectionDeviceStrip from './sections/SectionDeviceStrip.svelte';
   import SectionDeviceCards from './sections/SectionDeviceCards.svelte';
   import SectionImport from './sections/SectionImport.svelte';
+  import SectionMapMode from './sections/SectionMapMode.svelte';
   import CopyChip from './CopyChip.svelte';
   import { srcPath } from './source-pointer';
 
@@ -33,6 +34,7 @@
     ['#device-strip', 'Device strip'],
     ['#device-cards', 'Device cards'],
     ['#setlist-effects', 'Import'],
+    ['#map-mode', 'MIDI map'],
     ['#interaction', 'Interaction'],
   ] as const;
 </script>
@@ -77,6 +79,7 @@
   <SectionDeviceStrip />
   <SectionDeviceCards />
   <SectionImport />
+  <SectionMapMode />
   <SectionInteraction />
 
   <footer class="sg-foot">

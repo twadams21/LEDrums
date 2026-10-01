@@ -63,11 +63,22 @@ import { graphAt } from './graph-lookup';
 import { triggerSourceOf } from './runtime-setlist';
 import {
   alwaysEffects,
+  cellEffects,
   clockEffectsCrossed,
   effectPlayAction,
   matchSectionEffects,
+  resolveContinuousInputMappings,
+  type ContinuousInputBinding,
   type EffectInputEvent,
 } from '../effect-chain/resolver';
+import {
+  isContinuousTarget,
+  matchInputMapping,
+  parseInputMappings,
+  scaleInputMappingValue,
+  type InputMapping,
+  type InputMappingEvent,
+} from '../effect-chain/input-mappings';
 import { applySectionMaster, createSectionMasterState, resetSectionMaster } from '../effect-chain/master';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
 import type { Effect } from '../effect-chain/types';
@@ -267,6 +278,24 @@ class VoiceBusEngine implements RenderEngine {
    */
   private chainEffects = new Map<string, EffectDef>();
   private readonly chainBuses = new Map<string, Bus>([[CHAIN_BUS_ID, CHAIN_BUS]]);
+  /**
+   * MIDI-map (effect chains wave 5): the show's valid InputMappings, re-validated at `setShow`
+   * (the wire gate does not deep-check them). A note / CC / OSC that matches one is CONSUMED
+   * — after global controls (resolved by the host before the event reaches the engine),
+   * before zones, Cues and graph sources.
+   */
+  private inputMappings: InputMapping[] = [];
+  /**
+   * The latest 0..1 value each mapping's source sent, keyed by mapping id. Written ONLY inside
+   * the queue drain (a pure function of the event log, like {@link ccTable}); cleared at
+   * `setShow`. A continuous mapping writes its target only once its source has been heard, so
+   * an untouched knob leaves the authored value alone. Discrete CC mappings read it for their
+   * rising edge.
+   */
+  private mappingValues = new Map<string, number>();
+  /** The continuous mappings resolved against the ACTIVE section (re-resolved on show load and
+      on every recall), applied to live voices every frame. */
+  private continuousBindings: ContinuousInputBinding[] = [];
   /** Transport beat at the previous tick — Clock Effects fire on grid crossings since it.
       `null` until the first tick after a `setShow` (nothing is crossed on that tick). */
   private lastClockBeat: number | null = null;
@@ -466,11 +495,19 @@ class VoiceBusEngine implements RenderEngine {
     this.audioTable = null; // fresh show → no lingering audio frame
     this.chainEffects.clear(); // canvas scenes may have changed → rebuild chain defs lazily
     this.lastClockBeat = null;
+    this.inputMappings = parseInputMappings(show.mappings).mappings;
+    this.mappingValues.clear(); // fresh show → no lingering knob positions (like the CC table)
     // Preserve the engine-authoritative pair across equivalent/updated shows. A replacement
     // still gets a deterministic first song/section when the old pair no longer exists.
     const selection = isValidSelection(show, previousSelection) ? previousSelection : firstSelection(show);
     this.activeSongId = selection.activeSongId;
     this.activeSectionId = selection.activeSectionId;
+    this.resolveContinuousBindings();
+  }
+
+  /** Re-resolve the continuous mappings against the active section (show load, recall). */
+  private resolveContinuousBindings(): void {
+    this.continuousBindings = resolveContinuousInputMappings(this.inputMappings, this.activeEffectSection());
   }
 
   /**
@@ -551,6 +588,7 @@ class VoiceBusEngine implements RenderEngine {
     this.activeSongId = song?.id ?? null;
     this.activeSectionId = sectionId;
     resetSectionMaster(this.masterState);
+    this.resolveContinuousBindings();
     this.onDiagnostic?.({
       kind: 'section-recalled',
       songId: this.activeSongId,
@@ -699,6 +737,8 @@ class VoiceBusEngine implements RenderEngine {
       const value01 = ccValue01(e.value ?? 0);
       this.ccTable.set(ccKey(controller, e.channel ?? null), value01);
       this.ccTable.set(ccKey(controller, null), value01);
+      // MIDI-map: a mapped controller is consumed here — it never also edges a CC Cue.
+      if (this.performInputMapping(e, { midiCc: controller }, value01)) return;
       // Effect path: a Cue on this controller fires on the RISING edge through the half-way
       // point (a button's press, a knob sweeping up), never on every value while it moves.
       if (ccSection && !wasHigh && value01 >= CC_CUE_THRESHOLD) {
@@ -710,6 +750,8 @@ class VoiceBusEngine implements RenderEngine {
       const velocity = noteValue01(e.velocity ?? 0);
       this.noteTable.set(noteKey(e.note, e.channel ?? null), { gate: 1, velocity, releasedAtMs: null });
       this.noteTable.set(noteKey(e.note, null), { gate: 1, velocity, releasedAtMs: null });
+      // MIDI-map: a mapped note is consumed before zones, Cues and graph sources.
+      if (this.performInputMapping(e, { midiNote: e.note }, 1)) return;
     }
     if (e.kind === 'noteOff' && e.note !== undefined) {
       const write = (channel: number | null): void => {
@@ -719,6 +761,7 @@ class VoiceBusEngine implements RenderEngine {
       };
       write(e.channel ?? null);
       write(null);
+      if (this.performInputMapping(e, { midiNote: e.note }, 0)) return;
       // Effect path: a note-off releases the `hold` Effects its note / zone fired.
       const heldSection = this.activeEffectSection();
       if (heldSection) {
@@ -741,6 +784,8 @@ class VoiceBusEngine implements RenderEngine {
       // reset. Clearing a local signal removes its key, so expired device IDs do not leak.
       if (e.kind === 'oscValue' && value === 0) this.oscTable.delete(e.address);
       else this.oscTable.set(e.address, value);
+      // MIDI-map: a mapped address is consumed before zones, Cues and graph sources.
+      if (this.performInputMapping(e, { oscAddress: e.address }, value)) return;
     }
     if (e.kind === 'oscValue') return;
 
@@ -924,20 +969,146 @@ class VoiceBusEngine implements RenderEngine {
    * drum-row Effect fires as if its row's drum was hit.
    */
   private processFireEffect(e: InputEvent): void {
-    const input = describeInputEvent(e);
+    this.fireEffectById(e.effectId ?? '', normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 }), describeInputEvent(e));
+  }
+
+  /** Fire one Effect of the active section by id, as an audition (`fireEffect`, MIDI-map). */
+  private fireEffectById(effectId: string, velocity: number, input: VoiceInputDescriptor): void {
     const section = this.activeEffectSection();
-    const effect = section?.effects?.find((candidate) => candidate.id === e.effectId);
+    const effect = section?.effects?.find((candidate) => candidate.id === effectId);
     if (!section || !effect) {
-      this.onDiagnostic?.({ kind: 'effect-skipped', input, sectionId: section?.id ?? null, effectId: e.effectId ?? '', reason: 'no-such-effect' });
+      this.onDiagnostic?.({ kind: 'effect-skipped', input, sectionId: section?.id ?? null, effectId, reason: 'no-such-effect' });
       return;
     }
     if (effect.bypass) {
       this.onDiagnostic?.({ kind: 'effect-skipped', input, sectionId: section.id, effectId: effect.id, reason: 'bypassed' });
       return;
     }
-    const velocity = normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
     const rowDrum = effect.cell.row === 'kit' ? null : effect.cell.row;
     this.fireChainEffect(section, effect, velocity, rowDrum, input, 'audition');
+  }
+
+  // --- MIDI-map (effect chains wave 5) ---------------------------------------
+
+  /**
+   * Perform the InputMapping `facet` matches, if any, and report whether the input was
+   * CONSUMED (the caller then stops: no zone, Cue or graph source sees it). Every mapped
+   * input is consumed, whatever its target does. The modulation tables (CC / OSC / note) were
+   * already written by the caller, so a Control device can still follow the same knob.
+   *
+   * `value01` is the input's 0..1 value: a CC's normalised value, an OSC arg, 1 for a
+   * note-on and 0 for a note-off.
+   *
+   * - **Continuous** (`param` / `opacity` / `modifierMix`): the value is stored and written to
+   *   the target on the Effect's live voices every frame ({@link applyContinuousMappings}). A
+   *   note is a gate: held = `rangeMax`, released = `rangeMin`.
+   * - **Discrete** (`fireCell` / `fireEffect` / `recallSection`): a note-on and an `osc`
+   *   message fire (like a Cue); a CC fires on its rising edge through 0.5; a note-off
+   *   releases the `hold` Effects the target fires. An `oscValue` update never fires.
+   * - **`bypass`** is a toggle the web store owns (it sees the input echo); here it is only
+   *   consumed.
+   */
+  private performInputMapping(e: InputEvent, facet: InputMappingEvent, value01: number): boolean {
+    if (this.inputMappings.length === 0) return false;
+    const mapping = matchInputMapping(this.inputMappings, facet);
+    if (!mapping) return false;
+    const target = mapping.target;
+    const previous = this.mappingValues.get(mapping.id) ?? 0;
+    this.mappingValues.set(mapping.id, value01);
+    if (isContinuousTarget(target) || target.kind === 'bypass') return true;
+
+    if (e.kind === 'noteOff') {
+      for (const effect of this.mappedEffects(mapping)) {
+        if (effect.amp.length === 'hold') this.voices.releaseChainVoices(effect.id, this.timeMs, ['hold']);
+      }
+      return true;
+    }
+    const fires = e.kind === 'noteOn' || e.kind === 'osc'
+      || (e.kind === 'cc' && previous < CC_CUE_THRESHOLD && value01 >= CC_CUE_THRESHOLD);
+    if (!fires) return true;
+
+    const input = describeInputEvent(e);
+    const velocity = e.kind === 'noteOn'
+      ? normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 })
+      : e.kind === 'osc' ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 }) : value01;
+    switch (target.kind) {
+      case 'recallSection': {
+        const songId = target.songId
+          ?? this.show.songs?.find((song) => song.sections.some((s) => s.id === target.sectionId))?.id
+          ?? null;
+        this.recallTo(songId, target.sectionId);
+        return true;
+      }
+      case 'fireEffect':
+        this.fireEffectById(target.effectId, velocity, input);
+        return true;
+      case 'fireCell': {
+        const section = this.activeEffectSection();
+        const effects = section ? cellEffects(section, target.cell) : [];
+        if (!section) return true; // a graph-path section has no cells to fire
+        if (effects.length === 0) {
+          this.onDiagnostic?.({ kind: 'effect-missed', input, sectionId: section.id });
+          return true;
+        }
+        const rowDrum = target.cell.row === 'kit' ? null : target.cell.row;
+        for (const effect of effects) this.fireChainEffect(section, effect, velocity, rowDrum, input, 'audition');
+        return true;
+      }
+    }
+    return true;
+  }
+
+  /** The active section's Effects a discrete mapping fires (for a note-off's hold release). */
+  private mappedEffects(mapping: InputMapping): Effect[] {
+    const section = this.activeEffectSection();
+    if (!section) return [];
+    const target = mapping.target;
+    if (target.kind === 'fireCell') return cellEffects(section, target.cell);
+    if (target.kind === 'fireEffect') return (section.effects ?? []).filter((effect) => effect.id === target.effectId);
+    return [];
+  }
+
+  /**
+   * Write every heard continuous mapping onto the live voices of its Effect, before the
+   * per-frame param sweep. The mapping sets the BASE value — `voice.params` (the spawn
+   * snapshot the sweep refills from), a modifier link's `params` / `mix`, or the layer
+   * `opacity` — so a Control device's modulation on the same param still stacks on top, just
+   * as if the card's own knob had been turned. Writing every frame is what makes a knob move
+   * reach a voice that is already playing. Allocation-free.
+   *
+   * Opacity and modifier mix needed no new engine parameter: the voice already carries both
+   * per voice (`opacity` from S02's compositor, `mix` on each resolved modifier link), and
+   * both are read per frame, so the mapping writes them in place.
+   */
+  private applyContinuousMappings(): void {
+    const bindings = this.continuousBindings;
+    for (let b = 0; b < bindings.length; b++) {
+      const binding = bindings[b]!;
+      const raw = this.mappingValues.get(binding.mappingId);
+      if (raw === undefined) continue; // never heard: the authored value stands
+      const value = scaleInputMappingValue(raw, binding.rangeMin, binding.rangeMax, binding.lo, binding.hi);
+      for (const v of this.voices.pool) {
+        if (!v.active || v.chainEffectId !== binding.effectId) continue;
+        switch (binding.slot) {
+          case 'generator':
+            v.params[binding.param] = value;
+            break;
+          case 'opacity':
+            v.opacity = value;
+            break;
+          case 'modifier': {
+            const link = v.modifiers?.[binding.modifierIndex];
+            if (link) link.params[binding.param] = value;
+            break;
+          }
+          case 'mix': {
+            const link = v.modifiers?.[binding.modifierIndex];
+            if (link) link.mix = value;
+            break;
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -1285,6 +1456,7 @@ class VoiceBusEngine implements RenderEngine {
 
     // Refresh per-voice live params, then composite voices → pixels.
     if (this.model && this.finalFb) {
+      this.applyContinuousMappings();
       for (const v of this.voices.pool) {
         if (v.active) applyEffectiveParams(v, this.timeMs, this.bpm, this.ccTable, this.oscTable, this.noteTable, this.audioTable);
       }

@@ -15,6 +15,7 @@ import type { BlendMode } from '../color/blend';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
 import type { Effect, ModifierDevice } from '../effect-chain/types';
+import type { InputMapping } from '../effect-chain/input-mappings';
 
 export type { PlayType };
 
@@ -818,6 +819,12 @@ export interface Show {
    * `EffectGenerator` lookup (no compositor fork, locked decision 7).
    */
   canvasScenes?: CanvasScene[];
+  /**
+   * MIDI-map bindings (effect chains): input sources bound to fire / recall / continuous
+   * targets. A matched note / CC / OSC is consumed after global controls, before zones and
+   * Cues (see `engine.ts`). The engine re-validates each entry at `setShow`.
+   */
+  mappings?: InputMapping[];
 }
 
 export function emptyShow(): Show {
