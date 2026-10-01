@@ -4,12 +4,12 @@ import { tick } from 'svelte';
 import { fireEvent, render } from '@testing-library/svelte';
 import CommitInput from './CommitInput.svelte';
 
-/* The wheel gesture on a numeric field: one step per tick while hovered, and ONE commit per
+/* The wheel gesture on a numeric field: with ⌥ held, one step per tick while hovered, and ONE commit per
    gesture. Each commit is a store mutation with an undo snapshot and a server write, so a
    ten-tick scroll publishing ten of them would be a defect, not a detail. The commit-decision
    rules themselves live in commit-input.test.ts. */
 
-const wheel = (deltaY: number) => new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true });
+const wheel = (deltaY: number) => new WheelEvent('wheel', { altKey: true, deltaY, cancelable: true, bubbles: true });
 
 function renderNumber(props: Record<string, unknown> = {}) {
   const onCommit = vi.fn();
@@ -21,6 +21,19 @@ function renderNumber(props: Record<string, unknown> = {}) {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('CommitInput wheel — plain scroll is left alone', () => {
+  it('a scroll without ⌥ changes nothing and still scrolls the panel', () => {
+    vi.useFakeTimers();
+    const { onCommit, input } = renderNumber();
+    const ev = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    input.dispatchEvent(ev);
+    vi.advanceTimersByTime(500);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(input.value).toBe('10');
+    expect(onCommit).not.toHaveBeenCalled();
+  });
 });
 
 describe('CommitInput wheel-adjust', () => {

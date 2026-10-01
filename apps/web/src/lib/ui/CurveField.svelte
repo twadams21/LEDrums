@@ -37,7 +37,7 @@
   import IconButton from './IconButton.svelte';
   import SegmentedControl from './SegmentedControl.svelte';
   import Slider from './Slider.svelte';
-  import { wheelStep } from './wheel-step';
+  import { wheelAdjusts, wheelStep } from './wheel-step';
   import {
     CURVE_PROFILE_OPTIONS,
     NUDGE,
@@ -282,7 +282,8 @@
   let plotEl = $state<HTMLDivElement | undefined>();
 
   function onWheel(e: WheelEvent): void {
-    if (disabled) return;
+    // Plain scroll scrolls the panel; ⌥-scroll nudges the selected point (see `wheelAdjusts`).
+    if (disabled || !wheelAdjusts(e)) return;
     const current = curve[selected].y;
     const next = wheelStep({ value: current, deltaY: e.deltaY, min: 0, max: 1, step: NUDGE });
     if (next === null) return;

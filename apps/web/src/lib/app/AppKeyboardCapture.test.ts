@@ -5,7 +5,8 @@ import { createRawSnippet } from 'svelte';
 import type { TunnelInfo } from '../ws/protocol-types';
 import type { TriggerLab } from '../trigger-lab/store.svelte';
 import AppKeyboardCapture from './AppKeyboardCapture.svelte';
-import type { AppKeyboardShell, AppKeyboardStore } from './app-keyboard';
+import { selectionVerbFor, type AppKeyboardShell, type AppKeyboardStore } from './app-keyboard';
+import type { SelectionVerb } from '../trigger-lab/effects-api';
 import type { ShortcutEntry } from './shortcuts';
 import { createAppShortcuts } from './app-shortcuts';
 import BootOverlay from './chrome/BootOverlay.svelte';
@@ -244,7 +245,9 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(sectionDuplicate).toHaveBeenCalledTimes(1);
   });
 
-  it('lets marked keyboard controls receive Perform arrows and digits outside a modal', () => {
+  it('outside a modal, a focused control keeps its arrows but a digit auditions its Effect', () => {
+    // Clicking a slider / segmented / dropdown leaves it focused; the 1–9,0 bank must still work
+    // (Tim, 2026-09-28). None of those controls uses a digit.
     const { store } = fixture();
     const control = document.body.appendChild(document.createElement('button'));
     control.setAttribute('data-keyboard-owner', 'slider');
@@ -254,10 +257,38 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const arrow = key(control, 'ArrowRight');
     const digit = key(control, '1');
 
-    expect(received).toHaveBeenCalledTimes(2);
+    expect(received).toHaveBeenCalledTimes(1); // the arrow only
     expect(arrow.defaultPrevented).toBe(false);
-    expect(digit.defaultPrevented).toBe(false);
-    expect(store.fireEffectAt).not.toHaveBeenCalled();
+    expect(digit.defaultPrevented).toBe(true);
+    expect(store.fireEffectAt).toHaveBeenCalledWith(0);
+  });
+
+  it('outside a modal, Backspace on a focused control is still suppressed — it never reaches the view', () => {
+    fixture();
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'roving');
+    expect(key(control, 'Backspace').defaultPrevented).toBe(true);
+  });
+
+  it('outside a modal, a mapped key performs through a focused control — but not the keys it navigates by', () => {
+    const performKey = vi.fn((code: string) => code === 'KeyQ' || code === 'ArrowRight');
+    const session = { learnKey: vi.fn(), clearArmed: vi.fn(), performKey, isKeyMapped: vi.fn(() => true), reset: vi.fn() };
+    const store: AppKeyboardStore = { fireEffectAt: vi.fn(), stepSetlist: vi.fn(() => true) };
+    const shell: AppKeyboardShell = { view: 'perform', settingsPane: null, mapMode: false, mapSession: session };
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts: [], shortcutPlatform: 'mac' } });
+    const control = document.body.appendChild(document.createElement('button'));
+    control.setAttribute('data-keyboard-owner', 'slider');
+    const received = vi.fn();
+    control.addEventListener('keydown', received);
+
+    const mapped = key(control, 'q', { code: 'KeyQ' });
+    const arrow = key(control, 'ArrowRight', { code: 'ArrowRight' });
+
+    expect(performKey).toHaveBeenCalledWith('KeyQ');
+    expect(mapped.defaultPrevented).toBe(true);
+    expect(performKey).not.toHaveBeenCalledWith('ArrowRight'); // the slider's own key
+    expect(arrow.defaultPrevented).toBe(false);
+    expect(received).toHaveBeenCalledTimes(1); // only the arrow reached the control
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits inside a modal and popup', () => {
@@ -301,5 +332,72 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const textDelete = key(input, 'Backspace');
     expect(textDelete.defaultPrevented).toBe(false);
     expect(laterWindow).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AppKeyboardCapture — Effects strip edit keys', () => {
+  function effectsFixture(took = true) {
+    const editSelectionFromKeyboard = vi.fn((_verb: SelectionVerb) => took);
+    const store: AppKeyboardStore = { fireEffectAt: vi.fn(), stepSetlist: vi.fn(() => true), editSelectionFromKeyboard };
+    const shell: AppKeyboardShell = { view: 'trigger', settingsPane: null };
+    render(AppKeyboardCapture, { props: { store, shell, shortcuts: [], shortcutPlatform: 'mac' } });
+    return { editSelectionFromKeyboard, shell };
+  }
+
+  it('Delete / Backspace and ⌘X / ⌘C / ⌘V go to the strip, and a taken key is claimed', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const del = key(document.body, 'Delete');
+    key(document.body, 'Backspace');
+    key(document.body, 'x', { metaKey: true });
+    key(document.body, 'c', { metaKey: true });
+    key(document.body, 'v', { metaKey: true });
+    expect(editSelectionFromKeyboard.mock.calls.map((c) => c[0])).toEqual(['delete', 'delete', 'cut', 'copy', 'paste']);
+    expect(del.defaultPrevented).toBe(true);
+  });
+
+  it('works while a slider on the highlighted card has focus', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const slider = document.body.appendChild(document.createElement('div'));
+    slider.setAttribute('role', 'slider');
+    slider.tabIndex = 0;
+    key(slider, 'Backspace');
+    expect(editSelectionFromKeyboard).toHaveBeenCalledWith('delete');
+  });
+
+  it('leaves text fields, other views and page-text copies alone', () => {
+    const { editSelectionFromKeyboard } = effectsFixture();
+    const input = document.body.appendChild(document.createElement('input'));
+    key(input, 'Backspace');
+    key(input, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).not.toHaveBeenCalled();
+
+    const text = document.body.appendChild(document.createElement('p'));
+    text.textContent = 'Kick hit';
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    key(document.body, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).not.toHaveBeenCalled();
+    window.getSelection()!.removeAllRanges();
+  });
+
+  it('a key the strip did not take is left for the browser', () => {
+    const { editSelectionFromKeyboard } = effectsFixture(false);
+    const copy = key(document.body, 'c', { metaKey: true });
+    expect(editSelectionFromKeyboard).toHaveBeenCalledWith('copy');
+    expect(copy.defaultPrevented).toBe(false);
+  });
+});
+
+describe('selectionVerbFor', () => {
+  it('maps the keys only in the Effects view, with the platform’s own modifier', () => {
+    const k = (key: string, mods: Partial<KeyboardEvent> = {}) => ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+    expect(selectionVerbFor(k('Delete'), 'trigger', 'mac', false)).toBe('delete');
+    expect(selectionVerbFor(k('Delete'), 'sections', 'mac', false)).toBeNull();
+    expect(selectionVerbFor(k('c', { ctrlKey: true }), 'trigger', 'mac', false)).toBeNull(); // Ctrl is not ⌘ on a Mac
+    expect(selectionVerbFor(k('c', { ctrlKey: true }), 'trigger', 'other', false)).toBe('copy');
+    expect(selectionVerbFor(k('V', { metaKey: true }), 'trigger', 'mac', true)).toBe('paste'); // paste ignores page text
+    expect(selectionVerbFor(k('c', { metaKey: true, shiftKey: true }), 'trigger', 'mac', false)).toBeNull();
   });
 });
