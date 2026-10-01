@@ -143,7 +143,7 @@ const MS_PER_MINUTE = 60000;
  * - **Controls** → `Mapping[]` on the generator params and per-modifier `modulations`; a
  *   mapping's range defaults to the target param spec range. Mappings naming a device that is
  *   not in this Effect are dropped.
- * - **Amp envelope** → attack / sustain / release, the play mode, and always an
+ * - **Amp envelope** → attack (and its curve) / sustain / release, the play mode, and always an
  *   amplitude-over-life curve (flat at 1 when the sustain level is 1). Emitting the curve
  *   unconditionally makes the amp envelope the sole owner of the level: a hosted generator's
  *   own decay is always off on this path, whatever the sustain level.
@@ -190,12 +190,25 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     ? 'ms' in amp.length ? amp.length.ms : amp.length.beats * (MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120))
     : 0;
   const shape = ampShape(amp.attackMs, amp.decayMs, amp.sustainLevel);
+  const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
+  const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - amp.attackMs) : 0;
 
   const action: PlayAction = {
     kind: 'play',
     effectId: chainEffectDefId(hostedId),
     ...(gen.canvasScene ? { canvasScene: gen.canvasScene } : {}),
-    ...(gen.splice ? { splice: gen.splice, spliceInputs: gen.spliceInputs ?? [] } : {}),
+    // A Splice / Slice part that pulses or fades in its turn runs THE Effect's envelope (one
+    // envelope per Effect); a held / looping Effect has no length, so a part keeps the splice hold.
+    ...(gen.splice
+      ? {
+          splice: {
+            ...gen.splice,
+            envelope: { attackMs: amp.attackMs, sustainMs: mode === 'oneshot' ? sustainMs : gen.splice.envelope.sustainMs, releaseMs: amp.releaseMs },
+            attackEase,
+          },
+          spliceInputs: gen.spliceInputs ?? [],
+        }
+      : {}),
     mode,
     ...targetFields(effect, ctx.sourceDrumId),
     busId: CHAIN_BUS_ID,
@@ -203,7 +216,8 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     modifiers: modifiers.length ? modifiers : undefined,
     modulations: generatorMappings.length ? generatorMappings : undefined,
     attackMs: amp.attackMs,
-    sustainMs: mode === 'oneshot' ? Math.max(0, gateMs - amp.attackMs) : 0,
+    ...(attackEase ? { attackEase } : {}),
+    sustainMs,
     releaseMs: amp.releaseMs,
     chainEffectId: effect.id,
     blend: effect.blend,

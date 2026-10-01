@@ -88,8 +88,24 @@ export const ampLengthSchema = z.union([
   z.literal('loop'),
 ]);
 
+/** The curve an attack rises on (an `ease()` family + direction). Absent / linear = a straight ramp. */
+export const attackEaseSchema = z.object({
+  fn: z.enum(['linear', 'quad', 'cubic', 'quart', 'expo', 'sine', 'circ', 'back', 'bounce', 'elastic']),
+  dir: z.enum(['in', 'out', 'inOut']),
+});
+
+/**
+ * An Effect's brightness envelope (Tim, 2026-10-01: the Splice / Slice "brightness envelope"
+ * as THE way a hit lights — Attack · Curve · Sustain · Decay): `attackMs` up on `attackEase`,
+ * full brightness until `length` ends, then `releaseMs` down. It also drives each part of a
+ * Splice / Slice that pulses or fades in turn, so there is one envelope per Effect.
+ * `decayMs` / `sustainLevel` are the old ADSR's drop to a lower level: kept, and honoured, so a
+ * show that used them plays as before, but at their defaults (0 / 1) they do nothing and a new
+ * Effect never sets them.
+ */
 export const ampEnvelopeSchema = z.object({
   attackMs: nonNegMs.default(10),
+  attackEase: attackEaseSchema.optional(),
   decayMs: nonNegMs.default(0),
   sustainLevel: unit.default(1),
   length: ampLengthSchema.default({ ms: 500 }),

@@ -6,7 +6,8 @@
        MOVE AROUND   — how the light acts WITHIN that area: chase, spin or stagger, at a rate.
        MOVE THROUGH  — where the light is SENT: drum to drum, hoop to hoop, splice to splice, each
                        in an order you drag or pick — and what waiting parts do.
-       BRIGHTNESS ENVELOPE — attack, curve, sustain, decay.
+     No BRIGHTNESS ENVELOPE section any more: it is the Effect's own, on the Trigger card (Tim,
+     2026-10-01: one envelope per Effect), and a part that pulses or fades in its turn runs it.
      A Slice's first section is SLICE instead — On (Kit · Drum · Space, a box of the room), Axis,
      Tilt, Slices, Random lengths, Smudge, Seed, Velocity — and its MOVE THROUGH layers are THROUGH
      KIT · THROUGH SLICES · COLOUR CHASE. A Slice's On writes the Effect's Target (and its Space
@@ -21,7 +22,6 @@
   import SegmentedControl from '../../../../../ui/SegmentedControl.svelte';
   import Select from '../../../../../ui/Select.svelte';
   import OrderList from '../../../../../ui/OrderList.svelte';
-  import EasePicker from '../../../../../ui/EasePicker.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
   import CommitInput from '../../../../../ui/CommitInput.svelte';
   import Info from '@lucide/svelte/icons/info';
@@ -138,8 +138,6 @@
     ...(jitter > 0 ? [P('seed', { label: 'Seed' })] : []),
     P('velocity', { label: 'Velocity', percent: true, unit: '%', info: VELOCITY_INFO }),
   ]);
-  const envelopeLead = $derived([P('attackMs', { label: 'Attack' })]);
-  const envelopeTail = $derived([P('holdMs', { label: 'Sustain' }), P('releaseMs', { label: 'Decay' })]);
   const increment = $derived(isSlice ? P('incrementPct', { label: 'Increment' }) : P('incrementPx', { label: 'Increment' }));
 
   /** The kit's drums, in grid order (THROUGH KIT's chips, a Drum slice's choices). */
@@ -460,21 +458,6 @@
     {/each}
   </section>
 
-  <!-- BRIGHTNESS ENVELOPE -->
-  <section class="sec" aria-label="Brightness envelope">
-    {@render head('Brightness envelope', 'How long the lights stay up after a hit: attack up, sustain at full, then decay away.')}
-    <ParamRows params={envelopeLead} values={params} {modulated} {disabled} labelPrefix={noun} {mapParam} onChange={onRow} {...gesture} />
-    {#snippet curve()}
-      <EasePicker
-        value={{ fn: str('attackEaseFn', 'linear') as never, dir: str('attackEaseDir', 'in') as never }}
-        {disabled}
-        ariaLabel={`${noun} attack curve`}
-        onChange={(v) => setMany({ attackEaseFn: v.fn, attackEaseDir: v.dir })}
-      />
-    {/snippet}
-    {@render field('Curve', 'A linear attack reads as brightening too fast — an ease-in curve swells more evenly.', curve)}
-    <ParamRows params={envelopeTail} values={params} {modulated} {disabled} labelPrefix={noun} {mapParam} onChange={onRow} {...gesture} />
-  </section>
 </div>
 
 <style>

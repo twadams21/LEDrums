@@ -36,14 +36,13 @@ function setup(params: Record<string, unknown> = {}, target: unknown = { kind: '
 const section = (v: ReturnType<typeof setup>['view'], name: string) => within(v.getByRole('region', { name }));
 
 describe('Splice card sections', () => {
-  it('lays out SPLICE · MOVE AROUND · MOVE THROUGH · BRIGHTNESS ENVELOPE in the inspector’s words', () => {
+  it('lays out SPLICE · MOVE AROUND · MOVE THROUGH in the inspector’s words — the envelope is the Effect’s, on the Trigger card', () => {
     const { view } = setup();
-    for (const name of ['Splice', 'Move around', 'Move through', 'Brightness envelope']) expect(view.getByRole('region', { name })).toBeTruthy();
+    for (const name of ['Splice', 'Move around', 'Move through']) expect(view.getByRole('region', { name })).toBeTruthy();
+    expect(view.queryByRole('region', { name: 'Brightness envelope' })).toBeNull();
     const splice = section(view, 'Splice');
     for (const label of ['Splices', 'Per', 'Rotate', 'Random lengths', 'Smudge']) expect(splice.getByText(label)).toBeTruthy();
     expect(splice.queryByText('Seed')).toBeNull(); // only once lengths are random
-    const env = section(view, 'Brightness envelope');
-    for (const label of ['Attack', 'Curve', 'Sustain', 'Decay']) expect(env.getByText(label)).toBeTruthy();
   });
 
   it('Seed appears with Random lengths', () => {

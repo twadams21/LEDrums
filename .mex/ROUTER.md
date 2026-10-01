@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-10-01
+last_updated: 2026-10-02
 ---
 
 # Session Bootstrap
@@ -79,6 +79,8 @@ Bugs found and fixed along the way:
 Process: built in waves with dynamic Workflows (opus/medium implementers and reviewers, isolated worktrees, pool of 5) against two orchestrator-written contracts: `trigger-lab/effects-api.ts` and `map-api.ts`.
 
 Verification: each wave's integration branch passed typecheck, the full serial sweep and `ui-shot --all --strict` offline. Merge through gh-stack only, after Trent's review.
+
+**One brightness envelope per Effect (2026-10-02, branch `feat/brightness-envelope`, stacked on #260):** Tim asked whether the Splice / Slice "brightness envelope" should replace the Trigger's ADSR, whether it should be its own plugin, and whether Splice / Slice double up. Probed in the engine first: in Lit / Dark the Splice Brightness envelope did NOTHING (the Trigger's amp decided how long the lights stayed up — a port regression from v0.3.5, where it was the splice's voice envelope), and in Fade / Pulse there were two envelopes (amp = lifetime, splice = each part). Decided with Tim: one envelope per Effect, on the Trigger card (not a separate plugin — he asked; agent recommendation: it is the same data either way, so it can move to its own card later without migration). `ampEnvelopeSchema` gains `attackEase`; `effectPlayAction` puts it on the voice and REPLACES the splice config's per-unit envelope with the amp's (attack, length − attack, release, curve; a held / looping Effect keeps the splice hold for its parts). The Splice / Slice device params `attackMs` / `holdMs` / `releaseMs` / `attackEaseFn` / `attackEaseDir` are gone from the spec and the device→node map (old shows: ignored). Trigger card (`AmpEnvelopeField`): BRIGHTNESS ENVELOPE — outline (attack drawn on its curve), Attack, Curve (EasePicker, family over direction), Sustain (Time / Beats / While held / Loop), Decay; the old ADSR `decayMs` / `sustainLevel` stay in the schema and the engine, shown as Drop / Drop to ONLY when non-default — lossless, no migration (agent choice over the planned conversion). Strip `DeviceCard` / `AddDeviceSlot` use `min-height` so the Trigger card grows with its face.
 
 **Strobe speed in Hz or divisions (2026-10-01, branch `feat/strobe-sync`, stacked on #259):** Tim: "with the strobe plugin, i want to have an option for the speed to be either in Hz or subdivisions, as it is with splice and slice". Strobe gains `rateMode` (`hz` default — saved shows unchanged — | `beats`) and `division` (the delay divisions); `strobePeriodMs` turns a division into one flash per division at the transport tempo. `ModifierContext` gains optional `bpm` (the chain runner passes `modCtx.bpm`; the section Master chain now passes the engine's bpm too; absent → 120). The card shows ONE "Rate" dropdown — the divisions, then Free (Hz) — and the Hz value as a "Frequency" row only under Free (`card-model` `isTempoSynced` / `modifierFaceParams`, generic to any modifier with rateMode + division + rate). Phase still runs on the voice's own clock (from the hit), not the bar grid — agent choice.
 

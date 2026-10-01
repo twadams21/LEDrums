@@ -137,7 +137,7 @@
     <DemoCard
       title="Generator card — Splice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/SlotsEditor']}
-      note="The graph-era Splice inspector's sections and words, one column each: SPLICE · MOVE AROUND · MOVE THROUGH · BRIGHTNESS ENVELOPE, the Splices rows (one per band — Count) beside the kind picker. Timings are one dropdown (divisions, None, Free (ms)); an active cascade shows its Order — drag the chips or pick a pattern. Rows a mode makes meaningless stay hidden."
+      note="The graph-era Splice inspector's sections and words, one column each: SPLICE · MOVE AROUND · MOVE THROUGH (the brightness envelope is the Effect's own, on the Trigger card — a part that pulses or fades runs it), the Splices rows (one per band — Count) beside the kind picker. Timings are one dropdown (divisions, None, Free (ms)); an active cascade shows its Order — drag the chips or pick a pattern. Rows a mode makes meaningless stay hidden."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
@@ -146,14 +146,14 @@
     <DemoCard
       title="Generator card — Slice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="The graph-era Slice inspector on the same face: SLICE — On (Kit · Drum · Space; it writes the Effect's Target, Space adds a box of the room, seeded from the kit's bounds), Axis, Tilt X/Y/Z, Slices, Random lengths, Smudge, Seed, Velocity (ⓘ) — then MOVE AROUND (Sweep, not Spin), MOVE THROUGH (THROUGH KIT · THROUGH SLICES · COLOUR CHASE), BRIGHTNESS ENVELOPE. A new Slice cuts the whole kit. Past 12 rows any card's param list goes landscape in balanced columns (PARAM_ROWS_MAX)."
+      note="The graph-era Slice inspector on the same face: SLICE — On (Kit · Drum · Space; it writes the Effect's Target, Space adds a box of the room, seeded from the kit's bounds), Axis, Tilt X/Y/Z, Slices, Random lengths, Smudge, Seed, Velocity (ⓘ) — then MOVE AROUND (Sweep, not Spin), MOVE THROUGH (THROUGH KIT · THROUGH SLICES · COLOUR CHASE); the envelope is the Trigger card's. A new Slice cuts the whole kit. Past 12 rows any card's param list goes landscape in balanced columns (PARAM_ROWS_MAX)."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}
-      note="Kind switch moves the Effect's column. Zone is read-only (the cell's); the amp ADSR sits below.">
+      note="Kind switch moves the Effect's column. Zone is read-only (the cell's). Below, the Effect's brightness envelope: Attack · Curve · Sustain (time, beats, While held, Loop) · Decay — the one envelope the Effect has; the old ADSR drop (Drop / Drop to) shows only on an Effect that still uses one.">
       <div class="cards"><TriggerCard {api} effect={pulse} /></div>
     </DemoCard>
 

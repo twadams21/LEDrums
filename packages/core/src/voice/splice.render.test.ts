@@ -61,11 +61,9 @@ function deviceParams(c: SpliceCase): GeneratorDevice['params'] {
     if (value === undefined || !key.startsWith('splice') || key === 'splices') continue;
     const name = key.slice('splice'.length);
     const param = name[0]!.toLowerCase() + name.slice(1);
-    if (param === 'attackEase') {
-      const ease = value as NonNullable<SpliceNode['spliceAttackEase']>;
-      params.attackEaseFn = ease.fn;
-      params.attackEaseDir = ease.dir;
-    } else if (Array.isArray(value)) {
+    // The brightness envelope is the Effect's (its amp), not a device param — see spliceEffect.
+    if (['attackEase', 'attackMs', 'holdMs', 'releaseMs'].includes(param)) continue;
+    if (Array.isArray(value)) {
       params[param] = value.join(',');
     } else {
       params[param] = value as string | number;
@@ -96,8 +94,9 @@ function slotOf(def: SpliceDef, effects: readonly EffectDef[]): SpliceSlot {
   return slot;
 }
 
-/** The Splice Effect for a case, on kick's first zone. Its amp envelope is the splice envelope
-    (defaults 10 / 400 / 300), so the voice lives exactly as the case's splice did. */
+/** The Splice Effect for a case, on kick's first zone. Its amp envelope IS the splice envelope
+    (defaults 10 / 400 / 300, and the attack curve) — one envelope per Effect, which also drives
+    each part that pulses or fades in turn. */
 function spliceEffect(spec: SpliceSpec, effects: readonly EffectDef[] = []) {
   const { over } = spec;
   const attackMs = over.spliceAttackMs ?? 10;
@@ -111,7 +110,7 @@ function spliceEffect(spec: SpliceSpec, effects: readonly EffectDef[] = []) {
       : { kind: 'kit' };
   return zoneEffect('splice', {
     kind: 'splice', style: '', params: deviceParams(over), slots: spec.splices.map((d) => slotOf(d, effects)),
-  }, { amp: { attackMs, length, releaseMs: over.spliceReleaseMs ?? 300 }, target });
+  }, { amp: { attackMs, length, releaseMs: over.spliceReleaseMs ?? 300, ...(over.spliceAttackEase ? { attackEase: over.spliceAttackEase } : {}) }, target });
 }
 
 function show(spec: SpliceSpec, effects: EffectDef[] = []): Show {

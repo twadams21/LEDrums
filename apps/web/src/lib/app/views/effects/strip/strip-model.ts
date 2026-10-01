@@ -2,7 +2,7 @@
    Trigger / Target cards, the Effect header and the reorder drags all route their decisions
    through here so the rules are unit-tested once and the components stay thin. */
 
-import { effectChain } from '@ledrums/core';
+import { effectChain, voice } from '@ledrums/core';
 import type { EffectsAuthoringApi, GridRow } from '../../../../trigger-lab/effects-api';
 
 type Effect = effectChain.Effect;
@@ -150,7 +150,7 @@ export type AmpLengthMode = 'ms' | 'beats' | 'hold' | 'loop';
 export const AMP_LENGTH_OPTIONS: Option<AmpLengthMode>[] = [
   { value: 'ms', label: 'Time' },
   { value: 'beats', label: 'Beats' },
-  { value: 'hold', label: 'Hold' },
+  { value: 'hold', label: 'While held' },
   { value: 'loop', label: 'Loop' },
 ];
 
@@ -171,8 +171,10 @@ export function formatMs(ms: number): string {
 }
 
 /**
- * The ADSR outline for a `width`×`height` preview, as an SVG path. Timed stages are scaled so
- * the whole envelope fits; the sustain plateau gets a fixed share so a 0 ms envelope still reads.
+ * The brightness envelope's outline for a `width`×`height` preview, as an SVG path: the attack
+ * on its curve, the old ADSR drop (only when an Effect still uses one), the sustain, the decay.
+ * Timed stages are scaled so the whole envelope fits; the sustain gets a fixed share so a 0 ms
+ * envelope still reads.
  */
 export function ampPath(amp: effectChain.AmpEnvelope, width: number, height: number, pad = 2): string {
   const w = width - pad * 2;
@@ -189,7 +191,18 @@ export function ampPath(amp: effectChain.AmpEnvelope, width: number, height: num
   const x3 = x2 + w * plateau + hold * scale;
   const x4 = x3 + amp.releaseMs * scale;
   const f = (n: number) => n.toFixed(1);
-  return `M${f(pad)} ${f(bottom)} L${f(x1)} ${f(top)} L${f(x2)} ${f(sustainY)} L${f(x3)} ${f(sustainY)} L${f(Math.min(x4, pad + w))} ${f(bottom)}`;
+  // The attack on its curve: sampled, so an ease-in swell reads as one.
+  const curve = amp.attackEase && amp.attackEase.fn !== 'linear' ? amp.attackEase : null;
+  let attack = `L${f(x1)} ${f(top)}`;
+  if (curve && x1 > pad) {
+    const pts: string[] = [];
+    for (let i = 1; i <= 12; i++) {
+      const t = i / 12;
+      pts.push(`L${f(pad + (x1 - pad) * t)} ${f(bottom - (bottom - top) * voice.ease(curve, t))}`);
+    }
+    attack = pts.join(' ');
+  }
+  return `M${f(pad)} ${f(bottom)} ${attack} L${f(x2)} ${f(sustainY)} L${f(x3)} ${f(sustainY)} L${f(Math.min(x4, pad + w))} ${f(bottom)}`;
 }
 
 // ---- Target card --------------------------------------------------------------------------
