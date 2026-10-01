@@ -70,7 +70,7 @@ function runChain(
   modCtx: ModSampleCtx | undefined, scoped: boolean,
 ): void {
   if (!ranges.length) return;
-  const ctx: ModifierContext = { model, timeMs, dt };
+  const ctx: ModifierContext = { model, timeMs, dt, bpm: modCtx?.bpm };
   for (let i = 0; i < chain.length; i++) {
     const link = chain[i]!;
     if (link.bypass) continue;

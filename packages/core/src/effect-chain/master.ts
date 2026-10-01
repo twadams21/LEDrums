@@ -44,6 +44,8 @@ export interface SectionMasterCtx {
   timeMs: number;
   /** Frame delta in ms. */
   dt: number;
+  /** The transport tempo (a Strobe in divisions reads it); absent → 120. */
+  bpm?: number;
 }
 
 export function createSectionMasterState(): SectionMasterState {
@@ -91,5 +93,8 @@ export function applySectionMaster(
   }
   state.originMs ??= ctx.timeMs;
   const sectionMs = Math.max(0, ctx.timeMs - state.originMs);
-  applyModifierChain(state.resolved, state.slots, frameFb, { start: 0, end: pixelCount }, ctx.model, sectionMs, ctx.dt);
+  applyModifierChain(
+    state.resolved, state.slots, frameFb, { start: 0, end: pixelCount }, ctx.model, sectionMs, ctx.dt,
+    ctx.bpm === undefined ? undefined : { phase: 0, timeMs: sectionMs, bpm: ctx.bpm },
+  );
 }

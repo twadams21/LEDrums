@@ -21,6 +21,12 @@
  * sags the body to `1 − fade/2`, and a soft fall to the off state over the last `e`. The
  * output is `off + (input − off) · gate`, so the edges pass through intermediate values.
  *
+ * Speed (`rateMode`): `hz` (default — shows saved before this read back unchanged) flashes
+ * `rate` times a second; `beats` flashes once per `division` of the transport tempo
+ * (`ctx.bpm`, 120 when the host has none), e.g. `1/16` at 120 bpm = 125 ms = 8 Hz — Tim,
+ * 2026-10-01: "an option for the speed to be either in Hz or subdivisions, as it is with
+ * splice and slice".
+ *
  * `rate` ≤ 0 or `duty` ≥ 1 → always on (identity); `duty` ≤ 0 → always off. Stateless and
  * deterministic: a pure function of the voice clock and its params. At default params
  * (`offMode: black`, `fade: 0`) the output is bit-identical to the original hard gate.
@@ -28,6 +34,7 @@
 import { hexToRgb } from '../../color/color';
 import { clamp01 } from '../../math';
 import { pnum, pstr } from '../../effects/types';
+import { DELAY_DIVISIONS, computeDelayMs } from '../../voice/delay';
 import type { ModifierDef, PixelRange } from '../types';
 
 function smoothstep(e0: number, e1: number, x: number): number {
@@ -48,12 +55,24 @@ function gateAt(phase: number, duty: number, fade: number): number {
   return rise * fall * decay;
 }
 
+/** One flash cycle in ms: `1000 / rate` in Hz, else one `division` at `bpm`. 0 = no strobe. */
+export function strobePeriodMs(params: Parameters<ModifierDef['apply']>[1], bpm: number | undefined): number {
+  if (pstr(params, 'rateMode', 'hz') === 'beats') {
+    const tempo = bpm !== undefined && bpm > 0 ? bpm : 120;
+    return computeDelayMs('beats', 0, pstr(params, 'division', '1/16'), tempo);
+  }
+  const rate = pnum(params, 'rate', 8);
+  return rate > 0 ? 1000 / rate : 0;
+}
+
 export const strobe: ModifierDef = {
   id: 'strobe',
   name: 'Strobe',
   category: 'temporal',
   scopePolicy: 'full-output',
   paramSpec: [
+    { key: 'rateMode', label: 'Speed', type: 'enum', default: 'hz', options: ['hz', 'beats'] },
+    { key: 'division', label: 'Division', type: 'enum', default: '1/16', options: [...DELAY_DIVISIONS] },
     { key: 'rate', label: 'Rate', type: 'number', default: 8, min: 0.1, max: 40, step: 0.1, unit: 'Hz' },
     { key: 'duty', label: 'Duty', type: 'number', default: 0.5, min: 0, max: 1, step: 0.05 },
     { key: 'offMode', label: 'Off state', type: 'enum', default: 'black', options: ['black', 'dim', 'colour'] },
@@ -63,11 +82,10 @@ export const strobe: ModifierDef = {
   ],
 
   apply(ctx, params, fb, range: PixelRange): void {
-    const rate = pnum(params, 'rate', 8);
     const duty = pnum(params, 'duty', 0.5);
-    if (rate <= 0 || duty >= 1) return; // always on → identity
+    const periodMs = strobePeriodMs(params, ctx.bpm);
+    if (!(periodMs > 0) || !Number.isFinite(periodMs) || duty >= 1) return; // always on → identity
     const fade = clamp01(pnum(params, 'fade', 0));
-    const periodMs = 1000 / rate;
     const phase = ((ctx.timeMs % periodMs) + periodMs) % periodMs / periodMs; // [0,1), robust to <0
     const g = gateAt(phase, duty, fade);
     if (g >= 1) return; // fully on → pass through

@@ -21,7 +21,9 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
+  import Select from '../../../../../ui/Select.svelte';
   import { modifierIcon } from './device-icons';
+  import { FREE_MS, RATE_OPTIONS } from './splice-face';
   import { mappable } from '../../../../map-mode/mappable.svelte';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import { effectDisplayName } from '../strip-model';
@@ -33,7 +35,8 @@
     isLandscape,
     modifierCategory,
     modifierLabel,
-    modifierParams,
+    isTempoSynced,
+    modifierFaceParams,
     modulatedKeys,
     pct,
     type CardParam,
@@ -53,7 +56,20 @@
   const index = $derived(chain.findIndex((m) => m.uid === modifier.uid));
   const name = $derived(modifierLabel(modifier.modifierId));
   const category = $derived(modifierCategory(modifier.modifierId));
-  const params = $derived(modifierParams(modifier.modifierId));
+  const params = $derived(modifierFaceParams(modifier.modifierId, modifier.params));
+  // Strobe's speed: one dropdown of the divisions, then Free (Hz) — as Splice / Slice time it.
+  const synced = $derived(isTempoSynced(modifier.modifierId));
+  const SPEED_OPTIONS = [...RATE_OPTIONS.filter((o) => o.value !== FREE_MS), { value: FREE_MS, label: 'Free (Hz)' }];
+  const speed = $derived(modifier.params.rateMode === 'beats' ? (typeof modifier.params.division === 'string' ? modifier.params.division : '1/16') : FREE_MS);
+  function setSpeed(choice: string): void {
+    begin();
+    if (choice === FREE_MS) api.setModifierParam(effectId, modifier.uid, 'rateMode', 'hz');
+    else {
+      api.setModifierParam(effectId, modifier.uid, 'rateMode', 'beats');
+      api.setModifierParam(effectId, modifier.uid, 'division', choice);
+    }
+    end();
+  }
   const landscape = $derived(isLandscape(params.length));
   const modulated = $derived(modulatedKeys(effect, modifier.uid));
   const disabled = $derived(!api.canEdit);
@@ -114,6 +130,14 @@
     </ContextMenu>
   {/snippet}
 
+  <!-- The params (and a synced modifier's Rate) — beside the side column when landscape. -->
+  <div class="main">
+  {#if synced}
+    <div class="speed">
+      <span class="speedlabel">Rate</span>
+      <Select value={speed} options={SPEED_OPTIONS} segment={false} {disabled} ariaLabel={`${name} rate`} onChange={setSpeed} class="speedsel" />
+    </div>
+  {/if}
   <ParamRows
     {params}
     values={modifier.params}
@@ -125,6 +149,7 @@
     onGestureStart={begin}
     onGestureEnd={end}
   />
+  </div>
 
   <!-- Mix + envelope: under the params, or (landscape) a column of their own beside them. -->
   <div class="side">
@@ -216,6 +241,26 @@
 
   .mixctl {
     display: inline-flex;
+  }
+  .main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .speed {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 26px;
+  }
+  .speedlabel {
+    font-size: var(--text-2xs);
+    color: var(--text-muted);
+  }
+  .speed :global(.speedsel) {
+    width: 128px;
   }
   .mix {
     display: flex;

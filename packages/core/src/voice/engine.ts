@@ -965,7 +965,7 @@ class VoiceBusEngine implements RenderEngine {
       // Section Master chain: over the whole composited frame, before the output stage
       // (blackout / master brightness in `frame()`). Runs once per tick, never per read.
       const master = this.activeEffectSection()?.master;
-      if (master?.length) applySectionMaster(this.finalFb, master, this.masterState, { model: this.model, timeMs: this.timeMs, dt });
+      if (master?.length) applySectionMaster(this.finalFb, master, this.masterState, { model: this.model, timeMs: this.timeMs, dt, bpm: this.bpm });
     }
     this.perf = {
       ...emptyPerfStats(),

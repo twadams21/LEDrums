@@ -110,6 +110,20 @@ describe('GeneratorCard', () => {
 describe('ModifierCard', () => {
   const withStrobe = () => demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
 
+  it('Strobe’s Rate is one dropdown — Free (Hz) shows the Hz row; a division hides it — one undo step', async () => {
+    const { api, effect } = withStrobe();
+    const view = render(ModifierCard, { props: { api, effectId: 'e1', modifier: effect().modifiers[0]! } });
+    const rate = view.getByRole('button', { name: 'Strobe rate' });
+    expect(rate.textContent).toContain('Free (Hz)');
+    expect(view.getByRole('slider', { name: 'Strobe Frequency' })).toBeTruthy(); // the Hz value
+    await fireEvent.keyDown(rate, { key: 'Enter' });
+    await fireEvent.pointerUp(view.getByRole('option', { name: '1/8' }), { pointerType: 'mouse' });
+    expect(effect().modifiers[0]!.params).toMatchObject({ rateMode: 'beats', division: '1/8' });
+    expect(api.undoDepth).toBe(1);
+    await view.rerender({ api, effectId: 'e1', modifier: effect().modifiers[0]! });
+    expect(view.queryByRole('slider', { name: 'Strobe Frequency' })).toBeNull(); // no Hz in a division
+  });
+
   it('bypasses from the power toggle', async () => {
     const { api, effect } = withStrobe();
     const { getByRole } = render(ModifierCard, { props: { api, effectId: 'e1', modifier: effect().modifiers[0]! } });
