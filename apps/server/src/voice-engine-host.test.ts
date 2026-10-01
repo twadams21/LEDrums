@@ -425,6 +425,16 @@ describe('VoiceEngineHost', () => {
     );
   });
 
+  it('reports every Effect its engine fired, naming it — so clients flash the step a Sequence cell played', () => {
+    const { host } = makeHost();
+    const events: Array<{ type?: string; destination?: string }> = [];
+    host.setMonitor((event) => events.push(event as { type?: string; destination?: string }));
+    host.setShow(makeShow('kick', '0'));
+    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
+    for (let i = 0; i < 4; i++) host.step(STEP);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'effect', source: 'server/voice', destination: 'effect:fx-flash' }));
+  });
+
   it.each(['__proto__', 'constructor', 'toString'])('fires nothing for an inherited-property Effect id %s', (effectId) => {
     const { host } = makeHost();
     host.setShow(makeShow('kick', '0'));

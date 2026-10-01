@@ -108,6 +108,30 @@ export function cellSummary(section: EffectsSection | null, cell: EffectCell, ki
   return summary;
 }
 
+/** One audition key's worth: a single Effect, or a whole Sequence / Random cell. */
+export type AuditionSlot = { kind: 'effect'; effect: Effect } | { kind: 'cell'; cell: EffectCell };
+
+/**
+ * What keys 1–9 / 0 play, in grid order. Every Effect is its own key, EXCEPT the Effects of a
+ * Sequence / Random cell, which share one key at the place of the cell's first Effect — the cell
+ * is one instrument that steps, so pressing its key again plays its next step (Tim, 2026-10-01:
+ * "it should be the same number").
+ */
+export function auditionSlots(section: EffectsSection | null, rows: readonly GridRow[], columns: readonly GridColumn[]): AuditionSlot[] {
+  const slots: AuditionSlot[] = [];
+  const stepped = new Set<string>();
+  for (const effect of effectsInGridOrder(section, rows, columns)) {
+    if (section && effectChain.cellPlayMode(section, effect.cell) !== 'layer') {
+      const key = effectChain.cellKey(effect.cell);
+      if (!stepped.has(key)) slots.push({ kind: 'cell', cell: effect.cell });
+      stepped.add(key);
+    } else {
+      slots.push({ kind: 'effect', effect });
+    }
+  }
+  return slots;
+}
+
 /** Every Effect in grid order: row by row, column by column, each cell's stack in stack order.
     Effects in cells the grid does not show come last, in composition order. */
 export function effectsInGridOrder(section: EffectsSection | null, rows: readonly GridRow[], columns: readonly GridColumn[]): Effect[] {

@@ -145,6 +145,26 @@ describe('Slider', () => {
     expect((getByLabelText('Synced value') as HTMLInputElement).value).toBe('73');
   });
 
+  it('a click on the track is kept from the wrapping label — focus never jumps into the value box', () => {
+    // Field wraps rows in a <label>, whose default click action focuses its first text box.
+    const { container } = render(Slider, { props: { value: 5, min: 0, max: 10, step: 1, onChange: vi.fn(), ariaLabel: 'Amount' } });
+    const onTrack = new MouseEvent('click', { bubbles: true, cancelable: true });
+    container.querySelector('.track')!.dispatchEvent(onTrack);
+    expect(onTrack.defaultPrevented).toBe(true);
+    const onValue = new MouseEvent('click', { bubbles: true, cancelable: true });
+    container.querySelector('.value input')!.dispatchEvent(onValue);
+    expect(onValue.defaultPrevented).toBe(false);
+  });
+
+  it('a scroll without ⌥ changes nothing and still scrolls the panel', () => {
+    const onChange = vi.fn();
+    const { container } = render(Slider, { props: { value: 5, min: 0, max: 10, step: 1, onChange, ariaLabel: 'Amount' } });
+    const ev = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    container.querySelector('.slider')!.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('adjusts by one step per wheel tick, and swallows the scroll so the page stays put', async () => {
     const onChange = vi.fn();
     const { container } = render(Slider, {
@@ -152,12 +172,12 @@ describe('Slider', () => {
     });
     const root = container.querySelector('.slider')!;
 
-    const up = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    const up = new WheelEvent('wheel', { altKey: true, deltaY: -100, cancelable: true, bubbles: true });
     root.dispatchEvent(up);
     expect(onChange).toHaveBeenLastCalledWith(11);
     expect(up.defaultPrevented).toBe(true);
 
-    root.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true }));
+    root.dispatchEvent(new WheelEvent('wheel', { altKey: true, deltaY: 100, cancelable: true, bubbles: true }));
     expect(onChange).toHaveBeenLastCalledWith(10);
   });
 
@@ -192,7 +212,7 @@ describe('Slider', () => {
 
     container
       .querySelector('.slider')!
-      .dispatchEvent(new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true }));
+      .dispatchEvent(new WheelEvent('wheel', { altKey: true, deltaY: 100, cancelable: true, bubbles: true }));
 
     expect(onChange).toHaveBeenLastCalledWith(0.02);
   });
@@ -204,7 +224,7 @@ describe('Slider', () => {
     });
     const root = container.querySelector('.slider')!;
     const tick = (): void =>
-      void root.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true }));
+      void root.dispatchEvent(new WheelEvent('wheel', { altKey: true, deltaY: 100, cancelable: true, bubbles: true }));
 
     await fireEvent.pointerDown(root);
     tick();
@@ -221,7 +241,7 @@ describe('Slider', () => {
       props: { value: 10, disabled: true, onChange, ariaLabel: 'Wheeled' },
     });
 
-    const ev = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    const ev = new WheelEvent('wheel', { altKey: true, deltaY: -100, cancelable: true, bubbles: true });
     container.querySelector('.slider')!.dispatchEvent(ev);
 
     expect(onChange).not.toHaveBeenCalled();

@@ -36,6 +36,12 @@
     oncontextmenu?: (event: MouseEvent) => void;
     /** MIDI-map registration (fire this cell); absent for the Master and disabled cells. */
     map?: MappableSpec;
+    /** How the stack plays a hit; a Sequence / Random cell wears a badge. */
+    playMode?: effectChain.CellPlayMode;
+    /** The step (0-based) that played last, for "Seq 2/3"; null before the first hit. */
+    playedStep?: number | null;
+    /** How many steps it has (its un-bypassed Effects). */
+    steps?: number;
   };
 
   let {
@@ -56,7 +62,17 @@
     onfocus,
     oncontextmenu,
     map,
+    playMode = 'layer',
+    playedStep = null,
+    steps = 0,
   }: Props = $props();
+
+  /** "Seq 2/3" — which step played last, of how many; "Seq · 3" before the first hit. */
+  const playBadge = $derived.by(() => {
+    if (playMode === 'layer' || master || count === 0) return null;
+    const tag = playMode === 'sequence' ? 'Seq' : 'Rnd';
+    return playedStep === null ? `${tag} · ${steps}` : `${tag} ${playedStep + 1}/${steps}`;
+  });
 
   const master = $derived(variant === 'master');
   const Icon = $derived(master ? SlidersHorizontal : firstGenerator ? GENERATOR_ICONS[firstGenerator] : null);
@@ -82,7 +98,7 @@
         ? `${label}, unavailable`
         : count === 0
           ? `${label}, empty`
-          : `${label}, ${count} effect${count === 1 ? '' : 's'}, ${firstName ?? ''}${allBypassed ? ', bypassed' : ''}`,
+          : `${label}, ${count} effect${count === 1 ? '' : 's'}, ${firstName ?? ''}${allBypassed ? ', bypassed' : ''}${playMode === 'layer' ? '' : `, ${playMode}`}`,
   );
 </script>
 
@@ -135,6 +151,7 @@
       <span class="detail">
         {#if allBypassed}<PowerOff size={11} aria-hidden="true" />{/if}
         {detail}
+        {#if playBadge}<span class="play" aria-hidden="true">{playBadge}</span>{/if}
       </span>
     {:else}
       <span class="add" aria-hidden="true"><Plus size={14} /></span>
@@ -293,5 +310,17 @@
     .flash {
       animation: cell-fire 220ms step-end forwards;
     }
+  }
+  /* Sequence / Random badge: which step played last, of how many. */
+  .play {
+    margin-left: auto;
+    padding: 0 4px;
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    border: 1px solid color-mix(in oklch, var(--accent) 45%, transparent);
+    border-radius: var(--radius-1);
+    white-space: nowrap;
   }
 </style>

@@ -29,6 +29,7 @@ function toEffectSection(section: SetlistSection): EffectSection {
   const out: EffectSection = { id: section.id, name: section.name, effects: section.effects, master: section.master };
   if (section.bars !== undefined) out.bars = section.bars;
   if (section.bpm !== undefined) out.bpm = section.bpm;
+  if (section.cellPlay?.length) out.cellPlay = section.cellPlay;
   return out;
 }
 
@@ -42,6 +43,7 @@ function toStoreSection(section: EffectSection | SetlistSection): SetlistSection
   const out: SetlistSection = { id: section.id, name: section.name, effects: section.effects ?? [], master: section.master ?? [] };
   if (section.bars !== undefined) out.bars = section.bars;
   if (section.bpm !== undefined) out.bpm = section.bpm;
+  if (section.cellPlay?.length) out.cellPlay = section.cellPlay;
   return out;
 }
 
