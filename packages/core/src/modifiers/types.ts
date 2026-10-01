@@ -43,6 +43,9 @@ export interface ModifierContext {
   timeMs: number;
   /** Frame delta in ms. */
   dt: number;
+  /** The transport tempo, when the host knows it — a tempo-synced modifier (Strobe in
+      divisions) reads it; absent → 120. */
+  bpm?: number;
 }
 
 /** Single-render undo journal, owned by one live modifier state. capture replaces the

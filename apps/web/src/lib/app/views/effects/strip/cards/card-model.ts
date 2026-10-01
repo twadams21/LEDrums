@@ -219,6 +219,27 @@ export function modifierParams(modifierId: string): CardParam[] {
   return (tryGetModifier(modifierId)?.paramSpec ?? []).map(toCardParam);
 }
 
+/** A tempo-synced modifier (Strobe): its speed is `rateMode` (`hz` | `beats`) + `division` + `rate`. */
+export function isTempoSynced(modifierId: string): boolean {
+  const keys = new Set((tryGetModifier(modifierId)?.paramSpec ?? []).map((s) => s.key));
+  return keys.has('rateMode') && keys.has('division') && keys.has('rate');
+}
+
+/**
+ * The params a Modifier card lists as rows. A tempo-synced modifier's speed is ONE "Rate"
+ * dropdown instead (the divisions, then Free (Hz)), so its mode and division are not rows, and
+ * its Hz rate is a row only while Free is picked — as Splice's and Slice's timings work.
+ */
+export function modifierFaceParams(modifierId: string, values: Readonly<Record<string, ParamValue>> | undefined): CardParam[] {
+  const all = modifierParams(modifierId);
+  if (!isTempoSynced(modifierId)) return all;
+  const beats = (values?.rateMode ?? all.find((p) => p.key === 'rateMode')?.default) === 'beats';
+  return all
+    .filter((p) => p.key !== 'rateMode' && p.key !== 'division' && !(beats && p.key === 'rate'))
+    // The dropdown is "Rate"; the Hz value under Free is its frequency.
+    .map((p) => (p.key === 'rate' ? { ...p, label: 'Frequency' } : p));
+}
+
 export function modifierCategory(modifierId: string): string | undefined {
   return tryGetModifier(modifierId)?.category;
 }

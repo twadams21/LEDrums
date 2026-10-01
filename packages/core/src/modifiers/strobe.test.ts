@@ -3,7 +3,7 @@ import { Framebuffer } from '../engine/framebuffer';
 import type { PixelModel } from '../geometry/pixel-model';
 import { defaultParams, pnum, type ResolvedParams } from '../effects/types';
 import { applyModifierChain } from './chain';
-import { strobe } from './impl/strobe';
+import { strobe, strobePeriodMs } from './impl/strobe';
 import type { PixelRange, ResolvedModifier } from './types';
 
 /* Effect-chains S02 §2 — Strobe off state (black | dim | colour) and fade. Driven through the
@@ -134,5 +134,39 @@ describe('Strobe — fade', () => {
   it('is deterministic from the voice clock', () => {
     const p = { rate: 7, duty: 0.35, fade: 0.6, offMode: 'colour', offColor: '#20c0ff' };
     for (const t of TIMES) expect([...run(p, t)]).toEqual([...run(p, t)]);
+  });
+});
+
+/* Speed in Hz or in divisions (Tim, 2026-10-01: "an option for the speed to be either in Hz or
+   subdivisions, as it is with splice and slice"). */
+describe('Strobe speed: Hz or a division of the tempo', () => {
+  const lit = (rgba: Float32Array): boolean => rgba[3]! > 0;
+  function runAt(params: ResolvedParams, timeMs: number, bpm?: number): Float32Array {
+    const fb = src();
+    applyModifierChain([{ modifierId: 'strobe', params }], [], fb, range, model, timeMs, 16, bpm === undefined ? undefined : { phase: 0, timeMs, bpm });
+    return fb.rgba;
+  }
+
+  it('Hz is the default — a show saved before this reads back unchanged', () => {
+    expect(defaultParams(strobe.paramSpec).rateMode).toBe('hz');
+    expect(strobePeriodMs({ rate: 8 }, 140)).toBe(125);
+  });
+
+  it('a division flashes once per division at the tempo: 1/4 at 120 bpm = 500 ms', () => {
+    const p = { ...defaultParams(strobe.paramSpec), rateMode: 'beats', division: '1/4', duty: 0.5 };
+    expect(strobePeriodMs(p, 120)).toBe(500);
+    expect(lit(runAt(p, 100, 120))).toBe(true); // first half of the beat: on
+    expect(lit(runAt(p, 300, 120))).toBe(false); // second half: off
+    expect(lit(runAt(p, 600, 120))).toBe(true); // next beat
+  });
+
+  it('follows the tempo: the same 1/4 at 60 bpm is a 1000 ms cycle', () => {
+    const p = { ...defaultParams(strobe.paramSpec), rateMode: 'beats', division: '1/4', duty: 0.5 };
+    expect(strobePeriodMs(p, 60)).toBe(1000);
+    expect(lit(runAt(p, 300, 60))).toBe(true); // still the on half at 60 bpm
+  });
+
+  it('with no tempo from the host, a division reads at 120 bpm', () => {
+    expect(strobePeriodMs({ rateMode: 'beats', division: '1/16' }, undefined)).toBe(125);
   });
 });
