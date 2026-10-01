@@ -46,7 +46,7 @@ describe('decidePerformanceKey — accessibility owners', () => {
   it.each([
     ['editable text', { isEditableTarget: true }],
     ['an open combobox/listbox/select', { inOpenPopup: true }],
-    ['a radio/toggle/segmented control', { inKeyboardControl: true }],
+    ['a radio/toggle/segmented/slider control, for its arrows', { inKeyboardControl: true, key: 'ArrowRight' }],
   ])('yields to %s', (_surface, input) => {
     expect(decidePerformanceKey(at(input))).toEqual({ claim: false });
   });
@@ -57,10 +57,18 @@ describe('decidePerformanceKey — accessibility owners', () => {
     }
   });
 
-  it('never steals repeated keys from a focused control', () => {
-    for (const key of ['1', 'ArrowLeft', 'ArrowRight', '0']) {
+  it('never steals arrows from a focused control', () => {
+    for (const key of ['ArrowLeft', 'ArrowRight']) {
       expect(decidePerformanceKey(at({ key, inKeyboardControl: true }))).toEqual({ claim: false });
     }
+  });
+
+  it('fires digits through a focused slider / segmented / toggle / closed dropdown — none uses them', () => {
+    // Clicking a control leaves it focused; the digit bank used to go dead until you clicked away.
+    expect(decidePerformanceKey(at({ key: '4', inKeyboardControl: true }))).toEqual({ fireEffectIndex: 3, claim: true });
+    expect(decidePerformanceKey(at({ key: '0', inKeyboardControl: true, view: 'trigger' }))).toEqual({ fireEffectIndex: 9, claim: true });
+    // A held digit still repeats to nobody.
+    expect(decidePerformanceKey(at({ key: '4', inKeyboardControl: true, repeat: true }))).toEqual({ claim: false });
   });
 });
 
@@ -72,8 +80,8 @@ describe('decidePerformanceKey — context boundaries', () => {
     }
   });
 
-  it('still yields authoring-view digits to any keyboard-native surface', () => {
-    for (const owner of [{ isEditableTarget: true }, { inOpenPopup: true }, { inKeyboardControl: true }]) {
+  it('still yields authoring-view digits to a field being typed in, or an open list', () => {
+    for (const owner of [{ isEditableTarget: true }, { inOpenPopup: true }]) {
       expect(decidePerformanceKey(at({ view: 'trigger', key: '1', ...owner }))).toEqual({ claim: false });
     }
   });

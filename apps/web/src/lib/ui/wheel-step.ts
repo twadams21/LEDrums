@@ -7,6 +7,20 @@
    small deltas; taking the magnitude would make the same gesture mean different things on
    different hardware. Only the SIGN is read: up increases, down decreases. */
 
+/**
+ * Does this wheel event adjust the control under the pointer? Only with ⌥ Option (Alt) held.
+ *
+ * Tim, 2026-09-28: plain hover-scroll-adjust (Trent's 2026-08-13 rule) kept changing whatever
+ * parameter passed under the pointer while he scrolled the inspector — a value should change
+ * only when he means it to. So a plain scroll now always scrolls the panel, and the one-step-
+ * per-tick adjust below stays available, deliberately, behind ⌥. Every wheel-driven control
+ * (CommitInput, Slider, the node-face params, the curve editor) asks this first and returns
+ * WITHOUT preventDefault when it says no, so the scroll reaches the panel.
+ */
+export function wheelAdjusts(e: Pick<WheelEvent, 'altKey'>): boolean {
+  return e.altKey;
+}
+
 export interface WheelStepOptions {
   /** The control's current value — '' / non-numeric means "no value yet". */
   value: string | number;
