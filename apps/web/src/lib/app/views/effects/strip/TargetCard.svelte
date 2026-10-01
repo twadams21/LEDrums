@@ -44,6 +44,7 @@
   class="target-card"
   selected={api.selectedDevice?.kind === 'stage' && api.selectedDevice.effectId === effect.id && api.selectedDevice.stage === 'target'}
   onSelect={() => api.selectDevice({ kind: 'stage', effectId: effect.id, stage: 'target' })}
+  onDeselect={() => api.selectDevice(null)}
 >
   <SegmentedControl value={target.kind} options={TARGET_KIND_OPTIONS} onChange={setKind} ariaLabel="Target kind" {disabled} />
   <p class="summary" class:warn={selected !== null && selected.drums.length === 0}>{summary}</p>

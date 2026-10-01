@@ -106,6 +106,7 @@
   {disabled}
   selected={api.selectedDevice?.kind === 'modifier' && api.selectedDevice.owner === effectId && api.selectedDevice.uid === modifier.uid}
   onSelect={() => api.selectDevice({ kind: 'modifier', owner: effectId, uid: modifier.uid })}
+  onDeselect={() => api.selectDevice(null)}
 >
   {#snippet actions()}
     <ContextMenu mode="dropdown" actions={menu} label={`${name} actions`}>

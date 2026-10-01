@@ -25,7 +25,7 @@
   import { pushToast } from '../../../../ui/toast.svelte';
   import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICON } from './generator-icons';
-  import { BLEND_OPTIONS, RETRIGGER_OPTIONS, effectDisplayName, percent } from './strip-model';
+  import { BLEND_OPTIONS, RETRIGGER_OPTIONS, effectDisplayName, isControlPress, percent } from './strip-model';
 
   type Props = {
     api: EffectsAuthoringApi;
@@ -66,13 +66,24 @@
     event.preventDefault();
     onNudge?.(event.key === 'ArrowUp' ? -1 : 1);
   }
+
+  /** The name bar highlights the Effect; a later click on it again — on the bar or the name, not a
+      control, and not the second click of a double-click (that renames) — un-highlights it. */
+  function onHeadClick(event: MouseEvent): void {
+    const held = api.selectedDevice;
+    if (held?.kind === 'effect' && held.effectId === effect.id) {
+      if (event.detail <= 1 && !isControlPress(event.target, event.currentTarget as Element, '.name')) api.selectDevice(null);
+      return;
+    }
+    api.selectDevice({ kind: 'effect', effectId: effect.id });
+  }
 </script>
 
 <ContextMenu {actions}>
   <!-- The header click is a convenience: every control inside is keyboard reachable, and the
        name button (inside the header) selects. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="head" class:selected class:bypassed={effect.bypass} onclick={() => api.selectDevice({ kind: 'effect', effectId: effect.id })}>
+  <div class="head" class:selected class:bypassed={effect.bypass} onclick={onHeadClick}>
     <Tooltip text="Drag to reorder · ↑ ↓ to move">
       <button
         type="button"

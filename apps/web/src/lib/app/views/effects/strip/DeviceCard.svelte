@@ -12,6 +12,7 @@
   import ChevronsLeftRight from '@lucide/svelte/icons/chevrons-left-right';
   import ChevronsRightLeft from '@lucide/svelte/icons/chevrons-right-left';
   import Tooltip from '../../../../ui/Tooltip.svelte';
+  import { isControlPress } from './strip-model';
 
   type Props = {
     title: string;
@@ -32,6 +33,9 @@
     selected?: boolean;
     /** A press anywhere on the card highlights it (see `selected`). */
     onSelect?: () => void;
+    /** A second, separate click on an already-highlighted card's own area (not one of its
+        controls) un-highlights it. */
+    onDeselect?: () => void;
     children: Snippet;
     class?: string;
   };
@@ -47,12 +51,26 @@
     actions,
     selected = false,
     onSelect,
+    onDeselect,
     children,
     class: klass,
   }: Props = $props();
 
   // The prop only seeds the fold; the card owns it after.
   let folded = $state(untrack(() => startFolded));
+
+  // Press highlights; a later click on the highlighted card's own area — not a control, and not
+  // the second click of a double-click — un-highlights it (Tim, 2026-10-01).
+  let pressWasSelected = false;
+  function onPress(): void {
+    pressWasSelected = selected;
+    if (!selected) onSelect?.();
+  }
+  function onClickToggle(event: MouseEvent): void {
+    const toggle = pressWasSelected && event.detail <= 1 && !isControlPress(event.target, event.currentTarget as Element);
+    pressWasSelected = false;
+    if (toggle) onDeselect?.();
+  }
 </script>
 
 <!-- A press anywhere on the card — its title bar or any control on its face — highlights it,
@@ -63,7 +81,8 @@
   class:folded
   class:dimmed
   class:selected
-  onpointerdowncapture={() => onSelect?.()}
+  onpointerdowncapture={onPress}
+  onclickcapture={onClickToggle}
   style:--tint={tint}
   style:--device-w={folded ? undefined : `${width}px`}
   aria-label={title}

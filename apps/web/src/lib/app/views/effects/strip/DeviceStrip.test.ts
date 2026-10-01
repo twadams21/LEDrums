@@ -44,6 +44,37 @@ const stackIds = (api: ReturnType<typeof setup>['api']) => api.cellEffects(kickH
 const row = (container: HTMLElement, id: string) => container.querySelector<HTMLElement>(`[data-effect="${id}"]`)!;
 
 describe('DeviceStrip', () => {
+  it('a second click on a highlighted name bar un-highlights it — but not a control click, and not a double-click', async () => {
+    const { api, container } = setup();
+    const head = () => row(container, 'Pulse').querySelector<HTMLElement>('.head')!;
+    const boxed = () => api.selectedDevice?.kind === 'effect';
+    await fireEvent.click(head(), { detail: 1 });
+    expect(boxed()).toBe(true);
+    await fireEvent.click(within(head()).getByRole('button', { name: 'Pulse' }), { detail: 2 }); // the double-click that renames
+    expect(boxed()).toBe(true);
+    await fireEvent.click(within(head()).getByLabelText('Blend mode'), { detail: 1 }); // a control: stays
+    expect(boxed()).toBe(true);
+    await fireEvent.click(within(head()).getByRole('button', { name: 'Pulse' }), { detail: 1 }); // the name: toggles
+    expect(api.selectedDevice).toBeNull();
+    await fireEvent.click(head(), { detail: 1 });
+    expect(boxed()).toBe(true);
+  });
+
+  it('a second click on a highlighted card’s own area un-highlights it; a click on one of its controls does not', async () => {
+    const { api, container } = setup();
+    const card = () => row(container, 'Pulse').querySelector<HTMLElement>('.card')!; // the Generator card
+    const press = async (el: Element) => {
+      await fireEvent.pointerDown(el);
+      await fireEvent.click(el, { detail: 1 });
+    };
+    await press(card().querySelector('.title')!);
+    expect(api.selectedDevice).toMatchObject({ kind: 'stage', stage: 'generator' });
+    await press(card().querySelector('button.kind')!); // a control inside it
+    expect(api.selectedDevice).toMatchObject({ kind: 'stage', stage: 'generator' });
+    await press(card().querySelector('.title')!);
+    expect(api.selectedDevice).toBeNull();
+  });
+
   it('clicking an Effect’s name bar boxes the whole Effect; highlighting a card inside it does not', async () => {
     const { api, container } = setup();
     await fireEvent.click(row(container, 'Pulse').querySelector('.head')!);

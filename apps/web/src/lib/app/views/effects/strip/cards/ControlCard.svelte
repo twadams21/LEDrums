@@ -113,6 +113,7 @@
   {disabled}
   selected={api.selectedDevice?.kind === 'control' && api.selectedDevice.effectId === effect.id && api.selectedDevice.uid === control.uid}
   onSelect={() => api.selectDevice({ kind: 'control', effectId: effect.id, uid: control.uid })}
+  onDeselect={() => api.selectDevice(null)}
 >
   {#snippet actions()}
     <IconButton icon={Trash2} label={`Remove ${label}`} size={14} {disabled} onclick={() => api.removeControl(effect.id, control.uid)} />

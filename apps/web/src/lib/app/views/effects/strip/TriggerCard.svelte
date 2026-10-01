@@ -85,6 +85,7 @@
   class="trigger-card"
   selected={api.selectedDevice?.kind === 'stage' && api.selectedDevice.effectId === effect.id && api.selectedDevice.stage === 'trigger'}
   onSelect={() => api.selectDevice({ kind: 'stage', effectId: effect.id, stage: 'trigger' })}
+  onDeselect={() => api.selectDevice(null)}
 >
   <!-- A dropdown, not segments: four kinds do not fit a card-width segmented row legibly. -->
   <ParamLine label="Kind">
