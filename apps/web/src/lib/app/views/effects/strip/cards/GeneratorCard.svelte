@@ -16,6 +16,7 @@
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
   import SlotsEditor from './SlotsEditor.svelte';
+  import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
   import { effectDisplayName } from '../strip-model';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
@@ -46,7 +47,9 @@
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
   const params = $derived(generatorParams(device));
-  const landscape = $derived(isLandscape(params.length));
+  // Splice has its own sectioned face, always laid out left to right; others go landscape when long.
+  const spliceFace = $derived(device.kind === 'splice');
+  const landscape = $derived(spliceFace || isLandscape(params.length));
   const thumb = $derived(thumbSource(device));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
@@ -167,17 +170,21 @@
   {/if}
   </div>
 
-  <ParamRows
-    {params}
-    values={device.params}
-    {modulated}
-    {disabled}
-    labelPrefix={label}
-    {mapParam}
-    onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
-    onGestureStart={() => api.beginGesture()}
-    onGestureEnd={() => api.endGesture()}
-  />
+  {#if spliceFace}
+    <SpliceFace {api} {effect} {modulated} {mapParam} />
+  {:else}
+    <ParamRows
+      {params}
+      values={device.params}
+      {modulated}
+      {disabled}
+      labelPrefix={label}
+      {mapParam}
+      onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
+      onGestureStart={() => api.beginGesture()}
+      onGestureEnd={() => api.endGesture()}
+    />
+  {/if}
 </DeviceCard>
 
 <style>

@@ -31,8 +31,8 @@ function demo(extra: Record<string, unknown> = {}, opts: { canEdit?: boolean } =
 }
 
 describe('GeneratorCard', () => {
-  it('a Splice (many params) goes landscape: params in columns of at most 12 rows; a Wave stays portrait', () => {
-    const splice = demo({ generator: { kind: 'splice' } });
+  it('a Slice (many params) goes landscape: params in columns of at most 12 rows; a Wave stays portrait', () => {
+    const splice = demo({ generator: { kind: 'slice' } });
     const { container } = render(GeneratorCard, { props: { api: splice.api, effect: splice.effect() } });
     const card = container.querySelector('.card')!;
     expect(card.classList.contains('landscape')).toBe(true);
@@ -91,13 +91,15 @@ describe('GeneratorCard', () => {
     expect((getByRole('button', { name: 'Noise' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('shows the slots editor for a Splice and appends a coloured slot', async () => {
-    const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }] } });
+  it('shows one Splices row per band (Count), and Add appends after them, raising Count — one undo step', async () => {
+    const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }, { color: '#0000ff' }] } });
     const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelector('.preview')).toBeNull(); // a splice previews through its slots
+    expect(container.querySelectorAll('.slot')).toHaveLength(4); // Count 4: the two authored, cycling
     await fireEvent.click(getByRole('button', { name: 'Add splice' }));
-    expect(effect().generator.slots).toHaveLength(2);
-    expect(typeof effect().generator.slots![1]!.color).toBe('string');
+    expect(effect().generator.slots!.map((s) => s.color)).toEqual(['#ff0000', '#0000ff', '#ff0000', '#0000ff', '#0000ff']);
+    expect(effect().generator.params.count).toBe(5);
+    expect(api.undoDepth).toBe(1);
   });
 
   it('mutes a slot from its power toggle', async () => {

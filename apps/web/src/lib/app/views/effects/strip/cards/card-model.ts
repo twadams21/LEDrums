@@ -24,6 +24,8 @@ export interface CardParam {
   unit?: string;
   options?: string[];
   default: ParamValue;
+  /** A 0..1 amount read as a whole percent (`0.25` → `25`, unit `%`). */
+  percent?: boolean;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -59,6 +61,7 @@ function unitSuffix(unit: string | undefined): string {
 export function formatParam(p: CardParam, v: ParamValue, opts: { unit?: boolean } = {}): string {
   if (typeof v === 'boolean') return v ? 'On' : 'Off';
   if (typeof v === 'string') return enumLabel(v);
+  if (p.percent) return opts.unit === false ? String(Math.round(v * 100)) : `${Math.round(v * 100)}%`;
   const n = p.step !== undefined && p.step < 1 ? v.toFixed(2) : String(Math.round(v));
   return opts.unit === false ? n : `${n}${unitSuffix(p.unit)}`;
 }

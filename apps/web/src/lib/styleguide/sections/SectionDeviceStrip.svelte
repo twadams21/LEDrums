@@ -87,12 +87,25 @@
 
   const viewer = createStandaloneEffectsApi(section, DEFAULT_KIT, { canEdit: false });
 
-  /* A many-param device (Splice) — the landscape card. */
+  /* The Splice card (its own sectioned face) and a long generic one (Slice) — both landscape. */
   const spliceApi = createStandaloneEffectsApi(
-    { effects: [fx({ id: 'fx-splice', name: 'Splice', cell: kickHead, generator: { kind: 'splice' } })], master: [] },
+    {
+      effects: [
+        fx({
+          id: 'fx-splice',
+          name: 'Splice',
+          cell: kickHead,
+          target: { kind: 'kit' },
+          generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
+        }),
+        fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
+      ],
+      master: [],
+    },
     DEFAULT_KIT,
   );
   const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
+  const sliceFx = $derived(spliceApi.effectById('fx-slice')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -122,12 +135,21 @@
     </DemoCard>
 
     <DemoCard
-      title="Device card — landscape (many params)"
-      src={['lib/app/views/effects/strip/cards/DeviceCard', 'lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
-      note="Past 12 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 12 rows — 22 → 11 · 11 — so the card grows wider, not taller, in as few columns as fit. Twelve or fewer stays portrait."
+      title="Generator card — Splice"
+      src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/SlotsEditor']}
+      note="The graph-era Splice inspector's sections and words, one column each: SPLICE · MOVE AROUND · MOVE THROUGH · BRIGHTNESS ENVELOPE, the Splices rows (one per band — Count) beside the kind picker. Timings are one dropdown (divisions, None, Free (ms)); an active cascade shows its Order — drag the chips or pick a pattern. Rows a mode makes meaningless stay hidden."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Device card — landscape (many params)"
+      src={['lib/app/views/effects/strip/cards/DeviceCard', 'lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
+      note="Past 12 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 12 rows (e.g. Slice) — so the card grows wider, not taller, in as few columns as fit. Twelve or fewer stays portrait."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}
