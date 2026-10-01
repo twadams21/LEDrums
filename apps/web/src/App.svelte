@@ -8,7 +8,7 @@
   import { ShellStore } from './lib/app/shell-store.svelte';
   import { parseSearch } from './lib/app/shell-nav';
   import { platformShortcutModifier } from './lib/app/primary-shortcut';
-  import type { ShortcutEntry } from './lib/app/shortcuts';
+  import { createAppShortcuts } from './lib/app/app-shortcuts';
   import AppKeyboardCapture from './lib/app/AppKeyboardCapture.svelte';
   import Shell from './lib/app/AuthorShell.svelte';
   import Overlays from './lib/app/Overlays.svelte';
@@ -40,27 +40,9 @@
     typeof navigator !== 'undefined' ? navigator.platform : '',
   );
 
-  /** Duplicate the node selected on the Trigger canvas; a no-op (returns false, so the seam
-      lets the key fall through) unless a real, selected graph node exists — this lets the
-      Sections view keep its own Cmd/Ctrl+D (duplicate section) when a section is selected. */
-  function duplicateSelectedNode(): boolean {
-    const sel = shell.selection;
-    if (sel?.kind !== 'node') return false;
-    const node = store.selectedGraph?.nodes.find((n) => n.id === sel.nodeId);
-    if (!node) return false;
-    const clone = store.duplicateNode(node);
-    if (!clone) return false;
-    shell.select({ kind: 'node', nodeId: clone.id });
-    return true;
-  }
-
-  // The app-level shortcut registry (data → action + description; see lib/app/shortcuts.ts).
-  // Browser-default combos are CLAIMED here in capture phase. Undo lives here now rather than
-  // as an inline branch below. Ctrl/Cmd+D duplicates the selected trigger-graph node.
-  const shortcuts: ShortcutEntry[] = [
-    { combo: 'mod+z', description: 'Undo', run: () => store.undo() },
-    { combo: 'mod+d', description: 'Duplicate selected node', run: duplicateSelectedNode },
-  ];
+  // The app-level shortcut registry (see lib/app/app-shortcuts.ts). Browser-default combos are
+  // CLAIMED in capture phase; registered combos are also consumed inside modals.
+  const shortcuts = createAppShortcuts(store);
 
 </script>
 

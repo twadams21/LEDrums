@@ -15,6 +15,7 @@
 import type { GraphNode, TriggerSource } from './sim';
 import { initMidi, type MidiDeviceInfo, type MidiEventHandler, type MidiInitResult } from '../midi/webmidi';
 import type { GlobalControlAction, GlobalControlBinding, InputMap } from '@ledrums/core';
+import type { MapTarget } from './map-api';
 
 /** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
     so a CC source node may never bind it (S37) — the editor rejects it and learn skips it. */
@@ -37,7 +38,11 @@ export type MidiLearnTarget =
   | { kind: 'global-control-cc'; action: GlobalControlAction }
   /** Effect chains (S05): a Cue Effect's MIDI source — the next note OR controller binds it
       (whichever arrives first; CC 0 stays reserved). */
-  | { kind: 'cue'; effectId: string };
+  | { kind: 'cue'; effectId: string }
+  /** Effect chains (S07): MIDI-map mode's armed control — the next note OR controller binds it
+      (CC 0 stays reserved). Unlike every other target it stays ARMED after a bind: map mode
+      re-binds on each new input until the user disarms (clicks away, Escape, leaves the mode). */
+  | { kind: 'map'; target: MapTarget };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -65,6 +70,9 @@ export interface MidiControllerHost {
   /** Set a Cue Effect's MIDI source (a cue learn binds through here — the Effect's undo / guard
       path). Same accepted / refused contract as the other writers. */
   setCueMidiSource(effectId: string, source: { midiNote: number } | { midiCc: number }): boolean;
+  /** Bind MIDI-map mode's armed control (the store's `bindTarget` path, which records a refusal
+      for the overlay). The arm stays up either way, so the result is not read. */
+  bindMapSource(target: MapTarget, source: { midiNote: number } | { midiCc: number }): void;
 }
 
 export class MidiController {
@@ -151,6 +159,9 @@ export class MidiController {
       accepted = this.host.setGlobalControlBinding(target.action, { midiNote: note });
     } else if (target.kind === 'cue') {
       accepted = this.host.setCueMidiSource(target.effectId, { midiNote: note });
+    } else if (target.kind === 'map') {
+      this.host.bindMapSource(target.target, { midiNote: note });
+      return; // map learn stays armed (see MidiLearnTarget)
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
@@ -175,6 +186,10 @@ export class MidiController {
     if (target.kind === 'cue') {
       if (this.host.setCueMidiSource(target.effectId, { midiCc: controller })) this.learnTarget = null;
       return;
+    }
+    if (target.kind === 'map') {
+      this.host.bindMapSource(target.target, { midiCc: controller });
+      return; // map learn stays armed
     }
     if (target.kind !== 'cc-node') return;
     const node = this.host.selectedGraphNodes()?.find((n) => n.id === target.nodeId);

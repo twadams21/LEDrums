@@ -9,7 +9,6 @@ import { breathingKit } from './impl/breathing-kit';
 import { tempSweep } from './impl/temp-sweep';
 import { velocityFlames } from './impl/velocity-flames';
 import { hueRotateKit } from './impl/hue-rotate-kit';
-import { waveCollapse, collapseRadius } from './impl/wave-collapse';
 
 function model(drums = 1, hoopCount = 4): PixelModel {
   const drumDefs = [];
@@ -143,37 +142,5 @@ describe('hue-rotate-kit', () => {
     const fb = render(hueRotateKit, m, ctx(m, { timeMs: 400 }));
     expect(litCount(fb)).toBe(m.pixelCount);
     expect(allFinite01(fb)).toBe(true);
-  });
-});
-
-describe('wave-collapse', () => {
-  it('collapseRadius goes reach→0→reach over a hit life', () => {
-    const reach = 1000;
-    expect(collapseRadius(0, 1, reach)).toBeCloseTo(reach);
-    // Midway through the inward leg it is smaller than at the start.
-    expect(collapseRadius(500, 1, reach)).toBeLessThan(collapseRadius(0, 1, reach));
-    // At the bottom of the collapse the radius reaches (near) zero.
-    expect(collapseRadius(reach, 1, reach)).toBeCloseTo(0);
-    // Then it explodes back outward.
-    expect(collapseRadius(1500, 1, reach)).toBeGreaterThan(collapseRadius(reach, 1, reach));
-  });
-
-  it('renders a band of light for a recent hit, finite in [0,1]', () => {
-    const m = model(1);
-    // At age≈reach/speed the shell has collapsed to the origin, overlapping the
-    // small test drum (~100mm radius). A wide band guarantees coverage.
-    const fb = render(waveCollapse, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 1000)] }), {
-      speed: 1.2,
-      reach: 1200,
-      width: 600,
-      decayMs: 4000,
-    });
-    expect(litCount(fb)).toBeGreaterThan(0);
-    expect(allFinite01(fb)).toBe(true);
-  });
-
-  it('lights nothing with no triggers', () => {
-    const m = model(1);
-    expect(litCount(render(waveCollapse, m, ctx(m)))).toBe(0);
   });
 });

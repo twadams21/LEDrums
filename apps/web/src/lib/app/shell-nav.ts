@@ -6,8 +6,8 @@
    The app is mode-less: there is no Perform/Author mode — it is simply whichever
    `view` is selected (Perform being one of them). The invariant lives here once
    (locality): switching views clears the selection. Selections open in place —
-   node/patch in the graph views' Node Editor drawer, bus in the Buses panel,
-   section in the Sections view — so there is no global dock tab to route. */
+   bus in the Buses panel, section in the Sections view — so there is no global
+   dock tab to route. */
 
 export type View = 'perform' | 'objects' | 'sections' | 'trigger' | 'monitor';
 
@@ -27,18 +27,9 @@ export const SETTINGS_PANES: readonly SettingsPane[] = [
 
 export const DEFAULT_SETTINGS_PANE: SettingsPane = 'input';
 
-/** A node id in the Patch Graph (device routing). These are stage-prefixed strings
-    minted by `patch-topology.ts` — `input` · `trigger:<drumId>` · `zone:<drumId>:<zone>`
-    · `drum:<drumId>` · `hoop:<drumId>:<n>` · `dataline:<n>` · `output:<n>` · `controller`
-    — so the graph can name any node without a closed enum. */
-export type PatchNodeId = string;
-
-/** What is loaded into an inspector surface: a node in the active trigger graph,
-    a Patch-graph device node, a layer/bus, or a setlist section (rename +
+/** What is loaded into an inspector surface: a layer/bus, or a setlist section (rename +
     read-only transport-recall info). `null` = nothing selected. */
 export type Selection =
-  | { kind: 'node'; nodeId: string }
-  | { kind: 'patch'; nodeId: PatchNodeId }
   | { kind: 'bus'; busId: string }
   | { kind: 'section'; sectionId: string };
 
@@ -105,10 +96,6 @@ export function isSelected(nav: ShellNav, sel: Selection): boolean {
   const s = nav.selection;
   if (!s || s.kind !== sel.kind) return false;
   switch (s.kind) {
-    case 'node':
-      return s.nodeId === (sel as { nodeId: string }).nodeId;
-    case 'patch':
-      return s.nodeId === (sel as { nodeId: PatchNodeId }).nodeId;
     case 'bus':
       return s.busId === (sel as { busId: string }).busId;
     case 'section':

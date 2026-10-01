@@ -29,7 +29,6 @@
   import PasteFallbackDialog from './views/PasteFallbackDialog.svelte';
   import LayersIcon from '@lucide/svelte/icons/layers';
   import MapModeOverlay from './map-mode/MapModeOverlay.svelte';
-  import type { MapModeApi } from '../trigger-lab/map-api';
 
   let { store, shell }: { store: TriggerLab; shell: ShellStore } = $props();
 
@@ -37,37 +36,21 @@
   // store-wire lands.
   const effectsApi = $derived(store.effectsApi);
 
-  // MIDI-map mode depends only on the map contract, which the store implements in wave 5b.
-  const mapApi = $derived(store as unknown as MapModeApi); // TODO(ec-w5): store-mappings
-
   // Perform is a chrome-light view: the shell hides the right column and fills the
   // workspace row with PerformView.
   const perform = $derived(shell.view === 'perform');
 
   // Keep the selection consistent with the active model so an inspector surface never
   // shows stale info after the focus moves out from under it. The selection lives in the
-  // shell store while the active song / section / graph live in the engine store — the
+  // shell store while the active song / section live in the engine store — the
   // two are otherwise decoupled, so e.g. changing songs re-points `activeSectionId` (to
   // the new song's first section) without the section detail knowing. This bridge
-  // re-syncs:
-  //  · a SECTION selection follows the active section (song switch, recall);
-  //  · a NODE selection is dropped once it no longer exists in the open graph (graph
-  //    switch, node removed / swapped) so the inspector clears instead of describing a
-  //    gone node.
+  // re-syncs a SECTION selection to follow the active section (song switch, recall).
   $effect(() => {
     const sel = shell.selection;
-    if (!sel) return;
-    if (sel.kind === 'section') {
-      const active = store.activeSectionId;
-      if (active && active !== sel.sectionId) shell.select({ kind: 'section', sectionId: active });
-    } else if (sel.kind === 'node') {
-      // Drop a node selection only when a graph IS open and the node is genuinely gone from
-      // it. A transiently-null selectedGraph (mid graph-switch / store rebuild) must NOT
-      // clear — that race made the Inspector lose a selection it should have kept (item 1.8);
-      // while null the Inspector just resolves the node to nothing and shows its empty state.
-      const g = store.selectedGraph;
-      if (g && !g.nodes.some((n) => n.id === sel.nodeId)) shell.clearSelection();
-    }
+    if (sel?.kind !== 'section') return;
+    const active = store.activeSectionId;
+    if (active && active !== sel.sectionId) shell.select({ kind: 'section', sectionId: active });
   });
 
   // Resizable layout tracks — sizes live in store.paneSizes (persisted live) with
@@ -159,12 +142,10 @@
     />
   {/if}
 
-  <!-- MIDI-map mode: outlines, scrim, capture layer and hint bar; nothing until the mode is on. -->
-  <!-- Until store-mappings lands the store has no map methods; mounting over it would throw on
-       the first key press (performKeyMapping). TODO(ec-w5): store-mappings — drop the guard. -->
-  {#if 'performKeyMapping' in mapApi}
-    <MapModeOverlay api={mapApi} {shell} />
-  {/if}
+  <!-- MIDI-map mode: outlines, scrim, capture layer and hint bar; nothing until the mode is on.
+       The store implements the map contract (MapModeApi) directly: mappings are show-level, so
+       its canEditMappings is the viewer rule alone. -->
+  <MapModeOverlay api={store} {shell} />
 
   <!-- Transient notifications (paste errors, confirmations) — one host for the whole shell. -->
   <ToastHost />

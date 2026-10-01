@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { defaultProject, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
-import type { ServerMessage } from '@ledrums/protocol';
+import { serverMessageSchema, type ServerMessage } from '@ledrums/protocol';
 import { OutputManager } from '../output-manager';
 import { VoiceEngineHost } from '../voice-engine-host';
 import { handleVoiceInput, type VoiceInputDeps } from './voice-input';
@@ -282,6 +282,23 @@ describe('handleVoiceInput — the input echo names the drum', () => {
     expect(echoes(broadcasts)[0]!.drumId).toBe('kick');
     handleVoiceInput({ t: 'osc', address: '/unclaimed', value: 0.9 }, deps);
     expect(echoes(broadcasts)[1]!.drumId).toBeUndefined();
+  });
+
+  it('echoes a CC (not CC 0) with its controller and normalised value, so the web sees CC-mapped bypass toggles', () => {
+    const host = makeHost();
+    const broadcasts: ServerMessage[] = [];
+    const deps: VoiceInputDeps = { voiceHost: host, broadcastJson: (m) => broadcasts.push(m) };
+    handleVoiceInput({ t: 'cc', controller: 21, value: 127, channel: 2 }, deps);
+    handleVoiceInput({ t: 'cc', controller: 21, value: 0 }, deps);
+
+    const [press, release] = echoes(broadcasts);
+    expect(press).toEqual({ t: 'input', kind: 'midi', label: 'cc 21', value: 1, controller: 21, channel: 2 });
+    expect(release).toEqual({ t: 'input', kind: 'midi', label: 'cc 21', value: 0, controller: 21 });
+    // The wire schema is strict: the echo must survive the client's decode.
+    expect(serverMessageSchema.safeParse(press).success).toBe(true);
+    // CC 0 keeps its own section-recall echo (no controller field).
+    handleVoiceInput({ t: 'cc', controller: 0, value: 1 }, deps);
+    expect(echoes(broadcasts)[2]).toEqual({ t: 'input', kind: 'midi', label: 'CC0 1', value: 1 });
   });
 });
 

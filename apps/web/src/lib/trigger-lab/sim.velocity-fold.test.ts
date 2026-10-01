@@ -19,7 +19,7 @@ import {
    order, with routing parity, the N≤1 / N=0 edge cases, idempotency, and that
    section/beat (and already-folded) graphs are left untouched. */
 
-const EFFECT_IDS = ['gen:chase-bands', 'gen:pixel-accum', 'gen:whole-drum', 'gen:ripple-3d', 'gen:strobe'];
+const EFFECT_IDS = ['gen:chase-bands', 'gen:pixel-accum', 'gen:whole-drum', 'gen:ripple-3d', 'gen:whole-kit'];
 
 /** trigger → switch(on:'velocity') → N play children (child i at y=i*40, ascending, each on
     a distinct effect so a fired child is identifiable). `edgeOrder` inserts the child edges

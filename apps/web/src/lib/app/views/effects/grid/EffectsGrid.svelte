@@ -195,9 +195,11 @@
         {#each columns as col, c (col.column.kind === 'zone' ? `z${col.column.slot}` : col.column.kind)}
           {@const cell = { row: row.id, column: col.column }}
           {@const s = api.cellSummary(cell)}
+          {@const label = r === 0 ? `Kit ${s.label}` : col.column.kind === 'zone' ? s.label : `${row.label} ${s.label}`}
           <div class="slot" class:group={c === firstTrigger && c > 0}>
             <GridCell
-              label={r === 0 ? `Kit ${s.label}` : col.column.kind === 'zone' ? s.label : `${row.label} ${s.label}`}
+              {label}
+              map={s.enabled ? { target: { kind: 'fireCell', cell }, kind: 'button', label } : undefined}
               enabled={s.enabled}
               count={s.count}
               firstName={s.firstName}

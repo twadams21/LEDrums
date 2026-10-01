@@ -11,8 +11,9 @@ let idSeq = 1000;
 
 /** Every prefix the app mints through {@link nid} / {@link freshId}. Effect chains add `fx`
     (Effect ids), `mod` / `ctl` / `dev` (device uids — `effects-doc.ts` / `effects-files.ts`) and
-    `scene` (canvas scenes a file load brings in); a reload must reserve them too. */
-const GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset|fx|mod|ctl|dev|scene)-(\d+)$/;
+    `scene` (canvas scenes a file load brings in), and MIDI-map adds `map` (InputMapping ids);
+    a reload must reserve them too. */
+const GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset|fx|mod|ctl|dev|scene|map)-(\d+)$/;
 
 /** Mint a fresh `"<prefix>-<n>"` id (the raw counter bump). */
 export function nid(prefix: string): string {

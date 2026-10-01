@@ -46,11 +46,9 @@ function setup(options: ConstructorParameters<typeof MemoryMapModeApi>[0] = {}) 
   const onFire = vi.fn();
   const fireEffectAt = vi.fn();
   const store: AppKeyboardStore = {
-    selectedGraph: null,
     fireSectionGraph: vi.fn(),
     fireEffectAt,
     stepSetlist: vi.fn(() => true),
-    removeNode: vi.fn(),
   };
   render(Harness, { api, shell, registry, cell: cellSpec, fader: faderSpec, onFire, store });
   const enter = (): void => {
@@ -217,6 +215,17 @@ describe('MIDI-map mode overlay', () => {
     await fireEvent.input(max, { target: { value: '0.5' } });
     await fireEvent.blur(max);
     expect(api.inputMappings[0]).toMatchObject({ rangeMax: 0.5, rangeMin: undefined });
+  });
+
+  it('an unset range shows the target’s own range (defaultRange), a set bound shows itself', () => {
+    const { enter } = setup({
+      mappings: [{ id: 'm2', source: { midiCc: 21 }, target: faderSpec.target as effectChain.InputMappingTarget, rangeMax: 0.4 }],
+    });
+    enter();
+    press(screen.getByRole('slider', { name: 'Opacity' }));
+    flushSync();
+    expect((screen.getByRole('spinbutton', { name: 'Range minimum' }) as HTMLInputElement).value).toBe('0');
+    expect((screen.getByRole('spinbutton', { name: 'Range maximum' }) as HTMLInputElement).value).toBe('0.4');
   });
 
   it('a viewer cannot arm', () => {

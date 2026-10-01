@@ -13,6 +13,9 @@
   import Plus from '@lucide/svelte/icons/plus';
   import { NO_ACTIVE_SONG_REASON, REFERENCE_SONG_REASON, VIEWING_REASON } from './edit-gate';
   import { BIND_INVITE, globalControlBindingSummary } from '../global-control-labels';
+  import { globalControlDef, type GlobalControlAction } from '@ledrums/core';
+  import type { MappableSpec } from '../../trigger-lab/map-api';
+  import { mappable } from '../map-mode/mappable.svelte';
 
   let { store }: { store: TriggerLab } = $props();
 
@@ -35,11 +38,23 @@
   );
   const prevBinding = $derived(globalControlBindingSummary(store.globalControls.prevSection));
   const nextBinding = $derived(globalControlBindingSummary(store.globalControls.nextSection));
+
+  /** MIDI-map: a nav arrow maps its global control (written to Settings' bindings). */
+  const globalMap = (action: GlobalControlAction): MappableSpec => ({
+    target: { kind: 'globalControl', action },
+    kind: 'button',
+    label: globalControlDef(action).label,
+  });
+
+  /** MIDI-map: a chip recalls its section of the active song. */
+  const songId = $derived(store.activeSongById?.id);
 </script>
 
 <div class="bar" role="navigation" aria-label="Sections">
   <span class="rowlabel"><LayoutGrid size={13} aria-hidden="true" /> Sections</span>
-  <NavArrow direction="prev" unit="section" disabled={!store.canStepSetlist('section', -1)} binding={prevBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', -1)} />
+  <span class="nav" {@attach mappable(globalMap('prevSection'))}>
+    <NavArrow direction="prev" unit="section" disabled={!store.canStepSetlist('section', -1)} binding={prevBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', -1)} />
+  </span>
   <div class="chips">
     {#if sections.length === 0}
       <span class="none">No sections in this song</span>
@@ -57,6 +72,7 @@
         class="chip"
         class:on={store.activeSectionId === sec.id}
         aria-current={store.activeSectionId === sec.id ? 'true' : undefined}
+        {@attach mappable({ target: { kind: 'recallSection', sectionId: sec.id, songId }, kind: 'button', label: `Section · ${sec.name}` })}
         onclick={() => store.setActiveSection(sec.id)}
         ondblclick={() => startRename(sec.id)}
       >
@@ -74,11 +90,17 @@
       onclick={() => store.addSongSection(`Section ${sections.length + 1}`)}
     />
   </div>
-  <NavArrow direction="next" unit="section" disabled={!store.canStepSetlist('section', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', 1)} />
+  <span class="nav" {@attach mappable(globalMap('nextSection'))}>
+    <NavArrow direction="next" unit="section" disabled={!store.canStepSetlist('section', 1)} binding={nextBinding} bindingInvite={BIND_INVITE} onclick={() => store.stepSetlist('section', 1)} />
+  </span>
 </div>
 
 <style>
   .chip-edit { flex: 0 0 150px; }
+  .nav {
+    display: inline-flex;
+    flex: none;
+  }
   .bar {
     display: flex;
     align-items: center;

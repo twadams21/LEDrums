@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseKit, type OutputConfig } from '@ledrums/core';
+import type { OutputConfig } from '@ledrums/core';
 import {
-  hasHoopFanOut,
   outputsToPatch,
   patchToOutputs,
   pixelRanges,
@@ -167,37 +166,6 @@ describe('pixelRanges', () => {
     const { byOutput } = pixelRanges(routing, px);
     expect(byOutput).not.toHaveProperty('blank');
     expect(byOutput.o1).toEqual({ first: 0, last: 49 });
-  });
-});
-
-describe('hasHoopFanOut — S07 fan-out rule, editor-side (S11)', () => {
-  // A kit with two drums, enough hoops to fan out; mirrors routing-integrity.test.ts's builder.
-  const kit = parseKit({
-    global: { ledDensityPxPerM: 100, hoopCount: 1, defaultHoopSpacingMm: 50 },
-    drums: [
-      { id: 'A', diameterIn: 6, hoopSpacingMm: 50, hoopCount: 4, pixelsPerHoop: 10, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
-      { id: 'B', diameterIn: 6, hoopSpacingMm: 50, hoopCount: 2, pixelsPerHoop: 10, origin: { x: 500, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
-    ],
-    outputs: [],
-  });
-
-  it('is false for a clean routing — every hoop on exactly one output', () => {
-    // Hoops are 1-based (A1): A hoops 1..2 on o1, B hoop 1 on o2.
-    const routing: PatchRouting = { outputs: [output('o1', [h('A', 1), h('A', 2)]), output('o2', [h('B', 1)])] };
-    expect(hasHoopFanOut(kit, routing)).toBe(false);
-  });
-
-  it('is true when a hoop is driven across two outputs', () => {
-    const routing: PatchRouting = { outputs: [output('o1', [h('A', 1)]), output('o2', [h('A', 1)])] };
-    expect(hasHoopFanOut(kit, routing)).toBe(true);
-  });
-
-  it('a re-home (hoop MOVED to another output) stays clean — reconnect is not a fan-out', () => {
-    // Before: A#1 on o1. After the move: A#1 on o2 only. One output throughout → no fan-out.
-    const before: PatchRouting = { outputs: [output('o1', [h('A', 1)]), output('o2', [h('B', 1)])] };
-    const afterMove: PatchRouting = { outputs: [output('o1', []), output('o2', [h('B', 1), h('A', 1)])] };
-    expect(hasHoopFanOut(kit, before)).toBe(false);
-    expect(hasHoopFanOut(kit, afterMove)).toBe(false);
   });
 });
 

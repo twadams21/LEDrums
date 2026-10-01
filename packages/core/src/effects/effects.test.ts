@@ -9,17 +9,12 @@ import { solidBase } from './impl/solid-base';
 import { chase } from './impl/chase';
 import { wholeDrum } from './impl/whole-drum';
 import { wholeKit } from './impl/whole-kit';
-import { followHoop } from './impl/follow-hoop';
 import { radialWash, waveRadius } from './impl/radial-wash';
 import { wipe3d } from './impl/wipe-3d';
 import { meterEq } from './impl/meter-eq';
 import { pixelAccum } from './impl/pixel-accum';
-import { colourMelody } from './impl/colour-melody';
-import { strobe } from './impl/strobe';
 import { syncedHoops } from './impl/synced-hoops';
-import { burst } from './impl/burst';
 import { swing } from './impl/swing';
-import { sidechain } from './impl/sidechain';
 import { sacredHogs } from './impl/sacred-hogs';
 import { collisions } from './impl/collisions';
 import { breathingKit } from './impl/breathing-kit';
@@ -38,7 +33,6 @@ import { interference } from './impl/interference';
 import { caustics } from './impl/caustics';
 import { spiral } from './impl/spiral';
 import { gridGlow } from './impl/grid-glow';
-import { waveCollapse } from './impl/wave-collapse';
 // S22 — particle effects (colour batch 4)
 import { starfield } from './impl/starfield';
 import { cometTrails } from './impl/comet-trails';
@@ -143,20 +137,6 @@ describe('whole-drum vs whole-kit', () => {
   });
 });
 
-describe('follow-hoop', () => {
-  it('lights hoop 1 immediately and hoop 2 only after the delay', () => {
-    const m = model(1, 4);
-    const params = { delayMs: 100, decayMs: 2000 };
-    const now = render(followHoop, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 0)] }), params);
-    const later = render(followHoop, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 100)] }), params);
-    const hoopLit = (fb: Framebuffer, hoop: number) =>
-      m.pixels.filter((p) => p.hoopIndex === hoop).some((p) => fb.rgba[p.id * 4 + 1]! > 0.004 || fb.rgba[p.id * 4]! > 0.004 || fb.rgba[p.id * 4 + 2]! > 0.004);
-    expect(hoopLit(now, 1)).toBe(true); // hoop 1 = first hoop (1-based, A1), fires immediately
-    expect(hoopLit(now, 2)).toBe(false);
-    expect(hoopLit(later, 2)).toBe(true);
-  });
-});
-
 describe('radial-wash', () => {
   it('waveRadius grows for out, shrinks for in, and bounces', () => {
     expect(waveRadius('out', 0, 1, 1000)).toBe(0);
@@ -211,28 +191,6 @@ describe('pixel-accum', () => {
   });
 });
 
-describe('colour-melody', () => {
-  it('maps each note to a hue, held, and repeatable', () => {
-    const m = model(1);
-    const hueOf = (note: number) => {
-      const fb = render(colourMelody, m, ctx(m, { triggers: [trig(1, 'd0', note, 1, 0)] }));
-      const j = m.pixels[0]!.id * 4;
-      return [fb.rgba[j]!, fb.rgba[j + 1]!, fb.rgba[j + 2]!].join(',');
-    };
-    expect(hueOf(0)).not.toBe(hueOf(120));
-    expect(hueOf(60)).toBe(hueOf(60));
-  });
-});
-
-describe('strobe', () => {
-  it('is fully on during the on-phase and dark during the off-phase', () => {
-    const m = model(1);
-    // rate 10 Hz -> half-period 50ms. t=0 on, t=60ms off.
-    expect(litCount(render(strobe, m, ctx(m, { timeMs: 0 }), { rate: 10 }))).toBe(m.pixelCount);
-    expect(litCount(render(strobe, m, ctx(m, { timeMs: 60 }), { rate: 10 }))).toBe(0);
-  });
-});
-
 describe('synced-hoops', () => {
   it('renders the same color for the same hoopIndex across two drums', () => {
     const m = model(2, 4);
@@ -245,29 +203,6 @@ describe('synced-hoops', () => {
     // Different hoop levels differ (the wave/hue varies up the drum).
     const hoop2Start = d0.pixelStart + 2 * d0.pixelsPerHoop;
     expect(colorAt(d0.pixelStart)).not.toBe(colorAt(hoop2Start));
-  });
-});
-
-describe('burst', () => {
-  it('lights the whole struck drum; harder hits stay lit longer', () => {
-    const m = model(2);
-    const params = { baseDecayMs: 200 };
-    const d0 = m.drumById.get('d0')!;
-    // Whole struck drum lit at age 0.
-    const fresh = render(burst, m, ctx(m, { triggers: [trig(1, 'd0', 36, 1, 0)] }), params);
-    let drumLit = 0;
-    for (let p = d0.pixelStart; p < d0.pixelStart + d0.pixelCount; p++) {
-      if (fresh.rgba[p * 4]! > 0.004 || fresh.rgba[p * 4 + 1]! > 0.004 || fresh.rgba[p * 4 + 2]! > 0.004) drumLit++;
-    }
-    expect(drumLit).toBe(d0.pixelCount);
-
-    // At a fixed later age, the harder hit retains more brightness than a soft hit.
-    const briOf = (vel: number) => {
-      const fb = render(burst, m, ctx(m, { triggers: [trig(1, 'd0', 36, vel, 400)] }), params);
-      const j = d0.pixelStart * 4;
-      return Math.max(fb.rgba[j]!, fb.rgba[j + 1]!, fb.rgba[j + 2]!);
-    };
-    expect(briOf(1)).toBeGreaterThan(briOf(0.4));
   });
 });
 
@@ -296,24 +231,6 @@ describe('swing', () => {
   });
 });
 
-describe('sidechain', () => {
-  it('dips brightness right after a trigger then recovers', () => {
-    const m = model(1);
-    const params = { brightness: 1, duckDepth: 0.8, recoverMs: 400 };
-    const briOf = (fb: Framebuffer) => Math.max(fb.rgba[0]!, fb.rgba[1]!, fb.rgba[2]!);
-
-    const state = sidechain.createState!(m);
-    // Recovered baseline (no triggers, small dt).
-    const baseline = briOf(render(sidechain, m, ctx(m, { dt: 16, triggers: [] }), params, state));
-    // Trigger arrives -> ducks.
-    const ducked = briOf(render(sidechain, m, ctx(m, { dt: 0, triggers: [trig(1, 'd0', 36, 1, 0)] }), params, state));
-    expect(ducked).toBeLessThan(baseline);
-    // Subsequent idle frames recover toward the baseline.
-    const recovering = briOf(render(sidechain, m, ctx(m, { dt: 200, triggers: [] }), params, state));
-    expect(recovering).toBeGreaterThan(ducked);
-  });
-});
-
 describe('sacred-hogs', () => {
   it('lights pixels (halo + hogs) over time without NaNs', () => {
     const m = model(1, 4);
@@ -338,8 +255,8 @@ describe('collisions', () => {
 });
 
 // S19 — Colour batch 1 (swatch + hit/trigger effects). Saturation is now exposed on
-// chase, whole-drum, whole-kit, follow-hoop, burst, pixel-accum, synced-hoops, swing
-// (colour-melody already had it). The contract: saturation 0 desaturates every lit pixel
+// chase, whole-drum, whole-kit, pixel-accum, synced-hoops, swing (and the since-deleted
+// follow-hoop / burst / colour-melody). The contract: saturation 0 desaturates every lit pixel
 // to achromatic white/grey (r===g===b), which the hardcoded `hsvToRgb(hue, 1, …)` could
 // never produce. Each case uses a coloured hue so a leak would show as a chromatic pixel.
 describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
@@ -365,12 +282,9 @@ describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
     { name: 'chase', run: (m) => render(chase, m, ctx(m, { transport: transport(0) }), { hue: 120, saturation: 0 }) },
     { name: 'whole-drum', run: (m) => render(wholeDrum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
     { name: 'whole-kit', run: (m) => render(wholeKit, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
-    { name: 'follow-hoop', run: (m) => render(followHoop, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0, delayMs: 0, decayMs: 2000 }) },
-    { name: 'burst', run: (m) => render(burst, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }) },
     { name: 'pixel-accum', run: (m) => render(pixelAccum, m, ctx(m, { triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, pixelAccum.createState!(m)) },
     { name: 'synced-hoops', run: (m) => render(syncedHoops, m, ctx(m, { transport: transport(1.3, 700) }), { hue: 120, saturation: 0 }) },
     { name: 'swing', run: (m) => render(swing, m, ctx(m, { dt: 0, triggers: [hit('d0')] }), { hue: 120, saturation: 0 }, swing.createState!(m)) },
-    { name: 'colour-melody', run: (m) => render(colourMelody, m, ctx(m, { triggers: [hit('d0')] }), { saturation: 0 }) },
   ];
 
   for (const c of cases) {
@@ -390,11 +304,11 @@ describe('S19 colour batch 1 — saturation 0 ⇒ white on lit pixels', () => {
 });
 
 // S20 — Colour batch 2 (wash / base / utility / meter). Saturation is now exposed and threaded
-// through hsvToRgb on radial-wash, wipe-3d, solid-base, breathing-kit, strobe, hue-rotate-kit
+// through hsvToRgb on radial-wash, wipe-3d, solid-base, breathing-kit, hue-rotate-kit
 // (multi: base hue + vertical spread, no swatch), temp-sweep (multi: warm/cool endpoints, no
-// swatch), meter-eq and sidechain. Same contract as S19: saturation 0 desaturates every lit
-// pixel to achromatic white/grey (r===g===b), which the old hardcoded `hsvToRgb(hue, 1, …)`
-// could never produce. Each coloured case uses hue 120 so a leak shows as a chromatic pixel.
+// swatch) and meter-eq (plus the since-deleted strobe / sidechain). Same contract as S19:
+// saturation 0 desaturates every lit pixel to achromatic white/grey (r===g===b), which the old
+// hardcoded `hsvToRgb(hue, 1, …)` could never produce. Each coloured case uses hue 120 so a leak shows as a chromatic pixel.
 describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
   /** Every pixel with any light is achromatic (r===g===b within fp epsilon). */
   function scanLit(fb: Framebuffer): { lit: number; allWhite: boolean } {
@@ -420,10 +334,8 @@ describe('S20 colour batch 2 — saturation 0 ⇒ white on lit pixels', () => {
     { name: 'solid-base', run: (m) => render(solidBase, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
     { name: 'breathing-kit', run: (m) => render(breathingKit, m, ctx(m), { hue: 120, saturation: 0, brightness: 1 }) },
     { name: 'hue-rotate-kit', run: (m) => render(hueRotateKit, m, ctx(m), { saturation: 0, brightness: 0.8 }) },
-    { name: 'strobe', run: (m) => render(strobe, m, ctx(m, { timeMs: 0 }), { hue: 120, saturation: 0, brightness: 1 }) },
     { name: 'temp-sweep', run: (m) => render(tempSweep, m, ctx(m, { timeMs: 0 }), { saturation: 0, brightness: 0.8 }) },
     { name: 'meter-eq', run: (m) => render(meterEq, m, ctx(m), { hue: 120, saturation: 0, level: 1 }) },
-    { name: 'sidechain', run: (m) => render(sidechain, m, ctx(m, { dt: 0, triggers: [] }), { hue: 120, saturation: 0 }, sidechain.createState!(m)) },
   ];
 
   for (const c of cases) {
@@ -501,16 +413,6 @@ describe('S21 colour batch 3 — saturation 0 ⇒ white on lit pixels (textures)
     { name: 'caustics', run: (m) => render(caustics, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
     { name: 'spiral', run: (m) => render(spiral, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
     { name: 'grid-glow', run: (m) => render(gridGlow, m, ctx(m, { timeMs: 250 }), { hue: 120, saturation: 0 }) },
-    {
-      name: 'wave-collapse',
-      run: (m) =>
-        render(waveCollapse, m, ctx(m, { triggers: [trig(1, 'd0', 38, 1, 0)] }), {
-          hue: 120,
-          saturation: 0,
-          reach: 100,
-          width: 800,
-        }),
-    },
   ];
 
   for (const c of cases) {

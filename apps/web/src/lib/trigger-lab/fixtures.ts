@@ -156,10 +156,12 @@ export const play = (effectId: string, mode: PlayMode = 'oneshot'): Block => {
 // --- starter trees that exercise the block set ------------------------------
 
 // Seed trees reference the generator effects (the retired pattern ids were remapped to
-// their generator equivalents in U3 — see the alias map in core `aliases.ts`).
+// their generator equivalents in U3 — see the alias map in core `aliases.ts`). The snare
+// rim / shell trees played `gen:strobe` until S08 deleted the strobe generator (strobe is a
+// Modifier now); they play `gen:whole-kit`, the nearest kit-wide flash.
 const kickCenter: Block = play('gen:whole-drum', 'oneshot');
 const snareCenter: Block = { id: bid('rand'), kind: 'random', noRepeat: true, children: [play('gen:chase-bands'), play('gen:pixel-accum'), play('gen:ripple-3d')] };
-const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('gen:pixel-accum'), play('gen:strobe')] };
+const snareRim: Block = { id: bid('all'), kind: 'all', children: [play('gen:pixel-accum'), play('gen:whole-kit')] };
 const tomCenter: Block = { id: bid('seq'), kind: 'sequence', children: [play('gen:chase-bands'), play('gen:ripple-3d'), play('gen:whole-drum')] };
 // value+bands switch: 3 even bands (cutoffs 1/3, 2/3) == the old 3-child velocity split.
 // treeToGraph wires the children onto band-0 / band-1 / band-2 in y-order.
@@ -172,7 +174,7 @@ const tomEdge: Block = {
   children: [play('gen:pixel-accum'), play('gen:chase-bands'), play('gen:whole-drum')],
 };
 const kickShell: Block = { id: bid('toggle'), kind: 'toggle', child: play('gen:lava-lamp', 'loop') };
-const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('gen:strobe') };
+const snareShell: Block = { id: bid('chance'), kind: 'chance', p: 0.5, child: play('gen:whole-kit') };
 const tomRim: Block = {
   id: bid('rand2'),
   kind: 'random',

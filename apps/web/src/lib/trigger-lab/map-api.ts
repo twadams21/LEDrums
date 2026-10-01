@@ -44,6 +44,13 @@ export interface MapModeApi {
   readonly inputMappings: readonly InputMapping[];
   /** Whether the viewer may edit bindings. */
   readonly canEditMappings: boolean;
+  /**
+   * Continuous targets: the target's own range — what a mapping scales a 0..1 input into while
+   * its `rangeMin` / `rangeMax` are unset (the param spec's min / max; opacity and mix 0..1).
+   * Null for a discrete / toggle target, or one that does not resolve in the active section
+   * (unknown Effect, modifier or param, or a non-numeric param).
+   */
+  defaultRange(target: InputMappingTarget): { min: number; max: number } | null;
 
   // ---- write ----
   /** Bind (or re-bind) a target to a source. Refuses conflicts without changing anything. */

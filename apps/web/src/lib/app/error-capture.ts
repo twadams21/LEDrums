@@ -7,7 +7,7 @@
  *
  *  - `window.onerror` (uncaught synchronous errors) via an `'error'` listener,
  *  - `unhandledrejection` (rejected promises with no `.catch`),
- *  - a `console.error` monkey-patch (defensive logging + framework warnings — Svelte, xyflow).
+ *  - a `console.error` monkey-patch (defensive logging + framework warnings — Svelte).
  *
  * The capture is pure over its environment (window + console are injected) so it is unit-testable
  * with fakes, and fully fire-and-forget: a throw inside the sink is swallowed, and the patched

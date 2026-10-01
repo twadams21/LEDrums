@@ -12,15 +12,5 @@
       "entry": ["shell/main.js"]
     }
   },
-  "ignoreDependencies": ["max-api"],
-  "ignore": [
-    "apps/web/src/lib/app/views/PatchClipboardToolbar.svelte",
-    "apps/web/src/lib/app/views/PatchDiffDialog.svelte",
-    "apps/web/src/lib/app/views/PatchGraphView.svelte",
-    "apps/web/src/lib/app/views/PatchMirrorControl.svelte",
-    "apps/web/src/lib/app/views/PatchNode.svelte",
-    "apps/web/src/lib/app/views/PatchZoneNode.svelte",
-    "apps/web/src/lib/app/views/RefEdge.svelte",
-    "apps/web/src/lib/app/views/patch-context.ts"
-  ]
+  "ignoreDependencies": ["max-api"]
 }

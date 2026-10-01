@@ -12,7 +12,6 @@
   import SectionPrimitives from './sections/SectionPrimitives.svelte';
   import SectionComposites from './sections/SectionComposites.svelte';
   import SectionStagePreview from './sections/SectionStagePreview.svelte';
-  import SectionGraph from './sections/SectionGraph.svelte';
   import SectionInteraction from './sections/SectionInteraction.svelte';
   import SectionEffectsGrid from './sections/SectionEffectsGrid.svelte';
   import SectionDeviceStrip from './sections/SectionDeviceStrip.svelte';
@@ -29,7 +28,6 @@
     ['#motion', 'Motion'],
     ['#primitives', 'Primitives'],
     ['#composites', 'Composites'],
-    ['#graph', 'Graph'],
     ['#effects-grid', 'Effects grid'],
     ['#device-strip', 'Device strip'],
     ['#device-cards', 'Device cards'],
@@ -74,7 +72,6 @@
   <SectionPrimitives />
   <SectionComposites />
   <SectionStagePreview />
-  <SectionGraph />
   <SectionEffectsGrid />
   <SectionDeviceStrip />
   <SectionDeviceCards />

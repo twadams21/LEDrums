@@ -1,35 +1,27 @@
 /* The App-level keyboard dispatcher. The DOM adapter decides which semantic surface owns the
-   event; this seam composes the browser-shortcut registry, canvas deletion, and Perform actions so
+   event; this seam composes the browser-shortcut registry, the Backspace/Delete claim, and Perform actions so
    the application has one capture-phase owner and one mounted integration seam. */
 
-import { decideDeleteKey, isDeleteKey, type DeleteKeyNode } from './delete-key';
+import { decideDeleteKey, isDeleteKey } from './delete-key';
 import { performanceKeyTarget } from './performance-key-target';
 import { claimPerformanceKey, decidePerformanceKey } from './performance-key';
 import { dispatchShortcut, matchesShortcut, type ShortcutEntry } from './shortcuts';
 import type { voice } from '@ledrums/core';
-import type { Selection, SettingsPane, View } from './shell-nav';
+import type { SettingsPane, View } from './shell-nav';
 import type { ShortcutPlatform } from './primary-shortcut';
 import { decideMapModeKey, isBindableKey, isMapModeToggle, type MapKeySession } from './map-mode/map-keys';
 
-export interface AppKeyboardNode extends DeleteKeyNode {
-  id: string;
-}
-
 export interface AppKeyboardStore {
-  selectedGraph: { nodes: readonly AppKeyboardNode[] } | null;
   fireSectionGraph(index: number): void;
   /** Keys 1–9 / 0 audition the section's nth Effect in grid order (EffectsAuthoringApi). While the
       store has it, digits go here instead of {@link fireSectionGraph}; S08 drops the graph path. */
   fireEffectAt?(index: number): void;
   stepSetlist(axis: voice.NavAxis, delta: number): boolean;
-  removeNode(node: AppKeyboardNode): void;
 }
 
 export interface AppKeyboardShell {
   view: View;
   settingsPane: SettingsPane | null;
-  selection: Selection | null;
-  clearSelection(): void;
   /** MIDI-map mode (S07b). Optional so keyboard fixtures without map mode stay minimal. */
   mapMode?: boolean;
   setMapMode?(on: boolean): void;
@@ -94,7 +86,6 @@ export function dispatchAppKeyboard({
       isEditableTarget: false,
       inOpenPopup: false,
       inKeyboardControl: false,
-      inFlowCanvas: target.inFlowCanvas,
     });
     if (performance.claim) return;
   }
@@ -113,10 +104,9 @@ export function dispatchAppKeyboard({
       isEditableTarget: false,
       inOpenPopup: false,
       inKeyboardControl: false,
-      inFlowCanvas: false,
     });
     // Non-editable modal/popup chrome still owns the app shortcut boundary, before later
-    // SectionsView/xyflow/window listeners can act on the hidden surface. A marked control only
+    // SectionsView/window listeners can act on the hidden surface. A marked control only
     // bypasses this guard for its relevant Perform key; Backspace/Delete and registered chords
     // remain suppressed there.
     if (isDeleteKey(event.key) || performance.claim || matchesShortcut(event, shortcuts, shortcutPlatform)) {
@@ -127,7 +117,7 @@ export function dispatchAppKeyboard({
   }
 
   // A modal or keyboard-active popup owns every app shortcut in its surface. In particular, do
-  // not let a portalled menu/popover duplicate or delete the graph hidden behind it.
+  // not let a portalled menu/popover duplicate or delete what is hidden behind it.
   if (dispatchShortcut(event, shortcuts, shortcutPlatform)) return;
 
   if (shell.setMapMode && isMapModeToggle(event, shortcutPlatform)) {
@@ -151,24 +141,10 @@ export function dispatchAppKeyboard({
   }
 
   if (isDeleteKey(event.key)) {
-    const selection = shell.selection;
-    const node =
-      selection?.kind === 'node'
-        ? (store.selectedGraph?.nodes.find((candidate) => candidate.id === selection.nodeId) ?? null)
-        : null;
-    const { prevent, removeNode } = decideDeleteKey({
-      key: event.key,
-      isEditableTarget: target.isEditableTarget,
-      selection,
-      resolvedNode: node,
-    });
+    const { prevent } = decideDeleteKey({ key: event.key, isEditableTarget: target.isEditableTarget });
     // Keep the desktop WebView from treating an unowned Backspace as history navigation. Do not
-    // stop propagation here: xyflow's window listener still owns deletion of selected wires.
+    // stop propagation here: a later listener in the event's path may still own the key.
     if (prevent) event.preventDefault();
-    if (removeNode && node) {
-      store.removeNode(node);
-      shell.clearSelection();
-    }
     return;
   }
 

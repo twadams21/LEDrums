@@ -23,6 +23,7 @@
   import Select from '../../../../ui/Select.svelte';
   import Tooltip from '../../../../ui/Tooltip.svelte';
   import { pushToast } from '../../../../ui/toast.svelte';
+  import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICON } from './generator-icons';
   import { BLEND_OPTIONS, RETRIGGER_OPTIONS, effectDisplayName, percent } from './strip-model';
 
@@ -96,6 +97,7 @@
         aria-pressed={!effect.bypass}
         aria-label={`${name} on`}
         {disabled}
+        {@attach mappable({ target: { kind: 'bypass', effectId: effect.id }, kind: 'toggle', label: `${name} · On` })}
         onclick={(e) => {
           e.stopPropagation();
           api.setEffectBypass(effect.id, !effect.bypass);
@@ -110,6 +112,7 @@
         type="button"
         class="fire"
         aria-label={`Audition ${name}`}
+        {@attach mappable({ target: { kind: 'fireEffect', effectId: effect.id }, kind: 'button', label: `${name} · Fire` })}
         onclick={(e) => {
           e.stopPropagation();
           api.fireEffect(effect.id);
@@ -155,7 +158,7 @@
         <Select value={effect.blend} options={BLEND_OPTIONS} ariaLabel="Blend mode" {disabled}
           class="blend" onChange={(v) => api.setEffectBlend(effect.id, v as effectChain.Effect['blend'])} />
       </span>
-      <span class="ctl">
+      <span class="ctl" {@attach mappable({ target: { kind: 'opacity', effectId: effect.id }, kind: 'continuous', label: `${name} · Opacity` })}>
         <span class="k">Opacity</span>
         <FaceParamControl kind="number" value={effect.opacity} display={percent(effect.opacity)} min={0} max={1} step={0.01}
           ariaLabel="Opacity" {disabled} onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}

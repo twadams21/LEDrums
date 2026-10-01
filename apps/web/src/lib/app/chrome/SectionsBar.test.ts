@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/svelte';
 import type { TriggerLab } from '../../trigger-lab/store.svelte';
 import SectionsBar from './SectionsBar.svelte';
+import { mapRegistry } from '../map-mode/registry.svelte';
 import { NO_ACTIVE_SONG_REASON, REFERENCE_SONG_REASON, VIEWING_REASON } from './edit-gate';
 
 /* SectionsBar (tabbed chrome row 3): one chip per section of the active song,
@@ -114,5 +115,20 @@ describe('SectionsBar', () => {
     expect(none.container.textContent).toContain('No sections in this song');
     const noSong = render(SectionsBar, { props: { store: mockStore({ activeSong: null }) } });
     expect(noSong.container.textContent).toContain('No sections in this song');
+  });
+});
+
+describe('SectionsBar in MIDI-map mode', () => {
+  it('registers each chip as a recall of its section in the active song, and the arrows as the section global controls', () => {
+    const { container } = render(SectionsBar, { props: { store: mockStore() } });
+    const mine = mapRegistry.entries.filter((e) => container.contains(e.node));
+    expect(mine.map((e) => e.spec.target)).toEqual([
+      { kind: 'globalControl', action: 'prevSection' },
+      { kind: 'recallSection', sectionId: 'sec-1', songId: 's1' },
+      { kind: 'recallSection', sectionId: 'sec-2', songId: 's1' },
+      { kind: 'globalControl', action: 'nextSection' },
+    ]);
+    expect(mine.every((e) => e.spec.kind === 'button')).toBe(true);
+    expect(mine[1]!.node.classList.contains('chip')).toBe(true);
   });
 });

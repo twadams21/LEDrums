@@ -26,7 +26,6 @@
     "@tauri-apps/api": "^2.1.1",
     "@threlte/core": "^8.0.2",
     "@threlte/extras": "^9.1.0",
-    "@xyflow/svelte": "^1.6.0",
     "bits-ui": "^2.18.1",
     "three": "^0.171.0"
   },

@@ -1,5 +1,7 @@
 # Spec: Gen3 authoring UX & engine remediation — phased
 
+> **Superseded for graph authoring (2026-09-30).** The trigger graph this document remediates is being replaced by the Effect-chain model: `docs/plans/2026-09-30-effect-chains/spec.md` (GH #237; decisions Trent's). The graph code is deleted in effect-chains S08. Its graph, wire, lint and Add-pane items are history; its non-graph items (PixLite, code debt) are not covered by this note.
+
 **Source:** `docs/plans/2026-07-09-codex-review-remediation.md` + Trent's decisions (2026-07-09 session). Supersedes the open items in that doc's §2–§6 with locked decisions.
 **Status:** ready for slicing. One open question (edge-hot node-hover wire highlight) — see Further Notes.
 

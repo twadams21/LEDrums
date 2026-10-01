@@ -1,5 +1,7 @@
 # Gen3 Graph Authoring Stabilisation PRD
 
+> **Superseded (2026-09-30).** The trigger graph this document specifies is being replaced by the Effect-chain model: `docs/plans/2026-09-30-effect-chains/spec.md` (GH #237; decisions Trent's). The graph code is deleted in effect-chains S08. Kept as history; do not build from it.
+
 Date: 2026-07-08
 Branch: `codex/gen3-graph-authoring`
 Parent PRD: `docs/plans/2026-07-06-gen3-graph-authoring-prd.md`

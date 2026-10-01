@@ -12,12 +12,37 @@ edges:
     condition: when a decision relates to system structure
   - target: context/stack.md
     condition: when a decision relates to technology choice
-last_updated: 2026-09-11
+last_updated: 2026-09-30
 ---
 
 # Decisions
 
 ## Decision Log
+
+### Effect chains replace the per-section trigger graph
+**Date:** 2026-09-30
+**Status:** Building on the `feat/effect-chains-*` PR stack (GH #237); not merged to `main`, not shipped
+**Decision:** Authoring moves from a canvas node graph to a per-section grid of Cells, each
+holding a Stack of linear Effects (Trigger → Generator → Modifiers → Target, plus Controls and an
+amp envelope), with a section Master chain and an Ableton-style MIDI-map mode. About 54 effects
+collapse into 9 Generators plus Splice / Slice, as Styles over the unchanged implementations.
+Strobe and similar "changing light" looks exist only as Modifiers. Routing nodes (random,
+sequence, switch, chance, toggle, delay, mix) are dropped in v1. A new showfile format starts
+clean; an Import brings an old show's songs, sections, scenes and transport with empty grids.
+**Reasoning:** Trent (2026-09-29/30 planning session on Trent's MacBook Pro), building on Tim's
+voice note relayed by Trent: too many near-duplicate effects, fixed-character effects (Strobe
+could only go to black, with no fade), stacking on a canvas that did not combine the way
+performers expect, and select-then-edit-elsewhere editing. On routing nodes, Trent: "cut out some
+complexity and only add it in when we want it". Full list and the agent-chosen gaps:
+`docs/plans/2026-09-30-effect-chains/spec.md`.
+**Alternatives considered:** Converting old graphs into Effects (out of scope; graphs are
+dropped on import). Linked Effects across sections (dropped for v1 **(agent-chosen)**; copy / paste
+instead). A GPU particle engine (a separate spike, `spike/particle-world`, not part of this work).
+**Consequences:** One pure resolver (`effect-chain/resolver.ts`) feeds the existing `PlayAction`
+seam for the server engine, the offline Sim and show assembly. The graph layer, graph editor,
+`@xyflow/svelte` and `fireGraph` are deleted last (effect-chains S08), after nothing uses them.
+Several older decisions below (graph digits, section graph ownership, Gen3 nodes) stop applying
+once S08 merges.
 
 ### Graph digits fire in every view; only section arrows stay Perform-only
 **Date:** 2026-09-11

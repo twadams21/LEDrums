@@ -18,97 +18,9 @@
     "state": "view:trigger",
     "target": ".bottom"
   },
-  "trigger-graph": {
+  "effects-view": {
     "state": "view:trigger",
     "target": "main.center"
-  },
-  "inspector-closed": {
-    "state": "view:trigger"
-  },
-  "inspector-in-canvas": {
-    "state": "view:trigger,add:mix,select:mix"
-  },
-  "add-node-popover": {
-    "state": "view:trigger,new-graph,add-popover",
-    "target": "Add node palette"
-  },
-  "add-node-popover-with-inspector": {
-    "state": "view:trigger,new-graph,add:mix,select:mix,add-popover"
-  },
-  "fx-params-comet": {
-    "state": "view:trigger,add:effect,select:effect,effect:gen:comet-trails",
-    "target": "Inspector"
-  },
-  "fx-params-sparkler": {
-    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:sparkler",
-    "target": "Inspector",
-    "settle": 300
-  },
-  "fx-params-flame-flicker": {
-    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:flame-flicker",
-    "target": "Inspector",
-    "settle": 300
-  },
-  "fx-params-confetti": {
-    "state": "view:trigger,add:effect,select:effect,effect:gen:confetti-burst",
-    "target": "Inspector"
-  },
-  "fx-params-filtered": {
-    "state": "view:trigger,add:effect,select:effect,effect:gen:confetti-burst,param-filter:hue",
-    "target": "Inspector"
-  },
-  "fx-decay-envelope-exp": {
-    "state": "view:trigger,add:effect,select:effect,effect:gen:whole-drum",
-    "target": "Inspector"
-  },
-  "fx-decay-envelope-linear": {
-    "state": "view:trigger,add:effect,select:effect,effect:gen:segments",
-    "target": "Inspector"
-  },
-  "wire-drop-add-node": {
-    "state": "view:trigger,new-graph,wire-drop",
-    "target": "Add node palette"
-  },
-  "wire-drop-add-node-modulation": {
-    "state": "view:trigger,new-graph,wire-drop:mod-source",
-    "target": "Add node palette"
-  },
-  "gen3-scope-inspector": {
-    "state": "view:trigger,add:scope,select:scope",
-    "target": "Inspector"
-  },
-  "gen3-envelope-inspector": {
-    "state": "view:trigger,new-graph,add:envelope,select:envelope",
-    "target": "Inspector"
-  },
-  "delay-inspector": {
-    "state": "view:trigger,new-graph,add:delay,select:delay",
-    "target": "Inspector"
-  },
-  "lfo-inspector": {
-    "state": "view:trigger,new-graph,add:lfo,select:lfo",
-    "target": "Inspector"
-  },
-  "gen3-mix-node": {
-    "state": "view:trigger,add:mix,select:mix",
-    "target": "main.center"
-  },
-  "gen3-slider-input": {
-    "state": "view:trigger,add:effect,select:effect",
-    "target": "Inspector"
-  },
-  "trigger-node-selected": {
-    "state": "view:trigger,add:mix,select:mix",
-    "target": "Inspector"
-  },
-  "graphs-rail": {
-    "state": "view:trigger",
-    "target": ".grail"
-  },
-  "graphs-rail-playing": {
-    "state": "view:trigger,fire:chase-bands,mode:loop,wait:1500,refire",
-    "target": ".gcard.sel",
-    "settle": 1500
   },
   "visualizer": {
     "state": "view:trigger",
@@ -141,9 +53,9 @@
     "target": "main.center",
     "settle": 300
   },
-  "canonical-inspector-readonly": {
-    "state": "view:trigger,canonical-readonly",
-    "target": "Inspector",
+  "canonical-effects-readonly": {
+    "state": "canonical-readonly",
+    "target": "main.center",
     "settle": 300
   },
   "section-detail": {
@@ -201,126 +113,6 @@
     "target": "dialog:Settings",
     "settle": 300
   },
-  "inspector-play": {
-    "state": "view:trigger,add:effect,select:effect",
-    "target": "Inspector"
-  },
-  "effect-gallery": {
-    "state": "view:trigger,add:effect,select:effect,gallery",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-sparkler": {
-    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:sparkler,gallery,search:sparkler",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-flame-flicker": {
-    "state": "view:trigger,new-graph,wait:500,add:effect,select:effect,effect:gen:flame-flicker,gallery,search:flame",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-collection": {
-    "state": "view:trigger,add:effect,select:effect,gallery",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-canvas": {
-    "state": "view:trigger,add:effect,select:effect,gallery",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-lenses": {
-    "state": "view:trigger,add:effect,select:effect,gallery",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "effect-gallery-filtered": {
-    "state": "view:trigger,add:effect,select:effect,gallery",
-    "target": "dialog:Change effect",
-    "settle": 1200
-  },
-  "segments-params": {
-    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments",
-    "target": "Inspector",
-    "settle": 800
-  },
-  "segments-gallery": {
-    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,gallery,search:segments",
-    "target": "dialog:Change effect",
-    "settle": 1500
-  },
-  "face-params-card": {
-    "state": "view:trigger,new-graph,face-params",
-    "target": "main.center",
-    "settle": 300
-  },
-  "face-params-wired": {
-    "state": "view:trigger,new-graph,face-params:wired",
-    "target": "main.center",
-    "settle": 400
-  },
-  "face-params-mixed": {
-    "state": "view:trigger,new-graph,face-params:mixed",
-    "target": "main.center",
-    "settle": 300
-  },
-  "face-params-expose": {
-    "state": "view:trigger,new-graph,face-params",
-    "target": "Inspector",
-    "settle": 300
-  },
-  "segments-fire-graph": {
-    "state": "view:trigger,graph:kick,select:effect,effect:gen:segments,fire:kick",
-    "target": "Trigger graph canvas",
-    "settle": 150
-  },
-  "splice-node": {
-    "state": "view:trigger,new-graph,add:splice",
-    "target": "node:Splice"
-  },
-  "splice-inspector": {
-    "state": "view:trigger,new-graph,add:splice,select:splice",
-    "target": "Inspector"
-  },
-  "splice-motion": {
-    "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger",
-    "target": "Inspector"
-  },
-  "splice-cascade": {
-    "state": "view:trigger,splice-cascade:kick",
-    "target": ".viz-stage",
-    "settle": 1200
-  },
-  "splice-envelope": {
-    "state": "view:trigger,new-graph,add:splice,select:splice",
-    "target": "Inspector",
-    "viewport": "1600x2400"
-  },
-  "slice-node": {
-    "state": "view:trigger,new-graph,add:slice",
-    "target": "node:Slice"
-  },
-  "slice-inspector": {
-    "state": "view:trigger,new-graph,add:slice,select:slice",
-    "target": "Inspector",
-    "viewport": "1600x2800"
-  },
-  "slice-motion": {
-    "state": "view:trigger,new-graph,add:slice,select:slice,slice-motion:smooth",
-    "target": "Inspector",
-    "viewport": "1600x2800"
-  },
-  "slice-space": {
-    "state": "view:trigger,new-graph,add:slice,select:slice,slice-on:space",
-    "target": "Inspector",
-    "viewport": "1600x2800"
-  },
-  "splice-through": {
-    "state": "view:trigger,new-graph,add:splice,select:splice,splice-motion:stagger,splice-through",
-    "target": "Inspector",
-    "viewport": "1600x3000"
-  },
   "new-show": {
     "state": "configured-zones",
     "click": "button:Shows >> button:New",
@@ -330,10 +122,9 @@
     "state": "configured-zones,settings:zones",
     "target": "dialog:Settings"
   },
-  "add-graph-zones": {
-    "state": "configured-zones,view:trigger",
-    "click": "button:Add graph",
-    "target": "dialog:Add graph"
+  "grid-configured-zones": {
+    "state": "configured-zones,view:trigger,cell:kick:z0",
+    "target": "main.center"
   },
   "grid-empty": {
     "state": "view:trigger",

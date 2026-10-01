@@ -11,7 +11,6 @@ import {
   nextZoneSlot,
   setZoneLabel,
   zoneLabel,
-  patchEditorFor,
   perHoopPixelCount,
   physicalPortLine,
   pixelsPerHoopForDrum,
@@ -21,56 +20,8 @@ import {
   totalKitPixelCount,
   zoneMidiNote,
   zoneOscAddress,
-  zoneSlot,
   zoneSlotsForDrum,
 } from './patch-inspector';
-
-describe('patchEditorFor', () => {
-  it('decodes the far-end singletons', () => {
-    expect(patchEditorFor('input')).toEqual({ kind: 'input' });
-    expect(patchEditorFor('controller')).toEqual({ kind: 'controller' });
-  });
-
-  it('decodes a trigger node', () => {
-    expect(patchEditorFor('trigger:snare')).toEqual({ kind: 'trigger', drumId: 'snare' });
-  });
-
-  it('decodes a zone node to drumId + label + slot', () => {
-    expect(patchEditorFor('zone:snare:edge')).toEqual({ kind: 'zone', drumId: 'snare', zone: 'edge', slot: 1 });
-    expect(patchEditorFor('zone:kick:center')).toEqual({ kind: 'zone', drumId: 'kick', zone: 'center', slot: 0 });
-  });
-
-  it('decodes a drum node', () => {
-    expect(patchEditorFor('drum:tom1')).toEqual({ kind: 'drum', drumId: 'tom1' });
-  });
-
-  it('decodes a hoop node to a 1-based core hoop (topology id + HoopRef both 1-based, A1)', () => {
-    expect(patchEditorFor('hoop:snare:1')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 1 });
-    expect(patchEditorFor('hoop:snare:4')).toEqual({ kind: 'hoop', drumId: 'snare', hoop: 4 });
-  });
-
-  it('decodes an output node carrying its OutputConfig id', () => {
-    expect(patchEditorFor('output:2')).toEqual({ kind: 'output', outputId: '2' });
-    expect(patchEditorFor('output:new-3')).toEqual({ kind: 'output', outputId: 'new-3' });
-  });
-
-  it('falls back to unknown for unrecognised ids', () => {
-    expect(patchEditorFor('wat')).toEqual({ kind: 'unknown', id: 'wat' });
-    expect(patchEditorFor('zone:onlyone')).toEqual({ kind: 'unknown', id: 'zone:onlyone' });
-  });
-});
-
-describe('zoneSlot', () => {
-  it('maps the canonical zone order to 0-based slots', () => {
-    expect(zoneSlot('center')).toBe(0);
-    expect(zoneSlot('edge')).toBe(1);
-    expect(zoneSlot('rim')).toBe(2);
-    expect(zoneSlot('shell')).toBe(3);
-  });
-  it('falls back to slot 0 for an unknown zone', () => {
-    expect(zoneSlot('mystery')).toBe(0);
-  });
-});
 
 const kit = (drumOverrides: Partial<KitConfig['drums'][number]> = {}): KitConfig => ({
   version: 1,

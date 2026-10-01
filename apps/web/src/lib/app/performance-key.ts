@@ -1,7 +1,7 @@
 /* Performance-key ownership. Graph digits are claimed in EVERY view: authoring a graph means
    firing it to hear it, so the Trigger view needs the same 1-9,0 bank the Perform view has.
    Section arrows stay Perform-only - stepping the setlist while authoring is not an authoring
-   action, and the flow canvas owns arrows for node movement.
+   action, and the authoring views own their arrows (the effects grid moves its cell focus).
 
    Ownership yields to keyboard-native surfaces in every view, which is what keeps the digits
    safe outside Perform. Text fields own digits/caret arrows; open popup controls own
@@ -25,8 +25,6 @@ export interface PerformanceKeyInput {
   inOpenPopup: boolean;
   /** Radio/toggle/segmented controls own their keyboard interaction. */
   inKeyboardControl: boolean;
-  /** The graph canvas owns ArrowLeft/ArrowRight for selected-node movement. */
-  inFlowCanvas: boolean;
   /** Any modifier reserves the chord for the focused/native surface. */
   ctrlKey: boolean;
   metaKey: boolean;
@@ -61,8 +59,8 @@ export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKey
 
   if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
     // Setlist stepping is a performance action, not an authoring one - and every authoring
-    // view has its own arrow owner (the flow canvas moves the selected node).
-    if (input.view !== 'perform' || input.inFlowCanvas) return NOTHING;
+    // view has its own arrow owner.
+    if (input.view !== 'perform') return NOTHING;
     // Arrow repeat is intentional: holding an arrow walks through sections at the browser's
     // repeat cadence. This is different from graph digits, which are edge-triggered above.
     return { sectionStep: input.key === 'ArrowRight' ? 1 : -1, claim: true };
