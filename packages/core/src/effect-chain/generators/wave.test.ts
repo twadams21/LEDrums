@@ -121,8 +121,14 @@ describe('Wave generator', () => {
       .toEqual({ mode: 'in', hue: 10 });
   });
 
-  it.each(WAVE_STYLES)('Style %s card shows every param of its implementation', (style, impl) => {
-    expect(generatorParamSpec('wave', style).map((p) => p.key)).toEqual(impl.paramSpec.map((p) => p.key));
+  it.each(WAVE_STYLES)('Style %s card shows every param of its implementation (bar a hidden dead decay)', (style, impl) => {
+    const hidden = new Set(getGeneratorDef('wave')!.styles.find((s) => s.id === style)?.hiddenParams ?? []);
+    expect(generatorParamSpec('wave', style).map((p) => p.key)).toEqual(impl.paramSpec.map((p) => p.key).filter((k) => !hidden.has(k)));
+  });
+
+  it('only Radial hides its decay — the waves whose life shapes the picture keep it', () => {
+    expect(generatorParamSpec('wave', 'radial').some((p) => p.key === 'decayMs')).toBe(false);
+    for (const style of ['scan', 'sonar', 'field', 'ripple']) expect(generatorParamSpec('wave', style).some((p) => p.key === 'lifeMs')).toBe(true);
   });
 
   it('common params carry consistent labels across every Style', () => {

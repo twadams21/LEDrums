@@ -1,8 +1,10 @@
 <script lang="ts">
   /* The Effect's brightness envelope on the Trigger card (Tim, 2026-10-01: the Splice / Slice
      "brightness envelope" as THE way a hit lights, in place of the ADSR): a live outline, then
-     Attack · Curve · Sustain · Decay in the Splice inspector's words. Sustain is how long the light
-     stays up from the hit — a time, a beat count, While held (until the note is released), or Loop.
+     Attack · Curve · Sustain · Decay in the Splice inspector's words. Attack and Decay are each in ms
+     or beats; Sustain is how long the light stays up from the hit — a time, a beat count, While
+     held (until the note is released), or Loop. A beat value reads as a division where it is one
+     (1/16) and can be typed as one.
      One envelope per Effect: a Splice / Slice part that pulses or fades in its turn runs this same
      envelope. The old ADSR's drop to a lower level shows only on an Effect that still uses one,
      so a saved show plays exactly as before. Every drag is one undo step (begin/endGesture). An
@@ -15,7 +17,17 @@
   import Tooltip from '../../../../ui/Tooltip.svelte';
   import Info from '@lucide/svelte/icons/info';
   import ParamLine from './ParamLine.svelte';
-  import { AMP_LENGTH_OPTIONS, ampLengthFor, ampLengthMode, ampPath, formatMs, percent, type AmpLengthMode } from './strip-model';
+  import {
+    AMP_LENGTH_OPTIONS,
+    ampLengthFor,
+    ampLengthMode,
+    ampPath,
+    beatsLabel,
+    formatMs,
+    percent,
+    stageUnitPatch,
+    type AmpLengthMode,
+  } from './strip-model';
 
   let { api, effect }: { api: EffectsAuthoringApi; effect: effectChain.Effect } = $props();
 
@@ -31,6 +43,17 @@
   const end = () => api.endGesture();
   const num = (v: number | string | boolean) => (typeof v === 'number' ? v : Number(v));
 
+  const STAGE_UNITS = [
+    { value: 'ms', label: 'ms' },
+    { value: 'beats', label: 'Beats' },
+  ];
+  type Stage = 'attack' | 'release';
+  const stageBeats = (stage: Stage): number | undefined => (stage === 'attack' ? amp.attackBeats : amp.releaseBeats);
+  function setStageUnit(stage: Stage, unit: string): void {
+    const patch = stageUnitPatch(stage, unit as 'ms' | 'beats', amp);
+    if (Object.keys(patch).length) api.setAmp(effect.id, patch);
+  }
+
   function setMode(next: string): void {
     api.setAmp(effect.id, { length: ampLengthFor(next as AmpLengthMode, amp.length) });
   }
@@ -44,6 +67,27 @@
   const DROP_INFO =
     'From the old ADSR envelope: after the attack the light drops to this level over the Drop time. Set Drop to 100% to remove it.';
 </script>
+
+<!-- Attack / Decay: a unit (ms or beats) and its value, in one line like Sustain's. -->
+{#snippet stageRow(stage: Stage, label: string, ms: number)}
+  {@const beats = stageBeats(stage)}
+  {@const msKey = stage === 'attack' ? 'attackMs' : 'releaseMs'}
+  {@const beatsKey = stage === 'attack' ? 'attackBeats' : 'releaseBeats'}
+  <ParamLine {label}>
+    <Select value={beats === undefined ? 'ms' : 'beats'} options={STAGE_UNITS} segment={false} {disabled}
+      ariaLabel={`${label} unit`} onChange={(u) => setStageUnit(stage, u)} />
+    {#if beats === undefined}
+      <!-- The value alone, as Sustain's is: drag it, or click it and type the exact value. -->
+      <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={1}
+        ariaLabel={label} entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
+        onChange={(v) => api.setAmp(effect.id, { [msKey]: Math.max(0, num(v)) })} />
+    {:else}
+      <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+        ariaLabel={`${label} beats`} entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
+        onChange={(v) => api.setAmp(effect.id, { [beatsKey]: Math.max(0, num(v)) })} />
+    {/if}
+  </ParamLine>
+{/snippet}
 
 {#snippet info(text: string, label: string)}
   <Tooltip {text} side="top">
@@ -59,11 +103,7 @@
     <path d={path} />
   </svg>
 
-  <ParamLine label="Attack">
-    <FaceParamControl kind="number" value={amp.attackMs} display={formatMs(amp.attackMs)} min={0} max={2000} step={1}
-      ariaLabel="Attack" {disabled} onGestureStart={begin} onGestureEnd={end}
-      onChange={(v) => api.setAmp(effect.id, { attackMs: Math.max(0, num(v)) })} />
-  </ParamLine>
+  {@render stageRow('attack', 'Attack', amp.attackMs)}
 
   <div class="curve">
     <span class="k">Curve {@render info(CURVE_INFO, 'Curve')}</span>
@@ -94,23 +134,19 @@
       {#if typeof amp.length === 'object' && 'ms' in amp.length}
         {@const ms = amp.length.ms}
         <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10}
-          ariaLabel="Sustain time" {disabled} onGestureStart={begin} onGestureEnd={end}
+          ariaLabel="Sustain time" entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { ms: Math.max(0, num(v)) } })} />
       {:else if typeof amp.length === 'object'}
         {@const beats = amp.length.beats}
-        <FaceParamControl kind="number" value={beats} display={`${beats} bt`} min={0} step={0.25}
-          ariaLabel="Sustain beats" {disabled} onGestureStart={begin} onGestureEnd={end}
+        <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+          ariaLabel="Sustain beats" entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { beats: Math.max(0, num(v)) } })} />
       {/if}
       {@render info(SUSTAIN_INFO, 'Sustain')}
     </ParamLine>
   {/if}
 
-  <ParamLine label="Decay">
-    <FaceParamControl kind="number" value={amp.releaseMs} display={formatMs(amp.releaseMs)} min={0} max={4000} step={1}
-      ariaLabel="Decay" {disabled} onGestureStart={begin} onGestureEnd={end}
-      onChange={(v) => api.setAmp(effect.id, { releaseMs: Math.max(0, num(v)) })} />
-  </ParamLine>
+  {@render stageRow('release', 'Decay', amp.releaseMs)}
 </div>
 
 <style>

@@ -203,3 +203,17 @@ describe('the brightness envelope — one per Effect (Tim, 2026-10-01)', () => {
     expect([action.attackMs, action.sustainMs, action.releaseMs]).toEqual([30, 470, 200]); // the voice too
   });
 });
+
+describe('attack and decay in beats (Tim, 2026-10-02)', () => {
+  const effect = (over: Record<string, unknown>): Effect => zone('e', 'kick', 0, over);
+  it('a stage in beats resolves at the fire’s tempo and wins over its ms', () => {
+    const a = effectPlayAction(effect({ amp: { attackMs: 10, attackBeats: 0.5, length: { beats: 2 }, releaseMs: 300, releaseBeats: 1 } }), { ...ctx, bpm: 120 })!;
+    expect([a.attackMs, a.sustainMs, a.releaseMs]).toEqual([250, 750, 500]); // half a beat, 2 beats − attack, 1 beat
+    const slow = effectPlayAction(effect({ amp: { attackBeats: 0.5, length: { beats: 2 }, releaseBeats: 1 } }), { ...ctx, bpm: 60 })!;
+    expect([slow.attackMs, slow.releaseMs]).toEqual([500, 1000]);
+  });
+  it('without beats, the ms stand', () => {
+    const a = effectPlayAction(effect({ amp: { attackMs: 40, length: { ms: 400 }, releaseMs: 120 } }), ctx)!;
+    expect([a.attackMs, a.sustainMs, a.releaseMs]).toEqual([40, 360, 120]);
+  });
+});

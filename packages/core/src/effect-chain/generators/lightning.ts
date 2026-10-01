@@ -1,4 +1,5 @@
 import type { GeneratorDef } from './types';
+import { DEAD_DECAY } from './types';
 
 /** Lightning Generator — electric strikes and arcs between drums. */
 export const lightningGenerator: GeneratorDef = {
@@ -7,7 +8,7 @@ export const lightningGenerator: GeneratorDef = {
   description: 'Electric bolts on the struck drum, or sparks arcing across the kit.',
   icon: 'zap',
   styles: [
-    { id: 'bolt', label: 'Bolt', effectId: 'lightning' },
+    { id: 'bolt', label: 'Bolt', effectId: 'lightning', hiddenParams: DEAD_DECAY },
     { id: 'arc', label: 'Spark Arc', effectId: 'spark-arc' },
   ],
 };

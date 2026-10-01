@@ -45,3 +45,11 @@ export interface ResolvedGenerator {
   /** One draft per non-blank splice slot, index-aligned with `splice.inputBySlot`. */
   spliceInputs?: MixInputDraft[];
 }
+
+/**
+ * The hosted effect's own `decayMs`, hidden on a Style where it changes nothing: on the Effect
+ * path the Effect's brightness envelope owns the level, so the effect's own decay is off
+ * (`effectPlayAction`). Probed per Style, every pixel at four moments (Tim, 2026-10-02): a
+ * Style whose decay DOES shape the picture (a wave's life, a meter's swing) keeps it.
+ */
+export const DEAD_DECAY: readonly string[] = ['decayMs'];

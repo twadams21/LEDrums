@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import FaceParamControl from './FaceParamControl.svelte';
 import { DRAG_TRAVEL_PX } from './drag-number';
 
@@ -238,5 +239,77 @@ describe('number — wheel', () => {
     const { getByRole } = render(FaceParamControl, { props: { ...numberProps, disabled: true, onChange } });
     fireEvent.wheel(getByRole('slider'), { deltaY: -100 });
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+/* Exact values and fine control on the card slider (Tim, 2026-10-02: "i can't type in a number
+   into any of the boxes"). */
+function setupTyped(props: Record<string, unknown> = {}) {
+  const onChange = vi.fn();
+  const view = render(FaceParamControl, { props: { kind: 'number', value: 8, display: '8.00', min: 0, max: 40, step: 0.1, ariaLabel: 'Rate', onChange, ...props } });
+  // jsdom has no pointer capture; the drag handlers call it.
+  HTMLElement.prototype.setPointerCapture = () => {};
+  return { view, onChange };
+}
+const click = async (el: Element) => {
+  await fireEvent.pointerDown(el, { button: 0, clientX: 100, pointerId: 1 });
+  await fireEvent.pointerUp(el, { button: 0, clientX: 100, pointerId: 1 });
+  await tick();
+};
+
+describe('typing a value', () => {
+  it('a click on the value opens it for typing; Enter commits the exact value', async () => {
+    const { view, onChange } = setupTyped();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    const box = view.getByRole('textbox', { name: 'Rate value' }) as HTMLInputElement;
+    expect(box.value).toBe('8');
+    await fireEvent.input(box, { target: { value: '12.25' } });
+    await fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(12.25);
+  });
+
+  it('Esc cancels; a non-number changes nothing; out of range clamps', async () => {
+    const { view, onChange } = setupTyped();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '30' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(onChange).not.toHaveBeenCalled();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: 'fast' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).not.toHaveBeenCalled();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '500' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(40);
+  });
+
+  it('a drag still adjusts, and does not open the box', async () => {
+    const { view, onChange } = setupTyped();
+    const field = view.getByRole('slider', { name: 'Rate' });
+    await fireEvent.pointerDown(field, { button: 0, clientX: 100, pointerId: 1 });
+    await fireEvent.pointerMove(field, { clientX: 160, pointerId: 1 });
+    await fireEvent.pointerUp(field, { clientX: 160, pointerId: 1 });
+    expect(onChange).toHaveBeenCalled();
+    expect(view.queryByRole('textbox')).toBeNull();
+  });
+
+  it('Enter on the focused value opens it; Shift + arrow steps ten', async () => {
+    const { view, onChange } = setupTyped();
+    const field = view.getByRole('slider', { name: 'Rate' });
+    await fireEvent.keyDown(field, { key: 'ArrowUp', shiftKey: true });
+    expect(onChange).toHaveBeenLastCalledWith(9);
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    await tick();
+    expect(view.getByRole('textbox', { name: 'Rate value' })).toBeTruthy();
+  });
+
+  it('a percent param is typed as shown', async () => {
+    const { view, onChange } = setupTyped({ value: 0.5, display: '50', min: 0, max: 1, step: 0.01, entry: { factor: 100, unit: '%' } });
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    expect((view.getByRole('textbox') as HTMLInputElement).value).toBe('50');
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '33' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(0.33);
   });
 });

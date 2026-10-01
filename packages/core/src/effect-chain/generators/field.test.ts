@@ -86,10 +86,11 @@ describe('Noise / Particles / Pattern registry', () => {
 });
 
 describe('Style param specs', () => {
-  it('every Style shows the hosted effect params in order (no Style fixes or hides any)', () => {
+  it('every Style shows the hosted effect params in order, minus only the ones it hides (a dead decay)', () => {
     for (const kind of KINDS) {
       for (const style of getGeneratorDef(kind)!.styles) {
-        expect(generatorParamSpec(kind, style.id).map((p) => p.key)).toEqual(getEffect(style.effectId).paramSpec.map((p) => p.key));
+        const hidden = new Set(style.hiddenParams ?? []);
+        expect(generatorParamSpec(kind, style.id).map((p) => p.key)).toEqual(getEffect(style.effectId).paramSpec.map((p) => p.key).filter((k) => !hidden.has(k)));
       }
     }
   });
