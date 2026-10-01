@@ -34,7 +34,10 @@ export type MidiLearnTarget =
   | { kind: 'global-control'; action: GlobalControlAction }
   /** An app-general CONTINUOUS control's MIDI CC (master brightness). Separate from the
       note variant because it binds off a CC message, not a note. */
-  | { kind: 'global-control-cc'; action: GlobalControlAction };
+  | { kind: 'global-control-cc'; action: GlobalControlAction }
+  /** Effect chains (S05): a Cue Effect's MIDI source — the next note OR controller binds it
+      (whichever arrives first; CC 0 stays reserved). */
+  | { kind: 'cue'; effectId: string };
 
 /** The store-side surface the learn bind depends on — injected so the controller stays free of the
     project/routing plumbing and the graph-editing internals it drives. */
@@ -59,6 +62,9 @@ export interface MidiControllerHost {
   setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
   /** The selected graph's nodes, for a cc-node learn to find and rebind its controller. */
   selectedGraphNodes(): readonly GraphNode[] | undefined;
+  /** Set a Cue Effect's MIDI source (a cue learn binds through here — the Effect's undo / guard
+      path). Same accepted / refused contract as the other writers. */
+  setCueMidiSource(effectId: string, source: { midiNote: number } | { midiCc: number }): boolean;
 }
 
 export class MidiController {
@@ -143,6 +149,8 @@ export class MidiController {
       accepted = this.host.setSequenceResetSource(target.nodeId, { kind: 'midi', note });
     } else if (target.kind === 'global-control') {
       accepted = this.host.setGlobalControlBinding(target.action, { midiNote: note });
+    } else if (target.kind === 'cue') {
+      accepted = this.host.setCueMidiSource(target.effectId, { midiNote: note });
     } else {
       return; // a CC-node learn target ignores notes — it binds on the next CC (applyCcLearn)
     }
@@ -162,6 +170,10 @@ export class MidiController {
     if (target.kind === 'global-control-cc') {
       // Same rule as the reserved-CC guard above: a refused CC keeps the target armed.
       if (this.host.setGlobalControlBinding(target.action, { midiCc: controller })) this.learnTarget = null;
+      return;
+    }
+    if (target.kind === 'cue') {
+      if (this.host.setCueMidiSource(target.effectId, { midiCc: controller })) this.learnTarget = null;
       return;
     }
     if (target.kind !== 'cc-node') return;

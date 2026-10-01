@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { STORAGE_KEY, serializeAuthored, type AuthoredState } from './persistence';
-import { makeNode, type EffectDef, type Preset } from './sim';
-import { EFFECTS, PRESETS } from './fixtures';
+import { effectChain } from '@ledrums/core';
+import {
+  SHOWS_STORAGE_KEY,
+  SHOWS_V3_STORAGE_KEY,
+  SONGS_STORAGE_KEY,
+  STORAGE_KEY,
+  serializeShowLibraryV3,
+  type AuthoredStateV3,
+} from './persistence';
 import type { WSClient } from '../ws/client';
 
-/* Integration: construction = "reload". Verifies the store hydrates the persisted
-   authored slice before wiring (so a reload restores content), tolerates a bad
-   blob, and that createGraph mints a persistable authored graph. The pure module's
-   serialize/deserialize contract is covered separately in persistence.test.ts. */
+/* Integration: construction = "reload". Verifies the store hydrates the persisted v3 show
+   library before wiring (so a reload restores content), tolerates a bad blob, never touches the
+   old (v1/v2) keys, and that createGraph mints a sandbox graph. The pure module's
+   serialize/deserialize contract is covered separately in persistence(.v3).test.ts. */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -37,9 +43,13 @@ class MemStorage {
 const fakeClient = (): WSClient =>
   ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
-function seed(partial: Partial<AuthoredState>): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored(partial as AuthoredState)));
+function seed(partial: Partial<AuthoredStateV3>): void {
+  const lib = { shows: { 'show-1': { id: 'show-1', name: 'Saved', authored: partial as AuthoredStateV3 } }, activeShowId: 'show-1' };
+  localStorage.setItem(SHOWS_V3_STORAGE_KEY, JSON.stringify(serializeShowLibraryV3(lib)));
 }
+
+const kickHit = (id: string): effectChain.Effect =>
+  effectChain.parseEffect({ id, name: id, cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'solid', style: 'simple' } });
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -49,36 +59,65 @@ afterEach(() => {
 });
 
 describe('TriggerLab hydration (restore on reload)', () => {
-  it('starts from the seed when storage is empty', () => {
+  it('starts from the seed when storage is empty: the demo Effects in Intro, Verse and Chorus empty', () => {
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
-    // pad-label hydration names every seeded pad graph; the seed has NO authored graphs.
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual(['intro', 'verse', 'chorus']);
+    expect(store.activeSectionId).toBe('intro');
+    expect(store.activeSection!.effects!.map((e) => e.generator.kind)).toEqual(['solid', 'wave', 'gradient']);
+    expect(store.selectedEffectId).toBe(store.activeSection!.effects![0]!.id);
+    // The graph sandbox (transient until S08) still gets its friendly pad labels.
     const key = store.activeSong!.sections[0]!.graphs[0]!;
     expect(store.graphNames[key]).toBe('Kick · center');
-    expect(Object.keys(store.graphNames).every((k) => k in store.graphs)).toBe(true);
-    expect(Object.keys(store.graphNames).every((k) => k.startsWith('graph:seed:'))).toBe(true);
   });
 
-  it('restores persisted scalar fields on construction', () => {
-    // A real graph the (default-active) intro section places, and not the seed's own default
-    // selection — a load re-homes a selection its active section does not place.
-    const open = 'graph:seed:intro:kick:3';
-    seed({ bpm: 97, velocity: 0.42, beatsPerBar: 3, selectedPadKey: open });
+  it('restores persisted scalar fields and the Effect selection on construction', () => {
+    const section = { id: 'section-1', name: 'A', effects: [kickHit('fx-a'), kickHit('fx-b')], master: [] };
+    seed({
+      songs: [{ id: 'song-1', name: 'S', sections: [section] }],
+      activeSongId: 'song-1',
+      activeSectionId: 'section-1',
+      bpm: 97,
+      velocity: 0.42,
+      beatsPerBar: 3,
+      selectedCell: section.effects[1]!.cell,
+      selectedEffectId: 'fx-b',
+    });
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(97);
     expect(store.velocity).toBeCloseTo(0.42);
     expect(store.beatsPerBar).toBe(3);
-    expect(store.activeSection!.graphs).toContain(open);
-    expect(store.selectedPadKey).toBe(open);
+    expect(store.activeSectionId).toBe('section-1');
+    expect(store.selectedEffectId).toBe('fx-b');
   });
 
-  it('restores an authored graph + its label, surfaced in graphLibrary', () => {
-    const g = { nodes: [makeNode('trigger', 'trigger')], edges: [] };
-    seed({ graphs: { 'graph-x': g }, graphNames: { 'graph-x': 'My graph' } });
+  it('round-trips a section’s Effect stack + Master chain through a reload', () => {
     const store = new TriggerLab(fakeClient);
-    expect(store.graphs['graph-x']).toBeTruthy();
-    expect(store.graphLabel('graph-x')).toBe('My graph');
-    expect(store.graphLibrary.some((e) => e.key === 'graph-x' && e.label === 'My graph')).toBe(true);
+    const id = store.addEffect({ row: 'snare', column: { kind: 'zone', slot: 0 } }, 'wave', 'radial')!;
+    store.setEffectOpacity(id, 0.5);
+    const uid = store.addModifier('master', 'strobe')!;
+    store.saveShow();
+    const reloaded = new TriggerLab(fakeClient);
+    expect(reloaded.effectById(id)).toEqual(store.effectById(id));
+    expect(reloaded.effectById(id)!.opacity).toBe(0.5);
+    expect(reloaded.masterChain.map((m) => m.uid)).toEqual([uid]);
+  });
+
+  it('never writes or deletes the old (v1 / v2) keys', () => {
+    const oldShows = '{"version":2,"data":{"shows":{}}}';
+    const oldSongs = '{"version":1,"data":{"songs":{}}}';
+    const oldSingle = '{"version":2,"data":{"bpm":150}}';
+    localStorage.setItem(SHOWS_STORAGE_KEY, oldShows);
+    localStorage.setItem(SONGS_STORAGE_KEY, oldSongs);
+    localStorage.setItem(STORAGE_KEY, oldSingle);
+    const store = new TriggerLab(fakeClient);
+    store.bpm = 111;
+    store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid');
+    store.saveShow();
+    expect(localStorage.getItem(SHOWS_STORAGE_KEY)).toBe(oldShows);
+    expect(localStorage.getItem(SONGS_STORAGE_KEY)).toBe(oldSongs);
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(oldSingle);
+    expect(localStorage.getItem(SHOWS_V3_STORAGE_KEY)).not.toBeNull();
   });
 
   it('restores persisted pane sizes', () => {
@@ -88,67 +127,15 @@ describe('TriggerLab hydration (restore on reload)', () => {
   });
 
   it('ignores a version-mismatched blob (seed stands, never wedges boot)', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 999, data: { bpm: 1 } }));
+    localStorage.setItem(SHOWS_V3_STORAGE_KEY, JSON.stringify({ version: 999, data: { shows: {} } }));
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
   });
 
   it('ignores a malformed (non-JSON) blob', () => {
-    localStorage.setItem(STORAGE_KEY, '{ not json');
+    localStorage.setItem(SHOWS_V3_STORAGE_KEY, '{ not json');
     const store = new TriggerLab(fakeClient);
     expect(store.bpm).toBe(120);
-  });
-});
-
-describe('TriggerLab effects hydration (union, never replace)', () => {
-  const userFx = (id: string): EffectDef => ({
-    id,
-    name: id,
-    busId: 'base',
-    scope: 'kit',
-    attackMs: 10,
-    sustainMs: 0,
-    releaseMs: 100,
-    params: [],
-  });
-
-  it('surfaces new built-in effects even when the persisted blob predates them', () => {
-    // A returning user's blob holds only a stale subset (no generator effects). The
-    // union re-adds every CURRENT built-in, so the 41 generator effects still appear.
-    seed({ effects: [userFx('gen:helix')] }); // 'gen:helix' is a built-in; the blob lacks gen:*
-    const store = new TriggerLab(fakeClient);
-    expect(store.effects).toHaveLength(EFFECTS.length);
-    expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true);
-  });
-
-  it('preserves user-created effects across the union (and never duplicates built-ins)', () => {
-    seed({ effects: [...EFFECTS, userFx('my-custom-fx')] });
-    const store = new TriggerLab(fakeClient);
-    expect(store.effects.some((e) => e.id === 'my-custom-fx')).toBe(true); // user effect kept
-    expect(store.effects.some((e) => e.id.startsWith('gen:'))).toBe(true); // built-ins present
-    expect(store.effects).toHaveLength(EFFECTS.length + 1); // built-ins de-duped, +1 user effect
-  });
-});
-
-describe('TriggerLab presets hydration (union, never replace)', () => {
-  it('re-adds built-in generator :default presets a stale blob lacks (so play nodes resolve)', () => {
-    // A pre-generator blob persists only its own preset and none of the 41 generator
-    // `<id>:default`s. The union re-adds every missing built-in, so swapping a play
-    // node to a generator effect still resolves its Default preset (no blank sub /
-    // frozen preview). Regression for the generator-effect swap bug.
-    seed({ presets: [{ id: 'mine:default', name: 'mine', effectId: 'gen:helix', params: {} } as Preset] });
-    const store = new TriggerLab(fakeClient);
-    const genDefaults = store.presets.filter((p) => p.id.startsWith('gen:') && p.id.endsWith(':default'));
-    expect(genDefaults.length).toBeGreaterThan(0); // generator Defaults restored
-    expect(store.presets.some((p) => p.id === 'mine:default')).toBe(true); // user preset kept
-  });
-
-  it("keeps the user's edited built-in preset (persisted wins over the seed, no dup)", () => {
-    const builtin = PRESETS.find((p) => p.id.endsWith(':default'))!;
-    seed({ presets: [{ ...builtin, name: 'EDITED' }] });
-    const store = new TriggerLab(fakeClient);
-    expect(store.presets.find((p) => p.id === builtin.id)?.name).toBe('EDITED'); // edit preserved
-    expect(store.presets).toHaveLength(PRESETS.length); // 1 edited + the rest re-added, de-duped
   });
 });
 

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { padKey } from './store/seed';
 import type { WSClient } from '../ws/client';
 import type { ClientMessage } from '../ws/protocol-types';
 import type { MidiEvent } from '../midi/webmidi';
@@ -112,9 +111,10 @@ describe('onInput echo never fires the sim (S12)', () => {
 
 describe('outbound firing is gated on the engine link (S12)', () => {
   describe('forwardMidi (WebMIDI → server)', () => {
+    /** A Cue Effect bound to raw note 60 (the Effect-path twin of a directly-bound graph). */
     const bindDirect = (store: TriggerLab): void => {
-      const key = store.createGraph('Direct 60');
-      store.setTriggerSource(key, { kind: 'midi', note: 60 });
+      const id = store.addEffect({ row: 'kit', column: { kind: 'cue' } }, 'solid')!;
+      store.setTrigger(id, { kind: 'cue', source: { midiNote: 60 } });
     };
 
     it('offline: fires the local preview AND forwards the note', () => {
@@ -143,9 +143,11 @@ describe('outbound firing is gated on the engine link (S12)', () => {
   });
 
   describe('hit (pad surface)', () => {
+    /** The kick's first zone: the seed's Intro section holds a zone Effect there. */
     const padWithGraph = (store: TriggerLab) => {
-      store.activeSectionId = null; // flat per-pad resolution → the seeded pad graph fires
-      return store.pads.find((p) => store.graphs[padKey(p)]) ?? store.pads[0]!;
+      const pad = store.pads.find((p) => p.drumId === 'kick' && p.zone === 0)!;
+      expect(store.cellEffects({ row: 'kick', column: { kind: 'zone', slot: 0 } }).length).toBeGreaterThan(0);
+      return pad;
     };
 
     it('offline: fires the local preview and sends nothing', () => {
@@ -231,14 +233,20 @@ describe('setActiveSection recall is gated on the engine link (S15)', () => {
     return s!.id;
   };
 
-  it('offline: recalls the local sim (spawns the section looks) and sends nothing', () => {
+  it('offline: recalls the local sim (the section’s Always Effect plays) and sends nothing', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
     expect(store.link).toBe('offline');
+    store.setActiveSection('verse');
+    store.addEffect({ row: 'kit', column: { kind: 'always' } }, 'solid');
+    store.setActiveSection('intro');
+    store.sim.tick(16);
 
-    store.setActiveSection(sectionWithLook(store));
+    store.setActiveSection('verse');
+    store.sim.tick(16); // the recall lands on the engine's next tick
 
-    expect(store.voices.length).toBeGreaterThan(0); // the sim spawned the looks locally
+    expect(store.sim.effectSelection.sectionId).toBe('verse');
+    expect(store.sim.effectVoiceStats().length).toBeGreaterThan(0); // the Always Effect plays locally
     expect(sent).toHaveLength(0);
   });
 

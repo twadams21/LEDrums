@@ -5,7 +5,7 @@ import { flushSync } from 'svelte';
 import { TriggerLab } from './store.svelte';
 import { makeNode, type TriggerGraph } from './sim';
 import { EFFECTS } from './fixtures';
-import { serializeShowLibrary, serializeSongLibrary } from './persistence';
+import { serializeShowLibraryV3 as serializeShowLibrary, serializeSongLibraryV2 as serializeSongLibrary } from './persistence';
 import type { ShowsController } from './shows-controller.svelte';
 import type { WSClient, WSCallbacks } from '../ws/client';
 
@@ -102,11 +102,14 @@ it('binds the incoming canonical song pool before creating the adopted document 
   const { store, callbacks } = setup();
   try {
     const id = store.activeShowId;
-    const pool = serializeSongLibrary({ songs: { remote: { id: 'remote', name: 'Pool', sections: [], graphs: {}, graphNames: {}, effects: [{ ...EFFECTS[0]!, id: 'remote-effect' }], presets: [] } } });
-    const library = serializeShowLibrary({ activeShowId: id, shows: { [id]: { id, name: 'Remote', authored: { ...store.activeShow!.authored, songRefs: ['remote'] } } } });
+    const pool = serializeSongLibrary({ songs: { remote: { id: 'remote', name: 'Pool', sections: [{ id: 'lib:remote/s', name: 'S', effects: [], master: [] }] } } });
+    const authored = { ...store.activeShow!.authored, songRefs: ['remote'], activeSongId: 'remote', activeSectionId: 'lib:remote/s' };
+    const library = serializeShowLibrary({ activeShowId: id, shows: { [id]: { id, name: 'Remote', authored } } });
     callbacks.onState!(defaultProject(), { count: 0, positions: [], tangents: [], normals: [], segmentLengths: [], drums: [], bounds: { center: [0, 0, 0], size: 0 } }, [], [], { state: 'disabled', protocol: 'artnet', host: '', packetsSent: 0, lastError: null, universeCount: 0 }, library, pool, null, { status: 'listening', port: 9000, hosts: [] });
-    // Immediately coherent, not eventually fixed by a later autosave effect's registry upsert.
-    expect(store.sim.effect('remote-effect')).toBeDefined();
+    // Immediately coherent: the adopted runtime's Effect show already holds the referenced
+    // song, so the offline engine recalled its section (not fixed later by an autosave tick).
+    store.sim.tick(16); // the recall input lands on the next engine tick
+    expect(store.sim.effectSelection).toEqual({ songId: 'remote', sectionId: 'lib:remote/s' });
   } finally { store.stop(); }
 });
 
@@ -219,10 +222,8 @@ it('applies the staged handshake recall after adopting an already-resolved canon
   const { store, callbacks } = setup();
   try {
     store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
-    const source = store.songs[0]!;
     const librarySong = (id: string, name: string, sectionId: string) => ({
-      id, name, sections: [{ ...source.sections[0]!, id: sectionId, name: sectionId.toUpperCase() }],
-      graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets,
+      id, name, sections: [{ id: sectionId, name: sectionId.toUpperCase(), effects: [], master: [] }],
     });
     const songA = librarySong('canonical-a', 'A', 'a0');
     const songB = librarySong('canonical-b', 'B', 'b0');
@@ -250,10 +251,8 @@ it('keeps a superseding recall pending across delayed canonical adoption, then a
   const { store, callbacks } = setup();
   try {
     store.presence = { editorId: 'other', youAreEditor: false, clientCount: 2 };
-    const source = store.songs[0]!;
     const librarySong = (id: string, name: string, sectionId: string) => ({
-      id, name, sections: [{ ...source.sections[0]!, id: sectionId, name: sectionId.toUpperCase() }],
-      graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets,
+      id, name, sections: [{ id: sectionId, name: sectionId.toUpperCase(), effects: [], master: [] }],
     });
     const songB = librarySong('canonical-b', 'B', 'b0');
     const songC = librarySong('canonical-c', 'C', 'c0');
@@ -332,14 +331,9 @@ it('keeps the newest recall pending until its canonical song and section resolve
   try {
     store.presence = { editorId: 'editor', youAreEditor: false, clientCount: 2 };
     const remote = {
-      ...store.songs[0]!,
       id: 'remote-song',
       name: 'Remote',
-      sections: [{ ...store.songs[0]!.sections[0]!, id: 'remote-section', name: 'Remote section' }],
-      graphs: store.graphs,
-      graphNames: store.graphNames,
-      effects: store.effects,
-      presets: store.presets,
+      sections: [{ id: 'remote-section', name: 'Remote section', effects: [], master: [] }],
     };
     const showLibrary = serializeShowLibrary({
       activeShowId: store.activeShowId,

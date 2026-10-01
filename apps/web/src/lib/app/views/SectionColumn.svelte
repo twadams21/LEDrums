@@ -1,48 +1,42 @@
 <script lang="ts">
   /* One section column in the setlist: an EditableRow header (rename / activate / duplicate /
-     delete, with hover copy + paste) over the section's ordered graph rows and an "add graph"
-     button. Clicking the header makes this the active (played + edited) section and loads it
-     into the right-dock Inspector. The multi-column setlist layout is owned by SectionsView. */
+     delete, with the section menu) over a compact per-cell Effect summary — one row per occupied
+     grid cell, showing its Effect names in stack order, then the Master chain when it has
+     modifiers. Clicking a cell row makes this the active section, selects that cell and opens
+     the Effects view; "Edit effects" opens the section's grid with nothing selected.
+
+     Section arrangement (reorder, rename, copy / paste, move) goes through the store; Effect
+     reads and selection go through the authoring api. The multi-column layout and section drag
+     are owned by SectionsView. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import { MASTER_CELL, type CellSelection, type EffectsAuthoringApi } from '../../trigger-lab/effects-api';
+  import { sameCell } from '../../trigger-lab/effects-doc';
   import type { ShellStore } from '../shell-store.svelte';
   import type { Song, SetlistSection } from '../setlist';
   import EditableRow from '../../ui/EditableRow.svelte';
   import ContextMenu from '../../ui/ContextMenu.svelte';
   import { sectionActions } from '../section-actions';
+  import { sectionCellSummaries, sectionEffectCount, sectionMasterSummary } from './section-effects';
+  import SectionCellRow from './SectionCellRow.svelte';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
-  import SectionGraphRow from './SectionGraphRow.svelte';
-  import { gapIndexAt } from './sections-dnd';
-  import Plus from '@lucide/svelte/icons/plus';
+  import Grid3x3 from '@lucide/svelte/icons/grid-3x3';
 
   let {
     store,
+    api,
     shell,
     song,
     section,
-    draggingKind,
-    dropIndex,
-    onAddGraph,
     onSectionDragStart,
-    onGraphDragStart,
     onDragEnd,
-    onGraphDragOver,
-    onGraphDrop,
-    onLinkGraph,
   }: {
     store: TriggerLab;
+    api: EffectsAuthoringApi;
     shell: ShellStore;
     song: Song;
     section: SetlistSection;
-    draggingKind: 'section' | 'graph' | null;
-    /** Insertion-line gap for a graph drag over THIS column (0..graphs.length), or null. */
-    dropIndex: number | null;
-    onAddGraph: (sectionId: string) => void;
     onSectionDragStart: (event: DragEvent) => void;
-    onGraphDragStart: (graphKey: string, event: DragEvent) => void;
     onDragEnd: () => void;
-    onGraphDragOver: (index: number, event: DragEvent) => void;
-    onGraphDrop: (index: number, event: DragEvent) => void;
-    onLinkGraph: (songId: string, sectionId: string, graphKey: string) => void;
   } = $props();
 
   let editing = $state(false);
@@ -50,25 +44,16 @@
   const canArrange = $derived(store.canEditActiveSong && store.isLocalSong(song.id));
   const blockedReason = $derived(store.isViewer ? 'Another client is editing' : 'Library section is read-only — detach a copy in Objects to edit it');
 
-  let listEl = $state<HTMLDivElement | null>(null);
+  // The `?? []` only covers the pre-store-wire store (no grid read models yet).
+  const cells = $derived(sectionCellSummaries(section, api.gridRows, api.gridColumns));
+  const master = $derived(sectionMasterSummary(section));
+  const effectCount = $derived(sectionEffectCount(section));
 
-  /** The gap index (0..graphs.length) the pointer sits at, by comparing the pointer's
-      Y against each row's vertical midpoint. Header/above-first hover → 0; below the
-      last row → graphs.length. Pure geometry, so it matches `moveGraphPlacement`. */
-  function gapAt(clientY: number): number {
-    const rows = listEl?.querySelectorAll<HTMLElement>('[data-graph-row]') ?? [];
-    return gapIndexAt(Array.from(rows, (r) => r.getBoundingClientRect()), clientY);
-  }
-
-  // Only graph-row drags are handled per-column (they need this column's row geometry).
-  // Section reorder is handled at the `.cols` level in SectionsView so the vertical
-  // insert-line resolves across the whole row, including the inter-column gaps.
-  function handleDragOver(event: DragEvent): void {
-    if (draggingKind === 'graph') onGraphDragOver(gapAt(event.clientY), event);
-  }
-
-  function handleDrop(event: DragEvent): void {
-    if (draggingKind === 'graph') onGraphDrop(gapAt(event.clientY), event);
+  function isOpen(cell: CellSelection): boolean {
+    const sel = api.selectedCell;
+    if (!active || sel == null) return false;
+    if (sel === MASTER_CELL || cell === MASTER_CELL) return sel === cell;
+    return sameCell(sel, cell);
   }
 
   function selectSection(): void {
@@ -76,18 +61,17 @@
     shell.select({ kind: 'section', sectionId: section.id });
   }
 
-  const actions = $derived(sectionActions(store, section.id, () => requestAnimationFrame(() => (editing = true))));
+  /** Activate this section, select `cell` (or nothing) and land on the Effects view. */
+  function openInEffects(cell: CellSelection | null): void {
+    store.setActiveSection(section.id);
+    api.selectCell(cell);
+    shell.setView('trigger');
+  }
 
+  const actions = $derived(sectionActions(store, section.id, () => requestAnimationFrame(() => (editing = true)), api));
 </script>
 
-<section
-  class="col"
-  class:active
-  role="listitem"
-  data-section-col
-  ondragover={handleDragOver}
-  ondrop={handleDrop}
->
+<section class="col" class:active role="listitem" data-section-col>
   <div
     class="section-drag"
     role="group"
@@ -108,7 +92,7 @@
       renameDisabledLabel={blockedReason}
     >
       {#snippet trailing()}
-        <span class="colcount">{section.graphs.length}</span>
+        <span class="colcount" title={`${effectCount} ${effectCount === 1 ? 'effect' : 'effects'}`}>{effectCount}</span>
         <ContextMenu mode="dropdown" label={`Actions for ${section.name}`} {actions}>
           <Ellipsis size={16} aria-hidden="true" />
         </ContextMenu>
@@ -116,32 +100,40 @@
     </EditableRow>
   </div>
 
-  <div class="graphlist" role="list" bind:this={listEl}>
-    {#each section.graphs as key, i (key)}
-      {#if draggingKind === 'graph' && dropIndex === i}
-        <div class="insert-line" aria-hidden="true"></div>
-      {/if}
-      <SectionGraphRow
-        {store}
-        {shell}
-        {song}
-        {section}
-        graphKey={key}
-        onDragStart={(event) => onGraphDragStart(key, event)}
-        {onDragEnd}
-        onLink={onLinkGraph}
-      />
+  <div class="celllist" role="list" aria-label={`${section.name} cells`}>
+    {#if master}
+      <div role="listitem">
+        <SectionCellRow
+          row="Master"
+          column={`${master.names.length} ${master.names.length === 1 ? 'modifier' : 'modifiers'}`}
+          names={master.names}
+          master
+          bypassed={master.allBypassed}
+          active={isOpen(MASTER_CELL)}
+          onOpen={() => openInEffects(MASTER_CELL)}
+        />
+      </div>
+    {/if}
+    {#each cells as cell (cell.key)}
+      <div role="listitem">
+        <SectionCellRow
+          row={cell.rowLabel}
+          column={cell.columnLabel}
+          names={cell.names}
+          color={cell.color}
+          bypassed={cell.allBypassed}
+          active={isOpen(cell.cell)}
+          onOpen={() => openInEffects(cell.cell)}
+        />
+      </div>
     {/each}
-    {#if draggingKind === 'graph' && dropIndex === section.graphs.length}
-      <div class="insert-line" aria-hidden="true"></div>
+
+    {#if cells.length === 0 && !master}
+      <p class="empty">No effects yet.</p>
     {/if}
 
-    {#if section.graphs.length === 0}
-      <p class="empty">No graphs yet.</p>
-    {/if}
-
-    <button class="addgraph" type="button" disabled={!canArrange} title={canArrange ? 'Add a graph' : blockedReason} onclick={() => onAddGraph(section.id)}>
-      <Plus size={13} aria-hidden="true" /> graph
+    <button class="editgrid" type="button" title="Open this section's grid in the Effects view" onclick={() => openInEffects(null)}>
+      <Grid3x3 size={13} aria-hidden="true" /> Edit effects
     </button>
   </div>
 </section>
@@ -156,7 +148,6 @@
     background: var(--surface-inset);
     border: 1px solid var(--border-faint);
     border-radius: var(--radius-card);
-    transition: border-color var(--dur-120) ease;
   }
   /* Active-section border. Mixed in oklab (rectangular), NOT oklch: oklch interpolates
      the HUE ARC from lime (128°) through cyan (~205°) to the blue-grey border (256°), so
@@ -177,33 +168,11 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
-  .graphlist {
+  .celllist {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     min-height: 42px;
-    border-radius: var(--radius-card);
-  }
-  /* Insertion line marking the gap a dragged graph row will land in. The negative
-     margins collapse the parent flex gap so the line sits IN the gap rather than
-     adding its own; the glow makes the 2px bar read as a live target. */
-  .insert-line {
-    height: 2px;
-    margin: -1.5px 2px;
-    border-radius: 999px;
-    background: var(--accent);
-    box-shadow: 0 0 6px color-mix(in oklch, var(--accent) 60%, transparent);
-    animation: insert-line-in var(--dur-120) var(--ease-control, ease);
-  }
-  @keyframes insert-line-in {
-    from {
-      opacity: 0;
-      scale: 0.6 1;
-    }
-    to {
-      opacity: 1;
-      scale: 1 1;
-    }
   }
   .empty {
     margin: 0;
@@ -211,37 +180,27 @@
     font-size: var(--text-2xs);
     color: var(--text-faint);
   }
-  .addgraph {
+  .editgrid {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 5px;
     width: 100%;
+    min-height: 32px;
     padding: var(--space-2);
     font-size: var(--text-xs);
     color: var(--text-muted);
     background: var(--surface-inset);
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-card);
-    transition:
-      color var(--dur-120) ease,
-      border-color var(--dur-120) ease;
+    transition: none;
   }
-  .addgraph:hover {
+  .editgrid:hover {
     color: var(--accent);
     border-color: var(--border-accent);
+    background: var(--surface-inset);
   }
-  .addgraph:active {
-    scale: 0.98;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .col,
-    .addgraph,
-    .graphlist {
-      transition: none;
-    }
-    .insert-line {
-      animation: none;
-    }
+  .editgrid:active {
+    scale: 1;
   }
 </style>

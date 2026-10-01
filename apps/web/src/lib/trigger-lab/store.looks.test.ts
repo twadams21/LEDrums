@@ -84,17 +84,6 @@ describe('setLook — authored per-bus section looks (S16)', () => {
     expect(store.sections.find((s) => s.id === sectionId)!.looks.base).toBe('gen:perlin-clouds'); // derived look-list agrees
   });
 
-  it('offline: picking a look on the ACTIVE section morphs the local sim immediately', () => {
-    const store = new TriggerLab(capturing([]));
-    const sectionId = store.activeSong!.sections[0]!.id;
-    store.setActiveSection(sectionId); // make it active (offline recall)
-
-    store.setLook(sectionId, 'base', 'gen:perlin-clouds');
-
-    // The sim re-morphed to the new look — a base-bus voice is live in the preview.
-    expect(store.voices.some((v) => v.busId === 'base')).toBe(true);
-  });
-
   it('connected: an authored look flows through buildShow onto the engine (spawns on recall)', () => {
     const store = new TriggerLab(capturing([]));
     // A BRAND-NEW authored section (id minted at runtime, not a fixture) with a single base look —

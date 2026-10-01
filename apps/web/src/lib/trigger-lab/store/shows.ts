@@ -4,7 +4,7 @@
    the map arithmetic + which-show-becomes-active logic. Extracted from store.svelte.ts
    unchanged in behaviour. */
 
-import type { Show } from '../persistence';
+import type { ShowV3 as Show } from '../persistence';
 
 export type ShowMap = Record<string, Show>;
 

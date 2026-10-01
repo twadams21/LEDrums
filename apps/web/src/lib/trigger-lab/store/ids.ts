@@ -9,7 +9,10 @@
     `let idSeq` in store.svelte.ts), so ids stay unique across stores + reloads. */
 let idSeq = 1000;
 
-const GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset)-(\d+)$/;
+/** Every prefix the app mints through {@link nid} / {@link freshId}. Effect chains add `fx`
+    (Effect ids), `mod` / `ctl` / `dev` (device uids — `effects-doc.ts` / `effects-files.ts`) and
+    `scene` (canvas scenes a file load brings in); a reload must reserve them too. */
+const GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset|fx|mod|ctl|dev|scene)-(\d+)$/;
 
 /** Mint a fresh `"<prefix>-<n>"` id (the raw counter bump). */
 export function nid(prefix: string): string {

@@ -60,9 +60,9 @@ describe('setModifierId / setModifierBypass', () => {
   it('toggles bypass', () => {
     const { store, mod } = withModifier();
     expect(mod.bypass).toBeFalsy();
-    store.setModifierBypass(mod, true);
+    store.setModifierNodeBypass(mod, true);
     expect(mod.bypass).toBe(true);
-    store.setModifierBypass(mod, false);
+    store.setModifierNodeBypass(mod, false);
     expect(mod.bypass).toBe(false);
   });
 

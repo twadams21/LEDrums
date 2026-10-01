@@ -8,9 +8,14 @@
    This controller owns ONLY the once-per-session gate + echo/no-op suppression signatures, exactly
    as ShowLibrarySync does; the store (S41, when it wires refs/resolve/content) performs the rune
    swap + the actual WS send. Kept parallel to ShowLibrarySync so the two libraries reconcile
-   identically — a single-writer cold-load-adopt, viewer live-follow, seed-when-local-is-freshest. */
+   identically — a single-writer cold-load-adopt, viewer live-follow, seed-when-local-is-freshest.
+   Effect chains (S05): the pool is the v2 song-library envelope; an old (v1) blob is never adopted. */
 
-import { type SongLibrary, deserializeSongLibrary, serializeSongLibrary } from '../persistence';
+import {
+  type SongLibraryV2 as SongLibrary,
+  deserializeSongLibraryV2 as deserializeSongLibrary,
+  serializeSongLibraryV2 as serializeSongLibrary,
+} from '../persistence';
 
 /** What a `state`-message reconcile decides the store should do (mirrors show-library's plan). */
 export type SongReconcilePlan =

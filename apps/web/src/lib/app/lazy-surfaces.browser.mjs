@@ -28,7 +28,7 @@ try {
   let releaseTrigger;
   let failTrigger = true;
   let triggerRequests = 0, triggerProbes = 0;
-  await page.route(/\/assets\/TriggerGraphView-[^/]+\.js(?:\?.*)?$/, async (route) => {
+  await page.route(/\/assets\/EffectsView-[^/]+\.js(?:\?.*)?$/, async (route) => {
     if (isProbe(route)) { triggerProbes++; return failTrigger ? route.abort('failed') : route.continue(); }
     triggerRequests++;
     if (failTrigger) {
@@ -39,17 +39,17 @@ try {
   await page.goto(`${base}/?view=perform`);
   await page.locator('.bigpad').first().waitFor();
   await page.locator('[title="Output disabled — engine not transmitting"]').waitFor();
-  assert.equal(requested.some((url) => /\/(TriggerGraphView|SectionsView|ObjectsView|InputPane|ControllerPane)-/.test(url)), false, 'noninitial editors must not load on Perform');
+  assert.equal(requested.some((url) => /\/(EffectsView|SectionsView|ObjectsView|InputPane|ControllerPane)-/.test(url)), false, 'noninitial editors must not load on Perform');
   results.push('Perform controls/visualizer ready without editor or Settings pane requests');
-  await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
-  await page.getByRole('status').filter({ hasText: 'Loading Trigger' }).waitFor();
+  await page.getByRole('button', { name: 'Effects', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Loading Effects' }).waitFor();
   await page.screenshot({ path: `${output}/trigger-loading.png` });
   releaseTrigger();
-  await page.getByRole('alert').filter({ hasText: 'Couldn’t load Trigger' }).waitFor();
+  await page.getByRole('alert').filter({ hasText: 'Couldn’t load Effects' }).waitFor();
   await page.screenshot({ path: `${output}/trigger-failure.png` });
   failTrigger = false; // connectivity restored before both the negative control and app retry
   assert.equal(triggerProbes, 1, 'an opaque failure is corroborated by exactly one probe of the exact entry URL');
-  const failedEntry = requested.find((url) => /\/TriggerGraphView-[^/]+\.js$/.test(url));
+  const failedEntry = requested.find((url) => /\/EffectsView-[^/]+\.js$/.test(url));
   assert.equal(await page.evaluate(async (url) => {
     try { await import(url); return 'unexpectedly loaded'; } catch { return 'still rejected'; }
   }, failedEntry), 'still rejected');
@@ -57,20 +57,20 @@ try {
   // The failed editor must not strand the performer or interrupt their connection.
   await page.getByRole('button', { name: 'Perform', exact: true }).click();
   await page.locator('.bigpad').first().click();
-  await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
-  await page.getByRole('alert').filter({ hasText: 'Couldn’t load Trigger' }).waitFor();
+  await page.getByRole('button', { name: 'Effects', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Couldn’t load Effects' }).waitFor();
   assert.equal(triggerRequests, 1, 'navigation must not silently retry');
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await page.locator('.svelte-flow').waitFor();
+  await page.getByRole('grid', { name: 'Effects grid' }).waitFor();
   assert.equal(triggerRequests, 2, 'retry must make a real new request');
-  const entryUrls = requested.filter((url) => /\/TriggerGraphView-[^/]+\.js/.test(url));
+  const entryUrls = requested.filter((url) => /\/EffectsView-[^/]+\.js/.test(url));
   assert.equal(new Set(entryUrls).size, 2, 'retry must use a fresh entry URL');
   assert.ok(entryUrls[1].includes('?load-retry='));
   assert.equal(triggerProbes, 1, 'a witnessed recovery needs no further probe');
   assert.equal(navigations, 1, 'no automatic app reload');
   assert.equal(sockets, 1, 'same engine connection through recovery');
   assert.equal(requested.filter((url) => /\/index-[^/]+\.js/.test(url)).length, 1, 'shared runtime is not re-imported');
-  results.push('aborted production editor import: visible failure → actual network retry → graph ready');
+  results.push('aborted production editor import: visible failure → actual network retry → Effects grid ready');
 
   // Warm navigation must never mount the fallback, even for one DOM mutation.
   await page.getByRole('button', { name: 'Perform', exact: true }).click();
@@ -84,8 +84,8 @@ try {
     });
     window.__lazyObserver.observe(document.querySelector('main.center'), { childList: true, subtree: true });
   });
-  await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
-  await page.locator('.svelte-flow').waitFor();
+  await page.getByRole('button', { name: 'Effects', exact: true }).click();
+  await page.getByRole('grid', { name: 'Effects grid' }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.__lazyFlashes), []);
   assert.equal(triggerRequests, 2);
   results.push('warm Trigger navigation: no import request and no fallback DOM flash');
@@ -225,7 +225,7 @@ try {
   shared.on('console', (m) => { if (m.type() === 'error') sharedConsole.push(m.text()); });
   let sharedRequests = 0, sharedNavigations = 0;
   shared.on('framenavigated', (frame) => { if (frame === shared.mainFrame()) sharedNavigations++; });
-  await shared.route(/\/assets\/graph-thumb-[^/]+\.js(?:\?.*)?$/, (route) => {
+  await shared.route(/\/assets\/Field-[^/]+\.js(?:\?.*)?$/, (route) => {
     sharedRequests++;
     return route.abort('failed');
   });
@@ -239,13 +239,13 @@ try {
   await shared.getByLabel('Show name', { exact: true }).fill(recoveryName);
   await shared.getByLabel('Show name', { exact: true }).press('Enter');
   await shared.getByRole('status').filter({ hasText: 'Saved' }).waitFor();
-  await shared.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
+  await shared.getByRole('button', { name: 'Sections', exact: true }).click();
   await shared.getByRole('alert').filter({ hasText: 'Reopen the app when it’s safe to interrupt. Saved edits are kept.' }).waitFor();
   assert.equal(await shared.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
   await shared.screenshot({ path: `${output}/trigger-reopen-guidance.png` });
   await shared.getByRole('button', { name: 'Perform', exact: true }).click();
   await shared.locator('.bigpad').first().click();
-  await shared.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
+  await shared.getByRole('button', { name: 'Sections', exact: true }).click();
   assert.equal(sharedRequests, 1);
   assert.equal(sharedNavigations, 1);
   assert.deepEqual(sharedErrors, []);
@@ -351,7 +351,7 @@ try {
 
   await counterexample('script blocked by policy (CSP) → safe reopen guidance, no retry, no fake entry requests', async (page) => {
     let scripts = 0, probes = 0;
-    await page.route(/\/assets\/TriggerGraphView-[^/]+\.js(?:\?.*)?$/, (route) => {
+    await page.route(/\/assets\/EffectsView-[^/]+\.js(?:\?.*)?$/, (route) => {
       if (isProbe(route)) probes++; else scripts++;
       return route.continue();
     });
@@ -361,7 +361,7 @@ try {
       meta.content = "script-src 'none'";
       document.head.append(meta);
     });
-    await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
+    await page.getByRole('button', { name: 'Effects', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: safeReopen }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
     assert.equal(scripts, 0, 'a blocked script never reached the network');
@@ -370,24 +370,24 @@ try {
     return (console) => {
       assert.ok(console.length >= 1);
       assert.ok(console.every((error) => /violates the following Content Security Policy directive/.test(error)), JSON.stringify(console));
-      assert.ok(console.some((error) => /TriggerGraphView-[^/]+\.js/.test(error)));
+      assert.ok(console.some((error) => /EffectsView-[^/]+\.js/.test(error)));
     };
   });
 
   await counterexample('shared dependency aborted while a same-path icon probe fails → no retry offered for a delivered entry', async (page) => {
     let releaseShared, entryUrl, iconRequests = 0;
-    page.on('request', (r) => { if (/\/TriggerGraphView-[^/]+\.js$/.test(r.url()) && r.resourceType() === 'script') entryUrl = r.url(); });
-    await page.route(/\/assets\/graph-thumb-[^/]+\.js(?:\?.*)?$/, async (route) => {
+    page.on('request', (r) => { if (/\/SectionsView-[^/]+\.js$/.test(r.url()) && r.resourceType() === 'script') entryUrl = r.url(); });
+    await page.route(/\/assets\/Field-[^/]+\.js(?:\?.*)?$/, async (route) => {
       await new Promise((resolve) => { releaseShared = resolve; });
       return route.abort('failed');
     });
-    await page.route(/\/assets\/TriggerGraphView-[^/]+\.js(?:\?.*)?$/, (route) => {
+    await page.route(/\/assets\/SectionsView-[^/]+\.js(?:\?.*)?$/, (route) => {
       if (route.request().resourceType() === 'other') { iconRequests++; return route.abort('failed'); }
       return route.continue();
     });
-    await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
-    await page.getByRole('status').filter({ hasText: 'Loading Trigger' }).waitFor();
-    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /TriggerGraphView-[^/]+\.js$/.test(e.name) && e.responseStatus === 200));
+    await page.getByRole('button', { name: 'Sections', exact: true }).click();
+    await page.getByRole('status').filter({ hasText: 'Loading Sections' }).waitFor();
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /SectionsView-[^/]+\.js$/.test(e.name) && e.responseStatus === 200));
     await page.evaluate((url) => {
       const link = document.createElement('link');
       link.rel = 'icon';
@@ -403,12 +403,12 @@ try {
   });
 
   await counterexample('cross-origin redirect of the entry (opaque status 0) → safe reopen guidance, no retry', async (page) => {
-    await page.route(/\/assets\/TriggerGraphView-[^/]+\.js(?:\?.*)?$/, (route) => {
+    await page.route(/\/assets\/EffectsView-[^/]+\.js(?:\?.*)?$/, (route) => {
       const url = route.request().url();
       if (new URL(url).hostname !== 'localhost') return route.continue();
       return route.fulfill({ status: 302, headers: { location: url.replace('localhost', '127.0.0.1') }, body: '' });
     });
-    await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
+    await page.getByRole('button', { name: 'Effects', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: safeReopen }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);
     return 2; // Chrome's CORS diagnostic for the redirected module, plus its net::ERR_FAILED line
@@ -416,12 +416,12 @@ try {
 
   await counterexample('a delivered module throwing a fetch-shaped TypeError → safe reopen guidance, no retry', async (page) => {
     let requests = 0;
-    await page.route(/\/assets\/TriggerGraphView-[^/]+\.js(?:\?.*)?$/, (route) => {
+    await page.route(/\/assets\/EffectsView-[^/]+\.js(?:\?.*)?$/, (route) => {
       if (isProbe(route)) return route.continue();
       requests++;
       return route.fulfill({ status: 200, contentType: 'text/javascript', body: `throw new TypeError(${JSON.stringify(`Failed to fetch dynamically imported module: ${route.request().url()}`)}); export default () => {};` });
     });
-    await page.getByRole('button', { name: 'Trigger Graph', exact: true }).click();
+    await page.getByRole('button', { name: 'Effects', exact: true }).click();
     await page.getByRole('alert').filter({ hasText: safeReopen }).waitFor();
     assert.equal(requests, 1);
     assert.equal(await page.getByRole('button', { name: 'Try again', exact: true }).count(), 0);

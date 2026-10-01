@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
 import {
-  serializeShowLibrary,
+  serializeShowLibraryV3 as serializeShowLibrary,
   serializeAuthored,
-  SHOWS_STORAGE_KEY,
+  SHOWS_V3_STORAGE_KEY as SHOWS_STORAGE_KEY,
   STORAGE_KEY,
   type AuthoredState,
-  type Show,
-  type ShowLibrary,
+  type AuthoredStateV3,
+  type ShowV3 as Show,
+  type ShowLibraryV3 as ShowLibrary,
 } from './persistence';
 import type { WSClient, WSCallbacks } from '../ws/client';
 import type { ClientMessage, OscListenInfo, OutputStatus, SerializedModel, ShowLibraryBlob } from '../ws/protocol-types';
@@ -115,9 +116,9 @@ function serverLib(
   others: { id: string; name: string }[] = [],
 ): ShowLibraryBlob {
   const shows: Record<string, Show> = {
-    [active.id]: { id: active.id, name: active.name, authored: { bpm: active.bpm } as AuthoredState },
+    [active.id]: { id: active.id, name: active.name, authored: { bpm: active.bpm } as AuthoredStateV3 },
   };
-  for (const o of others) shows[o.id] = { id: o.id, name: o.name, authored: {} as AuthoredState };
+  for (const o of others) shows[o.id] = { id: o.id, name: o.name, authored: {} as AuthoredStateV3 };
   const lib: ShowLibrary = { shows, activeShowId: active.id };
   return serializeShowLibrary(lib);
 }
@@ -466,12 +467,20 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
   });
 });
 
-describe('legacy offline migration (unchanged by server persistence)', () => {
-  it('migrates a legacy single-blob authored state to one Default Show on a fresh offline boot', () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeAuthored({ bpm: 156 } as AuthoredState)));
+describe('legacy offline data (effect chains: offered for import, never migrated)', () => {
+  it('leaves a legacy single-blob authored state in place and offers it for import', () => {
+    const legacy = JSON.stringify(serializeAuthored({ bpm: 156 } as AuthoredState));
+    localStorage.setItem(STORAGE_KEY, legacy);
     const store = new TriggerLab(noopClient);
     expect(store.shows).toHaveLength(1);
-    expect(store.activeShow!.name).toBe('Default Show');
+    expect(store.activeShow!.name).toBe('Untitled Show');
+    expect(store.legacyImportAvailable).toBe(true);
+    expect(store.legacyShowNames).toEqual(['Default Show']);
+    expect(store.importLegacyShows()).toEqual({ ok: true });
+    expect(store.shows.map((s) => s.name)).toEqual(['Untitled Show', 'Default Show']);
+    expect(store.legacyImportAvailable).toBe(false); // idempotent: nothing left to import
+    expect(localStorage.getItem(STORAGE_KEY)).toBe(legacy); // the old data stays in place
+    store.openShow(store.shows[1]!.id);
     expect(store.bpm).toBe(156);
   });
 });

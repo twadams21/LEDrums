@@ -6,7 +6,7 @@
      local song and severs the link — after which it renders as an ordinary SongRow. Composes
      the shared EditableRow primitive, like SongRow. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ShowSongRow } from './objects-view';
+  import { songSubline, type ShowSongRow } from './objects-view';
   import EditableRow, { type ContextMenuAction } from '../../ui/EditableRow.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import StatusPill from '../../ui/StatusPill.svelte';
@@ -18,7 +18,7 @@
   let { store, row }: { store: TriggerLab; row: ShowSongRow } = $props();
 
   let editing = $state(false);
-  const sub = $derived(`${row.sectionCount} ${row.sectionCount === 1 ? 'section' : 'sections'}`);
+  const sub = $derived(songSubline(row.sectionCount, row.effectCount));
 
   /** Clone the referenced closure into this show as a local song and jump to it — it's now
       editable in place, independent of the library. */

@@ -25,7 +25,9 @@ import type { GlobalControlAction, GlobalControlBinding } from '@ledrums/core';
     to avoid (Trent, 2026-08-14). Identity is the SLOT, never the zone's name. */
 export type OscLearnTarget =
   | { kind: 'global-control'; action: GlobalControlAction }
-  | { kind: 'zone'; drumId: string; slot: number };
+  | { kind: 'zone'; drumId: string; slot: number }
+  /** Effect chains (S05): a Cue Effect's OSC address. */
+  | { kind: 'cue'; effectId: string };
 
 /** The store-side surface an OSC bind writes through — injected so this controller
     stays free of the project/routing plumbing. */
@@ -38,6 +40,8 @@ export interface OscLearnHost {
   setGlobalControlBinding(action: GlobalControlAction, patch: GlobalControlBinding): boolean;
   /** Write one zone's OSC address — same `setInputMap` gate, same accepted/refused contract. */
   setZoneOscAddress(drumId: string, slot: number, address: string): boolean;
+  /** Write a Cue Effect's OSC source — the Effect's undo / guard path, same contract. */
+  setCueOscAddress(effectId: string, address: string): boolean;
 }
 
 export class OscLearnController {
@@ -72,7 +76,9 @@ export class OscLearnController {
     const bound =
       target.kind === 'global-control'
         ? this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed })
-        : this.host.setZoneOscAddress(target.drumId, target.slot, trimmed);
+        : target.kind === 'cue'
+          ? this.host.setCueOscAddress(target.effectId, trimmed)
+          : this.host.setZoneOscAddress(target.drumId, target.slot, trimmed);
     if (!bound) return;
     this.target = null;
   }
