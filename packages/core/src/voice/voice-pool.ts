@@ -116,6 +116,19 @@ export class VoicePool {
     }
   }
 
+  /** Stop every voice of this authored Effect born BEFORE `timeMs` — releasing ones too — NOW,
+      with no release ramp (Retrigger `cut`). Voices of the same hit (born at `timeMs`) are spared.
+      The level drops to 0, so the next frame reaps it. */
+  cutChainVoices(chainEffectId: string, timeMs: number): void {
+    for (const v of this.pool) {
+      if (!v.active || v.chainEffectId !== chainEffectId || v.bornAtMs >= timeMs) continue;
+      v.phase = 'release';
+      v.releaseAtMs = timeMs;
+      v.releaseFromLevel = 0;
+      v.level = 0;
+    }
+  }
+
   /**
    * Find a free pool slot; if the pool is saturated, steal the oldest releasing
    * voice, else the oldest voice overall (voice-capped, no GC churn).

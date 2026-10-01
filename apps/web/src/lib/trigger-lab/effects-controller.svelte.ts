@@ -20,13 +20,15 @@ import {
   type ApplyResult,
   type CellSelection,
   type CellSummary,
+  type DeviceSelection,
   type EffectsAuthoringApi,
+  type SelectionVerb,
   type GridColumn,
   type GridRow,
 } from './effects-api';
 import * as doc from './effects-doc';
 import type { ChainOwner, EffectsSection } from './effects-doc';
-import { cellEnabled, cellSummary, effectsInGridOrder, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
+import { auditionSlots, cellEnabled, cellSummary, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
 
 type Effect = effectChain.Effect;
 type EffectCell = effectChain.EffectCell;
@@ -45,6 +47,12 @@ type BlendMode = Effect['blend'];
 type ParamValue = number | boolean | string;
 
 const READ_ONLY: ApplyResult = { ok: false, reason: 'This section is read-only.' };
+
+/** The Effect a strip selection belongs to — null for a Master-chain Modifier. */
+function ownerEffectOf(selection: DeviceSelection): string | null {
+  if (selection.kind === 'modifier') return selection.owner === MASTER_CELL ? null : selection.owner;
+  return selection.effectId; // effect, stage, control
+}
 
 /** The store-side surface the controller depends on. Reads are reactive in the store. */
 export interface EffectsControllerHost {
@@ -68,6 +76,10 @@ export interface EffectsControllerHost {
     cell(cell: EffectCell): void;
     effectFireAt(effectId: string): number;
     cellFireAt(cell: EffectCell): number;
+    /** Play a zone cell as a real hit on its drum zone, through the engine — so a Sequence /
+        Random cell steps exactly as the drum would step it. False when the host can't (no pad
+        for that zone, or no engine): the caller then auditions a step itself. */
+    hit?(cell: EffectCell): boolean;
   };
   files: {
     saveEffect(effect: Effect): Promise<void>;
@@ -80,6 +92,9 @@ export interface EffectsControllerHost {
     start(effectId: string, via: 'midi' | 'osc'): void;
     cancel(): void;
     effectId(): string | null;
+    /** Arm Learn for a cell's reset (the next note / CC / OSC address binds it). */
+    startReset(cell: EffectCell, via: 'midi' | 'osc'): void;
+    resetCell(): EffectCell | null;
   };
   legacyImport: {
     available(): boolean;
@@ -92,8 +107,17 @@ export interface EffectsControllerHost {
 export class EffectsController implements EffectsAuthoringApi {
   #selectedCell = $state<CellSelection | null>(null);
   #selectedEffectId = $state<string | null>(null);
-  /** Cell copy scratch (a deep-copied stack). Transient, never persisted. */
-  #clipboard = $state<Effect[] | null>(null);
+  /** The strip's highlighted Effect or device (Delete / ⌘X / ⌘C act on it). */
+  #selectedDevice = $state<DeviceSelection | null>(null);
+  /** Copy scratch — a cell's stack or one Effect (both paste as Effects into a cell), a Modifier,
+      or a Control (with its source Effect's Generator kind, to judge which mappings still fit).
+      Deep-copied, transient, never persisted. */
+  #clipboard = $state<
+    | { kind: 'effects'; effects: Effect[] }
+    | { kind: 'modifier'; device: effectChain.ModifierDevice }
+    | { kind: 'control'; device: ControlDevice; generator: string }
+    | null
+  >(null);
 
   constructor(private readonly host: EffectsControllerHost) {}
 
@@ -148,21 +172,141 @@ export class EffectsController implements EffectsAuthoringApi {
   selectCell(cell: CellSelection | null): void {
     this.#selectedCell = cell === null || cell === MASTER_CELL ? cell : doc.cloneJson(cell);
     this.#selectedEffectId = cell === null || cell === MASTER_CELL ? null : (this.cellEffects(cell)[0]?.id ?? null);
+    // A grid click is a new focus: nothing in the strip stays highlighted for Delete to act on.
+    this.#selectedDevice = null;
   }
   /** Selecting an Effect also selects its cell. */
   selectEffect(effectId: string | null): void {
     const effect = effectId === null ? undefined : this.effectById(effectId);
     this.#selectedEffectId = effect ? effect.id : null;
     if (effect) this.#selectedCell = doc.cloneJson(effect.cell);
+    // A highlight on some OTHER Effect's device no longer matches what is selected.
+    const held = this.#selectedDevice;
+    if (held && ownerEffectOf(held) !== this.#selectedEffectId) this.#selectedDevice = null;
+  }
+
+  // ---- device-strip selection + keyboard edits --------------------------------------------
+
+  get selectedDevice(): DeviceSelection | null {
+    // Like selectedEffectId: a highlight whose target left the section (undo, delete, section
+    // switch) reads as none, so Delete can never act on something no longer on screen.
+    const held = this.#selectedDevice;
+    const section = this.host.getSection();
+    if (!held || !section) return null;
+    if (held.kind === 'effect' || held.kind === 'stage') return doc.effectById(section, held.effectId) ? held : null;
+    if (held.kind === 'control') return doc.effectById(section, held.effectId)?.controls.some((c) => c.uid === held.uid) ? held : null;
+    const chain = held.owner === MASTER_CELL ? section.master : doc.effectById(section, held.owner)?.modifiers;
+    return chain?.some((m) => m.uid === held.uid) ? held : null;
+  }
+  selectDevice(selection: DeviceSelection | null): void {
+    if (selection === null) {
+      this.#selectedDevice = null;
+      return;
+    }
+    const effectId = ownerEffectOf(selection);
+    if (effectId !== null) this.selectEffect(effectId);
+    else this.selectCell(MASTER_CELL);
+    this.#selectedDevice = doc.cloneJson(selection);
+  }
+
+  editSelection(verb: SelectionVerb): ApplyResult | null {
+    if (verb === 'paste') return this.#pasteSelection();
+    const held = this.selectedDevice;
+    const section = this.host.getSection();
+    if (!held || !section) return null;
+    // A fixed stage belongs to its Effect: say where the whole-Effect edit lives rather than
+    // silently deleting (or copying) everything around the one card that is highlighted.
+    if (held.kind === 'stage') {
+      const name = held.stage === 'generator' ? 'Generator' : held.stage === 'trigger' ? 'Trigger' : 'Target';
+      return { ok: false, reason: `An Effect can't be without its ${name}. Click the Effect's name bar to ${verb} the whole Effect.` };
+    }
+    // Copying only reads — a viewer may copy (it is the paste that is guarded).
+    if (verb === 'copy' || verb === 'cut') {
+      if (held.kind === 'effect') this.#clipboard = { kind: 'effects', effects: [doc.cloneJson(doc.effectById(section, held.effectId)!)] };
+      else if (held.kind === 'control') {
+        const effect = doc.effectById(section, held.effectId)!;
+        this.#clipboard = { kind: 'control', device: doc.cloneJson(effect.controls.find((c) => c.uid === held.uid)!), generator: effect.generator.kind };
+      } else {
+        const chain = held.owner === MASTER_CELL ? section.master : doc.effectById(section, held.owner)!.modifiers;
+        this.#clipboard = { kind: 'modifier', device: doc.cloneJson(chain.find((m) => m.uid === held.uid)!) };
+      }
+      if (verb === 'copy') return { ok: true };
+    }
+    if (!this.canEdit) return READ_ONLY;
+    const removed = this.#edit((s) =>
+      held.kind === 'effect'
+        ? doc.removeEffect(s, held.effectId)
+        : held.kind === 'control'
+          ? doc.removeControl(s, held.effectId, held.uid)
+          : doc.removeModifier(s, held.owner, held.uid),
+    );
+    if (removed) this.#selectedDevice = null;
+    return removed ? { ok: true } : { ok: false, reason: 'Nothing was removed.' };
+  }
+
+  #pasteSelection(): ApplyResult | null {
+    const clip = this.#clipboard;
+    if (!clip) return null;
+    if (!this.canEdit) return READ_ONLY;
+    const held = this.selectedDevice;
+    const effectId = (held ? ownerEffectOf(held) : null) ?? this.selectedEffectId;
+    if (clip.kind === 'effects') {
+      const cell = (effectId ? this.effectById(effectId)?.cell : null) ?? (this.#selectedCell !== MASTER_CELL ? this.#selectedCell : null);
+      if (!cell) return { ok: false, reason: 'Select a cell to paste the Effect into.' };
+      return this.pasteCell(cell);
+    }
+    if (clip.kind === 'modifier') {
+      // After the highlighted Modifier; else at the end of the selected Effect's (or Master's) chain.
+      const owner: ChainOwner | null = held?.kind === 'modifier' ? held.owner : (effectId ?? (this.#selectedCell === MASTER_CELL ? MASTER_CELL : null));
+      if (owner === null) return { ok: false, reason: 'Select an Effect to paste the Modifier into.' };
+      const section = this.host.getSection();
+      const chain = owner === MASTER_CELL ? section?.master : section ? doc.effectById(section, owner)?.modifiers : undefined;
+      const at = held?.kind === 'modifier' ? (chain?.findIndex((m) => m.uid === held.uid) ?? -1) + 1 : undefined;
+      const uid = this.#mint((s) => doc.insertModifierDevice(s, owner, clip.device, at));
+      if (!uid) return { ok: false, reason: 'The Modifier could not be pasted here.' };
+      this.#selectedDevice = { kind: 'modifier', owner, uid };
+      return { ok: true };
+    }
+    if (!effectId) return { ok: false, reason: 'Select an Effect to paste the Control into.' };
+    let dropped = 0;
+    const uid = this.#mint((s) => {
+      const out = doc.insertControlDevice(s, effectId, clip.device, clip.generator);
+      dropped = out.dropped;
+      return out;
+    });
+    if (!uid) return { ok: false, reason: 'The Control could not be pasted here.' };
+    this.#selectedDevice = { kind: 'control', effectId, uid };
+    return dropped > 0
+      ? { ok: true, note: `Pasted the Control. ${dropped} of its ${dropped === 1 ? 'mapping points' : 'mappings point'} at devices this Effect doesn't have, so ${dropped === 1 ? 'it was' : 'they were'} left off.` }
+      : { ok: true };
   }
   fireEffect(effectId: string): void {
     if (this.effectById(effectId)) this.host.fire.effect(effectId);
   }
   fireEffectAt(index: number): void {
-    const effect = effectsInGridOrder(this.host.getSection(), this.gridRows, this.gridColumns)[index];
-    if (effect) this.host.fire.effect(effect.id);
+    const slot = auditionSlots(this.host.getSection(), this.gridRows, this.gridColumns)[index];
+    if (slot?.kind === 'effect') this.host.fire.effect(slot.effect.id);
+    else if (slot) this.fireCell(slot.cell);
   }
   fireCell(cell: EffectCell): void {
+    const play = this.cellPlay(cell);
+    if (play && play.mode !== 'layer') {
+      // A zone cell plays as a hit on its zone, so the engine's own step advances: the key, the
+      // grid and the drum all walk ONE sequence.
+      if (cell.column.kind === 'zone' && this.host.fire.hit?.(cell)) return;
+      // Auditioning a Sequence / Random cell plays ONE step, like a hit would: the step after the
+      // last one played (so repeated auditions walk the steps), or another one at random. A UI
+      // preview — it does not move the engine's own step.
+      const steps = this.cellEffects(cell).filter((e) => !e.bypass);
+      if (steps.length === 0) return;
+      const last = this.lastPlayedStep(cell);
+      let index: number;
+      if (play.mode === 'sequence') index = last === null ? 0 : (last + 1) % steps.length;
+      else if (steps.length === 1 || last === null) index = Math.floor(Math.random() * steps.length);
+      else index = (last + 1 + Math.floor(Math.random() * (steps.length - 1))) % steps.length;
+      this.host.fire.effect(steps[index]!.id);
+      return;
+    }
     if (this.cellEffects(cell).length > 0) this.host.fire.cell(cell);
   }
 
@@ -317,10 +461,10 @@ export class EffectsController implements EffectsAuthoringApi {
     const section = this.host.getSection();
     if (!section) return;
     const stack = doc.copyCell(section, cell);
-    if (stack.length > 0) this.#clipboard = stack;
+    if (stack.length > 0) this.#clipboard = { kind: 'effects', effects: stack };
   }
   pasteCell(cell: EffectCell): ApplyResult {
-    const stack = this.#clipboard;
+    const stack = this.#clipboard?.kind === 'effects' ? this.#clipboard.effects : null;
     if (!stack || stack.length === 0) return { ok: false, reason: 'Nothing to paste.' };
     if (!this.canEdit) return READ_ONLY;
     if (!cellEnabled(this.host.kit(), this.host.inputMap(), cell)) return { ok: false, reason: 'This cell cannot hold Effects.' };
@@ -333,10 +477,45 @@ export class EffectsController implements EffectsAuthoringApi {
     return result;
   }
   get canPasteCell(): boolean {
-    return this.canEdit && (this.#clipboard?.length ?? 0) > 0;
+    return this.canEdit && this.#clipboard?.kind === 'effects' && this.#clipboard.effects.length > 0;
   }
   clearCell(cell: EffectCell): void {
     this.#edit((s) => doc.clearCell(s, cell));
+  }
+
+  // ---- Cell play ---------------------------------------------------------------------------
+
+  cellPlay(cell: EffectCell): effectChain.CellPlay | null {
+    const section = this.host.getSection();
+    return section ? effectChain.cellPlayOf(section, cell) : null;
+  }
+  setCellPlayMode(cell: EffectCell, mode: effectChain.CellPlayMode): void {
+    if (!cellEnabled(this.host.kit(), this.host.inputMap(), cell)) return;
+    this.#edit((s) => doc.setCellPlayMode(s, cell, mode));
+  }
+  setCellReset(cell: EffectCell, reset: effectChain.CellReset | null): void {
+    this.#edit((s) => doc.setCellReset(s, cell, reset));
+  }
+  startCellResetLearn(cell: EffectCell, via: 'midi' | 'osc'): void {
+    if (!this.canEdit || !this.cellPlay(cell)) return;
+    this.host.learn.startReset(doc.cloneJson(cell), via);
+  }
+  get cellResetLearnCell(): EffectCell | null {
+    return this.host.learn.resetCell();
+  }
+  lastPlayedStep(cell: EffectCell): number | null {
+    // The steps are the cell's un-bypassed Effects in stack order — exactly what the engine steps.
+    const steps = this.cellEffects(cell).filter((e) => !e.bypass);
+    let best = -1;
+    let at = 0;
+    steps.forEach((effect, index) => {
+      const fired = this.effectFireAt(effect.id);
+      if (fired > at) {
+        at = fired;
+        best = index;
+      }
+    });
+    return best < 0 ? null : best;
   }
 
   // ---- Cue learn -------------------------------------------------------------------------
@@ -489,6 +668,7 @@ export function createStandaloneEffectsApi(
   let fired = $state.raw<string[]>([]);
   let fireTimes = $state.raw<Record<string, number>>({});
   let learnId = $state.raw<string | null>(null);
+  let resetLearn = $state.raw<EffectCell | null>(null);
   const state: StandaloneState = {
     get section() { return section; },
     set section(next) { section = next; },
@@ -551,8 +731,13 @@ export function createStandaloneEffectsApi(
       },
       cancel: () => {
         learnId = null;
+        resetLearn = null;
       },
       effectId: () => learnId,
+      startReset: (cell) => {
+        resetLearn = cell;
+      },
+      resetCell: () => resetLearn,
     },
     legacyImport: {
       available: () => false,

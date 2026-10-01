@@ -38,6 +38,8 @@ type ParamValue = number | boolean | string;
 export interface EffectsSection {
   effects: Effect[];
   master: ModifierDevice[];
+  /** Sequence / Random cells (see core `effect-chain/cell-play`). Absent = all cells layer. */
+  cellPlay?: effectChain.CellPlay[];
 }
 
 /** An op that mints an id: the new section plus the id (null + the input section on a no-op). */
@@ -531,6 +533,42 @@ export function removeMapping<S extends EffectsSection>(section: S, effectId: st
   );
 }
 
+// ---- Pasting devices -----------------------------------------------------------------------
+
+/** Insert a COPY of a Modifier device (fresh uid) at `index` of a chain (default: the end). */
+export function insertModifierDevice<S extends EffectsSection>(section: S, owner: ChainOwner, device: ModifierDevice, index?: number): Minted<S> {
+  const chain = chainOf(section, owner);
+  if (!chain) return { section, id: null };
+  const uid = freshId('mod', (id) => chain.some((m) => m.uid === id));
+  const copy: ModifierDevice = { ...cloneJson(device), uid };
+  const at = index == null ? chain.length : Math.max(0, Math.min(Math.trunc(index), chain.length));
+  const next = updateChain(section, owner, (c) => [...c.slice(0, at), copy, ...c.slice(at)]);
+  return next === section ? { section, id: null } : { section: next, id: uid };
+}
+
+/**
+ * Add a COPY of a Control device (fresh uid) to an Effect. A mapping names a device of the Effect
+ * it came from, so it survives only where that device still exists: the Generator, when the
+ * destination's Generator is the same kind (`sourceGenerator`), and a Modifier uid present in the
+ * destination (true when pasting back into the same Effect). The rest are left off and counted.
+ */
+export function insertControlDevice<S extends EffectsSection>(
+  section: S,
+  effectId: string,
+  device: ControlDevice,
+  sourceGenerator: string,
+): Minted<S> & { dropped: number } {
+  const effect = effectById(section, effectId);
+  if (!effect) return { section, id: null, dropped: 0 };
+  const uid = freshId('ctl', (id) => effect.controls.some((c) => c.uid === id));
+  const keeps = (device: string): boolean =>
+    device === 'generator' ? effect.generator.kind === sourceGenerator : effect.modifiers.some((m) => m.uid === device);
+  const mappings = device.mappings.filter((m) => keeps(m.device));
+  const copy: ControlDevice = { ...cloneJson(device), uid, mappings: cloneJson(mappings) };
+  const next = updateEffect(section, effectId, (e) => ({ ...e, controls: [...e.controls, copy] }));
+  return next === section ? { section, id: null, dropped: 0 } : { section: next, id: uid, dropped: device.mappings.length - mappings.length };
+}
+
 // ---- Cells ------------------------------------------------------------------------------
 
 /** A deep copy of the cell's stack — the cell clipboard's payload. */
@@ -559,5 +597,40 @@ export function pasteCell<S extends EffectsSection>(section: S, cell: EffectCell
 
 export function clearCell<S extends EffectsSection>(section: S, cell: EffectCell): S {
   if (!section.effects.some((e) => sameCell(e.cell, cell))) return section;
-  return withEffects(section, section.effects.filter((e) => !sameCell(e.cell, cell)));
+  const cleared = withEffects(section, section.effects.filter((e) => !sameCell(e.cell, cell)));
+  // An emptied cell starts over: it layers again, with no reset.
+  return section.cellPlay?.some((p) => sameCell(p.cell, cell))
+    ? { ...cleared, cellPlay: section.cellPlay.filter((p) => !sameCell(p.cell, cell)) }
+    : cleared;
+}
+
+// ---- Cell play (Layer / Sequence / Random) -----------------------------------------------
+
+/**
+ * Set how a cell's stack plays a hit. `layer` removes the entry (the default needs none). Switching
+ * between Sequence and Random keeps the reset. An Always cell has no hits to answer: refused.
+ */
+export function setCellPlayMode<S extends EffectsSection>(section: S, cell: EffectCell, mode: effectChain.CellPlayMode): S {
+  if (cell.column.kind === 'always') return section;
+  const entries = section.cellPlay ?? [];
+  const current = entries.find((p) => sameCell(p.cell, cell));
+  if ((current?.mode ?? 'layer') === mode) return section;
+  const rest = entries.filter((p) => !sameCell(p.cell, cell));
+  const next = mode === 'layer'
+    ? rest
+    : [...rest, { cell: cloneJson(cell), mode, ...(current?.reset ? { reset: cloneJson(current.reset) } : {}) }];
+  return { ...section, cellPlay: next };
+}
+
+/** Set (or, with null, clear) the input that rewinds a Sequence / Random cell. No-op on a layering cell. */
+export function setCellReset<S extends EffectsSection>(section: S, cell: EffectCell, reset: effectChain.CellReset | null): S {
+  const entries = section.cellPlay ?? [];
+  const index = entries.findIndex((p) => sameCell(p.cell, cell));
+  if (index < 0) return section;
+  const current = entries[index]!;
+  if (reset !== null && !effectChain.cellResetSchema.safeParse(reset).success) return section;
+  if (JSON.stringify(current.reset ?? null) === JSON.stringify(reset)) return section;
+  const { reset: _old, ...base } = current;
+  const updated: effectChain.CellPlay = reset === null ? base : { ...base, reset: cloneJson(reset) };
+  return { ...section, cellPlay: entries.map((p, i) => (i === index ? updated : p)) };
 }

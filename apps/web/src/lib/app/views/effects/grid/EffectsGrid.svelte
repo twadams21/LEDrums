@@ -210,6 +210,9 @@
               selected={selectedPos?.row === r && selectedPos.col === c}
               tabbable={tabStop.row === r && tabStop.col === c}
               fireAt={s.enabled ? api.cellFireAt(cell) : 0}
+              playMode={s.enabled ? (api.cellPlay(cell)?.mode ?? 'layer') : 'layer'}
+              playedStep={s.enabled && api.cellPlay(cell) ? api.lastPlayedStep(cell) : null}
+              steps={s.enabled && api.cellPlay(cell) ? api.cellEffects(cell).filter((e) => !e.bypass).length : 0}
               onselect={() => select({ row: r, col: c })}
               onactivate={() => activate({ row: r, col: c })}
               onfocus={() => (focusPos = { row: r, col: c })}

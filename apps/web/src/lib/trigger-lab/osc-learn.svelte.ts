@@ -17,7 +17,7 @@
    transport at all — every address arrives via the server — so there is exactly one
    feed here.
    ============================================================================= */
-import type { GlobalControlAction, GlobalControlBinding } from '@ledrums/core';
+import type { GlobalControlAction, GlobalControlBinding, effectChain } from '@ledrums/core';
 import type { MapTarget } from './map-api';
 
 /** What an armed OSC learn is waiting to bind: an app-general control, or one drum zone's
@@ -29,6 +29,8 @@ export type OscLearnTarget =
   | { kind: 'zone'; drumId: string; slot: number }
   /** Effect chains (S05): a Cue Effect's OSC address. */
   | { kind: 'cue'; effectId: string }
+  /** A Sequence / Random cell's reset. */
+  | { kind: 'cell-reset'; cell: effectChain.EffectCell }
   /** Effect chains (S07): MIDI-map mode's armed control. Stays ARMED after a bind — map mode
       re-binds on each new address until the user disarms. */
   | { kind: 'map'; target: MapTarget };
@@ -46,6 +48,7 @@ export interface OscLearnHost {
   setZoneOscAddress(drumId: string, slot: number, address: string): boolean;
   /** Write a Cue Effect's OSC source — the Effect's undo / guard path, same contract. */
   setCueOscAddress(effectId: string, address: string): boolean;
+  setCellResetFromLearn(cell: effectChain.EffectCell, reset: effectChain.CellReset): boolean;
   /** Bind MIDI-map mode's armed control (the store's `bindTarget`, which records a refusal for
       the overlay). The arm stays up either way. */
   bindMapOscAddress(target: MapTarget, address: string): void;
@@ -89,6 +92,8 @@ export class OscLearnController {
         ? this.host.setGlobalControlBinding(target.action, { oscAddress: trimmed })
         : target.kind === 'cue'
           ? this.host.setCueOscAddress(target.effectId, trimmed)
+          : target.kind === 'cell-reset'
+            ? this.host.setCellResetFromLearn(target.cell, { kind: 'osc', address: trimmed })
           : this.host.setZoneOscAddress(target.drumId, target.slot, trimmed);
     if (!bound) return;
     this.target = null;

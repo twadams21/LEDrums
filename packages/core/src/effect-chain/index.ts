@@ -6,6 +6,7 @@ export * from './types';
 export * from './tempo';
 export * from './generators';
 export * from './resolver';
+export * from './cell-play';
 export * from './runtime';
 export * from './library';
 export * from './master';

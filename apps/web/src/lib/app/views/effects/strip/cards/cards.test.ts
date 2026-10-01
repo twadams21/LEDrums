@@ -10,6 +10,7 @@ import { createStandaloneEffectsApi } from '../../../../../trigger-lab/effects-c
 import GeneratorCard from './GeneratorCard.svelte';
 import ModifierCard from './ModifierCard.svelte';
 import ControlCard from './ControlCard.svelte';
+import TriggerCard from '../TriggerCard.svelte';
 import ParamRows from './ParamRows.svelte';
 
 beforeAll(() => {
@@ -225,5 +226,29 @@ describe('ControlCard', () => {
     expect(api.undoDepth).toBe(1);
     const again = render(ControlCard, { props: { api, effect: effect(), control: effect().controls[0]! } });
     expect(again.container.querySelector('[aria-label="LFO Frequency"][role="slider"]')).toBeNull();
+  });
+});
+
+describe('highlighting a card (the thing Delete / ⌘X / ⌘C act on)', () => {
+  it('a press anywhere on a Modifier card highlights that Modifier', async () => {
+    const { api } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
+    const modifier = api.effectById('e1')!.modifiers[0]!;
+    const { container, rerender } = render(ModifierCard, { props: { api, effectId: 'e1', modifier } });
+    await fireEvent.pointerDown(container.querySelector('section.card')!);
+    expect(api.selectedDevice).toEqual({ kind: 'modifier', owner: 'e1', uid: 'm1' });
+    await rerender({ api, effectId: 'e1', modifier });
+    expect(container.querySelector('section.card')!.classList.contains('selected')).toBe(true);
+  });
+
+  it('a press on the Generator highlights the Generator alone — not the Trigger beside it', async () => {
+    // Tim, 2026-10-01: clicking Wave also lit the Trigger, when he only wanted Wave.
+    const { api, effect } = demo();
+    const gen = render(GeneratorCard, { props: { api, effect: effect() } });
+    await fireEvent.pointerDown(gen.container.querySelector('section.card')!);
+    expect(api.selectedDevice).toEqual({ kind: 'stage', effectId: 'e1', stage: 'generator' });
+    const trigger = render(TriggerCard, { props: { api, effect: effect() } });
+    expect(trigger.container.querySelector('section.device')!.classList.contains('selected')).toBe(false);
+    await gen.rerender({ api, effect: effect() });
+    expect(gen.container.querySelector('section.card')!.classList.contains('selected')).toBe(true);
   });
 });
