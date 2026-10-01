@@ -124,7 +124,7 @@
     <DemoCard
       title="Device card — landscape (many params)"
       src={['lib/app/views/effects/strip/cards/DeviceCard', 'lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
-      note="Past 10 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 10 rows — 22 → 8 · 8 · 6 — so the card grows wider, not taller. Ten or fewer stays portrait."
+      note="Past 12 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 12 rows — 22 → 11 · 11 — so the card grows wider, not taller, in as few columns as fit. Twelve or fewer stays portrait."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>

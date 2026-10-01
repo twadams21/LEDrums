@@ -72,11 +72,12 @@ export function enumLabel(v: string): string {
 
 /** A 0..1 ratio as a whole percent. */
 /** A card face lists at most this many param rows top to bottom before it starts another column to
-    the right (Tim, 2026-10-01: "something like 10 rows down as a maximum, then go across"). */
-export const PARAM_ROWS_MAX = 10;
+    the right (Tim, 2026-10-01: "something like 10 rows down as a maximum, then go across", then
+    "maybe it can be a little more than 10 … to keep plugins as compact as possible"). */
+export const PARAM_ROWS_MAX = 12;
 
 /** How `count` param rows lay out: as few columns as keep each under {@link PARAM_ROWS_MAX}, the
-    rows spread evenly across them (22 → 3 columns of 8, 7, 7 — not 10, 10, 2). */
+    rows spread evenly across them (22 → 2 columns of 11; 30 → 3 of 10 — never 12, 12, 6). */
 export function paramColumns(count: number): { columns: number; rows: number } {
   const columns = Math.max(1, Math.ceil(count / PARAM_ROWS_MAX));
   return { columns, rows: Math.max(1, Math.ceil(count / columns)) };
