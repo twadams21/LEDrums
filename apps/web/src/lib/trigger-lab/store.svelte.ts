@@ -43,7 +43,7 @@ import type {
   OutputConfig,
   Project,
 } from '@ledrums/core';
-import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, defaultProject, effectChain, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
+import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, buildPixelModel, defaultProject, effectChain, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
 import type { KitConfig } from '@ledrums/core';
 import { voice } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
@@ -1353,6 +1353,21 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
   setGeneratorParam(effectId: string, key: string, value: number | boolean | string): void {
     this.effectsCtl.setGeneratorParam(effectId, key, value);
+  }
+  setGeneratorParams(effectId: string, patch: Readonly<Record<string, number | boolean | string | undefined>>): void {
+    this.effectsCtl.setGeneratorParams(effectId, patch);
+  }
+
+  // ---- kit geometry for the strip (StripKitInfo) ---------------------------------------------
+  /** The project kit's pixel model — hoop counts and bounds as the engine lays them out. */
+  private kitPixelModel = $derived(buildPixelModel(this.effectsKit));
+  /** How many hoops a drum of the project kit has (Target hoop picking, Splice hoop order). */
+  drumHoopCount(drumId: string): number {
+    return this.kitPixelModel.drumById.get(drumId)?.hoopCount ?? 0;
+  }
+  /** The project kit's bounds, mm (a Slice's Space box starts as the whole kit). */
+  kitBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } {
+    return this.kitPixelModel.bounds;
   }
   setSpliceSlots(effectId: string, slots: effectChain.SpliceSlot[]): void {
     this.effectsCtl.setSpliceSlots(effectId, slots);

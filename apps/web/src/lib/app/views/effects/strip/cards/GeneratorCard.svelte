@@ -47,8 +47,8 @@
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
   const params = $derived(generatorParams(device));
-  // Splice has its own sectioned face, always laid out left to right; others go landscape when long.
-  const spliceFace = $derived(device.kind === 'splice');
+  // Splice and Slice have their own sectioned face, always laid out left to right; others go landscape when long.
+  const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
   const landscape = $derived(spliceFace || isLandscape(params.length));
   const thumb = $derived(thumbSource(device));
   const modulated = $derived(modulatedKeys(effect, 'generator'));

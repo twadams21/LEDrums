@@ -91,3 +91,47 @@ describe('Splice card sections', () => {
     expect(api.undoDepth).toBe(1);
   });
 });
+
+describe('Slice card sections (the graph Slice inspector)', () => {
+  function slice(params: Record<string, unknown> = {}, target: unknown = { kind: 'kit' }) {
+    const effect = effectChain.parseEffect({ id: 'e1', name: 'Cut', cell, target, generator: { kind: 'slice', params } });
+    const api = createStandaloneEffectsApi({ effects: [effect], master: [] }, kit);
+    const view = render(GeneratorCard, { props: { api, effect: api.effectById('e1')! } });
+    const rerender = () => view.rerender({ api, effect: api.effectById('e1')! });
+    return { api, view, rerender, e: () => api.effectById('e1')! };
+  }
+
+  it('lays out SLICE in the inspector’s words: On, Axis, Tilt, Slices, Random lengths, Smudge, Velocity', () => {
+    const { view } = slice();
+    const s = section(view, 'Slice');
+    for (const label of ['On', 'Axis', 'Tilt (°)', 'Slices', 'Random lengths', 'Smudge', 'Velocity']) expect(s.getByText(label)).toBeTruthy();
+    expect(within(view.getByRole('region', { name: 'Move around' })).getByRole('radio', { name: 'Sweep' })).toBeTruthy();
+  });
+
+  it('On writes the Target: Drum → the struck drum (Auto) or a chosen one; Space → the kit plus a box', async () => {
+    const { view, e, rerender, api } = slice();
+    await fireEvent.click(section(view, 'Slice').getByRole('radio', { name: 'Drum' }));
+    expect(e().target).toEqual({ kind: 'hitDrum' });
+    expect(api.undoDepth).toBe(1);
+    await rerender();
+    expect(section(view, 'Move through').queryByText('THROUGH KIT')).toBeNull(); // one drum: nowhere to send it
+    await fireEvent.click(section(view, 'Slice').getByRole('radio', { name: 'Space' }));
+    expect(e().target).toEqual({ kind: 'kit' });
+    expect(typeof e().generator.params.regionSx).toBe('number');
+    await rerender();
+    expect(section(view, 'Slice').getByLabelText('Slice region centre X')).toBeTruthy();
+    await fireEvent.click(section(view, 'Slice').getByRole('radio', { name: 'Kit' }));
+    expect(e().generator.params.regionSx).toBeUndefined(); // leaving Space removes the box
+  });
+
+  it('MOVE THROUGH: THROUGH KIT and THROUGH SLICES; COLOUR CHASE once waiting parts go dark', async () => {
+    const { view, rerender } = slice();
+    const through = () => section(view, 'Move through');
+    expect(through().getByText('THROUGH KIT')).toBeTruthy();
+    expect(through().getByText('THROUGH SLICES')).toBeTruthy();
+    expect(through().queryByText('COLOUR CHASE')).toBeNull();
+    await fireEvent.click(through().getByRole('radio', { name: 'Fade' }));
+    await rerender();
+    expect(through().getByText('COLOUR CHASE')).toBeTruthy();
+  });
+});

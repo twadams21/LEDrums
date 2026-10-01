@@ -7,6 +7,8 @@
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
   import GestureScope from './GestureScope.svelte';
+  import Tooltip from '../../../../../ui/Tooltip.svelte';
+  import Info from '@lucide/svelte/icons/info';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import { mappable } from '../../../../map-mode/mappable.svelte';
   import { enumLabel, formatParam, paramColumns, paramValue, type CardParam, type ParamValue } from './card-model';
@@ -51,7 +53,7 @@
       {@const v = paramValue(p, values)}
       {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
       <li class="row" class:modulated={modulated?.has(p.key)}>
-        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}</span>
+        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
         <span class="ctl" {@attach map && mappable(map)}>
           {#if p.kind === 'enum'}
             <Select
@@ -134,6 +136,12 @@
     margin-left: var(--space-1);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
+    color: var(--text-faint);
+  }
+  .info {
+    display: inline-flex;
+    margin-left: 4px;
+    vertical-align: -1px;
     color: var(--text-faint);
   }
   .row.modulated .label {

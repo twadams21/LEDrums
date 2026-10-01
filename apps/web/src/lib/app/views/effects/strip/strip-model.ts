@@ -255,6 +255,14 @@ export function targetHoopOn(target: SelectTarget, drumId: string, hoop: number)
  */
 export interface StripKitInfo {
   drumHoopCount(drumId: string): number;
+  /** The kit's bounds in mm, when the host knows its geometry (a Slice's Space box). */
+  kitBounds?(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
+}
+
+/** The kit's bounds from a host that reports them, else null. */
+export function kitBounds(api: EffectsAuthoringApi): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } | null {
+  const fn = (api as Partial<StripKitInfo>).kitBounds;
+  return typeof fn === 'function' ? fn.call(api) : null;
 }
 
 export function drumHoopCount(api: EffectsAuthoringApi, drumId: string): number {

@@ -10,6 +10,7 @@ import { createStandaloneEffectsApi } from '../../../../../trigger-lab/effects-c
 import GeneratorCard from './GeneratorCard.svelte';
 import ModifierCard from './ModifierCard.svelte';
 import ControlCard from './ControlCard.svelte';
+import ParamRows from './ParamRows.svelte';
 
 beforeAll(() => {
   // jsdom has no IntersectionObserver / canvas; the live thumbnail needs neither to mount.
@@ -31,16 +32,11 @@ function demo(extra: Record<string, unknown> = {}, opts: { canEdit?: boolean } =
 }
 
 describe('GeneratorCard', () => {
-  it('a Slice (many params) goes landscape: params in columns of at most 12 rows; a Wave stays portrait', () => {
-    const splice = demo({ generator: { kind: 'slice' } });
-    const { container } = render(GeneratorCard, { props: { api: splice.api, effect: splice.effect() } });
-    const card = container.querySelector('.card')!;
-    expect(card.classList.contains('landscape')).toBe(true);
-    const rows = card.querySelector<HTMLElement>('.rows')!;
+  it('a long param list runs in columns of at most 12 rows; a Wave card stays portrait', () => {
+    const many = Array.from({ length: 22 }, (_, k) => ({ key: `p${k}`, label: `P${k}`, kind: 'number' as const, min: 0, max: 1, step: 0.01, default: 0 }));
+    const rows = render(ParamRows, { props: { params: many, values: {}, onChange: () => {} } }).container.querySelector<HTMLElement>('.rows')!;
     expect(rows.classList.contains('cols')).toBe(true);
-    const count = rows.querySelectorAll('.row').length;
-    expect(Number(rows.style.getPropertyValue('--param-rows'))).toBeLessThanOrEqual(12);
-    expect(Number(rows.style.getPropertyValue('--param-rows'))).toBe(Math.ceil(count / Math.ceil(count / 12)));
+    expect(rows.style.getPropertyValue('--param-rows')).toBe('11'); // two columns of 11
     const wave = demo();
     const portrait = render(GeneratorCard, { props: { api: wave.api, effect: wave.effect() } });
     expect(portrait.container.querySelector('.card')!.classList.contains('landscape')).toBe(false);

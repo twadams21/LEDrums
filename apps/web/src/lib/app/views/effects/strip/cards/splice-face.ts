@@ -224,3 +224,76 @@ export function slotsAtCount(slots: readonly SpliceSlot[], count: number): Splic
     return slots.length ? (JSON.parse(JSON.stringify(slots[i % slots.length])) as SpliceSlot) : {};
   });
 }
+
+// ---- Slice ------------------------------------------------------------------------------------
+
+/** Slice motion: the same four modes, named for what they do to SLABS (a slab sweeps along a
+    straight axis; "spin" would promise a rotation the slice does not do). */
+export const SLICE_CHASE_OPTS: Opt[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'step', label: 'Chase' },
+  { value: 'smooth', label: 'Sweep' },
+  { value: 'stagger', label: 'Stagger' },
+];
+
+export const SLICE_CHASE_HINTS: Record<string, string> = {
+  off: 'The slices hold still.',
+  step: 'Each slice hands its content to the next one, a slice per interval.',
+  smooth: 'The slices glide along the axis through the kit, one whole span per interval, wrapping round at the end.',
+  stagger: 'The slices jump along the axis by a set share of the span each interval — the same movement as Sweep, landing on steps instead of gliding.',
+};
+
+/** What a slice cuts. SPACE is a box of the room you place and size. */
+export const SLICE_ON_OPTS: Opt[] = [
+  { value: 'kit', label: 'Kit' },
+  { value: 'drum', label: 'Drum' },
+  { value: 'space', label: 'Space' },
+];
+
+export const SLICE_AXIS_OPTS: Opt[] = [
+  { value: 'x', label: 'X' },
+  { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' },
+];
+
+/** The Space box's params: centre and size, mm. */
+export const REGION_KEYS = ['regionCx', 'regionCy', 'regionCz', 'regionSx', 'regionSy', 'regionSz'] as const;
+export type RegionKey = (typeof REGION_KEYS)[number];
+
+export function hasRegion(params: Params): boolean {
+  return REGION_KEYS.every((k) => typeof params[k] === 'number');
+}
+
+/** What the Slice cuts, read from its Target and Space box: Space > Kit > Drum. */
+export function sliceOnOf(target: { kind: string }, params: Params): 'kit' | 'drum' | 'space' {
+  if (hasRegion(params)) return 'space';
+  return target.kind === 'kit' ? 'kit' : 'drum';
+}
+
+type Vec = { x: number; y: number; z: number };
+/** A Space box that starts as the whole kit, so choosing Space changes nothing on the first frame. */
+export function regionFromBounds(bounds: { min: Vec; max: Vec } | null): Record<RegionKey, number> {
+  const min = bounds?.min ?? { x: -500, y: -500, z: -500 };
+  const max = bounds?.max ?? { x: 500, y: 500, z: 500 };
+  return {
+    regionCx: Math.round((min.x + max.x) / 2),
+    regionCy: Math.round((min.y + max.y) / 2),
+    regionCz: Math.round((min.z + max.z) / 2),
+    regionSx: Math.max(1, Math.round(max.x - min.x)),
+    regionSy: Math.max(1, Math.round(max.y - min.y)),
+    regionSz: Math.max(1, Math.round(max.z - min.z)),
+  };
+}
+
+/** The params that clear the Space box. */
+export const NO_REGION: Record<RegionKey, undefined> = {
+  regionCx: undefined,
+  regionCy: undefined,
+  regionCz: undefined,
+  regionSx: undefined,
+  regionSy: undefined,
+  regionSz: undefined,
+};
+
+/** THROUGH SLICES: the slabs are the slice's primary axis, ordered by pattern only. */
+export const THROUGH_SLICES_LAYER: ThroughLayer = { keys: HOOP_KEYS, pattern: 'order', sequence: null };

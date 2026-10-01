@@ -4,7 +4,11 @@ import {
   HOOP_KEYS,
   NO_DIVISION,
   RATE_KEYS,
+  NO_REGION,
   aroundLabel,
+  hasRegion,
+  regionFromBounds,
+  sliceOnOf,
   divisionLabel,
   effectiveOrder,
   sequenceOf,
@@ -93,5 +97,18 @@ describe('the Splices rows', () => {
 
   it('Count clamps as the engine does', () => {
     expect([spliceCountOf({}), spliceCountOf({ count: 0 }), spliceCountOf({ count: 99 }), spliceCountOf({ count: 6.4 })]).toEqual([4, 1, 64, 6]);
+  });
+});
+
+describe('Slice: what it cuts', () => {
+  it('reads On from the Target and the Space box', () => {
+    const box = regionFromBounds({ min: { x: -100, y: 0, z: -50 }, max: { x: 300, y: 200, z: 50 } });
+    expect(box).toEqual({ regionCx: 100, regionCy: 100, regionCz: 0, regionSx: 400, regionSy: 200, regionSz: 100 });
+    expect(sliceOnOf({ kind: 'kit' }, {})).toBe('kit');
+    expect(sliceOnOf({ kind: 'hitDrum' }, {})).toBe('drum');
+    expect(sliceOnOf({ kind: 'select' }, {})).toBe('drum');
+    expect(sliceOnOf({ kind: 'kit' }, box)).toBe('space');
+    expect(hasRegion({ ...box, regionSz: undefined as never })).toBe(false);
+    expect(Object.values(NO_REGION).every((v) => v === undefined)).toBe(true);
   });
 });

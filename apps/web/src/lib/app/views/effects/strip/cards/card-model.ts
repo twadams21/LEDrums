@@ -26,6 +26,8 @@ export interface CardParam {
   default: ParamValue;
   /** A 0..1 amount read as a whole percent (`0.25` → `25`, unit `%`). */
   percent?: boolean;
+  /** An explanation, shown behind an ⓘ beside the label (never as a paragraph under it). */
+  info?: string;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {

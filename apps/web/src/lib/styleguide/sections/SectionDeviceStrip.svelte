@@ -144,9 +144,9 @@
     </DemoCard>
 
     <DemoCard
-      title="Device card — landscape (many params)"
-      src={['lib/app/views/effects/strip/cards/DeviceCard', 'lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
-      note="Past 12 param rows (PARAM_ROWS_MAX) a card goes landscape: its lead block (kind picker, preview, slots) keeps its own column and the params run in balanced columns of at most 12 rows (e.g. Slice) — so the card grows wider, not taller, in as few columns as fit. Twelve or fewer stays portrait."
+      title="Generator card — Slice"
+      src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/ParamRows']}
+      note="The graph-era Slice inspector on the same face: SLICE — On (Kit · Drum · Space; it writes the Effect's Target, Space adds a box of the room, seeded from the kit's bounds), Axis, Tilt X/Y/Z, Slices, Random lengths, Smudge, Seed, Velocity (ⓘ) — then MOVE AROUND (Sweep, not Spin), MOVE THROUGH (THROUGH KIT · THROUGH SLICES · COLOUR CHASE), BRIGHTNESS ENVELOPE. A new Slice cuts the whole kit. Past 12 rows any card's param list goes landscape in balanced columns (PARAM_ROWS_MAX)."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
