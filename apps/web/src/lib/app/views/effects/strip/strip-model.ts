@@ -268,3 +268,23 @@ export function drumHoopCount(api: EffectsAuthoringApi, drumId: string): number 
   const n = fn.call(api, drumId);
   return Number.isInteger(n) && n > 0 ? n : 0;
 }
+
+// ---- highlight toggling -----------------------------------------------------------------------
+
+/** What counts as a control inside a highlightable area: a press on one edits, it never toggles. */
+const CONTROL_SELECTOR =
+  'button, input, select, textarea, a[href], [role], [draggable="true"], [contenteditable="true"], svg, .facectl, .colorfield';
+
+/**
+ * Is this press on a control inside `root` (a card, an Effect's name bar) rather than on the area
+ * itself — its title, labels, blank space? A second click on the AREA un-highlights it (Tim,
+ * 2026-10-01); a click on a control must not, or editing a highlighted card would keep switching it
+ * off. `surface` names elements inside `root` that count as the area even though they are controls
+ * (the Effect's name, a button only for keyboard focus and double-click rename).
+ */
+export function isControlPress(target: EventTarget | null, root: Element, surface?: string): boolean {
+  if (!(target instanceof Element) || !root.contains(target)) return false;
+  if (surface && target.closest(surface)) return false;
+  const hit = target.closest(CONTROL_SELECTOR);
+  return !!hit && hit !== root && root.contains(hit);
+}

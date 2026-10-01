@@ -65,6 +65,8 @@ import { EffectsController, type EffectsControllerHost } from './effects-control
 import {
   MASTER_CELL,
   type ApplyResult,
+  type DeviceSelection,
+  type SelectionVerb,
   type CellSelection,
   type CellSummary,
   type EffectsAuthoringApi,
@@ -1326,6 +1328,25 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
   selectEffect(effectId: string | null): void {
     this.effectsCtl.selectEffect(effectId);
+  }
+  get selectedDevice(): DeviceSelection | null {
+    return this.effectsCtl.selectedDevice;
+  }
+  selectDevice(selection: DeviceSelection | null): void {
+    this.effectsCtl.selectDevice(selection);
+  }
+  editSelection(verb: SelectionVerb): ApplyResult | null {
+    return this.effectsCtl.editSelection(verb);
+  }
+  /** The keyboard's route to {@link editSelection} (Delete / ⌘X / ⌘C / ⌘V in the Effects view):
+      the same edit, plus a toast for a refusal or a note, so a key that did nothing says why.
+      True when the key was the strip's to take. */
+  editSelectionFromKeyboard(verb: SelectionVerb): boolean {
+    const result = this.effectsCtl.editSelection(verb);
+    if (result === null) return false;
+    if (!result.ok) pushToast(result.reason, { tone: 'error' });
+    else if (result.note) pushToast(result.note, { tone: 'info' });
+    return true;
   }
   fireEffect(effectId: string): void {
     this.effectsCtl.fireEffect(effectId);

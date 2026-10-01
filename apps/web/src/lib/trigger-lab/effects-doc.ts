@@ -483,6 +483,42 @@ export function removeMapping<S extends EffectsSection>(section: S, effectId: st
   );
 }
 
+// ---- Pasting devices -----------------------------------------------------------------------
+
+/** Insert a COPY of a Modifier device (fresh uid) at `index` of a chain (default: the end). */
+export function insertModifierDevice<S extends EffectsSection>(section: S, owner: ChainOwner, device: ModifierDevice, index?: number): Minted<S> {
+  const chain = chainOf(section, owner);
+  if (!chain) return { section, id: null };
+  const uid = freshId('mod', (id) => chain.some((m) => m.uid === id));
+  const copy: ModifierDevice = { ...cloneJson(device), uid };
+  const at = index == null ? chain.length : Math.max(0, Math.min(Math.trunc(index), chain.length));
+  const next = updateChain(section, owner, (c) => [...c.slice(0, at), copy, ...c.slice(at)]);
+  return next === section ? { section, id: null } : { section: next, id: uid };
+}
+
+/**
+ * Add a COPY of a Control device (fresh uid) to an Effect. A mapping names a device of the Effect
+ * it came from, so it survives only where that device still exists: the Generator, when the
+ * destination's Generator is the same kind (`sourceGenerator`), and a Modifier uid present in the
+ * destination (true when pasting back into the same Effect). The rest are left off and counted.
+ */
+export function insertControlDevice<S extends EffectsSection>(
+  section: S,
+  effectId: string,
+  device: ControlDevice,
+  sourceGenerator: string,
+): Minted<S> & { dropped: number } {
+  const effect = effectById(section, effectId);
+  if (!effect) return { section, id: null, dropped: 0 };
+  const uid = freshId('ctl', (id) => effect.controls.some((c) => c.uid === id));
+  const keeps = (device: string): boolean =>
+    device === 'generator' ? effect.generator.kind === sourceGenerator : effect.modifiers.some((m) => m.uid === device);
+  const mappings = device.mappings.filter((m) => keeps(m.device));
+  const copy: ControlDevice = { ...cloneJson(device), uid, mappings: cloneJson(mappings) };
+  const next = updateEffect(section, effectId, (e) => ({ ...e, controls: [...e.controls, copy] }));
+  return next === section ? { section, id: null, dropped: 0 } : { section: next, id: uid, dropped: device.mappings.length - mappings.length };
+}
+
 // ---- Cells ------------------------------------------------------------------------------
 
 /** A deep copy of the cell's stack — the cell clipboard's payload. */

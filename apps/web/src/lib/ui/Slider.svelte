@@ -4,7 +4,7 @@
      readout can never drift apart. Pass `value` one-way with `onChange`, or
      `bind:value` — both work. */
   import { Slider } from 'bits-ui';
-  import { wheelStep } from './wheel-step';
+  import { wheelAdjusts, wheelStep } from './wheel-step';
   import { splitValueUnit } from './format-unit';
 
   type Props = {
@@ -163,7 +163,8 @@
   let root: HTMLDivElement;
 
   function onWheel(e: WheelEvent): void {
-    if (disabled) return;
+    // Plain scroll scrolls the panel; only ⌥-scroll nudges the value (see `wheelAdjusts`).
+    if (disabled || !wheelAdjusts(e)) return;
     const next = wheelStep({ value: normalizedValue, deltaY: e.deltaY, min, max, step });
     if (next === null) return;
     e.preventDefault();
@@ -173,12 +174,24 @@
   /* Both listeners are attached by hand on the same node: `wheel` because it has
      to be non-passive, `pointerdown` because a handler in the markup would put an
      interaction on a wrapper div that has no role of its own. */
+  /* A slider usually sits in a `Field`, which is a <label>. A click anywhere in a label focuses
+     its first text box — here the value box — so clicking the TRACK left the cursor in that box:
+     it wore a focus ring and swallowed the 1–9,0 graph keys until you clicked away (Tim,
+     2026-09-28). The track's own pointer handling has already focused the thumb by the time the
+     click lands, so cancelling the label's default for track clicks keeps focus where the user
+     put it. Clicks on the value box itself keep their default. */
+  function keepLabelOffTrack(e: MouseEvent): void {
+    if (!(e.target instanceof Element) || !e.target.closest('.value')) e.preventDefault();
+  }
+
   $effect(() => {
     root.addEventListener('wheel', onWheel, { passive: false });
     root.addEventListener('pointerdown', startPointer);
+    root.addEventListener('click', keepLabelOffTrack);
     return () => {
       root.removeEventListener('wheel', onWheel);
       root.removeEventListener('pointerdown', startPointer);
+      root.removeEventListener('click', keepLabelOffTrack);
     };
   });
 

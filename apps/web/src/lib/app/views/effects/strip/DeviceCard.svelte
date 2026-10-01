@@ -12,6 +12,7 @@
   import ChevronsLeftRight from '@lucide/svelte/icons/chevrons-left-right';
   import ChevronsRightLeft from '@lucide/svelte/icons/chevrons-right-left';
   import Tooltip from '../../../../ui/Tooltip.svelte';
+  import { isControlPress } from './strip-model';
 
   type Props = {
     title: string;
@@ -28,6 +29,13 @@
     dimmed?: boolean;
     /** Trailing title-bar controls (menus, audition). */
     actions?: Snippet;
+    /** Highlighted in the strip — the thing Delete / ⌘X / ⌘C act on. */
+    selected?: boolean;
+    /** A press anywhere on the card highlights it (see `selected`). */
+    onSelect?: () => void;
+    /** A second, separate click on an already-highlighted card's own area (not one of its
+        controls) un-highlights it. */
+    onDeselect?: () => void;
     children: Snippet;
     class?: string;
   };
@@ -41,18 +49,40 @@
     folded: startFolded = false,
     dimmed = false,
     actions,
+    selected = false,
+    onSelect,
+    onDeselect,
     children,
     class: klass,
   }: Props = $props();
 
   // The prop only seeds the fold; the card owns it after.
   let folded = $state(untrack(() => startFolded));
+
+  // Press highlights; a later click on the highlighted card's own area — not a control, and not
+  // the second click of a double-click — un-highlights it (Tim, 2026-10-01).
+  let pressWasSelected = false;
+  function onPress(): void {
+    pressWasSelected = selected;
+    if (!selected) onSelect?.();
+  }
+  function onClickToggle(event: MouseEvent): void {
+    const toggle = pressWasSelected && event.detail <= 1 && !isControlPress(event.target, event.currentTarget as Element);
+    pressWasSelected = false;
+    if (toggle) onDeselect?.();
+  }
 </script>
 
+<!-- A press anywhere on the card — its title bar or any control on its face — highlights it,
+     in the CAPTURE phase so a control that stops its own pointer events (a face-param drag)
+     still selects the card it sits on. Selecting never moves focus: the control keeps it. -->
 <section
   class={['device', klass]}
   class:folded
   class:dimmed
+  class:selected
+  onpointerdowncapture={onPress}
+  onclickcapture={onClickToggle}
   style:--tint={tint}
   style:--device-w={folded ? undefined : `${width}px`}
   aria-label={title}
@@ -115,6 +145,22 @@
   }
   .device.folded {
     width: 32px;
+  }
+  /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
+     keeping the role rule on top — the same ring as the device cards. */
+  /* The highlight is a box drawn OVER the card — an inset shadow sits under the title bar's own
+     background, which hid its top edge (Tim, 2026-10-01: "not just the sides and bottom"). */
+  .device.selected {
+    position: relative;
+  }
+  .device.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    pointer-events: none;
   }
   .bar {
     display: flex;

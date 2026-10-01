@@ -89,6 +89,12 @@
     dropGap = null;
   }
 
+  /** The Effect itself is highlighted (its name bar was clicked) — not just a card inside it. */
+  const boxed = (effectId: string): boolean => {
+    const held = api.selectedDevice;
+    return held?.kind === 'effect' && held.effectId === effectId;
+  };
+
   function nudge(index: number, delta: -1 | 1): void {
     const id = effects[index]!.id;
     move(index, nudgeIndex(index, delta, effects.length));
@@ -146,6 +152,7 @@
             class="effect-row"
             role="listitem"
             data-effect={effect.id}
+            class:boxed={boxed(effect.id)}
             class:dragging={dragFrom === i}
             class:gap-before={dragFrom !== null && dropGap === i}
             class:gap-after={dragFrom !== null && dropGap === i + 1 && i === effects.length - 1}
@@ -165,6 +172,7 @@
               onNudge={(d) => nudge(i, d)}
             />
             <EffectChain {api} {effect} />
+            {#if boxed(effect.id)}<span class="box" aria-hidden="true"></span>{/if}
           </div>
         {/each}
       </div>
@@ -253,6 +261,19 @@
   .effect-row {
     position: relative;
     border-bottom: 1px solid var(--border);
+  }
+  /* A highlighted Effect: one box round the whole of it — name bar and every card — drawn over
+     the cards (they paint their own backgrounds) and never catching a click (Tim, 2026-10-01). */
+  .effect-row.boxed {
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+  }
+  .box {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-2);
+    pointer-events: none;
   }
   .effect-row.dragging {
     opacity: 0.45;

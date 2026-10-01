@@ -10,7 +10,7 @@ edges:
     condition: "when the shortcut changes which surface owns a physical key"
   - target: "../../PRODUCT.md"
     condition: "when deciding which operator surface should claim a shortcut"
-last_updated: 2026-09-11
+last_updated: 2026-09-28
 ---
 
 # Keyboard Ownership
@@ -38,6 +38,18 @@ The rule must be about the event's current semantic target, not about focus-blur
    while held. Yield modified chords before deciding ownership.
 
 ## Gotchas
+
+- Digits are NOT a focused control's keys. Sliders, segmented/radio/toggle buttons and closed
+  dropdowns own their ARROWS only; clicking one leaves it focused, and yielding digits to it made
+  the 1–9,0 graph bank go dead until you clicked away (Tim, 2026-09-28). Only a field being typed
+  in (`isEditableTarget`, text-like inputs only — not checkbox/range/button inputs) or an open
+  list keeps digits. The same holds for S07b key MAPPINGS: a mapped key performs through a focused
+  control, except the control's navigation keys (`CONTROL_NAVIGATION_CODES` in `app-keyboard.ts`). Inside a dialog or open popup the control still keeps its digits, because
+  nothing may fire behind it. `app-keyboard.ts` has the first-refusal block that enforces this.
+- `Field` renders a `<label>` by default, and a label's click focuses its first text box. A
+  composite control inside one (the Slider and its value box) must cancel that default for clicks
+  outside its own text box, or a click on the control silently moves focus into the text box —
+  which then owns digits and wears a focus ring.
 
 - Do not globally stop propagation from the app shell: Bits Select typeahead and segmented
   roving focus need the event.

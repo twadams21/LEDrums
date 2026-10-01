@@ -33,6 +33,23 @@ type ParamValue = number | boolean | string;
 export const MASTER_CELL = 'master' as const;
 export type CellSelection = EffectCell | typeof MASTER_CELL;
 
+/**
+ * What a click in the device strip highlights — the thing Delete / ⌘X / ⌘C act on (Tim,
+ * 2026-10-01: "highlight a plugin by clicking on it and pressing delete … cut, copy and paste").
+ * Every card highlights ONLY itself (Tim, same day: clicking Wave must not light the Trigger too).
+ * The Effect's name bar selects the whole Effect. A fixed stage — its Trigger, Generator or
+ * Target — highlights on its own but can't be removed or copied apart from its Effect.
+ */
+export type EffectStage = 'trigger' | 'generator' | 'target';
+export type DeviceSelection =
+  | { kind: 'effect'; effectId: string }
+  | { kind: 'stage'; effectId: string; stage: EffectStage }
+  | { kind: 'modifier'; owner: string | typeof MASTER_CELL; uid: string }
+  | { kind: 'control'; effectId: string; uid: string };
+
+/** The keyboard edits on the device-strip selection. */
+export type SelectionVerb = 'delete' | 'cut' | 'copy' | 'paste';
+
 /** One grid row: the Kit, or a drum in kit order. */
 export interface GridRow {
   /** `'kit'` or the drum id. */
@@ -64,7 +81,9 @@ export interface CellSummary {
 }
 
 /** Why a file load / paste did or didn't apply (mirrors the existing graph-file results). */
-export type ApplyResult = { ok: true } | { ok: false; reason: string };
+/** `note` on success: something the user should know that didn't stop the edit (e.g. a pasted
+    Control's mappings that had nothing to point at). */
+export type ApplyResult = { ok: true; note?: string } | { ok: false; reason: string };
 
 export interface EffectsAuthoringApi {
   // ---- read models (reactive in the store) --------------------------------------------------
@@ -90,6 +109,17 @@ export interface EffectsAuthoringApi {
   /** Audition the section's nth Effect in grid order (keys 1–9, 0). */
   fireEffectAt(index: number): void;
   fireCell(cell: EffectCell): void;
+  /** The highlighted Effect or device in the strip, or null. Cleared when it leaves the section. */
+  readonly selectedDevice: DeviceSelection | null;
+  /** Highlight an Effect or device (a click on it). Selecting an Effect's part also selects the Effect. */
+  selectDevice(selection: DeviceSelection | null): void;
+  /**
+   * Delete / cut / copy the highlighted thing, or paste the clipboard next to it. Null when there
+   * is nothing for the verb to act on (the key is then left alone); otherwise the outcome. Paste
+   * puts an Effect into the selected cell, a Modifier after the selected Modifier (else at the end
+   * of the selected Effect's chain), a Control onto the selected Effect.
+   */
+  editSelection(verb: SelectionVerb): ApplyResult | null;
 
   // ---- Effects ---------------------------------------------------------------------------------
   /** Adds an Effect to the cell (default target from the row), selects it, returns its id. */
