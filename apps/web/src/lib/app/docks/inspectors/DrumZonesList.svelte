@@ -1,16 +1,15 @@
 <script lang="ts">
   /* A drum's zones (C6, reworked 2026-08-14) — the (drumId, slot) MIDI-note / OSC entries in
-     the authoritative `project.inputMap`, shared by EVERY graph on that drum. Edited via the
+     the authoritative `project.inputMap`, shared by EVERY Effect on that drum. Edited via the
      pure setZoneMidiNote / setZoneOscAddress / setZoneLabel helpers through store.setInputMap.
 
      What a zone IS, per Trent: a MIDI note (or OSC address) on a drum, with a NAME. So the
      Sensory-Percussion slot dropdown is gone — the name is free text, and a drum may have as
      many zones as it likes. The numeric SLOT survives as hidden identity: the engine keys pads
      `padKey(drumId, String(slot))` and section bindings reference `(drumId, slot)`, so a
-     rename must never move a zone's slot or every graph bound to it would miss.
+     rename must never move a zone's slot or every Effect bound to it would miss.
 
-     Extracted so BOTH the Trigger-graph source editor (TriggerSourceInspector) and the
-     Settings zones pane list the SAME zones off ONE mutation path. The drum is fixed by the
+     Extracted so the Settings zones pane lists the zones off ONE mutation path. The drum is fixed by the
      caller, so this component assumes a known drum and owns only the list. */
   import type { TriggerLab } from '../../../trigger-lab/store.svelte';
   import Radio from '@lucide/svelte/icons/radio';
@@ -117,7 +116,7 @@
   {:else}
     <div class="zonelist">
       {#each zoneSlots as slot (slot)}
-        {@const users = store.zoneGraphUsers(drumId, slot)}
+        {@const users = store.zoneEffectUsers(drumId, slot)}
         {@const note = project ? zoneMidiNote(project.inputMap, drumId, slot) : null}
         {@const addr = project ? zoneOscAddress(project.inputMap, drumId, slot) : null}
         {@const name = project ? zoneLabel(project.inputMap, drumId, slot) : ''}

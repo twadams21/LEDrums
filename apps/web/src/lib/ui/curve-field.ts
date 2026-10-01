@@ -7,7 +7,7 @@
  * The value itself — its type, its profiles, and how it evaluates — lives in
  * `@ledrums/core` (`model/curve.ts`) and is re-exported below, unchanged, so this module
  * stays the one import the control and its consumers reach for. It had to move: a curve is
- * authored content now (an effect node's `lifeEnvelope`, S6b; a drum's velocity curve, S8),
+ * authored content now (an Effect's life envelope, S6b; a drum's velocity curve, S8),
  * and the server engine evaluates the same shape this control draws. Two copies of
  * `evalCurve` would be two answers to "what is this voice's brightness right now".
  *

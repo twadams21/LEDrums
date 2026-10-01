@@ -12,10 +12,8 @@ import type { ShortcutPlatform } from './primary-shortcut';
 import { decideMapModeKey, isBindableKey, isMapModeToggle, type MapKeySession } from './map-mode/map-keys';
 
 export interface AppKeyboardStore {
-  fireSectionGraph(index: number): void;
-  /** Keys 1–9 / 0 audition the section's nth Effect in grid order (EffectsAuthoringApi). While the
-      store has it, digits go here instead of {@link fireSectionGraph}; S08 drops the graph path. */
-  fireEffectAt?(index: number): void;
+  /** Keys 1–9 / 0 audition the section's nth Effect in grid order (EffectsAuthoringApi). */
+  fireEffectAt(index: number): void;
   stepSetlist(axis: voice.NavAxis, delta: number): boolean;
 }
 
@@ -160,9 +158,8 @@ export function dispatchAppKeyboard({
     ...target,
   });
   claimPerformanceKey(event, decision);
-  if (decision.fireGraphIndex !== undefined) {
-    if (store.fireEffectAt) store.fireEffectAt(decision.fireGraphIndex);
-    else store.fireSectionGraph(decision.fireGraphIndex);
+  if (decision.fireEffectIndex !== undefined) {
+    store.fireEffectAt(decision.fireEffectIndex);
     return;
   }
   if (decision.sectionStep === undefined) return;

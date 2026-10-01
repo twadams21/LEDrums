@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { defaultProject } from '@ledrums/core';
 import { TriggerLab } from './store.svelte';
+import { STORAGE_KEY } from './legacy-import';
 import {
   serializeShowLibraryV3 as serializeShowLibrary,
-  serializeAuthored,
   SHOWS_V3_STORAGE_KEY as SHOWS_STORAGE_KEY,
-  STORAGE_KEY,
-  type AuthoredState,
   type AuthoredStateV3,
   type ShowV3 as Show,
   type ShowLibraryV3 as ShowLibrary,
@@ -387,21 +385,19 @@ describe('indicator-driving state is correct per role (S2)', () => {
 });
 
 describe("a viewer's authoring mutators are no-ops (S2)", () => {
-  it('blocks structural authoring (shows / songs / sections / graphs) while a viewer', () => {
+  it('blocks structural authoring (shows / songs / sections / Effects) while a viewer', () => {
     const store = new TriggerLab(noopClient);
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // viewer
     expect(store.isViewer).toBe(true);
 
     const songCount = store.songs.length;
     const showCount = store.shows.length;
-    const graphCount = Object.keys(store.graphs).length;
     const firstSong = store.activeSong!;
     const sectionCount = firstSong.sections.length;
+    const effectCount = store.activeSection!.effects.length;
 
     store.createSong('Nope');
-    store.createGraph('Nope');
-    expect(store.createGraphInSection(firstSong.sections[0]!.id)).toBeNull();
-    expect(store.copyGraphToSection(firstSong.sections[0]!.id, store.selectedPadKey ?? '')).toBeNull();
+    expect(store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid')).toBeNull();
     store.newShow('Nope');
     store.addSongSection('Nope');
     store.renameShow(store.activeShowId, 'Renamed');
@@ -409,30 +405,24 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
 
     expect(store.songs).toHaveLength(songCount);
     expect(store.shows).toHaveLength(showCount);
-    expect(Object.keys(store.graphs)).toHaveLength(graphCount);
+    expect(store.activeSection!.effects).toHaveLength(effectCount);
     expect(store.activeSong!.sections).toHaveLength(sectionCount);
     expect(store.activeShow!.name).not.toBe('Renamed');
     expect(store.activeSong!.name).not.toBe('Renamed');
   });
 
-  it('blocks fine-grained node setters (setParam / setScope) while a viewer', () => {
+  it('blocks fine-grained Effect setters (opacity / generator param) while a viewer', () => {
     const store = new TriggerLab(noopClient);
-    // As standalone (an editor), mint a graph + a play node we can try to mutate later.
-    const key = store.createGraph('Test graph');
-    const node = store.addNode('play', 0, 0);
-    expect(node).not.toBeNull();
-    const paramKey = Object.keys(node!.params)[0];
-    const paramBefore = paramKey ? node!.params[paramKey] : undefined;
-    const scopeBefore = node!.scope;
+    const effect = store.activeSection!.effects[0]!;
+    const opacityBefore = effect.opacity;
 
     store.presence = { editorId: 'c1', youAreEditor: false, clientCount: 2 }; // now a viewer
 
-    if (paramKey) store.setParam(node!, paramKey, 0.123456);
-    store.setScope(node!, scopeBefore === 'kit' ? 'drum' : 'kit');
+    store.setEffectOpacity(effect.id, opacityBefore === 0.5 ? 0.25 : 0.5);
+    store.setGeneratorParam(effect.id, 'color', '#123456');
 
-    if (paramKey) expect(node!.params[paramKey]).toBe(paramBefore); // param edit suppressed
-    expect(node!.scope).toBe(scopeBefore); // scope edit suppressed
-    expect(key).toBeTruthy();
+    expect(store.effectById(effect.id)!.opacity).toBe(opacityBefore); // opacity edit suppressed
+    expect(store.effectById(effect.id)!.generator.params).toEqual(effect.generator.params); // param edit suppressed
   });
 
   it('blocks authoritative project mutators (setOutput) while a viewer', () => {
@@ -469,7 +459,7 @@ describe("a viewer's authoring mutators are no-ops (S2)", () => {
 
 describe('legacy offline data (effect chains: offered for import, never migrated)', () => {
   it('leaves a legacy single-blob authored state in place and offers it for import', () => {
-    const legacy = JSON.stringify(serializeAuthored({ bpm: 156 } as AuthoredState));
+    const legacy = JSON.stringify({ version: 2, data: { bpm: 156 } }); // the old single authored blob
     localStorage.setItem(STORAGE_KEY, legacy);
     const store = new TriggerLab(noopClient);
     expect(store.shows).toHaveLength(1);

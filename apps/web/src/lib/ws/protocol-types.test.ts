@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodeServer } from './protocol-types';
-import { deserializeShowLibrary } from '../trigger-lab/persistence';
+import { SHOWS_VERSION_EFFECTS } from '@ledrums/core';
+import { deserializeShowLibraryV3 } from '../trigger-lab/persistence';
 
 describe('decodeServer', () => {
   afterEach(() => {
@@ -37,28 +38,22 @@ describe('decodeServer', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it.each(['__proto__', 'constructor', 'toString'])('decodes a viewer library with hostile graph key %s', (graphKey) => {
-    const graph = { nodes: [{ id: 'trigger', kind: 'trigger' }], edges: [] };
+  it.each(['__proto__', 'constructor', 'toString'])('decodes a viewer library with hostile show id %s', (showId) => {
     const decoded = decodeServer(JSON.stringify({
       t: 'showLibrary',
       library: {
-        version: 2,
+        version: SHOWS_VERSION_EFFECTS,
         data: {
-          activeShowId: 'show',
-          shows: {
-            show: {
-              id: 'show',
-              name: 'Show',
-              authored: { graphs: Object.fromEntries([[graphKey, graph]]), songs: [], effects: [], presets: [], buses: [] },
-            },
-          },
+          activeShowId: showId,
+          shows: Object.fromEntries([[showId, { id: showId, name: 'Show', authored: { songs: [] } }]]),
         },
       },
     }));
     expect(decoded?.t).toBe('showLibrary');
     if (decoded?.t !== 'showLibrary') return;
-    const library = deserializeShowLibrary(decoded.library);
+    const library = deserializeShowLibraryV3(decoded.library);
     expect(library).not.toBeNull();
-    expect(Object.hasOwn(library!.shows.show!.authored.graphs, graphKey)).toBe(true);
+    expect(Object.hasOwn(library!.shows, showId)).toBe(true);
+    expect(library!.activeShowId).toBe(showId);
   });
 });

@@ -226,7 +226,6 @@
               songName={ss.song.name}
               sectionIdx={ss.sectionIdx}
               recall={ss.recall}
-              looks={ss.section.looks}
               canEdit={store.canEditActiveSong && store.isLocalSong(ss.song.id)}
               editBlockReason={store.activeSongEditBlockReason ?? undefined}
             />

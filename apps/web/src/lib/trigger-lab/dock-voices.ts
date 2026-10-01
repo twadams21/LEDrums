@@ -1,22 +1,21 @@
-// Layers/Buses dock voice source-selection (S17).
+// Layers dock voice source-selection (S17).
 //
 // The dock shows one chip per sounding voice. There are two possible sources, and exactly one is
 // authoritative at any moment (the authority principle from doc 03 / S12):
-//   - OFFLINE (link not open): the local sim resolves + renders, so its voices are the truth.
+//   - OFFLINE (link not open): the local Sim's core engine resolves + renders, so its voices are the
+//     truth.
 //   - CONNECTED (link open): the server engine is the sole resolver/renderer and streams its voices
-//     back; the sim no longer fires, so its voice list is stale/empty. The server's voices win.
+//     back; the Sim no longer fires. The server's voices win.
 //
-// This module is the pure seam between those sources: it normalizes both a sim `Voice` and a wire
-// `VoiceStat` into one `DockVoice` view model and picks the right source from the link state — no
-// Svelte, no store, so it unit-tests directly. The dock renders `DockVoice` and never has to know
-// which side it came from, so the dock and the visualiser can no longer disagree.
+// Both sources speak the same wire `VoiceStat` shape (the Sim's engine is the server's class). This
+// module is the pure seam between them: it normalizes a `VoiceStat` into the `DockVoice` view model
+// and picks the right source from the link state — no Svelte, no store, so it unit-tests directly.
 
 import type { VoiceStat } from '@ledrums/protocol';
 import type { voice } from '@ledrums/core';
-import type { Voice } from './sim';
 
-/** The minimal per-voice shape the Layers/Buses dock draws — everything a chip needs and nothing
- * the source-of-truth (sim vs server) leaks in. Both sources normalize into this. */
+/** The minimal per-voice shape the Layers dock draws — everything a chip needs and nothing the
+ * source-of-truth (Sim vs server) leaks in. */
 export interface DockVoice {
   /** Stable identity — the dock keys chips on it. */
   id: string;
@@ -29,34 +28,13 @@ export interface DockVoice {
   hue: number;
   /** True while the voice is fading out (release phase) — the chip dims. */
   releasing: boolean;
-  /** Provenance label — the chip tooltip. */
+  /** Provenance label — the chip label / tooltip (`Effect: <name>` on the Effect path). */
   via: string;
-  /** Eval state prefix the voice was spawned under — the firing graph's key, `#<slot>`-suffixed
-   * on section-slot fires, `''` when the spawn path had none. Carries the graph ATTRIBUTION both
-   * sources already hold (sim `Voice.pad`, wire `VoiceStat.pad`), so a graph card can show that
-   * it is the one currently lighting the kit. Normalize with `graphKeyOfVoice`. */
-  pad: string;
 }
 
-/** Normalize an offline sim voice into the dock view model (mirrors what the dock used to read off
- * `Voice` directly). */
-export function simVoiceToDockVoice(v: Voice): DockVoice {
-  return {
-    id: v.id,
-    busId: v.busId,
-    effectId: v.effectId,
-    mode: v.mode,
-    level: v.level * v.deckGain,
-    hue: typeof v.params.hue === 'number' ? v.params.hue : 0,
-    releasing: v.phase === 'release',
-    via: v.via,
-    pad: v.pad ?? '',
-  };
-}
-
-/** Normalize a server-streamed voice-stat into the dock view model. The server already folds
- * `level * deckGain` and resolves the hue, so this is a straight adopt. */
-export function serverVoiceToDockVoice(v: VoiceStat): DockVoice {
+/** Normalize a voice-stat into the dock view model. The engine already folds `level * deckGain`
+ * and resolves the hue, so this is a straight adopt. */
+export function voiceStatToDockVoice(v: VoiceStat): DockVoice {
   return {
     id: v.id,
     busId: v.busId,
@@ -66,20 +44,16 @@ export function serverVoiceToDockVoice(v: VoiceStat): DockVoice {
     hue: v.hue,
     releasing: v.releasing,
     via: v.via,
-    pad: v.pad,
   };
 }
 
 /** Pick the authoritative voice source for the dock: the server's voices when the engine link is
- * open, the local sim's voices otherwise. The unused source is ignored entirely — a connected dock
- * shows a server-spawned voice even while the sim holds none, and never shows a stale sim voice. */
+ * open, the offline Sim's otherwise. The unused source is ignored entirely. */
 export function selectDockVoices(args: {
   /** `store.link === 'open'` — the same firing/authority gate the whole slice family uses. */
   connected: boolean;
-  simVoices: readonly Voice[];
+  simVoices: readonly VoiceStat[];
   serverVoices: readonly VoiceStat[];
 }): DockVoice[] {
-  return args.connected
-    ? args.serverVoices.map(serverVoiceToDockVoice)
-    : args.simVoices.map(simVoiceToDockVoice);
+  return (args.connected ? args.serverVoices : args.simVoices).map(voiceStatToDockVoice);
 }

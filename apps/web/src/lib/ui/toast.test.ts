@@ -14,9 +14,9 @@ afterEach(() => {
 
 describe('toast store', () => {
   it('pushes a toast with its message + tone and returns an id', () => {
-    const id = pushToast('Pasted graph.', { tone: 'success', ttl: 0 });
+    const id = pushToast('Pasted effect.', { tone: 'success', ttl: 0 });
     expect(toastStore.items).toHaveLength(1);
-    expect(toastStore.items[0]).toMatchObject({ id, message: 'Pasted graph.', tone: 'success' });
+    expect(toastStore.items[0]).toMatchObject({ id, message: 'Pasted effect.', tone: 'success' });
   });
 
   it('defaults to the info tone', () => {

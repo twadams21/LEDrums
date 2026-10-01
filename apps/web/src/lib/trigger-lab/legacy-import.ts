@@ -9,38 +9,197 @@
    are dropped, so every section has an empty grid and no master chain. The referenced legacy song
    library comes across the same way, so `songRefs` keep resolving.
 
-   Parsing goes through the EXISTING v2 loaders (`deserializeShowLibrary` / `deserializeAuthored`
-   / `deserializeSongLibrary`), so a v1 source gets the existing hoop-id migration and every
-   defensive coercion exactly as a v2 boot would. Nothing here writes: the old data stays in place
-   and the caller persists the returned v3 library under the new keys.
+   This is the ONE place the old formats are still read (the graph model is gone everywhere else,
+   effect chains S08), so their envelope gates and the defensive field coercion live here. Only
+   the fields an import keeps are read; the graph containers are never looked at, which also makes
+   the old v1 hoop-id migration moot (it only ever rewrote graph nodes). Nothing here writes: the
+   old data stays in place and the caller persists the returned v3 library under the new keys.
 
    Idempotent: an imported show records `importedFrom: <source show id>`; a re-import skips any
    source show already imported, and a library song whose id is already in the v3 pool is kept as
    is. */
 
+import { SHOWS_PRIOR_VERSION, SHOWS_VERSION, SONGS_VERSION, type CanvasScene } from '@ledrums/core';
 import {
-  SHOWS_STORAGE_KEY,
-  SHOWS_VERSION,
-  SHOWS_PRIOR_VERSION,
-  SONGS_STORAGE_KEY,
-  SONGS_VERSION,
-  STORAGE_KEY,
-  deserializeAuthored,
-  deserializeShowLibrary,
-  deserializeSongLibrary,
   readStoredJson,
-  type AuthoredState,
   type AuthoredStateV3,
   type EffectLibrarySong,
   type EffectSection,
   type EffectSong,
-  type ShowLibrary,
   type ShowLibraryV3,
   type ShowV3,
   type SongLibraryV2,
   type StorageLike,
 } from './persistence';
 import { nid } from './store/ids';
+
+// ---- the old formats (read-only) ------------------------------------------------------------
+
+/** The old single authored blob's localStorage key (pre show-library). */
+export const STORAGE_KEY = 'ledrums:authored:v1';
+/** The old (v1/v2) show library's localStorage key. */
+export const SHOWS_STORAGE_KEY = 'ledrums:shows:v1';
+/** The old (v1) song library's localStorage key. */
+export const SONGS_STORAGE_KEY = 'ledrums:songs:v1';
+
+/** The single authored blob's envelope versions: v2, and the v1 it upgraded from. */
+const AUTHORED_VERSION = 2;
+const AUTHORED_PRIOR_VERSION = 1;
+
+/** One old section, as far as an import reads it. */
+interface LegacySection {
+  id: string;
+  name: string;
+}
+
+interface LegacySong {
+  id: string;
+  name: string;
+  sections: LegacySection[];
+}
+
+/** The fields of an old authored slice an import keeps (every one optional: a partially-corrupt
+    slice degrades to what survived). */
+interface LegacyAuthored {
+  songs?: LegacySong[];
+  songRefs?: string[];
+  canvasScenes?: CanvasScene[];
+  activeSongId?: string;
+  activeSectionId?: string | null;
+  bpm?: number;
+  velocity?: number;
+  beatsPerBar?: number;
+  paneSizes?: Record<string, number>;
+  patchLabels?: Record<string, string>;
+}
+
+interface LegacyShow {
+  id: string;
+  name: string;
+  authored: LegacyAuthored;
+}
+
+interface LegacyShowLibrary {
+  shows: Record<string, LegacyShow>;
+  activeShowId: string;
+}
+
+interface LegacySongLibrary {
+  songs: Record<string, LegacySong>;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** De-duplicate the string entries of an unknown array, preserving first-appearance order. */
+function dedupeStrings(values: readonly unknown[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (typeof v === 'string' && v && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
+/** Old songs, defensively: non-object songs / sections are skipped, ids and names coerced. */
+function coerceLegacySongs(songs: readonly unknown[]): LegacySong[] {
+  const out: LegacySong[] = [];
+  for (const raw of songs) {
+    if (!isObject(raw)) continue;
+    const sections: LegacySection[] = [];
+    for (const sec of Array.isArray(raw.sections) ? raw.sections : []) {
+      if (isObject(sec)) sections.push({ id: String(sec.id ?? ''), name: String(sec.name ?? '') });
+    }
+    out.push({ id: String(raw.id ?? ''), name: String(raw.name ?? ''), sections });
+  }
+  return out;
+}
+
+/** Keep section ids globally unique across `songs` (the first section with an id wins; id-less
+    sections are dropped). */
+function uniqueSectionIds(songs: readonly LegacySong[], reserved: Set<string>): LegacySong[] {
+  return songs.map((song) => ({
+    ...song,
+    sections: song.sections.filter((section) => {
+      if (!section.id || reserved.has(section.id)) return false;
+      reserved.add(section.id);
+      return true;
+    }),
+  }));
+}
+
+/** Field-level coercion of an old authored slice (only the fields an import keeps). */
+function coerceLegacyAuthored(data: unknown): LegacyAuthored {
+  if (!isObject(data)) return {};
+  const out: LegacyAuthored = {};
+  if (Array.isArray(data.songs)) out.songs = uniqueSectionIds(coerceLegacySongs(data.songs), new Set());
+  if (Array.isArray(data.songRefs)) out.songRefs = dedupeStrings(data.songRefs);
+  if (Array.isArray(data.canvasScenes)) out.canvasScenes = data.canvasScenes as CanvasScene[];
+  if (isObject(data.paneSizes)) out.paneSizes = data.paneSizes as Record<string, number>;
+  if (isObject(data.patchLabels)) out.patchLabels = data.patchLabels as Record<string, string>;
+  if (typeof data.activeSongId === 'string') out.activeSongId = data.activeSongId;
+  // An older blob stored the active section under `arrangeSectionId`.
+  const rawActiveSection = data.activeSectionId !== undefined ? data.activeSectionId : data.arrangeSectionId;
+  if (typeof rawActiveSection === 'string' || rawActiveSection === null) out.activeSectionId = rawActiveSection;
+  if (isFiniteNumber(data.bpm)) out.bpm = data.bpm;
+  if (isFiniteNumber(data.velocity)) out.velocity = data.velocity;
+  if (isFiniteNumber(data.beatsPerBar)) out.beatsPerBar = data.beatsPerBar;
+  return out;
+}
+
+/** The old single authored-blob envelope (v1 or v2), or null. */
+function readLegacyAuthoredBlob(raw: unknown): LegacyAuthored | null {
+  if (!isObject(raw)) return null;
+  if (raw.version !== AUTHORED_VERSION && raw.version !== AUTHORED_PRIOR_VERSION) return null;
+  if (!isObject(raw.data)) return null;
+  return coerceLegacyAuthored(raw.data);
+}
+
+/** The old show-library envelope (v1 or v2), or null when unusable or no show survives. Section
+    ids stay unique across the whole library (first wins). */
+function readLegacyShowLibrary(raw: unknown): LegacyShowLibrary | null {
+  if (!isObject(raw)) return null;
+  if (raw.version !== SHOWS_VERSION && raw.version !== SHOWS_PRIOR_VERSION) return null;
+  const data = raw.data;
+  if (!isObject(data) || !isObject(data.shows)) return null;
+  const shows: Record<string, LegacyShow> = {};
+  for (const [id, rawShow] of Object.entries(data.shows)) {
+    if (!isObject(rawShow)) continue;
+    const showId = typeof rawShow.id === 'string' && rawShow.id ? rawShow.id : id;
+    const name = typeof rawShow.name === 'string' && rawShow.name ? rawShow.name : 'Untitled Show';
+    shows[showId] = { id: showId, name, authored: coerceLegacyAuthored(rawShow.authored) };
+  }
+  if (Object.keys(shows).length === 0) return null;
+  const usedSectionIds = new Set<string>();
+  for (const show of Object.values(shows)) {
+    if (show.authored.songs) show.authored.songs = uniqueSectionIds(show.authored.songs, usedSectionIds);
+  }
+  const activeShowId =
+    typeof data.activeShowId === 'string' && shows[data.activeShowId] ? data.activeShowId : Object.keys(shows)[0]!;
+  return { shows, activeShowId };
+}
+
+/** The old (v1) song-library envelope, or null when unusable. An empty pool is legal. */
+function readLegacySongLibrary(raw: unknown): LegacySongLibrary | null {
+  if (!isObject(raw) || raw.version !== SONGS_VERSION) return null;
+  const data = raw.data;
+  if (!isObject(data) || !isObject(data.songs)) return null;
+  const songs: Record<string, LegacySong> = {};
+  const usedSectionIds = new Set<string>();
+  for (const rawSong of Object.values(data.songs)) {
+    if (!isObject(rawSong) || typeof rawSong.id !== 'string' || !rawSong.id) continue;
+    const [song] = uniqueSectionIds(coerceLegacySongs([{ id: rawSong.id, name: rawSong.name, sections: rawSong.sections }]), usedSectionIds);
+    songs[rawSong.id] = { id: rawSong.id, name: typeof rawSong.name === 'string' && rawSong.name ? rawSong.name : 'Untitled Song', sections: song?.sections ?? [] };
+  }
+  return { songs };
+}
+
+// ---- detect + import ------------------------------------------------------------------------
 
 /** The source id given to a legacy single authored blob (it has no show id of its own). Fixed so
     a re-import of the same blob is recognised. */
@@ -63,17 +222,14 @@ export interface ServerLibraryBlobs {
   songLibrary?: unknown;
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/** Parse an old show source into the v2 library shape (hoop-migrated when v1), or null. */
-function parseLegacyShows(raw: unknown): ShowLibrary | null {
-  const lib = deserializeShowLibrary(raw);
+/** Parse an old show source into the old library shape, or null. */
+function parseLegacyShows(raw: unknown): LegacyShowLibrary | null {
+  const lib = readLegacyShowLibrary(raw);
   if (lib) return lib;
-  const single = deserializeAuthored(raw);
+  const single = readLegacyAuthoredBlob(raw);
   if (!single) return null;
   return {
-    shows: { [LEGACY_SINGLE_SHOW_ID]: { id: LEGACY_SINGLE_SHOW_ID, name: 'Default Show', authored: single as AuthoredState } },
+    shows: { [LEGACY_SINGLE_SHOW_ID]: { id: LEGACY_SINGLE_SHOW_ID, name: 'Default Show', authored: single } },
     activeShowId: LEGACY_SINGLE_SHOW_ID,
   };
 }
@@ -195,7 +351,7 @@ export function importLegacyShows(
     importedIdOf.set(legacyShow.id, id);
   }
 
-  const legacySongs = raw.songs == null ? null : deserializeSongLibrary(raw.songs);
+  const legacySongs = raw.songs == null ? null : readLegacySongLibrary(raw.songs);
   for (const song of Object.values(legacySongs?.songs ?? {})) {
     if (songs[song.id]) continue;
     songs[song.id] = {
@@ -224,7 +380,7 @@ function sectionIds(songs: readonly EffectSong[]): string[] {
 /** The v3 authored slice for one legacy show. `placeSection` assigns the section's final id and
     carries its raw timing fields. */
 function projectAuthored(
-  legacyAuthored: Partial<AuthoredState>,
+  legacyAuthored: LegacyAuthored,
   placeSection: (sectionId: string) => Pick<EffectSection, 'id' | 'bars' | 'bpm'>,
 ): AuthoredStateV3 {
   const songs: EffectSong[] = (legacyAuthored.songs ?? []).map((song) => ({
@@ -259,7 +415,7 @@ function projectAuthored(
   return authored;
 }
 
-/** `bars` / `bpm` as the raw source stored them (the v2 coercion does not carry them). */
+/** `bars` / `bpm` as the raw source stored them (the old coercion does not carry them). */
 function sectionTiming(raw: Record<string, unknown> | undefined): Pick<EffectSection, 'bars' | 'bpm'> {
   const out: Pick<EffectSection, 'bars' | 'bpm'> = {};
   if (typeof raw?.bars === 'number' && Number.isFinite(raw.bars)) out.bars = raw.bars;

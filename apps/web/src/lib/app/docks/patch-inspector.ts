@@ -6,7 +6,7 @@
    to derive the read-outs (first/last pixel, ordering), and edits the real project via
    the S3 store mutators. */
 
-import { drumDensity, SLOT_LABELS, type DrumConfig, type InputMap, type KitConfig, type voice } from '@ledrums/core';
+import { drumDensity, SLOT_LABELS, type DrumConfig, type effectChain, type InputMap, type KitConfig } from '@ledrums/core';
 import type { HoopRef, PatchRouting, PixelSpan } from '../patch-routing';
 
 const CHANNELS_PER_UNIVERSE = 512;
@@ -177,25 +177,16 @@ export function buildPixelOutputTable(
   return rows;
 }
 
-// --- trigger bindings (C3 drum, C6 trigger) ------------------------------------------
+// --- a drum's Effects (C3 drum) ----------------------------------------------------------
 
-/** The trigger graph bound to a drum by IDENTITY — the first graph whose `trigger` node carries a
-    `drum` source ({@link voice.TriggerSource}) for `drumId`. Read-only lookup over the graphs map
-    (`store.graphs` shape, `Record<graphKey, TriggerGraph>`); returns the graph key plus a
-    `drumId:zone` binding label, or `null` when no graph is bound. A `voice.TriggerGraph` carries no
-    human name (that lives in the store's separate `graphNames`), so the C3 view MAY upgrade `label`
-    via `store.graphLabel(graphKey)`; the returned label is a self-contained fallback. */
-export function boundTriggerFor(
+/** The Effects a section plays on a drum's grid row (its zone, Always and Clock cells), in stack
+    order, by display name — the drum card's read-out. An unnamed Effect reads as its generator
+    kind. Empty when the section has none on this drum (or there is no section). */
+export function drumEffectNames(
   drumId: string,
-  graphs: Record<string, voice.TriggerGraph>,
-): { graphKey: string; label: string } | null {
-  for (const [graphKey, graph] of Object.entries(graphs)) {
-    const source = graph.nodes.find((n) => n.kind === 'trigger')?.source;
-    if (source?.kind === 'drum' && source.drumId === drumId) {
-      return { graphKey, label: `${source.drumId}:${source.zone}` };
-    }
-  }
-  return null;
+  section: { effects: readonly effectChain.Effect[] } | null,
+): string[] {
+  return (section?.effects ?? []).filter((e) => e.cell.row === drumId).map((e) => e.name || e.generator.kind);
 }
 
 /** The zone slots a drum HAS — every distinct slot declared (`zones`) OR bound (a MIDI note / OSC

@@ -61,26 +61,28 @@ afterEach(() => {
 });
 
 describe('onInput echo never fires the sim (S12)', () => {
-  it('an echoed MIDI input does NOT fire the local sim, even for a directly-bound graph', () => {
+  it('an echoed MIDI input does NOT fire the local sim, even for a Cue on that note', () => {
     const store = new TriggerLab(capturing([]));
-    // A graph bound to raw note 60 — the sim WOULD have fired it under the old echo handler.
-    const key = store.createGraph('Direct 60');
-    store.setTriggerSource(key, { kind: 'midi', note: 60 });
+    // A Cue bound to raw note 60 — the Sim WOULD fire it if the echo reached the local engine.
+    const id = store.addEffect({ row: 'kit', column: { kind: 'cue' } }, 'solid')!;
+    store.setTrigger(id, { kind: 'cue', source: { midiNote: 60 } });
+    store.sim.tick(16);
 
     internals(store).receiveInputEcho({ kind: 'midi', label: 'C4', value: 0.8, note: 60, channel: 0 });
+    store.sim.tick(16);
 
     expect(effectEvents(store)).toHaveLength(0);
-    expect(store.voices).toHaveLength(0);
+    expect(store.sim.effectFiredAt(id)).toBe(0);
   });
 
   it('MIDI-learn still works from an echoed input (and does not also fire the sim)', () => {
     const store = new TriggerLab(capturing([]));
-    const key = store.createGraph('Learn me');
-    store.startMidiLearn({ kind: 'trigger', graphKey: key });
+    const id = store.addEffect({ row: 'kit', column: { kind: 'cue' } }, 'solid')!;
+    store.startCueLearn(id, 'midi');
 
     internals(store).receiveInputEcho({ kind: 'midi', label: 'E4', value: 1, note: 64, channel: 0 });
 
-    expect(store.triggerSource(key)).toEqual({ kind: 'midi', note: 64 });
+    expect(store.effectById(id)!.trigger).toEqual({ kind: 'cue', source: { midiNote: 64 } });
     expect(effectEvents(store)).toHaveLength(0);
   });
 
@@ -174,64 +176,37 @@ describe('outbound firing is gated on the engine link (S12)', () => {
     });
   });
 
-  describe('fireSectionGraph (keyboard performance)', () => {
+  describe('fireEffectAt (keyboard audition)', () => {
     it('offline: fires the local preview and sends nothing', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
-      expect(store.activeSection?.graphs.length ?? 0).toBeGreaterThan(0);
+      expect(store.activeSection!.effects.length).toBeGreaterThan(0);
 
-      store.fireSectionGraph(0);
+      store.fireEffectAt(0);
 
       expect(effectEvents(store).length).toBeGreaterThan(0);
       expect(sent).toHaveLength(0);
     });
 
-    it('connected: sends the fireGraph intent (exact key), not a synthetic source, and does not fire the sim (S13)', () => {
+    it('connected: sends the fireEffect intent for exactly that Effect and does not fire the sim', () => {
       const sent: ClientMessage[] = [];
       const store = new TriggerLab(capturing(sent));
-      const key0 = store.activeSection!.graphs[0]!;
       store.link = 'open';
 
-      store.fireSectionGraph(0);
-
-      // No local sim fire (authority principle) …
-      expect(effectEvents(store)).toHaveLength(0);
-      // … and EXACTLY the fireGraph intent goes out — no synthetic key/midi/osc source to
-      // re-resolve (which is what echo-re-fired the old keyboard path).
-      expect(sent).toEqual([{ t: 'fireGraph', graphKey: key0, velocity: store.velocity }]);
-    });
-
-    it('connected: a MIDI-bound section graph sends fireGraph — NOT a synthetic {t:midi} (the old triple-fire) (S13)', () => {
-      const sent: ClientMessage[] = [];
-      const store = new TriggerLab(capturing(sent));
-      const key0 = store.activeSection!.graphs[0]!;
-      store.setTriggerSource(key0, { kind: 'midi', note: 60 }); // rebind to a raw MIDI source
-      store.link = 'open';
-
-      store.fireSectionGraph(0);
+      store.fireEffectAt(0);
 
       expect(effectEvents(store)).toHaveLength(0);
-      // The whole S13 fix: a MIDI-bound section graph no longer forwards a synthetic {t:'midi'}
-      // (which the server re-resolved AND echoed → triple-fire). It sends the exact graph key.
-      expect(sent).toEqual([{ t: 'fireGraph', graphKey: key0, velocity: store.velocity }]);
-      expect(sent.some((m) => m.t === 'midi')).toBe(false);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.t).toBe('fireEffect');
     });
   });
 });
 
-/* S15 — the same authority principle for SECTION RECALL. The engine now spawns a section's
-   looks on recall (engine parity), so the sim must recall its looks ONLY while offline —
-   otherwise the sim + engine double-spawn when connected. `setActiveSection` therefore fires
-   `sim.recallSection` only when `link !== 'open'`, and always forwards `{t:'recallSection'}`
-   when connected. (S12 deferred this gate to S15; here is where it lands.) */
+/* S15 — the same authority principle for SECTION RECALL. The engine plays a section's Always
+   Effects on recall, so the Sim must recall ONLY while offline — otherwise the Sim + engine
+   double-spawn when connected. `setActiveSection` therefore recalls the Sim only when
+   `link !== 'open'`, and always forwards `{t:'recallSection'}` when connected. */
 describe('setActiveSection recall is gated on the engine link (S15)', () => {
-  /** A fixture section whose looks name at least one effect, so recalling it spawns
-      look voices in the local sim (an observable "the sim recalled" signal). */
-  const sectionWithLook = (store: TriggerLab): string => {
-    const s = store.sections.find((sec) => Object.values(sec.looks).some((v) => v != null));
-    expect(s, 'a fixture section with a non-null look').toBeTruthy();
-    return s!.id;
-  };
 
   it('offline: recalls the local sim (the section’s Always Effect plays) and sends nothing', () => {
     const sent: ClientMessage[] = [];
@@ -253,12 +228,16 @@ describe('setActiveSection recall is gated on the engine link (S15)', () => {
   it('connected: forwards the recall WITHOUT firing the local sim (no double-spawn)', () => {
     const sent: ClientMessage[] = [];
     const store = new TriggerLab(capturing(sent));
-    const id = sectionWithLook(store);
+    store.setActiveSection('verse');
+    store.addEffect({ row: 'kit', column: { kind: 'always' } }, 'solid');
+    store.setActiveSection('intro');
+    store.sim.tick(16);
     store.link = 'open';
 
-    store.setActiveSection(id);
+    store.setActiveSection('verse');
+    store.sim.tick(16);
 
-    expect(store.voices).toHaveLength(0); // sim did NOT spawn — the server engine is authority
-    expect(sent).toContainEqual({ t: 'recallSection', songId: store.activeSongId, sectionId: id });
+    expect(store.sim.effectSelection.sectionId).toBe('intro'); // the Sim did NOT recall — the server engine is authority
+    expect(sent).toContainEqual({ t: 'recallSection', songId: store.activeSongId, sectionId: 'verse' });
   });
 });

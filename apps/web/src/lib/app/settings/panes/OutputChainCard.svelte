@@ -22,7 +22,7 @@
   import { onNum, patchLabel } from '../../docks/inspectors/forms';
   import { physicalPortLine } from '../../docks/patch-inspector';
   import { outputNodeId } from '../../patch-graph';
-  import { fmtSpan, RGB_OPTS } from '../../views/node-options';
+  import { fmtSpan, RGB_OPTS } from '../../views/output-options';
   import { gapIndexAt } from '../../views/sections-dnd';
   import { hoopKey, type HoopDrag } from './chain-editor';
   import { isHoopDrag, readHoopDrag, writeHoopDrag } from './hoop-dnd';

@@ -134,9 +134,9 @@ describe('ClipDoc effect-chain kinds — defensive parse', () => {
     expect(doc.deps).toEqual({ canvasScenes: [scene('ok')] });
   });
 
-  it('the graph remapper refuses effect-chain docs rather than mis-materializing them', () => {
+  it('the section / song remapper refuses effect-chain docs rather than mis-materializing them', () => {
     const doc = buildEffectClipDoc(sceneEffect('fx', 'mine'), {});
-    const res = remapClipDoc(doc, { graphs: {}, effects: [], presets: [], isBuiltInEffectId: () => false });
+    const res = remapClipDoc(doc, {});
     expect(isClipParseError(res) && res.reason).toBe('unknown-kind');
   });
 });

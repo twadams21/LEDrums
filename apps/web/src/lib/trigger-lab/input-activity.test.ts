@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { voice } from '@ledrums/core';
 import {
   acceptsChannel,
   activityKey,
-  bindingFromSource,
   deriveInputBadge,
   LIVE_MS,
   STALE_MS,
@@ -41,21 +39,6 @@ describe('acceptsChannel (global MIDI channel filter)', () => {
     expect(acceptsChannel(10, 1)).toBe(false);
     expect(acceptsChannel(10, undefined)).toBe(false);
   });
-});
-
-describe('bindingFromSource', () => {
-  const cases: Array<{ name: string; src: voice.TriggerSource | undefined; expected: InputBinding | null }> = [
-    { name: 'midi note → midi binding', src: { kind: 'midi', note: 38 }, expected: { kind: 'midi', note: 38 } },
-    { name: 'midi CC → null (not on the input wire)', src: { kind: 'midi', cc: 7 }, expected: null },
-    { name: 'midi with no note → null', src: { kind: 'midi' }, expected: null },
-    { name: 'osc address → osc binding', src: { kind: 'osc', address: '/snare' }, expected: { kind: 'osc', address: '/snare' } },
-    { name: 'osc empty address → null', src: { kind: 'osc', address: '' }, expected: null },
-    { name: 'drum source → null (fires via pad path)', src: { kind: 'drum', drumId: 'kick', zone: '0' }, expected: null },
-    { name: 'undefined source → null', src: undefined, expected: null },
-  ];
-  for (const c of cases) {
-    it(c.name, () => expect(bindingFromSource(c.src)).toEqual(c.expected));
-  }
 });
 
 describe('deriveInputBadge', () => {

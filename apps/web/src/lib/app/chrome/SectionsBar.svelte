@@ -76,7 +76,7 @@
         onclick={() => store.setActiveSection(sec.id)}
         ondblclick={() => startRename(sec.id)}
       >
-        {sec.name}<span class="cnt">{sec.graphs.length}</span>
+        {sec.name}<span class="cnt">{sec.effects.length}</span>
       </button>
       </ContextMenu>
       {/if}

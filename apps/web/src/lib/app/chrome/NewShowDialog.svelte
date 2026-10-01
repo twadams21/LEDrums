@@ -3,12 +3,11 @@
      trigger inputs"). Opened from the Show browser's New, never on startup: a gig launch reopens
      the last show without waiting on a question.
 
-     From my trigger zones (first, the one Tim asked for): one empty graph per zone declared in
-     Settings › Drum trigger zones, and every later new section and song gets its own set — so the
-     zones are always there to fill, never rebuilt. Blank: one song, one empty section. Both
-     leave out the demo pads a bare new show used to carry. */
+     Both start one song with one empty section and leave out the demo Effects a bare new show
+     carries: the Effects grid already lays out a column per zone declared in Settings › Drum
+     trigger zones, so the zones are always there to fill. */
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
-  import type { ShowTemplate } from '../../trigger-lab/store/templates';
+  import type { ShowTemplate } from '../../trigger-lab/store.svelte';
   import Dialog from '../../ui/Dialog.svelte';
   import IconButton from '../../ui/IconButton.svelte';
   import Eyebrow from '../../ui/Eyebrow.svelte';
@@ -52,7 +51,7 @@
       <span class="ctitle"><LayoutGrid size={16} aria-hidden="true" />From my trigger zones</span>
       {#if zones.length > 0}
         <span class="cdesc">
-          A graph for each of your {zones.length} zones, ready to fill — and every new section and song gets its own set.
+          One song with one empty section, its grid laid out for your {zones.length} zones, ready to fill.
         </span>
         <span class="chips" aria-hidden="true">
           {#each zones.slice(0, SHOWN) as zone (`${zone.drumId}:${zone.slot}`)}<span class="chip">{zone.title}</span>{/each}
@@ -65,7 +64,7 @@
 
     <button type="button" class="choice" onclick={() => choose('blank')}>
       <span class="ctitle"><FileIcon size={16} aria-hidden="true" />Blank</span>
-      <span class="cdesc">One song with one empty section. You add graphs yourself.</span>
+      <span class="cdesc">One song with one empty section. You add Effects yourself.</span>
     </button>
   </div>
 </Dialog>

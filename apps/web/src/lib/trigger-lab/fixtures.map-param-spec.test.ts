@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamSpec as CoreParamSpec } from '@ledrums/core';
-import { mapParamSpec } from './fixtures';
+import { mapVoiceParamSpec as mapParamSpec } from '@ledrums/core';
 
 /* S18 — mapParamSpec must be TOTAL over the four core ParamTypes so no spec is ever
    silently dropped (the pre-S18 bug: enum/color returned null and the generator was stuck

@@ -65,15 +65,3 @@ export function smoothDockVoices(
   for (const id of levels.keys()) if (!seen.has(id)) levels.delete(id);
   return out;
 }
-
-/** Group dock voices by bus in ONE pass — replaces the per-bus `filter()` the dock ran
-    on every render (item H allocation waste). */
-export function groupVoicesByBus(voices: readonly DockVoice[]): Map<string, DockVoice[]> {
-  const byBus = new Map<string, DockVoice[]>();
-  for (const v of voices) {
-    const list = byBus.get(v.busId);
-    if (list) list.push(v);
-    else byBus.set(v.busId, [v]);
-  }
-  return byBus;
-}

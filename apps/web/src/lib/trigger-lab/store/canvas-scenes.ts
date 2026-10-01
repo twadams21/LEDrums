@@ -1,23 +1,10 @@
 /**
- * Canvas scene authoring helpers (U5) — pure functions over authored `CanvasScene`
- * documents and the virtual `EffectDef`/`Preset` they project into the effect registry.
- *
- * A `playType:'canvas'` play node names a scene; the scene is hosted through the ONE
- * `EffectGenerator` seam as `canvas:<sceneId>` (see core `canvas/ids.ts`). This module
- * never touches the compositor — it only builds the authoring-layer shims (a virtual
- * effect + default preset per scene) so canvas nodes reuse the generic gallery/inspector
- * surfaces, plus the graph-retarget + JSON (de)serialization used by scene CRUD.
+ * Canvas scene authoring helpers (U5) — pure functions over authored `CanvasScene` documents: a
+ * fresh scene, and the JSON (de)serialization the Objects view's scene editor uses. A Scene
+ * Generator plays a scene by id; the scene is hosted through the ONE `EffectGenerator` seam as
+ * `canvas:<sceneId>` (see core `canvas/ids.ts`).
  */
-import {
-  canvasVoiceEffectDef,
-  canvasVoiceDefaultPreset,
-  canvasSceneIdOf,
-  type CanvasScene,
-  type PlayType,
-} from '@ledrums/core';
-import type { EffectDef, GraphNode, Preset, TriggerGraph } from '../sim';
-
-export { CANVAS_BUS_ID } from '@ledrums/core';
+import type { CanvasScene } from '@ledrums/core';
 
 /** A fresh authored scene — one drifting stripe field, ready to tweak in the JSON editor. */
 export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasScene {
@@ -32,71 +19,6 @@ export function makeCanvasScene(id: string, name = 'New canvas scene'): CanvasSc
       { kind: 'stripes', angleDeg: 0, widthU: 0.18, duty: 0.5, speedUps: 0.25, hue: 140, sat: 1, softness: 0.08 },
     ],
   };
-}
-
-/** The virtual `EffectDef` a scene is hosted under — `id`/`generatorId` = `canvas:<sceneId>`. */
-export function canvasEffectDef(scene: CanvasScene): EffectDef {
-  return {
-    ...canvasVoiceEffectDef(scene),
-    category: 'texture',
-    description: scene.description,
-    tags: ['canvas', ...(scene.tags ?? []).filter((tag) => tag !== 'canvas')] as EffectDef['tags'],
-    playType: 'canvas',
-  };
-}
-
-/** The default preset for a scene's virtual effect (all params at their spec defaults). */
-export function canvasDefaultPreset(scene: CanvasScene): Preset {
-  return canvasVoiceDefaultPreset(scene);
-}
-
-/** Scene ids referenced by any canvas play node in a graph. */
-export function sceneRefsInGraph(graph: TriggerGraph): string[] {
-  const out = new Set<string>();
-  for (const node of graph.nodes) {
-    if (node.kind !== 'play' && node.kind !== 'effect') continue;
-    const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
-    if (sceneId) out.add(sceneId);
-  }
-  return [...out];
-}
-
-/**
- * Repoint every canvas play node that referenced `oldSceneId` onto `fallback` (or clear
- * the node's canvas binding when there is no fallback). Used when a scene is deleted so no
- * node is left dangling on an unregistered `canvas:<id>`.
- */
-export function retargetSceneRefs(
-  graphs: Record<string, TriggerGraph>,
-  oldSceneId: string,
-  fallback: CanvasScene | null,
-): Record<string, TriggerGraph> {
-  const fallbackEffect = fallback ? canvasEffectDef(fallback) : null;
-  const fallbackPreset = fallback ? canvasDefaultPreset(fallback) : null;
-  const out: Record<string, TriggerGraph> = {};
-
-  for (const [key, graph] of Object.entries(graphs)) {
-    let changed = false;
-    const nodes = graph.nodes.map((node) => {
-      if (node.kind !== 'play' && node.kind !== 'effect') return node;
-      const sceneId = node.canvasScene ?? canvasSceneIdOf(node.effectId) ?? undefined;
-      if (sceneId !== oldSceneId) return node;
-      changed = true;
-      if (!fallback || !fallbackEffect || !fallbackPreset) {
-        return { ...node, effectId: '', presetId: '', canvasScene: undefined, params: {}, playType: 'canvas' as PlayType };
-      }
-      return {
-        ...node,
-        playType: 'canvas' as PlayType,
-        canvasScene: fallback.id,
-        effectId: fallbackEffect.id,
-        presetId: fallbackPreset.id,
-        params: { ...fallbackPreset.params },
-      };
-    });
-    out[key] = changed ? { ...graph, nodes } : graph;
-  }
-  return out;
 }
 
 /** Pretty-print a scene for the Objects-view JSON editor. */

@@ -8,7 +8,7 @@
      an untinted chip is the same shape in the ink ramp rather than a different species.
 
      `tint` is a CSS colour (usually a role token, e.g. `var(--role-mod)`), passed through as
-     `--tint` — the same runtime-tint convention `NodeIconChip` uses. */
+     `--tint` — the app's runtime-tint convention. */
 
   let { label, tint, title }: { label: string; tint?: string; title?: string } = $props();
 </script>

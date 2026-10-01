@@ -1,13 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
 import type { WSClient } from '../ws/client';
-import type { ClientMessage } from '../ws/protocol-types';
 
-/* U4 — sections as flat graph lists, the merged active section, and hit-resolution off the
-   active section's source-matched graphs. The store seeds one song whose sections each hold
-   EVERY pad's graph key; each pad graph carries a `drum` source from its padKey (hydrate),
-   so a hit fires only the matching pad's graph — the pre-section per-zone behaviour, now
-   expressed as a flat list + source filter. */
+/* Sections on the store: the ONE active section (U4 merged active + arrange), section CRUD and
+   the in-app section clipboard, and hit-resolution off the active section's zone Effects. The
+   store seeds one song of three sections, the demo Effects in the first. */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -32,9 +29,6 @@ class MemStorage {
 }
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
-const capturing = (sent: ClientMessage[]): (() => WSClient) =>
-  () =>
-    ({ on() {}, connect() {}, close() {}, send(m: ClientMessage) { sent.push(m); } }) as unknown as WSClient;
 
 beforeEach(() => {
   (globalThis as { localStorage?: Storage }).localStorage = new MemStorage() as unknown as Storage;
@@ -45,23 +39,17 @@ afterEach(() => {
 
 const kickCentre = (store: TriggerLab) => store.pads.find((p) => p.drumId === 'kick' && p.zone === 0)!;
 
-describe('seed: sections are flat graph lists of every pad', () => {
-  it('every section lists every pad graph key (and defaults the first section active)', () => {
+describe('seed', () => {
+  it('seeds one song of three sections, the demo Effects in the first, and activates it', () => {
     const store = new TriggerLab(fakeClient);
-    expect(store.activeSong!.sections.length).toBeGreaterThan(0);
-    const keys = store.activeSong!.sections.flatMap((section) => section.graphs);
-    expect(keys).toHaveLength(store.activeSong!.sections.length * store.pads.length);
-    expect(new Set(keys)).toHaveLength(keys.length);
-    for (const sec of store.activeSong!.sections) {
-      expect(sec.graphs).toHaveLength(store.pads.length);
-      for (const key of sec.graphs) expect(store.graphs[key]).toBeDefined();
-    }
-    expect(store.activeSectionId).toBe(store.activeSong!.sections[0]!.id);
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual(['intro', 'verse', 'chorus']);
+    expect(store.activeSectionId).toBe('intro');
     expect(store.activeSection?.id).toBe(store.activeSectionId);
+    expect(store.activeSection!.effects.length).toBeGreaterThan(0);
   });
 });
 
-describe('setActiveSection / selectGraphInSection (merged active+arrange)', () => {
+describe('setActiveSection (merged active+arrange)', () => {
   it('setActiveSection sets the active section id', () => {
     const store = new TriggerLab(fakeClient);
     const id = store.activeSong!.sections[1]!.id;
@@ -69,91 +57,15 @@ describe('setActiveSection / selectGraphInSection (merged active+arrange)', () =
     expect(store.activeSectionId).toBe(id);
   });
 
-  it('selectGraphInSection activates the section AND opens the graph (highlight)', () => {
+  it('keeps the selected grid cell across a section change and re-selects its Effect there', () => {
     const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[1]!.id;
-    const key = store.activeSong!.sections[1]!.graphs[0]!;
-    store.selectGraphInSection(id, key);
-    expect(store.activeSectionId).toBe(id); // section made active
-    expect(store.selectedPadKey).toBe(key); // graph opened in the canvas
-  });
-
-  it('selectGraphInSection rejects an unknown graph key without activating another section', () => {
-    const store = new TriggerLab(fakeClient);
-    const id = store.activeSong!.sections[1]!.id;
-    store.selectGraphInSection(id, 'no-such-graph');
-    expect(store.activeSectionId).not.toBe(id);
-    expect(store.selectedPadKey).not.toBe('no-such-graph');
-  });
-
-  it('changing section re-points the open graph at the new section (rail and canvas agree)', () => {
-    const store = new TriggerLab(fakeClient);
-    const [first, second] = store.activeSong!.sections;
-    store.selectGraphInSection(first!.id, first!.graphs[2]!);
-    store.setActiveSection(second!.id);
-    expect(store.selectedPadKey).toBe(second!.graphs[0]); // not the old section's graph
-    expect(second!.graphs).toContain(store.selectedPadKey);
-  });
-
-  it('keeps the open graph across a section change when the new section also places it (linked)', () => {
-    const store = new TriggerLab(fakeClient);
-    const [first, second] = store.activeSong!.sections;
-    const shared = first!.graphs[1]!;
-    store.addGraphToSection(second!.id, shared);
-    store.selectGraphInSection(first!.id, shared);
-    store.setActiveSection(second!.id);
-    expect(store.selectedPadKey).toBe(shared);
-  });
-
-  it('opens nothing when the new section is empty', () => {
-    const store = new TriggerLab(fakeClient);
-    store.addSongSection('Empty'); // activates the new, graph-less section
-    expect(store.activeSection!.graphs).toEqual([]);
-    expect(store.selectedPadKey).toBeNull();
-  });
-
-  it('follows every re-point path: arrow stepping and removing the active section', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    store.setActiveSection(sections[0]!.id);
-    expect(store.stepSetlist('section', 1)).toBe(true);
-    expect(store.activeSectionId).toBe(sections[1]!.id);
-    expect(sections[1]!.graphs).toContain(store.selectedPadKey);
-
-    store.removeSection(sections[1]!.id);
-    expect(store.activeSection!.graphs).toContain(store.selectedPadKey);
-  });
-
-  it('a graph opened outside any section survives until the section actually changes', () => {
-    const store = new TriggerLab(fakeClient);
-    const unplaced = store.createGraph('Unplaced'); // Objects-style: selected, in no section
-    expect(store.selectedPadKey).toBe(unplaced);
-    store.setActiveSection(store.activeSectionId!); // same section: not a change
-    expect(store.selectedPadKey).toBe(unplaced);
-  });
-
-  it('re-homes a saved open graph that the saved active section does not place', () => {
-    // Same real-autosave harness as the reload test below: a no-op RAF, stop() flushes.
-    const raf = globalThis.requestAnimationFrame;
-    const caf = globalThis.cancelAnimationFrame;
-    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame;
-    globalThis.cancelAnimationFrame = (() => {}) as typeof cancelAnimationFrame;
-    try {
-      const first = new TriggerLab(fakeClient);
-      first.start();
-      const sections = first.activeSong!.sections;
-      // The drift older builds saved: section B active, a graph from section A open.
-      first.selectGraphInSection(sections[1]!.id, sections[1]!.graphs[0]!);
-      first.selectedPadKey = sections[0]!.graphs[2]!;
-      first.stop(); // flush authored → localStorage
-
-      const reloaded = new TriggerLab(fakeClient);
-      expect(reloaded.activeSectionId).toBe(sections[1]!.id);
-      expect(reloaded.activeSection!.graphs).toContain(reloaded.selectedPadKey);
-    } finally {
-      globalThis.requestAnimationFrame = raf;
-      globalThis.cancelAnimationFrame = caf;
-    }
+    const cell = store.activeSection!.effects[0]!.cell;
+    store.selectCell(cell);
+    store.setActiveSection('verse');
+    expect(store.selectedCell).toEqual(cell);
+    store.setActiveSection('intro');
+    expect(store.selectedCell).toEqual(cell);
+    expect(store.selectedEffectId).toBe(store.cellEffects(cell)[0]!.id);
   });
 
   it('ignores an invalid section activation and keeps the current section', () => {
@@ -228,19 +140,7 @@ describe('section creation boundary', () => {
   });
 });
 
-describe('section graph-list mutators', () => {
-  it('addGraphToSection appends (idempotent) + removeGraphFromSection removes', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = store.createGraph('Authored'); // an authored graph, not yet in any section
-    const id = store.activeSong!.sections[0]!.id;
-    store.addGraphToSection(id, key);
-    expect(store.activeSong!.sections[0]!.graphs).toContain(key);
-    store.addGraphToSection(id, key); // idempotent — no duplicate
-    expect(store.activeSong!.sections[0]!.graphs.filter((k) => k === key)).toHaveLength(1);
-    store.removeGraphFromSection(id, key);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(key);
-  });
-
+describe('section mutators', () => {
   it('moveSection reorders sections in the active song', () => {
     const store = new TriggerLab(fakeClient);
     const ids = store.activeSong!.sections.map((s) => s.id);
@@ -248,28 +148,10 @@ describe('section graph-list mutators', () => {
     expect(store.activeSong!.sections.map((s) => s.id)).toEqual([ids[1], ids[0], ids[2], ...ids.slice(3)]);
   });
 
-  it('moveGraphPlacement reorders a graph inside one section', () => {
-    const store = new TriggerLab(fakeClient);
-    const section = store.activeSong!.sections[0]!;
-    const [first, second, third] = section.graphs;
-    store.moveGraphPlacement(section.id, first!, section.id, 2);
-    expect(store.activeSong!.sections[0]!.graphs.slice(0, 3)).toEqual([second, first, third]);
-  });
-
-  it('moveGraphPlacement moves a graph between sections', () => {
-    const store = new TriggerLab(fakeClient);
-    const from = store.activeSong!.sections[0]!;
-    const to = store.activeSong!.sections[1]!;
-    const graph = from.graphs[0]!;
-    store.removeGraphFromSection(to.id, graph);
-    store.moveGraphPlacement(from.id, graph, to.id, 0);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(graph);
-    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(graph);
-  });
 });
 
 describe('copy / paste section (clipboard)', () => {
-  it('paste appends an independent clone (fresh id, "<name> copy") and activates it', () => {
+  it('paste appends an independent clone (fresh id, "<name> copy", same Effects) and activates it', () => {
     const store = new TriggerLab(fakeClient);
     const src = store.activeSong!.sections[0]!;
     const before = store.activeSong!.sections.length;
@@ -283,39 +165,31 @@ describe('copy / paste section (clipboard)', () => {
     const pasted = sections[sections.length - 1]!;
     expect(pasted.id).not.toBe(src.id); // fresh id
     expect(pasted.name).toBe(`${src.name} copy`);
-    expect(pasted.graphs).not.toEqual(src.graphs); // graph closure is copied, not linked
-    expect(pasted.graphs).toHaveLength(src.graphs.length);
-    for (const [index, key] of pasted.graphs.entries()) {
-      expect(store.graphs[key]).toEqual(store.graphs[src.graphs[index]!]);
-      expect(store.graphs[key]).not.toBe(store.graphs[src.graphs[index]!]);
-      expect(store.graphNames[key]).toBe(store.graphNames[src.graphs[index]!]);
-    }
+    expect(pasted.effects).toEqual(src.effects);
+    expect(pasted.effects).not.toBe(src.effects);
+    expect(pasted.master).toEqual(src.master);
     expect(store.activeSectionId).toBe(pasted.id); // the new section is now active
   });
 
   it('the pasted section is independent — editing one does not touch the other', () => {
     const store = new TriggerLab(fakeClient);
     const src = store.activeSong!.sections[0]!;
-    const key = src.graphs[0]!;
-    store.duplicateSection(src.id);
-    const pasted = store.activeSong!.sections.at(-1)!;
-
-    // remove a graph from the COPY → the original section keeps it
-    store.removeGraphFromSection(pasted.id, key);
-    expect(store.activeSong!.sections.find((s) => s.id === pasted.id)!.graphs).not.toContain(key);
-    expect(store.activeSong!.sections.find((s) => s.id === src.id)!.graphs).toContain(key);
+    const effectId = src.effects[0]!.id;
+    const name = src.effects[0]!.name;
+    store.duplicateSection(src.id); // the copy is now active
+    store.renameEffect(effectId, 'Only in the copy');
+    expect(store.activeSection!.effects[0]!.name).toBe('Only in the copy');
+    expect(store.activeSong!.sections.find((s) => s.id === src.id)!.effects[0]!.name).toBe(name);
   });
 
   it('the clipboard is a snapshot — editing the source after copy does not change a later paste', () => {
     const store = new TriggerLab(fakeClient);
     const src = store.activeSong!.sections[0]!;
-    const key = src.graphs[0]!;
+    const effect = src.effects[0]!;
     store.copySection(src.id);
-    store.removeGraphFromSection(src.id, key); // mutate the source AFTER copying
+    store.removeEffect(effect.id); // mutate the source AFTER copying
     store.pasteSection();
-    const pastedKey = store.activeSong!.sections.at(-1)!.graphs[0]!;
-    expect(pastedKey).not.toBe(key); // paste reflects copy-time content, under a fresh key
-    expect(store.graphs[pastedKey]).toEqual(store.graphs[key]);
+    expect(store.activeSong!.sections.at(-1)!.effects[0]).toEqual(effect); // paste reflects copy-time content
   });
 
   it('paste with an empty clipboard is a no-op', () => {
@@ -341,12 +215,7 @@ describe('copy / paste section (clipboard)', () => {
     store.importSongReference(libraryId);
     store.setActiveSong(libraryId);
     const canonicalSection = store.activeSong!.sections[0]!;
-    const before = {
-      activeSectionId: store.activeSectionId,
-      sectionCount: store.activeSong!.sections.length,
-      graphCount: Object.keys(store.graphs).length,
-      nameCount: Object.keys(store.graphNames).length,
-    };
+    const before = { activeSectionId: store.activeSectionId, sectionCount: store.activeSong!.sections.length };
 
     expect(store.copySection(canonicalSection.id)).toBe(false);
     expect(store.sectionClipboard).toBe(previousClipboard);
@@ -354,161 +223,19 @@ describe('copy / paste section (clipboard)', () => {
     store.pasteSection();
     store.renameSection(canonicalSection.id, 'Should not rename');
     store.removeSection(canonicalSection.id);
-    expect(store.createGraphInSection(canonicalSection.id)).toBeNull();
-    expect(store.copyGraphToSection(canonicalSection.id, canonicalSection.graphs[0]!)).toBeNull();
-    const localGraphCount = Object.keys(store.graphs).length;
-    expect(store.createGraph('Should not exist')).toBe(store.selectedPadKey ?? '');
-    expect(Object.keys(store.graphs)).toHaveLength(localGraphCount);
-    store.linkGraphPlacement(libraryId, canonicalSection.id, canonicalSection.graphs[0]!, libraryId, canonicalSection.id, canonicalSection.graphs[0]!);
-    store.unlinkGraphPlacement(libraryId, canonicalSection.id, canonicalSection.graphs[0]!);
+    expect(store.addEffect({ row: 'kick', column: { kind: 'zone', slot: 0 } }, 'solid')).toBeNull();
     expect(store.activeSectionId).toBe(before.activeSectionId);
     expect(store.activeSong!.sections).toHaveLength(before.sectionCount);
-    expect(Object.keys(store.graphs)).toHaveLength(before.graphCount);
-    expect(Object.keys(store.graphNames)).toHaveLength(before.nameCount);
+    expect(store.activeSong!.sections[0]!.name).toBe(canonicalSection.name);
   });
 
-  it('create-and-place and copy-and-place each undo as one transaction', () => {
+  it('undoing a section duplicate removes it in one step', () => {
     const store = new TriggerLab(fakeClient);
-    const sectionId = store.activeSong!.sections[0]!.id;
-    const beforeGraphs = Object.keys(store.graphs).length;
-    const created = store.createGraphInSection(sectionId, 'Placed');
-    expect(created).toBeTruthy();
-    expect(store.activeSong!.sections[0]!.graphs).toContain(created);
-    expect(store.undo()).toBe(true);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(created);
-    expect(store.graphs[created!]).toBeUndefined();
-    expect(store.graphNames[created!]).toBeUndefined();
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
-
-    const source = store.activeSong!.sections[0]!.graphs[0]!;
-    const copied = store.copyGraphToSection(sectionId, source, 'Independent');
-    expect(copied).toBeTruthy();
-    expect(store.activeSong!.sections[0]!.graphs).toContain(copied);
-    expect(store.undo()).toBe(true);
-    expect(store.activeSong!.sections[0]!.graphs).not.toContain(copied);
-    expect(store.graphs[copied!]).toBeUndefined();
-    expect(store.graphNames[copied!]).toBeUndefined();
-  });
-
-  it('links exact placements across three sections and linked edits propagate', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    const sourceKey = sections[0]!.graphs[0]!;
-    const targetKeys = sections.slice(1, 3).map((section) => section.graphs[0]!);
-
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKeys[0]!);
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[2]!.id, targetKeys[1]!);
-    expect(store.activeSong!.sections.slice(0, 3).map((section) => section.graphs[0])).toEqual([sourceKey, sourceKey, sourceKey]);
-
-    const before = store.graphs[sourceKey]!.nodes.length;
-    store.selectedPadKey = sourceKey;
-    store.addNode('play', 0, 0);
-    expect(store.activeSong!.sections.slice(0, 3).every((section) => store.graphs[section.graphs[0]!]!.nodes.length === before + 1)).toBe(true);
-  });
-
-  it('supports reverse-direction and cross-song links without cloning unrelated graphs', () => {
-    const store = new TriggerLab(fakeClient);
-    const firstSong = store.activeSong!;
-    const firstSection = firstSong.sections[0]!;
-    const secondSection = firstSong.sections[1]!;
-    const source = secondSection.graphs[0]!;
-    const target = firstSection.graphs[0]!;
-    const beforeGraphs = Object.keys(store.graphs).length;
-
-    store.linkGraphPlacement(firstSong.id, secondSection.id, source, firstSong.id, firstSection.id, target);
-    expect(store.songs[0]!.sections[0]!.graphs[0]).toBe(source);
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
-
-    const secondSongId = store.createSong('Second song');
-    const secondSong = store.songs.find((song) => song.id === secondSongId)!;
-    const crossSection = secondSong.sections[0]!;
-    const crossTarget = store.createGraphInSection(crossSection.id, 'Cross target')!;
-    store.linkGraphPlacement(firstSong.id, secondSection.id, source, secondSongId, secondSong.sections[0]!.id, crossTarget);
-    expect(store.songs.find((song) => song.id === secondSongId)!.sections[0]!.graphs[0]).toBe(source);
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + 1);
-  });
-
-  it('treats self-link as a no-op and default copy clones only the chosen graph', () => {
-    const store = new TriggerLab(fakeClient);
-    const section = store.activeSong!.sections[0]!;
-    const source = section.graphs[0]!;
-    const beforeGraphs = Object.keys(store.graphs).length;
-    const beforeSections = store.activeSong!.sections.length;
-    store.linkGraphPlacement(store.activeSong!.id, section.id, source, store.activeSong!.id, section.id, source);
-    expect(store.activeSong!.sections[0]!.graphs).toEqual(section.graphs);
-
-    const copy = store.copyGraphToSection(section.id, source);
-    expect(copy).toBeTruthy();
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + 1);
-    expect(store.activeSong!.sections).toHaveLength(beforeSections);
-    expect(store.activeSong!.sections[0]!.graphs.filter((key) => key === source)).toHaveLength(1);
-    expect(store.activeSong!.sections[0]!.graphs).toContain(copy);
-  });
-
-  it('unlinks one placement into an independent copy, and undo restores the link', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    const sourceKey = sections[0]!.graphs[0]!;
-    const targetKey = sections[1]!.graphs[0]!;
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKey);
-    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
-
-    const independentKey = store.activeSong!.sections[1]!.graphs[0]!;
-    expect(independentKey).not.toBe(sourceKey);
-    expect(store.graphs[independentKey]).toEqual(store.graphs[sourceKey]);
-    store.selectedPadKey = independentKey;
-    store.addNode('play', 0, 0);
-    expect(store.graphs[sourceKey]!.nodes.length).not.toBe(store.graphs[independentKey]!.nodes.length);
-
-    expect(store.undo()).toBe(true);
-    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(independentKey);
-    expect(store.undo()).toBe(true);
-    expect(store.activeSong!.sections[1]!.graphs[0]).toBe(sourceKey);
-    expect(store.graphs[sourceKey]).toBeDefined();
-  });
-
-  it('linking over the open placement moves the canvas to the linked graph', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    const sourceKey = sections[0]!.graphs[0]!;
-    const targetKey = sections[1]!.graphs[0]!;
-    store.selectGraphInSection(sections[1]!.id, targetKey);
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, targetKey);
-    expect(store.selectedPadKey).toBe(sourceKey); // not the replaced graph the section dropped
-  });
-
-  it('unlinking the open placement moves the canvas to the independent copy', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    const sourceKey = sections[0]!.graphs[0]!;
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, sections[1]!.graphs[0]!);
-    store.selectGraphInSection(sections[1]!.id, sourceKey);
-    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
-
-    const independentKey = store.activeSong!.sections[1]!.graphs[0]!;
-    expect(independentKey).not.toBe(sourceKey);
-    expect(store.selectedPadKey).toBe(independentKey); // still editing this section's placement
-  });
-
-  it('unlinking a placement that is not open leaves the canvas alone', () => {
-    const store = new TriggerLab(fakeClient);
-    const sections = store.activeSong!.sections;
-    const sourceKey = sections[0]!.graphs[0]!;
-    store.linkGraphPlacement(store.activeSong!.id, sections[0]!.id, sourceKey, store.activeSong!.id, sections[1]!.id, sections[1]!.graphs[0]!);
-    store.selectGraphInSection(sections[0]!.id, sourceKey);
-    store.unlinkGraphPlacement(store.activeSong!.id, sections[1]!.id, sourceKey);
-    expect(store.selectedPadKey).toBe(sourceKey);
-  });
-
-  it('undoing a section duplicate removes its cloned graph closure too', () => {
-    const store = new TriggerLab(fakeClient);
-    const beforeSections = store.activeSong!.sections.length;
-    const beforeGraphs = Object.keys(store.graphs).length;
+    const beforeSections = store.activeSong!.sections.map((s) => s.id);
     store.duplicateSection(store.activeSong!.sections[0]!.id);
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs + store.pads.length);
+    expect(store.activeSong!.sections).toHaveLength(beforeSections.length + 1);
     expect(store.undo()).toBe(true);
-    expect(store.activeSong!.sections).toHaveLength(beforeSections);
-    expect(Object.keys(store.graphs)).toHaveLength(beforeGraphs);
+    expect(store.activeSong!.sections.map((s) => s.id)).toEqual(beforeSections);
   });
 });
 
@@ -549,46 +276,6 @@ describe('hit resolution = the active section’s zone Effects on the pad’s dr
     store.activeSectionId = null;
     store.hit(kickCentre(store));
     expect(localFires(store)).toHaveLength(0);
-  });
-});
-
-describe('keyboard graph firing', () => {
-  it('connected: sends the fireGraph intent for a MIDI-sourced section graph — not a synthetic {t:midi} (S13)', () => {
-    const sent: ClientMessage[] = [];
-    const store = new TriggerLab(capturing(sent));
-    const key = store.createGraph('Midi graph');
-    store.setTriggerSource(key, { kind: 'midi', note: 36 });
-    store.addGraphToSection(store.activeSectionId!, key);
-    store.link = 'open';
-
-    const index = store.activeSection!.graphs.indexOf(key);
-    store.fireSectionGraph(index);
-
-    // S13: the server fires the EXACT graph by key. We no longer forward a synthetic {t:'midi'}
-    // (which the server re-resolved AND echoed back → the old keyboard triple-fire); the sim
-    // stays silent locally.
-    expect(sent).toContainEqual({ t: 'fireGraph', graphKey: key, velocity: store.velocity });
-    expect(sent.some((m) => m.t === 'midi')).toBe(false);
-    expect(store.localPreviewActive).toBe(false);
-  });
-
-  it('a connected keyboard graph fire stays server-authoritative and never previews the local sim (S12)', () => {
-    const store = new TriggerLab(fakeClient);
-    const key = store.createGraph('Midi graph');
-    store.setTriggerSource(key, { kind: 'midi', note: 36 });
-    store.addGraphToSection(store.activeSectionId!, key);
-    store.link = 'open';
-    store.serverModel = store.labModel.model;
-    store.serverFrame = new Uint8Array(store.frameBuf.length);
-
-    expect(store.useServer).toBe(true);
-    store.fireSectionGraph(store.activeSection!.graphs.indexOf(key));
-
-    // S12 authority principle: connected, the sim never fires — no local preview flash, and the
-    // visualiser keeps rendering the server's frames.
-    expect(store.localPreviewActive).toBe(false);
-    expect(store.useServer).toBe(true);
-    expect(store.previewFrame).toBe(store.serverFrame);
   });
 });
 

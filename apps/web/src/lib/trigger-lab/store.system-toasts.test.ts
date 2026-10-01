@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { TriggerLab } from './store.svelte';
-import { makeNode, type TriggerGraph } from './sim';
-import { STORAGE_KEY, VERSION } from './persistence';
+import { STORAGE_KEY } from './legacy-import';
 import { toastStore } from '../ui/toast.svelte';
 import type { WSClient } from '../ws/client';
 
@@ -34,18 +33,19 @@ class MemStorage {
 
 const fakeClient = (): WSClient => ({ on() {}, connect() {}, close() {}, send() {} }) as unknown as WSClient;
 
-/** A legacy (unversioned, pre-Gen3) authored blob with one unwired `play` leaf per graph — the
-    exact shape that forces a migration + auto-wire on load. */
-function legacyGraph(): TriggerGraph {
+/** A legacy (pre-Gen3) graph with one unwired `play` leaf — the exact shape the retired graph
+    hydrate migrated and auto-wired on load, announcing it in a toast. */
+function legacyGraph(): unknown {
   return {
-    nodes: [makeNode('trigger', 'trigger'), makeNode('play', 'p1', 200, 0, { effectId: 'gen:radial-wash' })],
+    nodes: [{ id: 'trigger', kind: 'trigger', x: 0, y: 0 }, { id: 'p1', kind: 'play', x: 200, y: 0, effectId: 'gen:radial-wash' }],
     edges: [{ id: 'e1', from: 'trigger', to: 'p1' }],
   };
 }
 
-function seedLegacyBlob(graphs: Record<string, TriggerGraph>): void {
+/** The old single authored blob (envelope v2) under its old key. */
+function seedLegacyBlob(graphs: Record<string, unknown>): void {
   const storage = new MemStorage();
-  storage.setItem(STORAGE_KEY, JSON.stringify({ version: VERSION, data: { graphs } }));
+  storage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, data: { graphs } }));
   (globalThis as { localStorage?: Storage }).localStorage = storage as unknown as Storage;
 }
 

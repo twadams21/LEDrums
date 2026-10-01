@@ -1,4 +1,4 @@
-/* File IO adapter for Save / Load of graphs and nodes — the file twin of clipboard-io.ts. The
+/* File IO adapter for Save / Load of Effect, cell and device files — the file twin of clipboard-io.ts. The
    store builds and applies the ClipDoc; this module only moves text to and from a file the user
    picks, so the store stays free of environment guards.
 
@@ -25,7 +25,7 @@ export interface OpenedFile {
 /** What happened to an open: the file, `cancelled`, or `failed` (unreadable / too large). */
 export type OpenOutcome = OpenedFile | 'cancelled' | 'failed';
 
-/** Refuse anything larger — a graph file is kilobytes; a 16 MB "graph" is the wrong file. */
+/** Refuse anything larger — an Effect file is kilobytes; a 16 MB one is the wrong file. */
 export const MAX_FILE_BYTES = 16 * 1024 * 1024;
 
 /** A file name safe on macOS, Windows and Linux: path/reserved characters become `-`, blank

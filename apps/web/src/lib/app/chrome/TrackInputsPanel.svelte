@@ -34,9 +34,9 @@
   {/if}
   {#if status?.error}<p class="hint" role="alert">{status.error}</p>{/if}
   <p class="hint">Track devices appear here automatically. The bridge accepts inputs from this computer only; it does not grant editing access.</p>
-  <Field label="Audio source" info="One input feeds Audio nodes. Per-track bands and macros can also be mapped independently with OSC nodes.">
+  <Field label="Audio source" info="One input feeds Audio Controls. Per-track bands and macros can also be mapped independently with OSC Controls.">
     <Select value={selected ?? '@browser'} options={audioOptions} segment={false} disabled={!canEdit || (!status && !selected)}
-      onChange={(id) => { if (canEdit && (id === '@browser' || status)) onSelect(id === '@browser' ? undefined : id); }} ariaLabel="Audio source for graph nodes" />
+      onChange={(id) => { if (canEdit && (id === '@browser' || status)) onSelect(id === '@browser' ? undefined : id); }} ariaLabel="Audio source for Effects" />
   </Field>
   {#if inputs.length === 0}
     <p class="empty">No track devices connected. Max for Live device sources are included in <code>integrations/ableton</code>; packaging and Live compatibility still need verification.</p>
@@ -68,7 +68,7 @@
               <p class="hint">Press-only address. Replace the final number for another note; use <code>gate</code> instead of <code>note</code> for held-note modulation.</p>
             {/if}
             <CopyableValue value={trackInputAddress(input.id, 'macro/1')} label="Macro 1" />
-            <p class="hint">Use these addresses in OSC source nodes. Macros 1–8 can drive effect parameters from automation. Do not also route the same notes through a virtual MIDI port.</p>
+            <p class="hint">Use these addresses in OSC Controls. Macros 1–8 can drive effect parameters from automation. Do not also route the same notes through a virtual MIDI port.</p>
           </Disclosure>
           {#if input.dropped > 0}<p class="hint" role="status">{input.dropped} missing packets — check the sender load.</p>{/if}
         </li>

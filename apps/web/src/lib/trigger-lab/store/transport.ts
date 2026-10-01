@@ -1,9 +1,8 @@
 /* Engine-link sync — the change-detection guards behind the store's per-frame transport push
    and its authored-Show resend (no runes/DOM). The store opens/closes the WS link and sends; this
    controller answers "did it actually change?" so we never spam the engine. A signature guard on
-   the Show skips no-op fires AND pure node-position (x/y) drags, so dragging the graph doesn't
-   needlessly reset engine voices; transport rides a separate message so tempo edits never resend
-   the Show. Extracted from store.svelte.ts unchanged in behaviour. */
+   the Show skips no-op fires; transport rides a separate message so tempo edits never resend the
+   Show. Extracted from store.svelte.ts unchanged in behaviour. */
 
 /** The transport tuple mirrored to the engine. */
 export interface TransportState {
@@ -12,10 +11,11 @@ export interface TransportState {
   beatsPerBar: number;
 }
 
-/** Signature of an authored Show that is INSENSITIVE to node x/y positions — so a layout drag
-    doesn't count as a content change (which would reseed engine voices). */
+/** Signature of an authored Show: its content. (The graph era zeroed node x/y here so a canvas
+    drag never resent the Show; the Effect show has no layout, and a canvas scene's own x/y is
+    content.) */
 export function showSig(show: unknown): string {
-  return JSON.stringify(show, (k, v) => (k === 'x' || k === 'y' ? 0 : v));
+  return JSON.stringify(show);
 }
 
 /** Tracks the last Show signature + transport tuple sent to the engine, so the store only

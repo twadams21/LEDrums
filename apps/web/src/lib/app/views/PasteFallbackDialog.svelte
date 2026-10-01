@@ -1,5 +1,5 @@
 <script lang="ts">
-  /* Paste-text fallback (S44). When a graph/section paste can't read the system clipboard (the
+  /* Paste-text fallback (S44). When a section paste can't read the system clipboard (the
      browser denied access, or there's no clipboard API), the store opens this dialog so the user
      can paste the copied text by hand — clipboard portability still works without read permission.
      The store owns parse/remap/toast (`submitPasteFallback`); this is the field + two actions. */

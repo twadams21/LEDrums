@@ -3,11 +3,10 @@ import { TriggerLab } from './store.svelte';
 import type { WSClient } from '../ws/client';
 import type { ClientMessage } from '../ws/protocol-types';
 import type { VoiceStat } from '../ws/protocol-types';
-import type { Voice } from './sim';
 
-/* S17 — the Layers/Buses dock reads server-truth when connected. `store.dockVoices` source-selects
-   between the streamed server voices (link open) and the local sim voices (offline); and while
-   connected the sim's per-frame `snapshot()` must NOT clobber the server-streamed bus levels. */
+/* S17 — the Layers dock reads server-truth when connected. `store.dockVoices` source-selects
+   between the streamed server voices (link open) and the Sim engine's voices (offline); and while
+   connected the per-frame `snapshot()` must NOT clobber the server-streamed bus levels. */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -40,31 +39,6 @@ const capturing = (sent: ClientMessage[]): (() => WSClient) =>
 type Internals = { snapshot(): void };
 const internals = (store: TriggerLab): Internals => store as unknown as Internals;
 
-function simVoice(over: Partial<Voice> = {}): Voice {
-  return {
-    id: 'sv1',
-    effectId: 'flash',
-    busId: 'base',
-    mode: 'loop',
-    scope: 'kit',
-    sourceDrumId: null,
-    velocity: 1,
-    seed: 0,
-    params: { hue: 200 },
-    attackMs: 0,
-    sustainMs: 0,
-    releaseMs: 0,
-    phase: 'sustain',
-    level: 0.5,
-    bornAtMs: 0,
-    releaseAtMs: null,
-    releaseFromLevel: 0,
-    via: 'sim-via',
-    deckGain: 0.8,
-    ...over,
-  };
-}
-
 const serverVoice = (over: Partial<VoiceStat> = {}): VoiceStat => ({
   id: 'srv1',
   busId: 'base',
@@ -74,7 +48,7 @@ const serverVoice = (over: Partial<VoiceStat> = {}): VoiceStat => ({
   hue: 30,
   releasing: false,
   via: 'server-via',
-  pad: 'graph:1',
+  pad: '',
   ...over,
 });
 
@@ -86,10 +60,10 @@ afterEach(() => {
 });
 
 describe('store.dockVoices (S17)', () => {
-  it('connected: derives from the server-streamed voices, not the local sim voices', () => {
+  it('connected: derives from the server-streamed voices, not the Sim voices', () => {
     const store = new TriggerLab(capturing([]));
-    // A stale local sim voice (e.g. an ungated section-recall look) must NOT leak into the dock.
-    store.voices = [simVoice({ id: 'stale', effectId: 'flash', via: 'sim-via' })];
+    // A stale offline Sim voice must NOT leak into the dock.
+    store.effectVoices = [serverVoice({ id: 'stale', effectId: 'flash', via: 'sim-via' })];
     store.serverVoices = [serverVoice({ effectId: 'aurora', busId: 'base' })];
     store.link = 'open';
 
@@ -99,9 +73,8 @@ describe('store.dockVoices (S17)', () => {
     expect(store.dockVoices.some((v) => v.via === 'sim-via')).toBe(false);
   });
 
-  it('offline: derives from the Sim’s Effect-path voices, ignoring leftover server + graph voices', () => {
+  it('offline: derives from the Sim’s engine voices, ignoring leftover server voices', () => {
     const store = new TriggerLab(capturing([]));
-    store.voices = [simVoice({ effectId: 'flash', via: 'sim-via' })]; // graph-era pool: not the dock's source
     store.serverVoices = [serverVoice({ effectId: 'aurora' })];
     store.effectVoices = [serverVoice({ effectId: 'chain:solid', via: 'effect-via' })];
     store.link = 'offline';
@@ -124,25 +97,35 @@ describe('store.dockVoices (S17)', () => {
 });
 
 describe('bus levels follow the same authority rule (S17)', () => {
+  const statsDue = (store: TriggerLab): void => {
+    (store as unknown as { lastVoiceStatsAt: number }).lastVoiceStatsAt = -Infinity;
+  };
+
   it('connected: snapshot() does not overwrite the server-streamed bus levels', () => {
     const store = new TriggerLab(capturing([]));
-    const bus = store.buses[0]!.id;
     store.link = 'open';
-    store.busLevels = { [bus]: 0.7 }; // as if just applied from an onStats voice payload
+    store.busLevels = { bus: 0.7 }; // as if just applied from an onStats voice payload
+    statsDue(store);
 
     internals(store).snapshot(); // a normal per-frame tick while connected
 
-    expect(store.busLevels[bus]).toBe(0.7);
+    expect(store.busLevels).toEqual({ bus: 0.7 });
   });
 
-  it('offline: snapshot() publishes the local sim bus levels', () => {
+  it('offline: snapshot() publishes the Sim engine’s bus levels', () => {
     const store = new TriggerLab(capturing([]));
-    const bus = store.buses[0]!.id;
     store.link = 'offline';
-    store.busLevels = { [bus]: 0.7 };
+    store.busLevels = { bus: 0.7 };
+    statsDue(store);
+    internals(store).snapshot(); // no voices ⇒ no bus carries a level
+    expect(store.busLevels).toEqual({});
 
-    internals(store).snapshot(); // offline the sim owns the meters — no voices ⇒ level 0
-
-    expect(store.busLevels[bus]).toBe(0);
+    store.fireEffect(store.activeSection!.effects[0]!.id);
+    for (let i = 0; i < 10; i++) store.sim.tick(16); // past the attack
+    statsDue(store);
+    internals(store).snapshot();
+    const levels = Object.values(store.busLevels);
+    expect(levels.length).toBe(1);
+    expect(levels[0]).toBeGreaterThan(0);
   });
 });

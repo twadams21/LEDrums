@@ -14,7 +14,7 @@
   import { perHoopPixelCount } from '../../docks/patch-inspector';
   import { hoopNodeId } from '../../patch-graph';
   import type { PixelSpan } from '../../patch-routing';
-  import { fmtSpan } from '../../views/node-options';
+  import { fmtSpan } from '../../views/output-options';
 
   let { store, drum, kit, hoop, span }: {
     store: TriggerLab;

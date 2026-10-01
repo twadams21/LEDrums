@@ -1,49 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { idsFromLibrarySong, idsFromSongLibrary } from './reserve-library-ids';
+import { effectChain } from '@ledrums/core';
+import { authoredIdsFromLibraryV3, idsFromSongLibraryV2 } from './reserve-library-ids';
 import { nid, reserveIds } from './ids';
-import type { LibrarySong } from './song-library';
-import type { SongLibrary } from '../persistence';
-import type { TriggerGraph } from '../sim';
+import type { EffectSection, ShowLibraryV3, SongLibraryV2 } from '../persistence';
 
-/* Closure-internal id reservation (S44 fix). A library song's graph keys / effect / preset / section
-   ids are namespaced (`lib:<id>/…`), but `rekeyGraph` leaves NODE + EDGE ids raw — and S42 lets a
-   user edit a referenced graph (add a node). idsFrom* must surface those raw ids so the boot /
-   adopt-song-library reserve sites (and the song→library paste branch, which share this helper)
-   bump the global counter past them, or a later `nid('n')` re-mints a live node id. */
+/* Id reservation for restored / adopted libraries. Effect ids and device uids travel raw inside
+   sections (a library song's section ids are namespaced, its Effects are not), and a detached
+   song's Effects stay editable — so a high-numbered carried id must bump the global counter, or a
+   later mint re-mints a live id. */
 
-/** A pool song whose one closure graph carries a raw, high-numbered node + edge id. */
-function poolSongWithHighIds(id: string, nodeId: string, edgeId: string): LibrarySong {
-  const graph = { nodes: [{ id: nodeId }], edges: [{ id: edgeId }] } as unknown as TriggerGraph;
-  return { id, name: id, sections: [], graphs: { [`lib:${id}/graph-1`]: graph }, graphNames: {}, effects: [], presets: [] };
+/** A section holding one Effect (with a modifier + a control) and a master modifier, all carrying
+    raw, high-numbered generated ids. */
+function sectionWithHighIds(id: string, n: number): EffectSection {
+  const effect = effectChain.parseEffect({
+    id: `fx-${n}`,
+    cell: { row: 'kick', column: { kind: 'zone', slot: 0 } },
+    generator: { kind: 'solid' },
+    modifiers: [{ uid: `mod-${n + 1}`, modifierId: 'strobe', params: {}, mix: 1, bypass: false }],
+    controls: [{ uid: `ctl-${n + 2}`, kind: 'lfo', settings: {}, mappings: [] }],
+  });
+  return { id, name: id, effects: [effect], master: [{ uid: `mod-${n + 3}`, modifierId: 'strobe', params: {}, mix: 1, bypass: false }] };
 }
 
-describe('idsFromLibrarySong', () => {
-  it('yields the pool id plus the closure graph’s raw node/edge ids', () => {
-    const ids = [...idsFromLibrarySong(poolSongWithHighIds('song-1', 'n-7000001', 'e-7000002'))];
-    expect(ids).toContain('song-1');
-    expect(ids).toContain('n-7000001');
-    expect(ids).toContain('e-7000002');
-  });
+describe('idsFromSongLibraryV2', () => {
+  it('yields each pool song id plus its sections’ Effect ids and device uids', () => {
+    const lib: SongLibraryV2 = {
+      songs: { 'song-10': { id: 'song-10', name: 'A', sections: [sectionWithHighIds('lib:song-10/s', 8100001)] } },
+    };
+    const ids = [...idsFromSongLibraryV2(lib)];
+    expect(ids).toEqual(expect.arrayContaining(['song-10', 'fx-8100001', 'mod-8100002', 'ctl-8100003', 'mod-8100004']));
 
-  it('reserving its ids bumps the global counter past the carried node id', () => {
-    reserveIds(idsFromLibrarySong(poolSongWithHighIds('song-2', 'n-7700001', 'e-7700002')));
-    expect(Number(nid('n').split('-')[1])).toBeGreaterThan(7700002);
+    reserveIds(ids);
+    expect(Number(nid('fx').split('-')[1])).toBeGreaterThan(8100004);
   });
 });
 
-describe('idsFromSongLibrary', () => {
-  it('walks every pool song’s closure, so an adopted library never leaves a node id un-reserved', () => {
-    const lib: SongLibrary = {
-      songs: {
-        'song-10': poolSongWithHighIds('song-10', 'n-8100001', 'e-8100002'),
-        'song-11': poolSongWithHighIds('song-11', 'n-8200001', 'e-8200002'),
+describe('authoredIdsFromLibraryV3', () => {
+  it('walks every show’s songs, sections, Effects, device uids and canvas scenes', () => {
+    const lib: ShowLibraryV3 = {
+      activeShowId: 'show-1',
+      shows: {
+        'show-1': {
+          id: 'show-1',
+          name: 'Show',
+          authored: {
+            songs: [{ id: 'song-1', name: 'S', sections: [sectionWithHighIds('section-9', 8200001)] }],
+            canvasScenes: [{ id: 'scene-8200009', name: 'Sky', sampler: { kind: 'cylinder' }, lenses: [], elements: [] }],
+            selectedCell: null,
+            selectedEffectId: null,
+            activeSongId: 'song-1',
+            activeSectionId: 'section-9',
+            bpm: 120,
+            velocity: 1,
+            beatsPerBar: 4,
+          },
+        },
       },
     };
-    const ids = [...idsFromSongLibrary(lib)];
-    expect(ids).toEqual(expect.arrayContaining(['n-8100001', 'n-8200001', 'e-8100002', 'e-8200002']));
-
-    reserveIds(ids);
-    // Editing a referenced graph now mints a node id clear of BOTH pool songs' carried ids.
-    expect(Number(nid('n').split('-')[1])).toBeGreaterThan(8200002);
+    expect([...authoredIdsFromLibraryV3(lib)]).toEqual([
+      'show-1', 'song-1', 'section-9', 'fx-8200001', 'mod-8200002', 'ctl-8200003', 'mod-8200004', 'scene-8200009',
+    ]);
   });
 });

@@ -45,7 +45,7 @@ type EffectCell = effectChain.EffectCell;
 type ModifierDevice = effectChain.ModifierDevice;
 type ControlDevice = effectChain.ControlDevice;
 
-/** Effect / cell / device files end in their own double extension (like graph / node files). */
+/** Effect / cell / device files end in their own double extension. */
 export const EFFECT_FILE_EXT = '.ledrums-effect.json';
 export const CELL_FILE_EXT = '.ledrums-cell.json';
 export const DEVICE_FILE_EXT = '.ledrums-device.json';
@@ -161,7 +161,7 @@ function fail<S extends EffectsFileSection>(section: S, reason: string): Effects
 function readDoc(text: string, want: readonly EffectsClipDoc['kind'][]): EffectsClipDoc | { reason: string } {
   const doc = parse(text);
   if (isClipParseError(doc)) return { reason: parseReason(doc.reason) };
-  if (!isEffectsClipDoc(doc)) return { reason: `That file holds a ${doc.kind} from the old graph editor, which can’t be loaded here.` };
+  if (!isEffectsClipDoc(doc)) return { reason: `That file holds a ${doc.kind}, which can’t be loaded here.` };
   if (!want.includes(doc.kind)) return { reason: `That file holds ${KIND_NOUN[doc.kind]}, not ${want.map((k) => KIND_NOUN[k]).join(' or ')}.` };
   return doc;
 }
@@ -326,8 +326,8 @@ export function applyDeviceFile<S extends EffectsFileSection>(section: S, effect
 /**
  * Load an Effect or a device file onto an existing Effect — the Effect header's "Load" action.
  * A device file goes through {@link applyDeviceFile}. An Effect file replaces the Effect's
- * contents in place: it keeps its id, its cell and its position in the stack (like loading a
- * graph file onto a graph), the rest follows the placement rules.
+ * contents in place: it keeps its id, its cell and its position in the stack; the rest follows
+ * the placement rules.
  */
 export function applyFileToEffect<S extends EffectsFileSection>(section: S, effectId: string, text: string, ctx: EffectsFileContext = {}): EffectsFileApplied<S> {
   const doc = readDoc(text, ['effect', 'device']);

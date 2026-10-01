@@ -100,7 +100,7 @@
       <section class="viz"><Visualizer {store} variant="panel" /></section>
       <section class="buses">
         <PanelHeader icon={LayersIcon} title="Buses / Layers" />
-        <LayersDock {store} {shell} />
+        <LayersDock {store} />
       </section>
     </aside>
   {/if}
@@ -151,7 +151,7 @@
   <ToastHost />
 
   <!-- Clipboard paste dialogs (store-driven, S44): song destination chooser + the manual
-       paste-text fallback for graph/section when clipboard reads are blocked. -->
+       paste-text fallback for a section when clipboard reads are blocked. -->
   <PasteSongDialog {store} />
   <PasteFallbackDialog {store} />
 </div>

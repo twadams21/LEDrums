@@ -4,9 +4,8 @@ import { render, fireEvent } from '@testing-library/svelte';
 import FaceParamControl from './FaceParamControl.svelte';
 import { DRAG_TRAVEL_PX } from './drag-number';
 
-/* The in-place control that rides a node-face param row (S5). What matters here: the right
-   control per declared type, xyflow's drag/pan/wheel guards present (without them a drag on
-   the value drags the NODE), one gesture bracket per drag, and a modulated param staying
+/* The in-place control that rides a card param row (S5). What matters here: the right
+   control per declared type, one gesture bracket per drag, and a modulated param staying
    EDITABLE with a badge (the ColorSwatch precedent) rather than going read-only. */
 
 const numberProps = {
@@ -18,16 +17,6 @@ const numberProps = {
   step: 0.01,
   ariaLabel: 'Size',
 };
-
-describe('guards against the canvas', () => {
-  it('carries nodrag / nopan / nowheel so a value edit never moves or zooms the graph', () => {
-    const { container } = render(FaceParamControl, { props: { ...numberProps, onChange: () => {} } });
-    const root = container.querySelector('.facectl')!;
-    expect(root.classList.contains('nodrag')).toBe(true);
-    expect(root.classList.contains('nopan')).toBe(true);
-    expect(root.classList.contains('nowheel')).toBe(true);
-  });
-});
 
 describe('number — drag field', () => {
   it('renders the pre-formatted read-out, not a raw float', () => {

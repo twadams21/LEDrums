@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { attemptOutcome, createLazyHost, failedStyleUrl, lazyComponent, reportedEntryUrl, styleOwner, type LazyEnvironment } from './lazy-component';
 
 const origin = 'http://localhost:4412';
-const entry = `${origin}/assets/TriggerGraphView-a_1.js`;
+const entry = `${origin}/assets/EffectsView-a_1.js`;
 
 describe('reportedEntryUrl', () => {
   it.each([
@@ -10,28 +10,28 @@ describe('reportedEntryUrl', () => {
     'error loading dynamically imported module: ',
     'Importing a module script failed: ',
   ])('recognizes a first-attempt fetch failure of the bare entry: %s', (prefix) => {
-    expect(reportedEntryUrl(new TypeError(`${prefix}${entry}`), 'TriggerGraphView', origin, null)).toBe(entry);
+    expect(reportedEntryUrl(new TypeError(`${prefix}${entry}`), 'EffectsView', origin, null)).toBe(entry);
   });
   it('on a retry accepts only the exact URL that retry requested', () => {
     const retried = `${entry}?load-retry=3`;
     const error = new TypeError(`Failed to fetch dynamically imported module: ${retried}`);
-    expect(reportedEntryUrl(error, 'TriggerGraphView', origin, retried)).toBe(retried);
-    expect(reportedEntryUrl(error, 'TriggerGraphView', origin, `${entry}?load-retry=2`)).toBeNull();
-    expect(reportedEntryUrl(error, 'TriggerGraphView', origin, null)).toBeNull();
-    expect(reportedEntryUrl(new TypeError(`Failed to fetch dynamically imported module: ${entry}`), 'TriggerGraphView', origin, retried)).toBeNull();
+    expect(reportedEntryUrl(error, 'EffectsView', origin, retried)).toBe(retried);
+    expect(reportedEntryUrl(error, 'EffectsView', origin, `${entry}?load-retry=2`)).toBeNull();
+    expect(reportedEntryUrl(error, 'EffectsView', origin, null)).toBeNull();
+    expect(reportedEntryUrl(new TypeError(`Failed to fetch dynamically imported module: ${entry}`), 'EffectsView', origin, retried)).toBeNull();
   });
   it.each([
     new Error(`Failed to fetch dynamically imported module: ${entry}`),
     new TypeError(`evaluation failed: ${entry}`),
-    new TypeError('Failed to fetch dynamically imported module: https://other.test/assets/TriggerGraphView-a.js'),
+    new TypeError('Failed to fetch dynamically imported module: https://other.test/assets/EffectsView-a.js'),
     new TypeError(`Failed to fetch dynamically imported module: ${origin}/assets/shared-a.js`),
-    new TypeError(`Failed to fetch dynamically imported module: ${origin}/other/TriggerGraphView-a.js`),
-    new TypeError('Failed to fetch dynamically imported module: http://user@localhost:4412/assets/TriggerGraphView-a.js'),
+    new TypeError(`Failed to fetch dynamically imported module: ${origin}/other/EffectsView-a.js`),
+    new TypeError('Failed to fetch dynamically imported module: http://user@localhost:4412/assets/EffectsView-a.js'),
     new TypeError(`Failed to fetch dynamically imported module: ${entry}?favicon-probe`),
     new TypeError(`Failed to fetch dynamically imported module: ${entry}#x`),
     new TypeError('Importing a module script failed.'),
   ])('does not import arbitrary URLs or guess an opaque failure', (error) => {
-    expect(reportedEntryUrl(error, 'TriggerGraphView', origin, null)).toBeNull();
+    expect(reportedEntryUrl(error, 'EffectsView', origin, null)).toBeNull();
   });
 });
 
@@ -62,7 +62,7 @@ describe('attemptOutcome', () => {
 describe('stylesheets', () => {
   it('only recognizes a same-origin Vite asset stylesheet, without its query', () => {
     expect(failedStyleUrl(new Error('Unable to preload CSS for /assets/View-ab.css'), origin)).toBe(`${origin}/assets/View-ab.css`);
-    expect(failedStyleUrl(new Error(`Unable to preload CSS for ${origin}/assets/graph-thumb-ab.css?load-retry=2`), origin)).toBe(`${origin}/assets/graph-thumb-ab.css`);
+    expect(failedStyleUrl(new Error(`Unable to preload CSS for ${origin}/assets/effect-thumb-ab.css?load-retry=2`), origin)).toBe(`${origin}/assets/effect-thumb-ab.css`);
     expect(failedStyleUrl(new Error('Unable to preload CSS for https://other.test/assets/View-ab.css'), origin)).toBeNull();
     expect(failedStyleUrl(new Error('Unable to preload CSS for /private.css'), origin)).toBeNull();
     expect(failedStyleUrl(new Error('ordinary failure'), origin)).toBeNull();
@@ -71,7 +71,7 @@ describe('stylesheets', () => {
     const entries = new Set(['ObjectsView', 'SectionsView']);
     expect(styleOwner(`${origin}/assets/ObjectsView-B96n.css`, entries)).toBe('ObjectsView');
     expect(styleOwner(`${origin}/assets/Field-CvCM.css`, entries)).toBeNull();
-    expect(styleOwner(`${origin}/assets/graph-thumb-BXyz.css`, entries)).toBeNull();
+    expect(styleOwner(`${origin}/assets/effect-thumb-BXyz.css`, entries)).toBeNull();
   });
 });
 

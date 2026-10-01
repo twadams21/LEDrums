@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { TriggerLab } from './store.svelte';
-import { buildGraphClipDoc, buildSectionClipDoc, buildSongClipDoc, serialize } from './clipdoc';
+import { buildSectionClipDoc, buildSongClipDoc, serialize } from './clipdoc';
 import { serializeShowLibraryV3, SHOWS_V3_STORAGE_KEY } from './persistence';
 import { toastStore } from '../ui/toast.svelte';
 import type { WSCallbacks, WSClient } from '../ws/client';
@@ -19,22 +19,16 @@ function setup() {
   store.start();
   return { store, callbacks };
 }
-const kinds = ['graph', 'section', 'song-show', 'song-library'] as const;
+const kinds = ['section', 'song-show', 'song-library'] as const;
 type Kind = typeof kinds[number];
 function clipText(store: TriggerLab, kind: Kind): string {
   // Match the production adapter's detached snapshot: structuredClone cannot consume rune proxies.
-  // Effect chains: the graph closure is no longer persisted (a transient sandbox), so the sources
-  // are read from the live store.
-  const sources = JSON.parse(JSON.stringify({
-    graphs: store.graphs, graphNames: store.graphNames, effects: store.effects, presets: store.presets, canvasScenes: store.canvasScenes,
-  }));
+  const sources = JSON.parse(JSON.stringify({ canvasScenes: store.canvasScenes }));
   const song = JSON.parse(JSON.stringify(store.songs.find((s) => s.id === store.activeSongId)));
-  if (kind === 'graph') return serialize(buildGraphClipDoc(store.selectedPadKey!, sources));
   if (kind === 'section') return serialize(buildSectionClipDoc(song.sections[0], sources));
   return serialize(buildSongClipDoc(song, sources));
 }
 function paste(store: TriggerLab, kind: Kind) {
-  if (kind === 'graph') return store.pasteGraphFromClipboard();
   if (kind === 'section') return store.pasteSectionFromClipboard();
   store.openSongPaste();
   return store.pasteSong(kind === 'song-show' ? 'show' : 'library');
@@ -55,8 +49,7 @@ function replace(store: TriggerLab, callbacks: WSCallbacks, sameId: boolean) {
 function snapshot(store: TriggerLab) {
   store.saveShow();
   const authored = JSON.parse(localStorage.getItem(SHOWS_V3_STORAGE_KEY)!).data.shows[store.activeShowId].authored;
-  // The graph closure is a transient sandbox since effect chains (not persisted): include it.
-  return JSON.stringify({ authored, pool: store.songLibrary, graphs: store.graphs, graphNames: store.graphNames });
+  return JSON.stringify({ authored, pool: store.songLibrary });
 }
 function flushAutosave() { flushSync(); vi.advanceTimersByTime(500); }
 
@@ -110,9 +103,7 @@ describe.each([false, true])('clipboard document lifetime (same ID: %s)', (sameI
         vi.stubGlobal('navigator', { clipboard: { readText } });
         const oldWork = paste(store, kind);
         replace(store, callbacks, sameId);
-        // Distinct graph content proves a valid graph paste actually applies, rather than reusing it.
         const text = clipText(store, kind);
-        if (kind === 'graph') store.deleteGraph(store.selectedPadKey!);
         const before = snapshot(store);
         const newWork = paste(store, kind);
         toastStore.clear();
@@ -147,7 +138,6 @@ describe.each([false, true])('clipboard document lifetime (same ID: %s)', (sameI
         expect(snapshot(store)).toBe(before);
         expect(toastStore.items).toHaveLength(0);
         // A fresh fallback still works after replacement.
-        if (kind === 'graph') store.deleteGraph(store.selectedPadKey!);
         const freshBefore = snapshot(store);
         await paste(store, kind);
         if (kind.startsWith('song')) store.pasteSongText(kind === 'song-show' ? 'show' : 'library', text);
@@ -199,7 +189,7 @@ describe.each([false, true])('clipboard document lifetime (same ID: %s)', (sameI
     try {
       const pending = deferred<void>();
       vi.stubGlobal('navigator', { clipboard: { writeText: () => pending.promise } });
-      const work = store.copyGraphToClipboard(store.selectedPadKey!);
+      const work = store.copySongToClipboard(store.activeSongId);
       replace(store, callbacks, sameId);
       toastStore.clear();
       if (succeeds) pending.resolve(); else pending.reject(new Error('blocked'));

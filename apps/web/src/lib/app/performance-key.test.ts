@@ -24,9 +24,9 @@ const at = (over: Partial<PerformanceKeyInput> = {}): PerformanceKeyInput => ({
 
 describe('decidePerformanceKey — Perform ownership', () => {
   it('fires 1–9 and 0 as graph indexes and claims each event', () => {
-    expect(decidePerformanceKey(at({ key: '1' }))).toEqual({ fireGraphIndex: 0, claim: true });
-    expect(decidePerformanceKey(at({ key: '9' }))).toEqual({ fireGraphIndex: 8, claim: true });
-    expect(decidePerformanceKey(at({ key: '0' }))).toEqual({ fireGraphIndex: 9, claim: true });
+    expect(decidePerformanceKey(at({ key: '1' }))).toEqual({ fireEffectIndex: 0, claim: true });
+    expect(decidePerformanceKey(at({ key: '9' }))).toEqual({ fireEffectIndex: 8, claim: true });
+    expect(decidePerformanceKey(at({ key: '0' }))).toEqual({ fireEffectIndex: 9, claim: true });
   });
 
   it('steps sections from the live surface and claims the arrows', () => {
@@ -67,8 +67,8 @@ describe('decidePerformanceKey — accessibility owners', () => {
 describe('decidePerformanceKey — context boundaries', () => {
   it('fires graph digits in every authoring view — the author must be able to hear the graph', () => {
     for (const view of ['objects', 'sections', 'trigger', 'monitor'] as const) {
-      expect(decidePerformanceKey(at({ view, key: '1' }))).toEqual({ fireGraphIndex: 0, claim: true });
-      expect(decidePerformanceKey(at({ view, key: '0' }))).toEqual({ fireGraphIndex: 9, claim: true });
+      expect(decidePerformanceKey(at({ view, key: '1' }))).toEqual({ fireEffectIndex: 0, claim: true });
+      expect(decidePerformanceKey(at({ view, key: '0' }))).toEqual({ fireEffectIndex: 9, claim: true });
     }
   });
 

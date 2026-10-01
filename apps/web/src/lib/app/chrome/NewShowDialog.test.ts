@@ -6,10 +6,8 @@ import { TriggerLab } from '../../trigger-lab/store.svelte';
 import type { WSClient } from '../../ws/client';
 import NewShowDialog from './NewShowDialog.svelte';
 import ShowBrowser from './ShowBrowser.svelte';
-import DrumZonesPane from '../settings/panes/DrumZonesPane.svelte';
 
-/* The New show chooser (from the Show browser's New — never on startup), and the per-show switch in
-   Settings › Drum trigger zones. What each choice builds is pinned in store.zone-template.test.ts. */
+/* The New show chooser (from the Show browser's New — never on startup). */
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -89,18 +87,5 @@ describe('ShowBrowser → New', () => {
     screen().getByRole('button', { name: 'New' }).click();
     expect(newShow).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(screen().getByRole('button', { name: /From my trigger zones/ })).toBeTruthy());
-  });
-});
-
-describe('Settings › Drum trigger zones', () => {
-  it('the switch sets the show’s setting, and Add to existing sections fills them', () => {
-    const s = store();
-    const set = vi.spyOn(s, 'setAutoZoneGraphs');
-    const fill = vi.spyOn(s, 'fillAllSectionsWithZoneGraphs').mockReturnValue(3);
-    render(DrumZonesPane, { props: { store: s } });
-    screen().getByRole('button', { name: 'A graph per zone in every new section' }).click();
-    expect(set).toHaveBeenCalledWith(true);
-    screen().getByRole('button', { name: 'Add to existing sections' }).click();
-    expect(fill).toHaveBeenCalled();
   });
 });

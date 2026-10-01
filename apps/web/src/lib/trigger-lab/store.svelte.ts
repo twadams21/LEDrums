@@ -1,60 +1,24 @@
-/* Reactive bridge over the throwaway Sim. Owns editable config + the effect/preset
-   registries as runes, drives the sim from a rAF loop, and snapshots transient
-   voice/log state each frame. Throwaway — see ./NOTES.md.
+/* Reactive bridge over the offline Sim. Owns the editable authored document as runes, drives the
+   Sim from a rAF loop, and snapshots transient voice/log state each frame. See ./NOTES.md.
 
-   THIN WRAPPER (S3.2): the domain logic lives in pure reducer slices under `store/`
-   (ids · seed · hydrate · graphs · graph-wiring · value-switch · objects ·
-   trigger-routing · shows · show-library-sync · transport) + the existing pure modules
-   (persistence · save-status · setlist · show-builder). This class holds the runes +
-   sim/client lifecycle and delegates each domain to its slice — mirroring
-   setlist.ts / shell-nav.ts. The public TriggerLab API is unchanged.
+   THIN WRAPPER (S3.2): the domain logic lives in pure slices under `store/` (ids · shows ·
+   show-library-sync · song-library-sync · effect-song-library · input-mappings · canvas-scenes ·
+   trigger-routing · transport) + the existing pure modules (persistence · save-status · setlist ·
+   show-builder · clipdoc · effects-files). This class holds the runes + sim/client lifecycle and
+   delegates each domain to its slice — mirroring setlist.ts / shell-nav.ts.
 
-   EFFECT CHAINS (S05, wave-4 store-wire): the authored document is the v3 show library.
-   Sections carry `effects` / `master`; the store implements {@link EffectsAuthoringApi} by
-   delegating to {@link EffectsController} (pure ops in `effects-doc.ts`) — except `canEdit`,
-   which stays viewer-only for app callers, so Effects UI mounts take `store.effectsApi` (the
-   controller, with the mutators' canEdit) instead of the store itself; the runtime Show is
-   core `buildRuntimeShow` (via `buildEffectsShow`), sent to the server and loaded into the
-   offline Sim's Effect path. The graph runes (graphs / buses / presets / effect defs) are a
-   TRANSIENT sandbox until S08 deletes them: seeded per document, kept in undo, never persisted,
-   never played. */
+   EFFECT CHAINS (S05): the authored document is the v3 show library. Sections carry `effects` /
+   `master`; the store implements {@link EffectsAuthoringApi} by delegating to
+   {@link EffectsController} (pure ops in `effects-doc.ts`) — except `canEdit`, which stays
+   viewer-only for app callers, so Effects UI mounts take `store.effectsApi` (the controller, with
+   the mutators' canEdit) instead of the store itself. The runtime Show is core `buildRuntimeShow`
+   (via `buildEffectsShow`), sent to the server and loaded into the offline Sim's core engine. */
 
-import {
-  Sim,
-  defaultParams,
-  defaultAdsr,
-  adsrToPoints,
-  type AdsrShape,
-  type Bus,
-  type EffectDef,
-  type GraphEdge,
-  type Envelope,
-  type EnvKind,
-  type EnvPoint,
-  type LogEntry,
-  type ParamValue,
-  type PlayMode,
-  type Polyphony,
-  type Preset,
-  type Scope,
-  type Section,
-  type SwitchOn,
-  type ValueMode,
-  type Voice,
-  type GraphNode,
-  type NodeKind,
-  type TriggerGraph,
-  type TriggerSource,
-  makeNode,
-  resolveGraphsForFire,
-  sourceMatchesPad,
-  triggerSourceOf,
-} from './sim';
-import { BUSES, DRUMS, EFFECTS, PADS, PRESETS, ZONE_LABELS, type Pad } from './fixtures';
+import { Sim, type LogEntry } from './sim';
+import { DRUMS, PADS, type Pad } from './fixtures';
 import { buildLabModel } from './kit';
 import * as clipdoc from './clipdoc';
 import { renderFrame as compositeFrame } from './render';
-import { graphFireKeyOf } from '@ledrums/protocol';
 import { WSClient, type ConnectionState, type InputEcho } from '../ws/client';
 import { TRACK_INPUT_LIMIT, trackInputIdSchema, type TrackInputsStatus } from '@ledrums/protocol';
 import { type MidiClockEvent, type MidiDeviceInfo, type MidiEvent } from '../midi/webmidi';
@@ -64,14 +28,12 @@ import type { ClockInput, TransportSource } from '@ledrums/core';
 import { appendVelocityHit, type VelocityHits } from '../app/velocity-hits';
 import type { CurveHit } from '../ui/curve-field';
 import { selectDockVoices, type DockVoice } from './dock-voices';
-import { playingGraphKeys } from './graph-liveness';
 import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import { packetsPerSecond, type PacketSample } from '../app/docks/inspectors/output-status';
 // The zone-map writers are pure helpers; the store reuses them so an OSC learn writes the
 // SAME shape the zones editor does (one mutation path, mutation parity), not a second one.
-import { setZoneOscAddress, zoneSlotsForDrum, zoneLabel, defaultZoneName } from '../app/docks/patch-inspector';
+import { setZoneOscAddress, zoneSlotsForDrum, zoneLabel } from '../app/docks/patch-inspector';
 import type {
-  BlendMode,
   CanvasScene,
   GlobalControlAction,
   GlobalControlBinding,
@@ -79,12 +41,11 @@ import type {
   InputMap,
   NodeLayout,
   OutputConfig,
-  PlayType,
   Project,
 } from '@ledrums/core';
 import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, defaultProject, effectChain, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
 import type { KitConfig } from '@ledrums/core';
-import { voice, canvasEffectId, type CurveValue } from '@ledrums/core';
+import { voice } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
 import { projectResyncMessages } from './store/project-resync';
 import { buildEffectsShow, type EffectsShowSource } from './show-builder';
@@ -114,7 +75,7 @@ import type { ChainOwner, EffectsSection } from './effects-doc';
 import type { BindResult, MapModeApi, MapTarget } from './map-api';
 import * as inputMappings from './store/input-mappings';
 import * as effectsFiles from './effects-files';
-import { detectLegacyLibrary, importLegacyShows, pendingLegacyShowNames, type LegacyLibrary } from './legacy-import';
+import { detectLegacyLibrary, pendingLegacyShowNames, type LegacyLibrary } from './legacy-import';
 import { extractEffectSong, toEffectSong, toStoreSong } from './store/effect-song-library';
 import { SaveStatusController, type SaveStatus } from './save-status';
 import { ControllerMonitor } from './controller-monitor.svelte';
@@ -143,33 +104,11 @@ import {
 } from './input-activity';
 
 // --- pure domain slices (S3.2) --------------------------------------------------
-import { nid, freshId, reserveIds } from './store/ids';
-import { findFreePosition } from '../app/views/node-placement';
-import { padKey, seedGraphKey, seedGraphNames, seedGraphs, seedAuthored, seedDocumentV3, seedSectionPlacements } from './store/seed';
-import { normalizeGraphs as hydrateGraphs, unionEffects, unionPresets } from './store/hydrate';
-import { announceSystemActions } from './store/system-toasts';
+import { freshId, reserveIds } from './store/ids';
+import { seedDocumentV3 } from './store/seed';
 import { idsFromSongLibraryV2 } from './store/reserve-library-ids';
-import * as graphsLib from './store/graphs';
-import {
-  canSplice,
-  classifyConnection,
-  classifyReconnect,
-  normalizeFromPort,
-  normalizeToPort,
-  type ToPort,
-  type WireRejection,
-} from './store/graph-wiring';
-import * as vsw from './store/value-switch';
-import * as penv from './store/param-envelope';
-import * as mg from './store/mod-graph';
-import * as fp from './store/face-params';
-import * as objects from './store/objects';
 import * as routing from './store/trigger-routing';
-import * as songRefsLib from './store/song-library-refs';
-import { type ClosureSources } from './store/song-library';
 import {
-  buildGraphClipDoc,
-  buildNodeClipDoc,
   buildSectionClipDoc,
   buildSongClipDoc,
   serialize,
@@ -184,8 +123,7 @@ import {
   type RemapResult,
 } from './clipdoc';
 import { readClipboardText, writeClipboardText } from './clipboard-io';
-import { templateAuthored, zoneGraph, type ShowTemplate } from './store/templates';
-import { openTextFile, safeFileName, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
+import { openTextFile, saveTextFile, type OpenOutcome, type SaveOutcome } from './file-io';
 import { pushToast } from '../ui/toast.svelte';
 import { bindingRejectionMessage } from '../app/binding-claim-label';
 import { EngineLinkSync } from './store/transport';
@@ -198,6 +136,7 @@ import {
   type MonitorFilterType,
 } from '../app/monitor';
 
+
 /** How long after the last authored change we wait before writing to storage. */
 const SAVE_DEBOUNCE_MS = 300;
 /** How often the offline Layers dock re-reads the Sim's Effect-path voices (it allocates). */
@@ -209,12 +148,6 @@ const TRACK_OSC_KEY_LIMIT = 16 * 128 * 3 + voice.AUDIO_BANDS.length + 8;
 /** One shared empty buffer, so a drum with no hits yet reads a stable identity. */
 const EMPTY_HITS: readonly CurveHit[] = [];
 
-export type EnvelopeCreationPreset = 'pluck' | 'stab' | 'swell' | 'gate' | 'custom';
-export type LfoCreationPreset = voice.LfoWaveform;
-export type AddNodeOptions = {
-  envelopePreset?: string;
-  lfoWaveform?: string;
-};
 
 /** Re-exported from the extracted MIDI controller (R21) so `MidiLearnTarget` stays importable from
     the store — the inspectors that arm a learn keep their import path unchanged. */
@@ -223,67 +156,6 @@ export type { MidiLearnTarget };
 export type { EffectsAuthoringApi } from './effects-api';
 /** The MIDI-map authoring contract the store implements (effect chains S07, wave 5b). */
 export type { MapModeApi } from './map-api';
-
-/** Nodes that carry authored `params` + per-param `env`: play nodes and modifier nodes.
-    The param/envelope mutators + inspector share one editing surface across both. */
-function nodeHasParams(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect' || node.kind === 'modifier';
-}
-
-function isAnchorNode(node: GraphNode): boolean {
-  return node.kind === 'trigger' || node.kind === 'output';
-}
-
-function isEffectNode(node: GraphNode): boolean {
-  return node.kind === 'play' || node.kind === 'effect';
-}
-
-function envelopePresetAdsr(preset: string | undefined): AdsrShape {
-  const base = defaultAdsr();
-  switch (preset) {
-    case 'pluck':
-      return { ...base, attack: 0.03, decay: 0.16, sustain: 0, release: 0.18 };
-    case 'stab':
-      return { ...base, attack: 0.02, decay: 0.08, sustain: 0.78, release: 0.22 };
-    case 'swell':
-      return { ...base, attack: 0.62, decay: 0.08, sustain: 0.92, release: 0.3 };
-    case 'gate':
-      return { ...base, attack: 0.01, decay: 0.02, sustain: 1, release: 0.04 };
-    case 'custom':
-    default:
-      return base;
-  }
-}
-
-function lfoPresetWaveform(waveform: string | undefined): voice.LfoWaveform {
-  return voice.LFO_WAVEFORMS.includes(waveform as voice.LfoWaveform) ? (waveform as voice.LfoWaveform) : 'sine';
-}
-
-function envelopeNodeDefaults(preset: string | undefined = 'pluck'): Pick<GraphNode, 'env'> {
-  const adsr = envelopePresetAdsr(preset);
-  return {
-    env: {
-      [voice.ENVELOPE_NODE_KEY]: {
-        kind: 'custom',
-        amount: 1,
-        points: adsrToPoints(adsr),
-        adsr,
-      },
-    },
-  };
-}
-
-function pruneEdgesForModSource(graph: TriggerGraph, nodeId: string): void {
-  graph.edges = graph.edges.filter((edge) => {
-    // Modulate/source nodes take no incoming wires.
-    if (edge.to === nodeId) return false;
-
-    // They may only output to parameter-input rows.
-    if (edge.from === nodeId) return voice.paramKeyOf(edge.toPort) !== null;
-
-    return true;
-  });
-}
 
 /** sessionStorage key for the room PIN (S3) — per-tab so it does not leak across browser
     sessions, but survives a reconnect/refresh within a session. */
@@ -351,7 +223,7 @@ function writeStoredHostToken(token: string): void {
 }
 
 /** The authored clipboard kinds a paste can target, one per UI context (S44). */
-export type PasteContext = 'graph' | 'section' | 'song';
+export type PasteContext = 'section' | 'song';
 /** Where a pasted song lands: the active show's setlist, or the shared Song Library pool. */
 export type SongPasteDest = 'show' | 'library';
 
@@ -359,6 +231,10 @@ export type SongPasteDest = 'show' | 'library';
 export type PasteResult =
   | { ok: true; kind: PasteContext; message: string }
   | { ok: false; message: string };
+
+/** What a new show starts from (the New show dialog). Both start one song with one empty section:
+    the grid already lays out a column for every declared zone. */
+export type ShowTemplate = 'blank' | 'zones';
 
 /** Turn a defensive-parse reason into a friendly, user-facing paste message. */
 function friendlyParseMessage(reason: ClipParseReason): string {
@@ -369,92 +245,33 @@ function friendlyParseMessage(reason: ClipParseReason): string {
       return 'That was copied from a newer version of LEDrums.';
     case 'unknown-kind':
       return 'That clipboard content can’t be pasted here.';
-    case 'unresolved-dependency':
-      return 'That clipboard section is incomplete — its required graph data is missing.';
     default:
       return 'The clipboard didn’t contain anything pasteable.';
   }
 }
 
 /** Every generated id a materialized paste introduces that must be reserved against the global id
-    counter BEFORE it enters the show. The critical ones are the graphs' NODE + EDGE ids: remap
-    carries them verbatim (so wiring/modulation ports survive), so a cross-machine paste can bring a
-    high `n-<n>` the local counter is below — a later `nid('n')` would then re-mint it, duplicating a
-    node id in one graph. The remapped graph/section/song/preset ids come off the counter already,
-    but yielding them too is harmless and future-proof. */
+    counter BEFORE it enters the show: the fresh section / song ids come off the counter already,
+    but the Effect ids and device uids travel verbatim, so a cross-machine paste can bring a high
+    id the local counter is below — a later mint would then re-mint it. */
 function* remapResultIds(res: RemapResult): Iterable<string> {
-  for (const [key, graph] of Object.entries(res.graphs)) {
-    yield key;
-    for (const node of graph.nodes) yield node.id;
-    for (const edge of graph.edges) yield edge.id;
+  const sections = res.section ? [res.section] : res.song?.sections ?? [];
+  if (res.song) yield res.song.id;
+  for (const section of sections) {
+    yield section.id;
+    for (const effect of section.effects) {
+      yield effect.id;
+      for (const modifier of effect.modifiers) yield modifier.uid;
+      for (const control of effect.controls) yield control.uid;
+    }
+    for (const modifier of section.master) yield modifier.uid;
   }
-  if (res.graphKey) yield res.graphKey;
-  for (const effect of res.effects) yield effect.id;
-  for (const preset of res.presets) yield preset.id;
   for (const scene of res.canvasScenes) yield scene.id;
-  if (res.section) yield res.section.id;
-  if (res.song) {
-    yield res.song.id;
-    for (const section of res.song.sections) yield section.id;
-  }
-}
-
-/** The outcome of applying a graph/node FILE — the caller toasts `message`. `graphKey` is the graph
-    now holding the content; `nodeId` the node that now holds it (a new one when the file's kind
-    differed from the target's, so the inspector can move its selection there). */
-export type FileLoadResult =
-  | { ok: true; message: string; graphKey?: string; nodeId?: string }
-  | { ok: false; message: string };
-
-/** Graph files and node files end in their own double extension, so a folder of them reads at a
-    glance and the Open panel's `.json` filter still shows them. */
-export const GRAPH_FILE_EXT = '.ledrums-graph.json';
-export const NODE_FILE_EXT = '.ledrums-node.json';
-
-/** A parse failure, worded for a file the user picked rather than for the clipboard. */
-function friendlyFileMessage(reason: ClipParseReason): string {
-  switch (reason) {
-    case 'foreign':
-      return 'That file isn’t a LEDrums file.';
-    case 'unsupported-version':
-      return 'That file was saved by a newer version of LEDrums.';
-    default:
-      return 'That file couldn’t be read as a LEDrums graph or node.';
-  }
-}
-
-/** A file's own name minus its LEDrums/JSON extension — the fallback name for a loaded graph. */
-function fileStem(name: string): string {
-  return name.replace(/\.ledrums-(graph|node)\.json$/i, '').replace(/\.json$/i, '').trim();
 }
 
 /** The success message for a materialized authored paste. */
 function pasteSuccessMessage(res: RemapResult): string {
-  switch (res.kind) {
-    case 'graph':
-      return 'Pasted graph.';
-    case 'node':
-      return 'Pasted node.';
-    case 'section':
-      return 'Pasted section.';
-    case 'song':
-      return 'Pasted song.';
-  }
-}
-
-/** The graph-era runes that are no longer part of the persisted document (effect chains S05):
-    a transient sandbox the legacy graph editor still edits until S08 deletes it. Kept in undo
-    checkpoints so graph edits stay undoable meanwhile; never persisted, never played. */
-interface LegacyGraphSlice {
-  graphs: Record<string, voice.TriggerGraph>;
-  graphNames: Record<string, string>;
-  buses: Bus[];
-  presets: Preset[];
-  effects: EffectDef[];
-  selectedPadKey: string | null;
-  autoZoneGraphs: boolean;
-  /** Each section's graph placements + looks, by section id (the v3 document drops them). */
-  placements: Record<string, { graphs: string[]; looks: Record<string, string | null> }>;
+  return res.kind === 'section' ? 'Pasted section.' : 'Pasted song.';
 }
 
 /** One undo checkpoint: the authored show slice plus a separate snapshot of the authoritative
@@ -463,29 +280,30 @@ interface LegacyGraphSlice {
 interface UndoEntry {
   authored: AuthoredStateV3;
   project: Project | null;
-  legacy: LegacyGraphSlice;
-}
-
-/** The legacy sandbox a freshly loaded document starts from (the graph-era seed). */
-function seedLegacySlice(): LegacyGraphSlice {
-  const seed = seedAuthored();
-  return {
-    graphs: seed.graphs,
-    graphNames: seed.graphNames,
-    buses: seed.buses,
-    presets: seed.presets,
-    effects: seed.effects,
-    selectedPadKey: seed.selectedPadKey,
-    autoZoneGraphs: false,
-    placements: seedSectionPlacements(),
-  };
 }
 
 const EMPTY_EFFECTS: readonly effectChain.Effect[] = [];
+/** The binding guard's graph scope. The Effect model has no graphs; core's scope still takes the
+    field until its graph types go (effect chains S08, wave 6b). */
+const NO_GRAPHS: voice.BindingScope['graphs'] = {};
 const EMPTY_MASTER: readonly effectChain.ModifierDevice[] = [];
 const READ_ONLY: ApplyResult = { ok: false, reason: 'This section is read-only.' };
 /** Offline stand-in for the server Project's kit / input map (the grid needs rows + zones). */
 const OFFLINE_PROJECT = defaultProject();
+
+/** Per-bus meter levels from a voice list: the summed voice levels, capped at 1. */
+function busLevelsOf(voices: readonly VoiceStat[]): Record<string, number> {
+  const levels: Record<string, number> = {};
+  for (const v of voices) levels[v.busId] = Math.min(1, (levels[v.busId] ?? 0) + v.level);
+  return levels;
+}
+
+/** How many Effects a runtime Show carries (the Monitor's `setShow` line). */
+function countShowEffects(show: voice.Show): number {
+  let n = 0;
+  for (const song of show.songs ?? []) for (const section of song.sections) n += section.effects?.length ?? 0;
+  return n;
+}
 
 function nowMs(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -523,21 +341,10 @@ function writeLegacyDismissed(): void {
 }
 
 export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
-  // editable config (shared by reference with the sim)
-  buses = $state<Bus[]>(BUSES.map((b) => ({ ...b })));
+  /** The kit's playable drum zones (the Perform surface's pads). */
   pads = $state<Pad[]>(structuredClone(PADS));
-  /** Every trigger graph, keyed by graph key — the editable model. No authored/pad
-      distinction: pad graphs (keyed `drumId:zone`) and graphs minted via createGraph()
-      / duplicateGraph() (keyed `graph-<n>`) are all first-class, generic graphs that
-      rename / duplicate / delete uniformly. */
-  graphs = $state<Record<string, voice.TriggerGraph>>(seedGraphs());
-  /** display labels for EVERY graph key — seeded keys and authored keys alike; legacy pad keys
-      fall back to their kit-derived label when no persisted name exists. */
-  graphNames = $state<Record<string, string>>(seedGraphNames());
-  /** mutable preset library — snapshots you Apply onto / Save from play nodes (S39). */
-  presets = $state<Preset[]>(structuredClone(PRESETS));
-  /** User-authored canvas scene documents (U5). Each projects a virtual `canvas:<id>`
-      effect + default preset (see `canvasEffects`/`allPresets`), persisted in the show doc. */
+  /** User-authored canvas scene documents (U5), persisted in the show doc; a Scene Generator plays
+      one by id (see `allCanvasScenes`). */
   canvasScenes = $state<CanvasScene[]>([]);
 
   bpm = $state(120);
@@ -546,22 +353,12 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   playing = $state(true);
   beatsPerBar = $state(4);
 
-  selectedPadKey = $state<string | null>(seedGraphKey('intro', PADS[2]!));
-
-  // popups (targets are play nodes from the active graph)
-  galleryBlock = $state<voice.GraphNode | null>(null); // effect swap
-  settingsBlock = $state<voice.GraphNode | null>(null); // preset + params + envelopes
-  liveNodePositions = $state.raw<Record<string, { x: number; y: number }>>({});
-  envTarget = $state<{ block: GraphNode; key: string } | null>(null); // envelope editor
-
-  // --- setlist (songs → sections → flat ordered graph lists) ---------------
+  // --- setlist (songs → sections → Effect stacks) ------------------------------
   // `songs` / `songRefs` / `activeSongId` are owned by {@link showsCtl} (R23) — see the
   // delegators alongside its field. The section-arrangement concern (the active-section
-  // pointer, the clipboard, the sections/activeSection deriveds, and section CRUD) is owned
-  // by {@link sectionsCtl} (R24, store split 5/5) — the store delegates its public surface
-  // to this via the accessors + forwarders below, so callers/tests are unchanged. The store
-  // supplies the active-song reads, the `songs` rune swap, the WS link, and the offline sim
-  // look-recall (the play surface stays here) through the injected host.
+  // pointer, the clipboard, the activeSection derived, and section CRUD) is owned by
+  // {@link sectionsCtl} (R24, store split 5/5) — the store delegates its public surface
+  // to this via the accessors + forwarders below, so callers/tests are unchanged.
   private readonly sectionsCtl = new SectionsController({
     isViewer: () => this.isViewer,
     activeSongById: () => this.activeSongById,
@@ -570,31 +367,14 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     isLocalSong: (songId) => this.songs.some((song) => song.id === songId),
     setSongs: (songs) => (this.songs = songs),
     recordUndo: () => this.pushUndoSnapshot(),
-    graphs: () => $state.snapshot(this.graphs) as Record<string, TriggerGraph>,
-    graphNames: () => $state.snapshot(this.graphNames) as Record<string, string>,
-    mergeGraphModel: (patch) => {
-      if (patch.graphs) this.graphs = { ...this.graphs, ...patch.graphs };
-      if (patch.graphNames) this.graphNames = { ...this.graphNames, ...patch.graphNames };
-    },
-  cloneSectionGraphs: (section, graphs, graphNames) =>
-      graphsLib.cloneSectionGraphs(
-        section,
-        $state.snapshot(graphs) as Record<string, TriggerGraph>,
-        $state.snapshot(graphNames) as Record<string, string>,
-        () => freshId('graph', (k) => k in this.graphs),
-      ),
-    linkOpen: () => this.link === 'open',
-    recallSectionLook: (look) => {
-      this.sim.recallSection(look);
-      this.snapshot();
-    },
     activeSectionChanged: () => this.followActiveSection(),
   } satisfies SectionsControllerHost);
 
+
   // --- section-arrangement state delegators (R24) — owned by sectionsCtl ------------------------
   /** The ONE active section (U4 merged the old look-recall + arrange focus): the section you're
-      playing IS the one you're editing. Drives hit-resolution (its graphs fire, in the play
-      surface below), the look-morph recall, and the Sections / Trigger views' highlight. */
+      playing IS the one you're editing. Drives hit-resolution (its Effects fire, in the play
+      surface below), the recall, and the Sections / Effects views' highlight. */
   get activeSectionId(): string | null {
     return this.sectionsCtl.activeSectionId;
   }
@@ -618,9 +398,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   songPasteOpen = $state(false);
   /** Document revision, not show id: same-id server replacements invalidate pending clipboard IO. */
   private documentGeneration = 0;
-  /** Non-null when a graph/section paste hit a blocked clipboard read: drives the manual paste-text
+  /** Non-null when a section paste hit a blocked clipboard read: drives the manual paste-text
       fallback dialog, remembering which context the pasted text should materialize into. */
-  pasteFallback = $state<{ context: 'graph' | 'section' } | null>(null);
+  pasteFallback = $state<{ context: 'section' } | null>(null);
 
   /** persisted shell pane sizes in px, keyed by a stable pane id (set by the
       resizable docks — step 3). Empty until the user drags a splitter. */
@@ -631,22 +411,18 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       Project — so it persists via the authored-state autosave, not over WS. Empty until a
       node is renamed. */
   patchLabels = $state<Record<string, string>>({});
-  /** This show gives every new section one empty graph per declared drum zone (see
-      {@link AuthoredState.autoZoneGraphs}). */
-  autoZoneGraphs = $state(false);
 
   // Shows / setlist / song-library state (showLibrary, activeShowId, songs, songRefs, activeSongId,
   // songLibrary) + its deriveds/CRUD/sync/persistence are owned by {@link showsCtl} (R23, store split
   // 4/5). The store delegates its public surface via the accessors below.
 
   // transient snapshot
-  voices = $state<Voice[]>([]);
   log = $state<LogEntry[]>([]);
   timeMs = $state(0);
   beat = $state(0);
   busLevels = $state<Record<string, number>>({});
   /** Per-voice detail streamed from the server engine's stats (S17) — the authoritative voice list
-      while the engine link is open (the sim stops firing when connected, so its `voices` are stale).
+      while the engine link is open (the Sim stops firing when connected).
       Empty offline / before the first stats. {@link dockVoices} source-selects between this and the
       sim. */
   serverVoices = $state<VoiceStat[]>([]);
@@ -716,13 +492,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       setlist songs, the canonical song pool, their resolved runtime view, and the server-library
       cold-load/write-through sync, extracted into {@link ShowsController}. The store delegates its
       public surface to this via the accessors + forwarders below, and supplies the authored-state
-      swap machinery, the graph model, the section-arrangement boundary (R24), and the WS link
-      through the injected host. */
+      swap machinery, the section-arrangement boundary (R24), and the WS link through the injected
+      host. */
   private readonly showsCtl = new ShowsController({
-    graphs: () => this.graphs,
-    graphNames: () => this.graphNames,
-    effects: () => this.effects,
-    presets: () => this.presets,
     canvasScenes: () => this.canvasScenes,
     mergeCanvasScenes: (scenes) => this.unionCanvasScenes(scenes),
     recordUndo: () => this.pushUndoSnapshot(),
@@ -752,7 +524,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   set activeShowId(id: string) {
     this.showsCtl.activeShowId = id;
   }
-  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS. */
+  /** authored arrangement: songs, each with sections that hold an Effect stack + Master chain. */
   get songs(): Song[] {
     return this.showsCtl.songs;
   }
@@ -816,13 +588,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   // --- shows / setlist / song-library forwarders (R23) — thin, API-preserving ------------------
-  /** Create a show and switch to it. With a `template`, it starts blank (one empty section) or
-      from the kit's drum zones (a graph per zone, and every later new section gets its own set);
-      without one, from the demo seed. */
+  /** Create a show and switch to it. With a `template`, it starts one song with one EMPTY section
+      (both templates: the grid already lays out every declared zone, so `zones` needs no per-zone
+      content); without one, from the demo seed. */
   newShow(name?: string, template?: ShowTemplate): string {
-    // Effect chains: both templates start one song with one EMPTY section (the grid already lays
-    // out every declared zone, so the `zones` template needs no per-zone content). The graph-era
-    // `templateAuthored` stays for the legacy sandbox's zone-graph fill until S08.
     return this.showsCtl.newShow(name, template ? blankAuthoredV3() : undefined);
   }
   openShow(id: string): void {
@@ -893,13 +662,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return true;
   }
   createSong(name?: string): string {
-    const before = this.activeSongId;
-    const id = this.showsCtl.createSong(name);
-    // A zone show's new song starts with its zone graphs. Creating a song takes no undo checkpoint
-    // of its own, so the fill takes one: undo empties the new section rather than a prior edit.
-    const section = this.activeSectionId;
-    if (this.autoZoneGraphs && id !== before && section) this.fillZoneGraphs([{ songId: id, sectionId: section }]);
-    return id;
+    return this.showsCtl.createSong(name);
   }
   renameSong(id: string, name: string): void {
     this.showsCtl.renameSong(id, name);
@@ -966,8 +729,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       failure; cleared on the next successful patch send or when the user dismisses it. */
   serverError = $state<string | null>(null);
 
-  /** mutable effect registry — the effect creator appends here (synced to the sim). */
-  effects = $state<EffectDef[]>([...EFFECTS]);
   drums = DRUMS;
 
   labModel = buildLabModel();
@@ -982,28 +743,18 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   model = $derived<SerializedModel>(this.useServer ? this.serverModel! : this.labModel.model);
   /** Preview frame: the engine's composited output when connected, else local sim. */
   previewFrame = $derived<Uint8Array>(this.useServer ? this.serverFrame! : this.frameBuf);
-  /** Voice list for the Layers/Buses dock (S17): the server's streamed voices while the engine link
-      is open (its render is authoritative — the sim no longer fires when connected), the local sim's
+  /** Offline voices for the Layers dock, refreshed at telemetry rate (the Sim engine's `stats()`
+      allocates, so never per frame). The same `VoiceStat` wire shape the server streams. */
+  effectVoices = $state.raw<VoiceStat[]>([]);
+  /** Voice list for the Layers dock (S17): the server's streamed voices while the engine link is
+      open (its render is authoritative — the Sim no longer fires when connected), the Sim engine's
       voices offline. Pure source-selection lives in {@link selectDockVoices}. Gated on `link` (the
       firing/authority gate), not `useServer` (the stricter visualiser-frame gate): the dock owns no
       pixels, so it can adopt server voices the instant the link opens without waiting for a frame. */
-  /** Offline Effect-path voices for the Layers dock, refreshed at telemetry rate (the engine's
-      `stats()` allocates, so never per frame). */
-  effectVoices = $state.raw<VoiceStat[]>([]);
   dockVoices = $derived<DockVoice[]>(
-    // Effect chains: offline, the Sim plays through its private core engine, whose voices come
-    // back as the same `VoiceStat` wire shape the server streams ({@link effectVoices}).
-    selectDockVoices({
-      connected: true,
-      simVoices: [],
-      serverVoices: this.link === 'open' ? this.serverVoices : this.effectVoices,
-    }),
+    selectDockVoices({ connected: this.link === 'open', simVoices: this.effectVoices, serverVoices: this.serverVoices }),
   );
 
-  /** Graph keys with a sustained (loop/hold) voice alive right now — the graph rail's "now
-      playing" marks. Derived from {@link dockVoices}, the authoritative list, NOT the smoothed
-      display one (which decays late and would hold the mark lit past the sound). */
-  playingGraphs = $derived<Set<string>>(playingGraphKeys(this.dockVoices));
 
   /** DISPLAY-smoothed dock state (item H): the server streams stats at ~2 Hz, and adopting
       them raw made meters/chips step visibly. These mirror {@link busLevels}/{@link dockVoices}
@@ -1060,46 +811,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         : 'Library song is read-only — detach a copy in Objects to edit it',
   );
 
-  /** Ownership of a graph in the current resolved document. Local graphs may be unplaced (the
-      Objects view can open them), while canonical graphs are only editable after detachment. */
-  graphOwnership(graphKey: string | null = this.selectedPadKey): 'local' | 'canonical' | 'missing' {
-    if (!graphKey) return 'missing';
-    if (graphKey.startsWith('lib:')) {
-      return this.resolvedView.graphs[graphKey] && this.resolvedGraphPlacement(graphKey) ? 'canonical' : 'missing';
-    }
-    return this.graphs[graphKey] ? 'local' : 'missing';
-  }
-  /** The single graph-authoring capability. Every graph mutator and its UI must use this
-      boundary: canonical library graphs can be selected and played, but only local graphs can
-      be changed. Copy-as-source operations use {@link canCopyGraph} instead. */
-  canMutateGraph(graphKey: string | null = this.selectedPadKey): boolean {
-    return this.canEdit && this.graphOwnership(graphKey) === 'local';
-  }
-  /** Compatibility name for older view/controller call sites; it is deliberately derived from
-      the authoritative capability above rather than implementing a second policy. */
-  canEditGraph(graphKey: string | null): boolean {
-    return this.canMutateGraph(graphKey);
-  }
-  canMutateSelectedGraph = $derived(this.canMutateGraph(this.selectedPadKey));
-  canEditSelectedGraph = $derived(this.canMutateSelectedGraph);
-  /** Read-only graph copies are allowed to materialize local content. This is intentionally
-      separate from {@link canMutateGraph}: canonical graphs are valid copy sources, while the
-      viewer cannot author the resulting local copy. */
-  canCopyGraph(graphKey: string | null): boolean {
-    return this.canEdit && !!graphKey && !!this.resolvedView.graphs[graphKey] && this.graphOwnership(graphKey) !== 'missing';
-  }
-  private canMutateNode(node: GraphNode): boolean {
-    return this.canMutateSelectedGraph && !!this.selectedGraph?.nodes.some((candidate) => candidate.id === node.id);
-  }
-  selectedGraphEditBlockReason = $derived(
-    this.isViewer
-      ? 'Another client is editing'
-      : this.graphOwnership() === 'canonical'
-        ? 'This is a read-only library reference — detach the song in Objects to edit it'
-        : this.graphOwnership() === 'missing'
-          ? 'Select a graph placed in this section'
-          : null,
-  );
   /** Stable local-song membership guard for controllers and view identity checks. */
   isLocalSong(songId: string): boolean {
     return this.songs.some((song) => song.id === songId);
@@ -1135,15 +846,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     isViewer: () => this.isViewer,
     getInputMap: () => this.project?.inputMap ?? null,
     setInputMap: (inputMap) => this.setInputMap(inputMap),
-    setTriggerSource: (graphKey, source) => this.setTriggerSource(graphKey, source),
-    setSequenceResetSource: (nodeId, source) => {
-      const node = this.selectedGraph?.nodes.find((n) => n.id === nodeId);
-      // A vanished node is not a REFUSAL — nothing to keep the learn armed for, so report
-      // accepted and let the arm clear rather than leaving the user pressing pads at nothing.
-      return node ? this.setSequenceResetSource(node, source) : true;
-    },
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
-    selectedGraphNodes: () => this.selectedGraph?.nodes,
     setCueMidiSource: (effectId, source) => this.setCueSource(effectId, source),
     bindMapSource: (target, source) => this.bindFromMapLearn(target, source),
   });
@@ -1233,7 +936,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   private clearOscMirror(address: string): void {
-    this.sim.oscTable.delete(address);
     this.inputActivity.delete(activityKey({ kind: 'osc', address }));
     if (this.lastOscHeard?.address === address) this.lastOscHeard = null;
   }
@@ -1409,25 +1111,12 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     makeClient: () => WSClient = () =>
       new WSClient({ pin: readStoredPin(), hostToken: readHostToken() }),
   ) {
-    // Load the show library from storage BEFORE the sim is built and the engine link opens,
-    // so the sim's registries and the first setShow reflect the ACTIVE show's
-    // restored content. loadShowLibrary never throws: a valid library wins; else a legacy
-    // single blob is migrated to one "Default Show"; else a fresh "Untitled Show" is seeded.
-    // Hydrate the show + song libraries from storage into the controller (reserving their ids) and
-    // mirror the ACTIVE show's authored over the seed defaults — a migrated/fresh slice is partial,
-    // so applyAuthored fills any absent field. loadShowLibrary never throws: a valid library wins;
-    // else a legacy single blob migrates to one "Default Show"; else a fresh "Untitled Show" seeds.
+    // Hydrate the show + song libraries from storage into the controller (reserving their ids) BEFORE
+    // the sim is built and the engine link opens, and mirror the ACTIVE show's authored over the
+    // seed defaults — a fresh slice is partial, so applyAuthored fills any absent field. The v3
+    // loader never throws: a valid library wins, else a fresh "Untitled Show" is seeded.
     this.applyAuthored(this.showsCtl.hydrateFromStorage());
-    // The graph sandbox (transient until S08) starts from its seed, placed on seed-id sections.
-    this.applyLegacy(seedLegacySlice());
-    this.rehomeLoadedSelection();
-    // Make every pad-bound graph's trigger source EXPLICIT (a `drum` source from its padKey) and
-    // fold any legacy `on:'velocity'` switch into the canonical `value`+`bands` form — seed or
-    // restored, idempotent, authored graphs left unset.
-    this.normalizeGraphs();
-    // Build the sim from the (possibly restored) arrays — it snapshots `buses` by reference and
-    // indexes `effects`/`presets` into maps at construction, so it must see the hydrated arrays.
-    this.sim = new Sim(this.buses, this.effects, this.presets);
+    this.sim = new Sim();
     this.sim.pixelModel = this.labModel.pm;
     // Effect chains: the offline Sim plays the v3 show through its private core engine.
     this.ensureSimShow();
@@ -1436,59 +1125,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.client = makeClient();
   }
 
-  selectedPad = $derived(this.pads.find((p) => padKey(p) === this.selectedPadKey) ?? null);
-
-  // The resolved runtime view (`resolvedView`/`resolvedSongs`) + the `songLibraryList` are owned by
-  // {@link showsCtl} (R23) — the store exposes them via the getters alongside its field. Consumers
-  // (selectedGraph, graphLabel, showSource, the paste/clipboard region) read through those getters.
-
-  // Read through the RESOLVED graphs (S42), but only after the selection seam has established a
-  // real placement for canonical keys. Local unplaced graphs remain first-class Objects entries.
-  selectedGraph: voice.TriggerGraph | null = $derived.by(() => {
-    const key = this.selectedPadKey;
-    if (!key) return null;
-    if (this.graphs[key]) return this.resolvedView.graphs[key] ?? this.graphs[key] ?? null;
-    return this.resolvedGraphPlacement(key) ? this.resolvedView.graphs[key] ?? null : null;
-  });
-  beatPhase = $derived((this.beat % 4) / 4);
-
-  // `shows`/`activeShow` (show derived) and `activeSong` (over the RESOLVED song list) are owned by
-  // {@link showsCtl} (R23) — exposed via the getters alongside its field. The section-arrangement
-  // deriveds are owned by {@link sectionsCtl} (R24) and exposed via the getters below (they read the
-  // active song through that same seam).
   /** The active section (SetlistSection) in the active song — the section you play + edit.
-      Its flat `graphs` list drives hit-resolution + the Sections/Trigger views. */
+      Its Effect stack drives hit-resolution + the Sections / Effects views. */
   get activeSection(): SetlistSection | null {
     return this.sectionsCtl.activeSection;
-  }
-  /** The look-morph section list (`{ id, name, looks }`) the engine spawns on recall, the
-      offline sim recalls, and the Perform view lists — DERIVED from the active song's authored
-      sections so authored looks (S16) are the single source of truth (no separate fixture look
-      array to drift). `buildShow` reads this for `Show.sections`; the offline `setActiveSection`
-      recall resolves the look here. Empty when there is no active song. */
-  get sections(): Section[] {
-    return this.sectionsCtl.sections;
-  }
-  /** The reusable graph library: every EXISTING graph key with its display label — pad graphs
-      and authored graphs alike, no distinction — in graph insertion order (pads first, then
-      created/duplicated graphs). Drives the section picker + slot labels. A deleted graph drops
-      out (it's no longer in `graphs`). */
-  graphLibrary = $derived(Object.keys(this.graphs).map((key) => ({ key, label: this.graphLabel(key) })));
-
-  /** Per-graph last-fire wall-clock (`performance.now()` ms), keyed by graph key — display-only
-      state that drives the Graphs rail's fire indicator AND live-on-trigger node previews
-      (TouchDesigner-style: a trigger-driven node face is STATIC until its graph fires, then plays
-      live from that instant). Keyed per graph rather than "the last fire", so several graphs can
-      read as recently-fired at once and a card lights whether or not the fire came from this
-      song's section. This is a UI timestamp, NOT engine/render state, so core purity +
-      determinism are untouched. */
-  graphFireAt = $state<Record<string, number>>({});
-  /** Stamp a graph fire. THE one signal: every path lands here — the keyboard performance path
-      ({@link fireSectionGraph}), a local pad/MIDI hit offline, and the SERVER's voice engine
-      connected (its `graph fired` monitor event, read back in {@link wireClient}). */
-  markGraphFire(key: string): void {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    this.graphFireAt = { ...this.graphFireAt, [key]: now };
   }
   /** Recent input velocities per drum, for the velocity-sensitivity editor's live overlay
       (Trent, 2026-08-17: see the curve helping while you drum). Each entry is the RAW input
@@ -1514,20 +1154,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return inputMap ? applyDrumVelocity(inputMap, drumId, velocity) : velocity;
   }
 
-  /** The fire epoch of the graph open in the editor (or null if it hasn't fired this session) —
-      threaded into that graph's node previews so they animate on the graph's own fire. */
-  get selectedGraphFireAt(): number | null {
-    return this.selectedPadKey ? (this.graphFireAt[this.selectedPadKey] ?? null) : null;
-  }
-
-  /** Human label for a graph key (for the section lists + picker): the stored display name
-      (`graphNames`, populated for every graph incl. pad keys at hydrate), else a kit-derived pad
-      label, else the raw key. */
-  graphLabel(key: string): string {
-    // Resolved names (S42): a referenced library graph's display name lives in the resolved
-    // view, not the local `graphNames`; local names are a subset, so labels still resolve.
-    return graphsLib.graphLabelOf(this.resolvedView.graphNames, key, this.pads);
-  }
 
   // --- effect chains authoring (S05): EffectsAuthoringApi over EffectsController -----------------
   // The store implements the authoring contract by DELEGATING to {@link EffectsController}: every
@@ -1611,8 +1237,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return this.project?.inputMap ?? OFFLINE_PROJECT.inputMap;
   }
 
-  /** The active section as the pure ops' {@link EffectsSection}. Graph-era sections (and ones a
-      setlist op made) carry no Effect fields yet; they read as an empty stack. */
+  /** The active section as the pure ops' {@link EffectsSection}. */
   private get activeEffectsSection(): (EffectsSection & SetlistSection) | null {
     const section = this.activeSection;
     if (!section) return null;
@@ -1811,17 +1436,16 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   /**
-   * Bind a Cue Effect's source (the MIDI / OSC learn write). The binding guard reuses the graph
-   * trigger rule: a Cue is a `pad-trigger` claim, so it may share a note with a zone but not with
-   * a sequence reset, a global control or reserved CC 0. The v3 document has no graphs, so only
-   * the input map's claims (and globals) can collide. False = refused (the learn stays armed).
+   * Bind a Cue Effect's source (the MIDI / OSC learn write). A Cue is a `pad-trigger` claim, so it
+   * may share a note with a zone but not with a global control or reserved CC 0. False = refused
+   * (the learn stays armed).
    */
   private setCueSource(effectId: string, source: effectChain.CueSource): boolean {
     const effect = this.effectsCtl.effectById(effectId);
     if (!effect || effect.trigger.kind !== 'cue' || !this.effectsCtl.canEdit) return false;
-    const scope: voice.BindingScope | null = this.project ? { inputMap: this.project.inputMap, graphs: {} } : null;
+    const scope: voice.BindingScope | null = this.project ? { inputMap: this.project.inputMap, graphs: NO_GRAPHS } : null;
     if (scope) {
-      const asSource: TriggerSource =
+      const asSource: voice.TriggerSource =
         source.oscAddress !== undefined ? { kind: 'osc', address: source.oscAddress } : { kind: 'midi', note: source.midiNote, cc: source.midiCc };
       const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey: `cue:${effectId}`, nodeId: effectId };
       if (this.refuseBindings(voice.sourceBindingRejections(scope, asSource, self))) return false;
@@ -1896,15 +1520,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.mappings = next;
   }
 
-  /** MapModeApi: a continuous InputMapping's range. The string overload is the graph era's
-      modulation-edge range (the Modulation inspector), kept compiling until S08 deletes it. */
-  setMappingRange(target: effectChain.InputMappingTarget, rangeMin: number | undefined, rangeMax: number | undefined): void;
-  setMappingRange(edgeId: string, min: number, max: number): void;
-  setMappingRange(target: effectChain.InputMappingTarget | string, rangeMin: number | undefined, rangeMax: number | undefined): void {
-    if (typeof target === 'string') {
-      if (rangeMin !== undefined && rangeMax !== undefined) this.setEdgeMappingRange(target, rangeMin, rangeMax);
-      return;
-    }
+  /** MapModeApi: a continuous InputMapping's range. */
+  setMappingRange(target: effectChain.InputMappingTarget, rangeMin: number | undefined, rangeMax: number | undefined): void {
     if (!this.canEditMappings) return;
     const next = inputMappings.withMappingRange(this.mappings, this.mapTargetId(target), rangeMin, rangeMax);
     if (next === this.mappings) return;
@@ -1958,7 +1575,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     if (!this.project) return { ok: false, reason: 'Connect to the LEDrums server to bind a global control.' };
     const current = this.project.inputMap;
     const next: InputMap = { ...current, globalControls: withGlobalControlBinding(current.globalControls, action, patch) };
-    const [rejection] = voice.inputMapBindingRejections(current, next, this.graphs, { mappings: this.mappings });
+    const [rejection] = voice.inputMapBindingRejections(current, next, NO_GRAPHS, { mappings: this.mappings });
     if (rejection) return { ok: false, reason: this.bindingRefusalText(rejection) };
     const before = current.globalControls[action];
     const after = next.globalControls[action];
@@ -1972,14 +1589,20 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private get mappingBindingScope(): voice.BindingScope {
     return {
       inputMap: this.effectsInputMap,
-      graphs: this.graphs,
+      graphs: NO_GRAPHS,
       mappings: this.mappings,
       effects: this.resolvedSongs.flatMap((song) => song.sections.flatMap((section) => section.effects ?? [])),
     };
   }
 
   private bindingRefusalText(rejection: voice.BindingRejection): string {
-    return bindingRejectionMessage(rejection, this.drums, (key) => this.graphLabel(key));
+    return bindingRejectionMessage(rejection, this.drums, (key) => this.claimLabel(key));
+  }
+
+  /** A binding claim's display name: a Cue claim (`cue:<effectId>`) names its Effect. */
+  private claimLabel(key: string): string {
+    const effectId = key.startsWith('cue:') ? key.slice('cue:'.length) : null;
+    return (effectId && this.effectsCtl.effectById(effectId)?.name) || key;
   }
 
   /**
@@ -2370,7 +1993,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private forwardMidi(ev: MidiEvent): void {
     switch (ev.kind) {
       case 'note':
-        this.sim.setNote(ev.note, ev.velocity, ev.channel, ev.on && ev.velocity > 0);
         if (ev.on && ev.velocity > 0) {
           // Local WebMIDI never round-trips back as a server `input` echo, so record the
           // badge activity here (channel-filtered inside recordInputActivity).
@@ -2385,7 +2007,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
             // sole resolver/renderer and streams its frames/levels back — firing here as well would
             // double the hit (the echo loop). Authority principle, doc 03.
             //
-            // A note bound to a global control is CONSUMED and must not fire a pad/graph —
+            // A note bound to a global control is CONSUMED and must not fire an Effect —
             // the same precedence the server pins in `toInputEvent`, mirrored here so the two
             // modes agree on what a bound note does NOT do. The action itself stays
             // server-resolved (like Program Change / CC#0 recall), so offline it is inert.
@@ -2405,8 +2027,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         this.client.send({ t: 'midi', note: ev.note, velocity: ev.velocity, on: ev.on, channel: ev.channel });
         return;
       case 'cc':
-        // S37: a CC source node can MIDI-learn the next incoming controller; the live value
-        // feeds the offline sim's CC table so the graph preview (+ S38 readout) tracks it.
+        // A CC learn (global control, Cue, map mode) binds the next incoming controller; the live
+        // value feeds the offline Sim's engine so Controls and mappings track it.
         // Controller 0 is reserved for section recall and never learns/binds here.
         if (this.acceptsMidiChannel(ev.channel)) {
           const learning = this.midiMapLearnArmed;
@@ -2430,33 +2052,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     }
   }
 
-  // --- live persistence (show library ⇄ localStorage) ----------------------
-
-  /** Make every pad-bound graph's trigger source explicit, fold legacy velocity switches, and
-      hydrate a friendly display name onto every pad-keyed graph — the graph back-compat the
-      constructor and every show load run (idempotent). Delegates to the pure hydrate slice. */
-  private normalizeGraphs(): void {
-    const { graphs, graphNames, actions } = hydrateGraphs(
-      this.graphs,
-      this.graphNames,
-      this.pads,
-      (effectId) => this.effects.find((e) => e.id === effectId)?.params ?? [],
-      (presetId) => this.presetById(presetId)?.params,
-    );
-    this.graphs = graphs;
-    this.graphNames = graphNames;
-    // Announce anything the hydrate did on the user's behalf (R02) — the single choke point every
-    // load/adopt/show-switch funnels through, so a migration/auto-wire announces once and batched.
-    // A no-op hydrate (already Gen3) yields an empty summary, so this stays silent.
-    announceSystemActions(actions);
-  }
-
-  /** Reset every authored rune to the blank-document seed (via {@link seedDocumentV3}, plus the
-      graph-era sandbox seed) — the clean baseline a show SWITCH starts from, so no field of the
-      outgoing show survives. */
+  /** Reset every authored rune to the blank-document seed (via {@link seedDocumentV3}) — the clean
+      baseline a show SWITCH starts from, so no field of the outgoing show survives. */
   private resetAuthoredToSeed(): void {
     this.applyAuthored(seedDocumentV3());
-    this.applyLegacy(seedLegacySlice());
   }
 
   /** The sole document replacement boundary, including same-id server adoption. History is
@@ -2471,20 +2070,11 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.gestureSuppressPrev = false;
     this.suppressUndoSnapshot = false;
     // Save As snapshots the runes already live here. It changes document identity/lifetime, not
-    // authored content: boot backfill would resurrect deleted presets (and migration could edit
-    // graphs). Only genuinely loaded documents need seed defaults, registry union and migration.
+    // authored content. Only genuinely loaded documents need the seed defaults.
     if (source === 'loaded') {
       this.resetAuthoredToSeed();
       this.applyAuthored($state.snapshot(show.authored) as AuthoredStateV3);
-      // The graph sandbox's seed placements land on the loaded sections that share a seed id.
-      this.applyPlacements(seedSectionPlacements());
-      this.rehomeLoadedSelection();
-      this.normalizeGraphs();
     }
-    this.galleryBlock = null;
-    this.settingsBlock = null;
-    this.envTarget = null;
-    this.liveNodePositions = {};
     this.sectionClipboard = null;
     this.midi.cancelLearn();
     this.osc.cancel();
@@ -2495,10 +2085,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.syncTransport();
   }
 
-  /** Re-instantiation, not stopAll: the existing Sim owns private sequence/PRNG/latch/delay
-      state and registry references. No new Sim contract is needed to release all of them. */
+  /** Re-instantiation, not stopAll: the existing Sim owns a private core engine (voices, sequence /
+      PRNG / latch state). A fresh one releases all of it. */
   private replaceRuntime(): void {
-    this.sim = new Sim(this.buses, this.resolvedView.effects, this.resolvedView.presets);
+    this.sim = new Sim();
     this.sim.pixelModel = this.labModel.pm;
     this.sim.bpm = this.bpm;
     this.sim.beatsPerBar = this.beatsPerBar;
@@ -2513,10 +2103,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.snapshot();
   }
 
-  /** One field list for dependency tracking, history and persistence (the v3 document). The
-      songs are re-shaped to v3 sections (the store keeps graph-era `graphs` / `looks` on its
-      sections until S08); Effect / master arrays stay LIVE references — only
-      toAuthored/History materialize detached data, at their respective commit boundaries. */
+  /** One field list for dependency tracking, history and persistence (the v3 document). Effect /
+      master arrays stay LIVE references — only toAuthored/History materialize detached data, at
+      their respective commit boundaries. */
   private get authoredSource(): AuthoredStateV3 {
     const out: AuthoredStateV3 = {
       songs: this.songs.map(toEffectSong),
@@ -2534,22 +2123,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     };
     if (this.mappings.length > 0) out.mappings = this.mappings;
     return out;
-  }
-
-  /** The graph-era sandbox runes (live references) for undo checkpoints — see {@link LegacyGraphSlice}. */
-  private get legacySource(): LegacyGraphSlice {
-    return {
-      graphs: this.graphs,
-      graphNames: this.graphNames,
-      buses: this.buses,
-      presets: this.presets,
-      effects: this.effects,
-      selectedPadKey: this.selectedPadKey,
-      autoZoneGraphs: this.autoZoneGraphs,
-      placements: Object.fromEntries(
-        this.songs.flatMap((song) => song.sections.map((s) => [s.id, { graphs: s.graphs, looks: s.looks }] as const)),
-      ),
-    };
   }
 
   /** Materialize only at a save/flush/document-switch boundary. */
@@ -2586,37 +2159,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.bypassEdges.reset();
   }
 
-  /** Restore the graph-era sandbox (undo / document reset). */
-  private applyLegacy(l: LegacyGraphSlice): void {
-    this.graphs = l.graphs;
-    this.graphNames = l.graphNames;
-    this.buses = l.buses;
-    // Union, never replace: a stale slice must not drop the built-in generator presets / effects.
-    this.presets = unionPresets(l.presets);
-    this.effects = unionEffects(l.effects);
-    this.applyPlacements(l.placements);
-    this.selectedPadKey = l.selectedPadKey;
-    this.autoZoneGraphs = l.autoZoneGraphs;
-  }
-
-  /** Put graph-era placements (graph keys + looks) back onto the sections that share an id. */
-  private applyPlacements(placements: LegacyGraphSlice['placements']): void {
-    let changed = false;
-    const songs = this.songs.map((song) => {
-      let songChanged = false;
-      const sections = song.sections.map((section) => {
-        const placed = placements[section.id];
-        if (!placed) return section;
-        songChanged = true;
-        return { ...section, graphs: [...placed.graphs], looks: { ...placed.looks } };
-      });
-      if (!songChanged) return song;
-      changed = true;
-      return { ...song, sections };
-    });
-    if (changed) this.songs = songs;
-  }
-
   private pushUndoSnapshot(): void {
     if (this.restoringUndo || this.isViewer || this.suppressUndoSnapshot) return;
     // First mutation inside an open gesture (a pointer drag on a face param / slider): THIS
@@ -2628,7 +2170,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     const result = this.history.push(this.activeShowId, {
       authored: this.authoredSource,
       project: this.project,
-      legacy: this.legacySource,
     });
     if (result === 'oversized') {
       pushToast('Undo cleared: this document exceeds the 32 MiB history budget. Your edit is kept.');
@@ -2691,8 +2232,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.restoringUndo = true;
     this.resetAuthoredToSeed();
     this.applyAuthored(structuredClone(prev.authored));
-    this.applyLegacy(structuredClone(prev.legacy));
-    this.normalizeGraphs();
     this.replaceRuntime();
     // Restore the authoritative project slice (routing/geometry/IO) and re-send only the granular
     // edits whose slice actually moved, so the engine converges — a trigger-only undo leaves the
@@ -2720,19 +2259,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         this.scheduleSave(authoredMounted);
         authoredMounted = true;
       });
-      // The graph runes are a transient sandbox since effect chains (S05) — not persisted, so no
-      // per-graph subscription.
       $effect(() => {
         this.showsCtl.trackSongLibraryChanges();
         this.scheduleSave(poolMounted);
         poolMounted = true;
-      });
-      // Keep the offline sim's effect/preset registries in step with the RESOLVED view (S42), so a
-      // referenced section fires its own effects/presets in the in-browser preview — not just over
-      // the engine link. register* are idempotent upserts; re-runs on any ref/library change.
-      $effect(() => {
-        for (const e of this.resolvedView.effects) this.sim.registerEffect(e);
-        for (const p of this.resolvedView.presets) this.sim.registerPreset(p);
       });
     });
     if (typeof window !== 'undefined') {
@@ -2962,12 +2492,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       },
       onMonitor: (event) => {
         this.addMonitor(event);
-        // Connected, the SERVER's voice engine is the resolver: its "graph fired" monitor event
-        // is the only truth about which graph a hardware drum hit actually played — including a
-        // graph the local view never resolved (another song's section). Fold it into the one
-        // fire signal so the card indicator is the same subscription online and off.
-        const fired = graphFireKeyOf(event);
-        if (fired) this.markGraphFire(fired);
         // Effect fires connected: the server does not (yet) report `effect-fired` on the monitor
         // stream, so connected fire flashes come from the local intents (hit / audition) only.
       },
@@ -3056,29 +2580,19 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       case 'key':
         return { type: 'input', direction: 'out', source: 'web', destination: 'server', label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` };
       case 'setShow':
-        return { type: 'graph', direction: 'out', source: 'web', destination: 'server', label: 'Set show', detail: `${Object.keys(msg.show.graphs).length} graphs` };
+        return { type: 'graph', direction: 'out', source: 'web', destination: 'server', label: 'Set show', detail: `${countShowEffects(msg.show)} Effects` };
       default:
         return { type: 'system', direction: 'out', source: 'web', destination: 'server', label: msg.t };
     }
   }
 
-  /** Re-send the authored Show to the engine when it actually changed, so edits
-      (swap effect, tweak params/preset, rewire a graph, edit slots/buses) take
-      effect live — without this the server runs whatever Show it got at connect
-      time and keeps firing the original effects. Driven off the debounced autosave
-      tick. The {@link EngineLinkSync} signature guard skips no-op fires AND pure
-      node-position (x/y) drags, so dragging the graph doesn't needlessly reset engine
-      voices; transport lives on a separate message so tempo edits never resend the
-      Show. NOTE: setShow reseeds the engine (voices clear) — acceptable for authoring;
-      a finer-grained live-update message is a future refinement. */
   /** The engine's Show source with library references RESOLVED IN (S42): the sent Show carries the
-      referenced songs' graphs/effects/presets/sections (namespaced, collision-free) so the engine can
+      referenced songs' sections (namespaced, collision-free) so the engine can
       recallSection + fire a referenced section. Persistence (`toAuthored`) is untouched — it still
       stores refs, not copies — so canonical propagation survives a reload. `sections` already resolves
       via {@link activeSong}. */
   private get showSource(): EffectsShowSource {
     return {
-      format: 'effects',
       songs: this.songs.map(toEffectSong),
       songRefs: this.songRefs,
       canvasScenes: this.canvasScenes,
@@ -3194,21 +2708,15 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       if (now - this.lastVoiceStatsAt >= EFFECT_STATS_INTERVAL_MS) {
         this.lastVoiceStatsAt = now;
         this.effectVoices = this.sim.effectVoiceStats();
+        // Bus meters follow the same authority rule as the voice list: the server owns them when
+        // connected (streamed via onStats), so only publish the Sim's levels while offline.
+        this.busLevels = busLevelsOf(this.effectVoices);
       }
       this.pollSimEffectFires();
     }
-    this.voices = this.sim.voices.slice();
     this.log = this.sim.log.slice(0, 40);
     this.timeMs = this.sim.timeMs;
     this.beat = this.sim.beat;
-    // Bus meters follow the same authority rule as the voice list: the server owns them when
-    // connected (streamed via onStats). Writing the sim's levels here every rAF frame would clobber
-    // that ~2 Hz server value ~30× a second, so only publish sim levels while offline.
-    if (this.link !== 'open') {
-      const levels: Record<string, number> = {};
-      for (const b of this.buses) levels[b.id] = this.sim.busLevel(b.id);
-      this.busLevels = levels;
-    }
   }
 
   private addMonitor(event: Omit<MonitorEvent, 'id' | 'time'> | MonitorEvent): void {
@@ -3220,10 +2728,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.monitorEvents = [];
   }
 
-  /** Surface a client-side editor fault on the Monitor as an `error` event, so a
-      live-show failure (a thrown xyflow callback, a failed graph projection) is visible
-      in the Monitor timeline instead of silently corrupting the canvas. `source` groups
-      the fault (e.g. `trigger-graph`), `label` names it, `detail` carries the message. */
+  /** Surface a client-side editor fault on the Monitor as an `error` event, so a live-show
+      failure is visible in the Monitor timeline instead of failing silently. `source` groups the
+      fault, `label` names it, `detail` carries the message. */
   reportError(source: string, label: string, detail?: string): void {
     this.addMonitor({ type: 'error', direction: 'local', source, label, detail });
   }
@@ -3273,21 +2780,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     }, 350);
   }
 
-  private mappedDrumIdForMidiNote(note: number): string | null {
-    return this.project?.inputMap.midiNotes.find((m) => m.note === note)?.drumId ?? null;
-  }
-
-  private sourceDrumIdForTriggerSource(src: TriggerSource | undefined): string {
-    if (src?.kind === 'drum') return src.drumId;
-    if (src?.kind === 'midi' && src.note !== undefined) {
-      return this.mappedDrumIdForMidiNote(src.note) ?? this.pads[0]?.drumId ?? '';
-    }
-    return this.pads[0]?.drumId ?? '';
-  }
-
-  /** Offline hardware MIDI on the Effect path: ONE `hitEffects` carrying the zone the note map
-      claims AND the note, so the zone Effect and a Cue on that note each fire exactly once
-      (the Sim does not forward `setNote` into its engine). */
   /**
    * Offline: a note-on a MIDI-map mapping takes. The Sim's core engine performs fires and
    * continuous targets (it consumes the note before zones, as the server does), so the zone
@@ -3374,93 +2866,33 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.markLocalPreview();
   }
 
-  /** Fire the graph at `index` in the ACTIVE section's ordered graph list directly — the
-      computer-keyboard performance path (keys 1–9 → graphs 1–9, 0 → graph 10). Unlike
-      {@link hit} this does NOT filter by trigger-source match: it plays exactly the n-th graph
-      the active section lists, and is a no-op when the section has fewer graphs. */
-  fireSectionGraph(index: number): void {
-    const key = this.activeSection?.graphs[index];
-    const graph = key ? this.resolvedView.graphs[key] : undefined;
-    if (!key || !graph) return;
-    this.selectedPadKey = key; // show the graph that fired
-    this.markGraphFire(key); // card indicator + live-on-trigger node previews
-    const src = triggerSourceOf(graph);
-    // Connected: send the `fireGraph` INTENT (the exact graph key), not a synthetic MIDI/OSC
-    // source. The server fires precisely this graph — no re-resolution, so no zone-map/direct
-    // both-fire and no echo mis-fire (the old keyboard triple-fire). The local sim stays silent
-    // (authority principle, doc 03 §3).
-    if (this.link === 'open') {
-      this.client.send({ t: 'fireGraph', graphKey: key, velocity: this.velocity });
-      return;
-    }
-    // Offline preview: fire the local sim directly (no source-match filter — the n-th graph plays).
-    const idx = this.sections.findIndex((s) => s.id === this.activeSectionId);
-    const ctx = {
-      velocity: this.velocity,
-      sectionIndex: idx < 0 ? 0 : idx,
-      sectionCount: this.sections.length,
-      beatPhase: this.beatPhase,
-      sourceDrumId: this.sourceDrumIdForTriggerSource(src),
-      bpm: this.bpm,
-      beatsPerBar: this.beatsPerBar,
-    };
-    const resolved = this.sim.triggerGraph(this.graphLabel(key), graph, ctx, key);
-    this.addMonitor({ type: 'effect', direction: 'local', source: 'keyboard', label: this.graphLabel(key), detail: resolved.join(' | ') });
-    this.renderFrame();
-    this.snapshot();
-    this.markLocalPreview();
-  }
-
   togglePlay(): void {
     this.playing = !this.playing;
   }
 
-  stopBus(busId: string): void {
-    this.sim.stopBus(busId);
-    // Connected: the server's voice engine is authoritative — the local release alone
-    // changes nothing on the rig (the old "Release <bus>" buttons only ever stopped the sim).
-    if (this.link === 'open') this.client.send({ t: 'releaseBus', busId });
-    this.snapshot();
-  }
+  /** Release every live voice — the Sim offline, the server's engine when linked. */
   panic(): void {
     this.sim.stopAll();
     if (this.link === 'open') this.client.send({ t: 'releaseBus' });
     this.snapshot();
   }
 
-  // --- voice model (branch 1) ----------------------------------------------
-
-  setPolyphony(busId: string, poly: Polyphony): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    const b = this.buses.find((x) => x.id === busId);
-    if (b) b.polyphony = poly;
-  }
-  setCrossfade(busId: string, ms: number): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    const b = this.buses.find((x) => x.id === busId);
-    if (b) b.crossfadeMs = ms;
-  }
-
   // --- active section (U4: merged look-recall + arrange focus) -------------
 
   /**
-   * Activate a section — it becomes the one you're PLAYING and the one you're EDITING
-   * (U4 merged the old `recall` look-morph and `setArrangeSection` arrange focus). Sets
-   * `activeSectionId`, recalls the timed look-morph when a fixture look shares this id, and
-   * tells the engine to fire this section's graphs.
+   * Activate a section of the active song — it becomes the one you're PLAYING and the one you're
+   * EDITING (U4 merged the old recall and arrange focus). Sets `activeSectionId` and recalls it:
+   * the engine replaces the Always Effects and the Master chain.
    */
   setActiveSection(sectionId: string): void {
-    const look = this.sections.find((s) => s.id === sectionId);
-    if (!look) return;
+    if (!this.activeSongById?.sections.some((s) => s.id === sectionId)) return;
     this.activeSectionId = sectionId;
-    // Offline preview only: when connected the server engine spawns this section's looks
-    // itself (S15 engine parity), so firing the sim too would double-spawn. Mirror the
-    // outbound authority gate (S12) — the sim resolves only while the link is closed.
-    if (look && this.link !== 'open') {
-      // Effect path: the Sim recalls through its core engine (Always Effects + Master chain);
-      // the show must already hold this section, so load the current one first.
+    // Offline preview only: when connected the server engine recalls the section itself, so
+    // recalling the Sim too would double-spawn. Mirror the outbound authority gate (S12).
+    if (this.link !== 'open') {
+      // The show must already hold this section, so load the current one first.
       this.ensureSimShow();
-      this.sim.recallSection(look, this.activeSongId || null);
+      this.sim.recallSection(sectionId, this.activeSongId || null);
       this.snapshot();
     }
     if (this.link === 'open') {
@@ -3469,48 +2901,14 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   /**
-   * Keep the open graph inside the section on show. Runs whenever the active section is
-   * re-pointed (chip, arrows, recall, song switch, section add/paste/remove): a graph the new
-   * section also places stays open (a linked placement); otherwise the section's first graph
-   * opens, or nothing for an empty / absent section. Without this the Trigger view's rail lists
-   * the new section while the canvas still edits a graph from the old one.
+   * Keep the Effects selection inside the section on show. Runs whenever the active section is
+   * re-pointed (chip, arrows, recall, song switch, section add/paste/remove): the selected CELL is
+   * a grid coordinate, valid in every section — keep it and re-select that cell's first Effect in
+   * the new section (a Master selection stays).
    */
   private followActiveSection(): void {
-    // Effect chains: the selected CELL is a grid coordinate, valid in every section — keep it and
-    // re-select that cell's first Effect in the new section (a Master selection stays).
     const cell = this.effectsCtl.selectedCell;
     if (cell !== null && cell !== MASTER_CELL) this.effectsCtl.selectCell(cell);
-    const graphs = this.activeSection?.graphs ?? [];
-    if (this.selectedPadKey !== null && graphs.includes(this.selectedPadKey)) return;
-    this.selectedPadKey = graphs.find((key) => this.resolvedView.graphs[key]) ?? null;
-  }
-
-  /**
-   * A loaded document can carry an open graph its active section does not place — builds before
-   * {@link followActiveSection} let the two drift, and the drift was saved. Re-home it on load,
-   * but leave a deliberately open unplaced graph (an Objects entry in no section) alone. Undo
-   * does not run this: it restores the exact snapshot.
-   */
-  private rehomeLoadedSelection(): void {
-    const key = this.selectedPadKey;
-    if (key !== null && this.graphs[key] && setlist.graphPlacementCount(this.songs, key) === 0) return;
-    this.followActiveSection();
-  }
-
-  /**
-   * Select a graph within a section: make that section active (above) and open the graph in
-   * the canvas (highlighted via `selectedPadKey`). The Sections view and the Trigger view's
-   * section list both call this for select → activate + open + highlight. No-op-safe if the
-   * graph key is unknown.
-   */
-  selectGraphInSection(sectionId: string, graphKey: string): void {
-    const placement = this.resolvedView.songs
-      .flatMap((song) => song.sections.map((section) => ({ songId: song.id, section })))
-      .find(({ section }) => section.id === sectionId && section.graphs.includes(graphKey));
-    if (!placement || !this.resolvedView.graphs[graphKey]) return;
-    if (this.activeSongId !== placement.songId) this.setActiveSong(placement.songId);
-    this.setActiveSection(sectionId);
-    this.selectedPadKey = graphKey;
   }
 
   // --- authoritative project mutators (Patch graph: routing / geometry / IO) ------
@@ -3586,10 +2984,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   /** Who uses a drum zone (the zone-delete guard + the zones list): every Effect in that zone's
-      cell, in any show (the live one, inactive ones) or library song — `"<Effect> · <section>"`.
-      Effect chains replaced the graph users (the graph runes are an unpersisted sandbox now). The
-      name is kept for its callers. */
-  zoneGraphUsers(drumId: string, slot: number): string[] {
+      cell, in any show (the live one, inactive ones) or library song — `"<Effect> · <section>"`. */
+  zoneEffectUsers(drumId: string, slot: number): string[] {
     const songs: { sections: readonly { name: string; effects?: readonly effectChain.Effect[] }[] }[] = [
       ...this.songs,
       ...Object.values(this.showsCtl.showLibrary).filter((show) => show.id !== this.activeShowId).flatMap((show) => show.authored.songs ?? []),
@@ -3604,31 +3000,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       }
     }
     return [...users];
-  }
-
-  private drumZoneGraphName(source: TriggerSource, map = this.project?.inputMap): string | null {
-    if (source.kind !== 'drum' || source.zone === '') return null;
-    const drum = (this.project?.kit.drums ?? this.drums).find((drum) => drum.id === source.drumId);
-    if (!drum) return null;
-    const label = map ? zoneLabel(map, source.drumId, Number(source.zone)) : defaultZoneName(Number(source.zone));
-    return `${drum.label || drum.id} · ${label}`;
-  }
-
-  private isDefaultDrumZoneGraphName(name: string): boolean {
-    const normalized = name.trim().toLowerCase();
-    const map = this.project?.inputMap;
-    for (const drum of this.project?.kit.drums ?? this.drums) {
-      const drumName = (drum.label || drum.id).toLowerCase();
-      const labels = [
-        ...ZONE_LABELS,
-        ...Array.from({ length: 4 }, (_, slot) => defaultZoneName(slot)),
-        ...(map ? zoneSlotsForDrum(map, drum.id).map((slot) => zoneLabel(map, drum.id, slot)) : []),
-      ];
-      if ([' · ', ' • ', ' - '].some((separator) => labels.some((label) =>
-        normalized === `${drumName}${separator}${label.toLowerCase()}`,
-      ))) return true;
-    }
-    return false;
   }
 
   /**
@@ -3651,26 +3022,17 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         const remaining = zoneSlotsForDrum(inputMap, drum.id);
         for (const slot of zoneSlotsForDrum(this.project.inputMap, drum.id)) {
           if (remaining.includes(slot)) continue;
-          const users = this.zoneGraphUsers(drum.id, slot);
+          const users = this.zoneEffectUsers(drum.id, slot);
           if (users.length) {
             pushToast(`Remove this zone’s Effects before deleting it: ${users.join(', ')}`, { tone: 'error' });
             return false;
           }
         }
       }
-      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, this.graphs, { mappings: this.mappings }))) {
+      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, NO_GRAPHS, { mappings: this.mappings }))) {
         return false;
       }
       this.pushUndoSnapshot();
-      const names = { ...this.graphNames };
-      for (const [key, graph] of Object.entries(this.graphs)) {
-        const source = triggerSourceOf(graph);
-        if (source && this.isDefaultDrumZoneGraphName(this.graphLabel(key))) {
-          const name = this.drumZoneGraphName(source, inputMap);
-          if (name) names[key] = name;
-        }
-      }
-      this.graphNames = names;
       this.project = routing.applyInputMap(this.project, inputMap);
     }
     this.client.send({ t: 'setInputMap', inputMap });
@@ -3685,13 +3047,8 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private refuseBindings(rejections: readonly voice.BindingRejection[]): boolean {
     const first = rejections[0];
     if (!first) return false;
-    pushToast(bindingRejectionMessage(first, this.drums, (key) => this.graphLabel(key)), { tone: 'error' });
+    pushToast(bindingRejectionMessage(first, this.drums, (key) => this.claimLabel(key)), { tone: 'error' });
     return true;
-  }
-
-  /** The scope every binding check resolves against: this patch's input map + all graphs. */
-  private get bindingScope(): voice.BindingScope | null {
-    return this.project ? { inputMap: this.project.inputMap, graphs: this.graphs } : null;
   }
 
   setMidiChannel(channel: number | null): void {
@@ -3957,36 +3314,15 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.serverError = null;
   }
 
-  // --- setlist arranging (songs → sections → per-drum graph slots) ----------
+  // --- setlist arranging (songs → sections) ------------------------------------
   // Song CRUD (setActiveSong / createSong / renameSong / duplicateSong / removeSong) lives on
   // {@link showsCtl} (R23) — forwarded above. The section-arrangement edits (add/rename/remove/
-  // reorder sections + graph slots + looks, R24) live on {@link sectionsCtl} — thin, API-preserving
-  // forwarders below. They mutate the songs rune ShowsController owns, reached through the host.
+  // reorder/copy/paste, R24) live on {@link sectionsCtl} — thin, API-preserving forwarders below.
+  // They mutate the songs rune ShowsController owns, reached through the host.
 
-  /** Append a graph reference to a section's flat list (idempotent — see setlist.addGraph). */
-  addGraphToSection(sectionId: string, graphKey: string): boolean {
-    return this.sectionsCtl.addGraphToSection(sectionId, graphKey);
-  }
-  /** Create a graph and place it in one local section as one undoable transaction. */
-  createGraphInSection(sectionId: string, name?: string): string | null {
-    if (this.isViewer || !this.activeSongIsLocal) return null;
-    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
-    const section = song?.sections.find((candidate) => candidate.id === sectionId);
-    if (!song || !section) return null;
-    this.pushUndoSnapshot();
-    const key = freshId('graph', (candidate) => candidate in this.graphs);
-    const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
-    this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
-    this.graphNames = { ...this.graphNames, [key]: label };
-    this.songs = this.songs.map((candidate) =>
-      candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate,
-    );
-    this.selectedPadKey = key;
-    return key;
-  }
   /** Every drum zone the kit declares (Settings › Drum trigger zones), in kit order then slot
-      order, with the name a graph for it gets. The Add-graph list groups graphs under these, so a
-      zone with no graph yet still shows up — and can be given one. Empty offline (no input map). */
+      order, with its display title — the zones a new show's grid lays out. Empty offline (no
+      input map). */
   get drumZones(): Array<{ drumId: string; slot: number; title: string }> {
     const map = this.project?.inputMap;
     if (!map) return [];
@@ -3994,177 +3330,18 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       zoneSlotsForDrum(map, drum.id).map((slot) => ({
         drumId: drum.id,
         slot,
-        title: this.drumZoneGraphName({ kind: 'drum', drumId: drum.id, zone: String(slot) }) ?? `${drum.id} · ${slot}`,
+        title: `${drum.label || drum.id} · ${zoneLabel(map, drum.id, slot)}`,
       })),
     );
   }
 
-  /** Create a graph that fires from one drum zone, named after it, and place it in a local
-      section — one undo step. Returns the new key, or null when the section can't be edited. */
-  createZoneGraphInSection(sectionId: string, drumId: string, slot: number): string | null {
-    const source: TriggerSource = { kind: 'drum', drumId, zone: String(slot) };
-    const key = this.createGraphInSection(sectionId, this.drumZoneGraphName(source) ?? undefined);
-    const trigger = key ? this.graphs[key]?.nodes.find((node) => node.kind === 'trigger') : undefined;
-    if (trigger) trigger.source = source; // inside createGraphInSection's undo step: no new snapshot
-    return key;
-  }
-
-  /** Keys of graphs that are an exact copy of another graph (same nodes and wires). Lazy: only
-      computed while something reads it (the Add-graph list). */
-  duplicateGraphKeys = $derived(new Set(graphsLib.duplicateGraphGroups(this.graphs).flat()));
-
-  /** The exact duplicates no section uses — what {@link removeDuplicateGraphs} deletes. */
-  get redundantDuplicateGraphs(): string[] {
-    return graphsLib.redundantDuplicateKeys(this.graphs, (key) => setlist.graphPlacementCount(this.songs, key));
-  }
-
-  /** Delete every exact duplicate graph that no section uses, keeping one copy of each graph
-      (see `redundantDuplicateKeys`) — one undo step. Returns how many went. */
-  removeDuplicateGraphs(): number {
-    if (this.isViewer) return 0;
-    const doomed = this.redundantDuplicateGraphs;
-    if (doomed.length === 0) return 0;
-    this.pushUndoSnapshot();
-    let next = { graphs: this.graphs, graphNames: this.graphNames, songs: this.songs as Song[] };
-    for (const key of doomed) next = graphsLib.removeGraphEverywhere(next.graphs, next.graphNames, next.songs, key);
-    this.graphs = next.graphs;
-    this.graphNames = next.graphNames;
-    this.songs = next.songs;
-    if (this.selectedPadKey && doomed.includes(this.selectedPadKey)) this.selectedPadKey = null;
-    return doomed.length;
-  }
-
-  addMissingDrumZoneGraphs(sectionId: string): void {
-    if (!this.canEditActiveSong) return;
-    this.fillZoneGraphs([{ songId: this.activeSongId, sectionId }]);
-  }
-
-  /** Turn the show's "a graph per zone in every new section" on or off — one undo step. */
-  setAutoZoneGraphs(on: boolean): void {
-    if (this.isViewer || this.autoZoneGraphs === on) return;
-    this.pushUndoSnapshot();
-    this.autoZoneGraphs = on;
-  }
-
-  /** Give every section of every song in this show the zone graphs it lacks — one undo step.
-      Returns how many graphs were added. */
-  fillAllSectionsWithZoneGraphs(): number {
-    return this.fillZoneGraphs(this.songs.flatMap((song) => song.sections.map((section) => ({ songId: song.id, sectionId: section.id }))));
-  }
-
-  /** Add an empty zone graph to each target section for every declared zone none of its graphs
-      fires from, as one undo checkpoint. Only this show's own songs are touched. */
-  private fillZoneGraphs(targets: ReadonlyArray<{ songId: string; sectionId: string }>): number {
-    if (this.isViewer) return 0;
-    const zones = this.drumZones;
-    if (zones.length === 0 || targets.length === 0) return 0;
-    const wanted = new Set(targets.map((t) => `${t.songId}\u0000${t.sectionId}`));
-    const graphs = { ...this.graphs };
-    const names = { ...this.graphNames };
-    const sourceOf = (key: string): TriggerSource | undefined =>
-      graphs[key]?.nodes.find((node) => node.kind === 'trigger')?.source ?? this.triggerSource(key) ?? undefined;
-    let added = 0;
-    const songs = this.songs.map((song) => {
-      let changed = false;
-      const sections = song.sections.map((section) => {
-        if (!wanted.has(`${song.id}\u0000${section.id}`)) return section;
-        const missing = zones.filter((zone) => !section.graphs.some((key) => sourceMatchesPad(sourceOf(key), zone.drumId, String(zone.slot))));
-        if (missing.length === 0) return section;
-        const keys = [...section.graphs];
-        for (const zone of missing) {
-          const key = freshId('graph', (candidate) => candidate in graphs);
-          graphs[key] = zoneGraph(zone);
-          names[key] = zone.title;
-          keys.push(key);
-        }
-        added += missing.length;
-        changed = true;
-        return { ...section, graphs: keys };
-      });
-      return changed ? { ...song, sections } : song;
-    });
-    if (added === 0) return 0;
-    this.pushUndoSnapshot();
-    this.graphs = graphs;
-    this.graphNames = names;
-    this.songs = songs;
-    return added;
-  }
-
-  /** Clone a graph and place the clone in one local section as one undoable transaction. */
-  copyGraphToSection(sectionId: string, sourceKey: string, name?: string): string | null {
-    if (!this.canEditActiveSong) return null;
-    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
-    const section = song?.sections.find((candidate) => candidate.id === sectionId);
-    const source = this.resolvedView.graphs[sourceKey];
-    if (!song || !section || !source) return null;
-    this.pushUndoSnapshot();
-    const key = freshId('graph', (candidate) => candidate in this.graphs);
-    this.graphs = { ...this.graphs, [key]: graphsLib.cloneGraph($state.snapshot(source) as TriggerGraph) };
-    this.graphNames = {
-      ...this.graphNames,
-      [key]: name?.trim() || `${this.graphLabel(sourceKey)} copy`,
-    };
-    this.songs = this.songs.map((candidate) =>
-      candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate,
-    );
-    this.selectedPadKey = key;
-    return key;
-  }
-  /** Link one exact placement to another placement's graph. */
-  linkGraphPlacement(
-    sourceSongId: string,
-    sourceSectionId: string,
-    sourceGraphKey: string,
-    targetSongId: string,
-    targetSectionId: string,
-    targetGraphKey: string,
-  ): void {
-    const wasOpen = this.activeSectionId === targetSectionId && this.selectedPadKey === targetGraphKey;
-    this.sectionsCtl.linkGraphPlacement(sourceSongId, sourceSectionId, sourceGraphKey, targetSongId, targetSectionId, targetGraphKey);
-    // The target placement now holds the source graph; if it was the one open, follow it rather
-    // than leaving the canvas on the replaced graph, which this section no longer places.
-    if (wasOpen && this.activeSection?.graphs.includes(sourceGraphKey)) this.selectedPadKey = sourceGraphKey;
-  }
-  /** Make one linked placement an independent deep copy. When that placement is the graph open
-      in the canvas, the canvas moves to the copy — the placement you were editing — rather than
-      staying on the shared original, which this section no longer places. */
-  unlinkGraphPlacement(songId: string, sectionId: string, graphKey: string): void {
-    const section = this.songs.find((song) => song.id === songId)?.sections.find((s) => s.id === sectionId);
-    const index = section?.graphs.indexOf(graphKey) ?? -1;
-    const wasOpen = this.activeSectionId === sectionId && this.selectedPadKey === graphKey;
-    this.sectionsCtl.unlinkGraphPlacement(songId, sectionId, graphKey);
-    if (!wasOpen || index < 0) return;
-    const copy = this.songs.find((song) => song.id === songId)?.sections.find((s) => s.id === sectionId)?.graphs[index];
-    if (copy && copy !== graphKey) this.selectedPadKey = copy;
-  }
-  /** Remove a graph reference from a section's flat list. */
-  removeGraphFromSection(sectionId: string, graphKey: string): void {
-    this.sectionsCtl.removeGraphFromSection(sectionId, graphKey);
-  }
-  /** Replace a section's whole graph list (de-duplicated, order preserved) — for reorder. */
-  setSectionGraphs(sectionId: string, graphs: string[]): void {
-    this.sectionsCtl.setSectionGraphs(sectionId, graphs);
-  }
   /** Reorder a section in the active song by drag/drop. */
   moveSection(sectionId: string, toIndex: number): void {
     this.sectionsCtl.moveSection(sectionId, toIndex);
   }
-  /** Move one graph placement within a section or across sections by drag/drop. */
-  moveGraphPlacement(fromSectionId: string, graphKey: string, toSectionId: string, toIndex: number): void {
-    this.sectionsCtl.moveGraphPlacement(fromSectionId, graphKey, toSectionId, toIndex);
-  }
-  /** Set (or clear) the effect a section LOOPS on a bus — its "look" (S16). */
-  setLook(sectionId: string, busId: string, effectId: string | null): void {
-    this.sectionsCtl.setLook(sectionId, busId, effectId);
-  }
+  /** Append a new empty section to the active song and make it active. */
   addSongSection(name: string): void {
-    const before = this.activeSectionId;
     this.sectionsCtl.addSongSection(name);
-    const added = this.activeSectionId;
-    if (!this.autoZoneGraphs || !added || added === before) return;
-    // Folds into the checkpoint the new section just took: one undo removes section AND graphs.
-    this.batchIntoCurrentUndo(() => this.fillZoneGraphs([{ songId: this.activeSongId, sectionId: added }]));
   }
   /** Rename a section of the active song (no-op-safe on an unknown id). */
   renameSection(sectionId: string, name: string): void {
@@ -4188,25 +3365,18 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
 
   // --- system clipboard copy / paste (S44, group K) ------------------------------
-  // Copy lifts an authored thing PLUS its dependency closure into a portable ClipDoc (clipdoc.ts)
-  // and writes the JSON to the system clipboard, so it pastes across browser sessions and servers.
-  // Sources are the RESOLVED view (S42) so a referenced-library graph/section/song copies its
+  // Copy lifts a section / song PLUS the canvas scenes its Effects play into a portable ClipDoc
+  // (clipdoc.ts) and writes the JSON to the system clipboard, so it pastes across browser sessions
+  // and servers. Sources are the RESOLVED view (S42) so a referenced library song copies its
   // materialized content, not a dangling ref. Paste parses defensively (foreign/malformed ⇒ a
-  // friendly toast, never a crash), remaps every incoming id against THIS show (built-ins kept,
-  // content-equal deps reused — no duplicates on re-paste), then unions the fresh closure and
-  // inserts the primary object. The pure build/parse/remap lives in clipdoc.ts; this region is the
-  // thin store adapter (clipboard IO + rune mutation + toasts).
+  // friendly toast, never a crash), gives the section / song fresh ids, reuses content-equal
+  // scenes (no duplicates on re-paste), then inserts it. The pure build/parse/remap lives in
+  // clipdoc.ts; this region is the thin store adapter (clipboard IO + rune mutation + toasts).
 
-  /** The resolved-view slices a copy extracts its closure from — snapshotted so the serialized
-      envelope carries plain data, never live rune proxies. */
-  private clipSources(): ClosureSources {
-    return {
-      graphs: $state.snapshot(this.resolvedView.graphs),
-      graphNames: $state.snapshot(this.resolvedView.graphNames),
-      effects: $state.snapshot(this.resolvedView.effects) as EffectDef[],
-      presets: $state.snapshot(this.resolvedView.presets) as Preset[],
-      canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
-    };
+  /** The show's authored scenes a copy carries — snapshotted so the serialized envelope carries
+      plain data, never live rune proxies. */
+  private clipSources(): { canvasScenes: CanvasScene[] } {
+    return { canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[] };
   }
 
   /** Provenance stamped on every exported ClipDoc (advisory only — never gates paste). */
@@ -4224,26 +3394,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return undefined;
   }
 
-  private resolvedGraphPlacement(graphKey: string): { songId: string; sectionId: string } | undefined {
-    for (const song of this.resolvedView.songs) {
-      const section = song.sections.find((candidate) => candidate.graphs.includes(graphKey));
-      if (section) return { songId: song.id, sectionId: section.id };
-    }
-    return undefined;
-  }
-
-  /** Select a graph from the Objects view or a section. Unplaced local graphs remain selectable;
-      canonical graphs must have a real resolved placement before they can enter the editor. */
-  selectGraph(graphKey: string): void {
-    if (!this.resolvedView.graphs[graphKey]) return;
-    const placement = this.resolvedGraphPlacement(graphKey);
-    if (placement) {
-      this.selectGraphInSection(placement.sectionId, graphKey);
-      return;
-    }
-    if (this.graphs[graphKey]) this.selectedPadKey = graphKey;
-  }
-
   /** Serialize a ClipDoc to the system clipboard and toast the outcome. */
   private async writeClip(doc: ClipDoc, okMessage: string): Promise<void> {
     const generation = this.documentGeneration;
@@ -4254,13 +3404,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     });
   }
 
-  /** Copy a graph (by key) + its effect/preset closure to the system clipboard. */
-  async copyGraphToClipboard(key: string): Promise<void> {
-    if (!this.resolvedView.graphs[key]) return;
-    await this.writeClip(buildGraphClipDoc(key, this.clipSources(), this.clipMeta()), 'Graph copied.');
-  }
-
-  /** Copy a section + its graphs' closure to the system clipboard. Keeps the in-app section
+  /** Copy a section + the scenes it plays to the system clipboard. Keeps the in-app section
       clipboard ({@link copySection}) written in PARALLEL as a same-session fast path. */
   async copySectionToClipboard(sectionId: string): Promise<void> {
     const section = this.findResolvedSection(sectionId);
@@ -4272,41 +3416,32 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     );
   }
 
-  /** Copy a song + its full closure to the system clipboard. */
+  /** Copy a song + the scenes it plays to the system clipboard. */
   async copySongToClipboard(songId: string): Promise<void> {
     const song = this.resolvedView.songs.find((s) => s.id === songId);
     if (!song) return;
     await this.writeClip(buildSongClipDoc($state.snapshot(song), this.clipSources(), this.clipMeta()), 'Song copied.');
   }
 
-  /** The local-show reconciliation context a paste remaps against: this show's registries (for
-      content-reuse) + which effect ids are built-in registry vocabulary (kept verbatim). `mint` is
-      injected only by tests; production uses the reservation-safe default. */
+  /** The local-show reconciliation context a paste remaps against: this show's scenes (for
+      content-reuse) and its section ids. `mint` is injected only by tests; production uses the
+      reservation-safe default. */
   private remapCtx(mint?: RemapMint): RemapContext {
     return {
-      graphs: $state.snapshot(this.graphs),
-      effects: $state.snapshot(this.effects) as EffectDef[],
-      presets: $state.snapshot(this.presets) as Preset[],
       canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[],
       sectionIds: this.resolvedView.songs.flatMap((song) => song.sections.map((section) => section.id)),
-      isBuiltInEffectId: (id) => EFFECTS.some((e) => e.id === id),
       mint,
     };
   }
 
-  /** Union a materialized paste's fresh closure into the runes (reused/built-in deps are absent)
-      and insert its primary object — mirrors {@link detachSongReference}. Sim registries re-sync
-      through the resolved-view effect. */
+  /** Union a materialized paste's fresh scenes into the show (reused ones are absent) and insert
+      its section / song — mirrors {@link detachSongReference}. */
   private applyRemapResult(res: RemapResult): void {
-    // Reserve the carried node/edge ids (and remapped domain ids) FIRST, so a later mint into the
-    // pasted content can't collide with an id that arrived verbatim from another machine.
+    // Reserve the carried Effect ids / device uids FIRST, so a later mint into the pasted content
+    // can't collide with an id that arrived verbatim from another machine.
     reserveIds(remapResultIds(res));
-    if (Object.keys(res.graphs).length > 0) this.graphs = { ...this.graphs, ...res.graphs };
-    if (Object.keys(res.graphNames).length > 0) this.graphNames = { ...this.graphNames, ...res.graphNames };
-    this.unionRemapDeps(res);
-    if (res.kind === 'graph' && res.graphKey) {
-      this.selectedPadKey = res.graphKey;
-    } else if (res.kind === 'section' && res.section) {
+    this.unionCanvasScenes(res.canvasScenes);
+    if (res.kind === 'section' && res.section) {
       this.sectionsCtl.insertSection(res.section);
     } else if (res.kind === 'song' && res.song) {
       const song = res.song;
@@ -4315,38 +3450,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     }
   }
 
-  /** Add a materialized closure's fresh effects / presets / canvas scenes (reused and built-in
-      deps are absent from `res`, so nothing is duplicated). */
-  private unionRemapDeps(res: RemapResult): void {
-    if (res.effects.length > 0) this.effects = [...this.effects, ...res.effects];
-    if (res.presets.length > 0) this.presets = [...this.presets, ...res.presets];
-    if (res.canvasScenes.length > 0) this.canvasScenes = [...this.canvasScenes, ...res.canvasScenes];
-  }
-
-  // --- save / load to a file ---------------------------------------------------------------
-  // The file is the SAME ClipDoc JSON the clipboard carries (pretty-printed), so a saved graph
-  // can also be pasted and a copied one saved: one format, two transports. Load goes through the
-  // same remap as paste — every id is re-keyed against this show, built-in effects keep their
-  // ids, identical custom effects are reused rather than duplicated. The `apply…File` methods are
-  // the IO-free heart (text in, result out) so they are unit-testable; the `…FromFile` wrappers add
-  // the file panel and the toast.
-
-  /** Save a graph (by key) and the effects/presets/scenes it uses to a file the user picks. */
-  async saveGraphToFile(key: string): Promise<SaveOutcome | null> {
-    if (!this.resolvedView.graphs[key]) return null;
-    const label = this.graphLabel(key);
-    const doc = buildGraphClipDoc(key, this.clipSources(), this.clipMeta());
-    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'graph')}${GRAPH_FILE_EXT}`, `Saved “${label}”.`);
-  }
-
-  /** Save one node and what it uses to a file. `label` names the file (the inspector passes the
-      node's effect or kind name). The trigger and output anchors are not nodes you can move
-      between graphs, so they don't save. */
-  async saveNodeToFile(node: GraphNode, label: string): Promise<SaveOutcome | null> {
-    if (isAnchorNode(node)) return null;
-    const doc = buildNodeClipDoc($state.snapshot(node) as GraphNode, this.clipSources(), this.clipMeta());
-    return this.writeFile(JSON.stringify(doc, null, 2), `${safeFileName(label, 'node')}${NODE_FILE_EXT}`, `Saved the ${label} node.`);
-  }
+  // --- save to a file (Effect / cell / device files; see the Files region above) ----------------
 
   private async writeFile(text: string, fileName: string, okMessage: string): Promise<SaveOutcome> {
     const generation = this.documentGeneration;
@@ -4355,128 +3459,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     if (outcome === 'saved') pushToast(okMessage, { tone: 'success' });
     else if (outcome === 'failed') pushToast('Couldn’t save the file.', { tone: 'error' });
     return outcome;
-  }
-
-  /** Ask for a file, then hand its text to `apply` and toast the result. Guards against the show
-      being replaced while the panel was open. */
-  private async readFileThen(apply: (text: string, name: string) => FileLoadResult): Promise<FileLoadResult | null> {
-    const generation = this.documentGeneration;
-    const opened: OpenOutcome = await openTextFile();
-    if (generation !== this.documentGeneration || opened === 'cancelled') return null;
-    const result: FileLoadResult = opened === 'failed' ? { ok: false, message: 'Couldn’t read that file.' } : apply(opened.text, opened.name);
-    pushToast(result.message, { tone: result.ok ? 'success' : 'error' });
-    return result;
-  }
-
-  /** Parse file text as one kind of ClipDoc, remapped against this show. */
-  private remapFile(text: string, want: 'graph' | 'node'): RemapResult | { error: string } {
-    const doc = parse(text);
-    if (isClipParseError(doc)) return { error: friendlyFileMessage(doc.reason) };
-    if (doc.kind !== want) {
-      const where = doc.kind === 'node' ? 'load it from a node’s inspector' : doc.kind === 'graph' ? 'load it from a graph’s right-click menu' : 'paste it instead';
-      return { error: `That file holds a ${doc.kind}, not a ${want} — ${where}.` };
-    }
-    const res = remapClipDoc(doc, this.remapCtx());
-    return isClipParseError(res) ? { error: friendlyFileMessage(res.reason) } : res;
-  }
-
-  /**
-   * Replace a graph's contents with a graph file — one undo step. The graph keeps its key, its
-   * name and every section it is placed in (a linked graph changes everywhere, as any edit does).
-   * It also keeps the pad it fires from when it has one: the file's trigger is only used when
-   * this graph's trigger is unassigned, so loading a look onto the snare graph doesn't retarget
-   * it to the kick the file was saved from.
-   */
-  applyGraphFileTo(key: string, text: string): FileLoadResult {
-    if (!this.canMutateGraph(key)) return { ok: false, message: this.isViewer ? 'This show is read-only.' : 'This graph is a read-only library reference.' };
-    const res = this.remapFile(text, 'graph');
-    if ('error' in res) return { ok: false, message: res.error };
-    const graph = res.graphKey ? res.graphs[res.graphKey] : undefined;
-    if (!graph) return { ok: false, message: friendlyFileMessage('malformed') };
-    const current = this.graphs[key]?.nodes.find((node) => node.kind === 'trigger');
-    const incoming = graph.nodes.find((node) => node.kind === 'trigger');
-    if (current?.source && incoming) incoming.source = structuredClone($state.snapshot(current.source));
-    this.pushUndoSnapshot();
-    this.batchIntoCurrentUndo(() => {
-      reserveIds(remapResultIds(res));
-      this.unionRemapDeps(res);
-      this.graphs = { ...this.graphs, [key]: graph };
-    });
-    return { ok: true, message: `Loaded into “${this.graphLabel(key)}”.`, graphKey: key };
-  }
-
-  /** Add a graph file to a section of the active song as a NEW graph — one undo step. It is named
-      from the file (its saved name, else the file name) and takes the file's trigger as-is. */
-  applyGraphFileToSection(sectionId: string, text: string, fileName = ''): FileLoadResult {
-    if (!this.canEditActiveSong) return { ok: false, message: this.activeSongEditBlockReason ?? 'This song is read-only.' };
-    const song = this.songs.find((candidate) => candidate.id === this.activeSongId);
-    if (!song?.sections.some((section) => section.id === sectionId)) return { ok: false, message: 'That section is gone.' };
-    const res = this.remapFile(text, 'graph');
-    if ('error' in res) return { ok: false, message: res.error };
-    const key = res.graphKey;
-    const graph = key ? res.graphs[key] : undefined;
-    if (!key || !graph) return { ok: false, message: friendlyFileMessage('malformed') };
-    const name = res.graphNames[key]?.trim() || fileStem(fileName) || graphsLib.nextGraphName(this.graphNames);
-    this.pushUndoSnapshot();
-    this.batchIntoCurrentUndo(() => {
-      reserveIds(remapResultIds(res));
-      this.unionRemapDeps(res);
-      this.graphs = { ...this.graphs, [key]: graph };
-      this.graphNames = { ...this.graphNames, [key]: name };
-      this.songs = this.songs.map((candidate) => (candidate.id === song.id ? setlist.addGraph(candidate, sectionId, key) : candidate));
-      this.selectedPadKey = key;
-    });
-    return { ok: true, message: `Loaded “${name}”.`, graphKey: key };
-  }
-
-  /**
-   * Load a node file onto a node of the selected graph — one undo step. A file of the SAME kind
-   * replaces the node's settings in place: it keeps its id, its position and its wires. A file of
-   * a DIFFERENT kind would leave those wires meaningless, so it is added beside the node instead
-   * (unwired) and the result names the new node.
-   */
-  applyNodeFileTo(target: GraphNode, text: string): FileLoadResult {
-    const g = this.selectedGraph;
-    if (!g || !this.canMutateNode(target) || isAnchorNode(target)) return { ok: false, message: 'This node can’t be changed.' };
-    const res = this.remapFile(text, 'node');
-    if ('error' in res) return { ok: false, message: res.error };
-    const loaded = res.node;
-    if (!loaded || isAnchorNode(loaded)) return { ok: false, message: 'That file holds a graph anchor, which can’t be loaded as a node.' };
-    const sameKind = loaded.kind === target.kind || (isEffectNode(loaded) && isEffectNode(target));
-    this.pushUndoSnapshot();
-    let nodeId = target.id;
-    this.batchIntoCurrentUndo(() => {
-      reserveIds(remapResultIds(res));
-      this.unionRemapDeps(res);
-      if (sameKind) {
-        const next: GraphNode = { ...loaded, id: target.id, x: target.x, y: target.y };
-        g.nodes = g.nodes.map((node) => (node.id === target.id ? next : node));
-        if (this.settingsBlock?.id === target.id) this.settingsBlock = null;
-        if (this.galleryBlock?.id === target.id) this.galleryBlock = null;
-        if (this.envTarget?.block.id === target.id) this.envTarget = null;
-      } else {
-        nodeId = this.placeClone(loaded, target.x + 36, target.y + 36)?.id ?? '';
-      }
-    });
-    if (!nodeId) return { ok: false, message: 'There was no room to add the node.' };
-    return sameKind
-      ? { ok: true, message: 'Loaded the node’s settings.', nodeId }
-      : { ok: true, message: `That file holds a different kind of node, so it was added beside this one.`, nodeId };
-  }
-
-  /** Right-click → Load into graph: pick a graph file and replace this graph's contents. */
-  loadGraphFromFile(key: string): Promise<FileLoadResult | null> {
-    return this.readFileThen((text) => this.applyGraphFileTo(key, text));
-  }
-
-  /** Pick a graph file and add it to a section as a new graph. */
-  loadGraphFileIntoSection(sectionId: string): Promise<FileLoadResult | null> {
-    return this.readFileThen((text, name) => this.applyGraphFileToSection(sectionId, text, name));
-  }
-
-  /** Inspector → Load: pick a node file and load it onto (or beside) `target`. */
-  loadNodeFromFile(target: GraphNode): Promise<FileLoadResult | null> {
-    return this.readFileThen((text) => this.applyNodeFileTo(target, text));
   }
 
   /**
@@ -4522,19 +3504,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     pushToast(result.message, { tone: result.ok ? 'success' : 'error' });
   }
 
-  /** Paste a graph from the system clipboard into the show. Opens the manual paste-text fallback
-      when the browser blocks clipboard reads. */
-  async pasteGraphFromClipboard(): Promise<void> {
-    const generation = this.documentGeneration;
-    const text = await readClipboardText();
-    if (generation !== this.documentGeneration) return;
-    if (text === null) {
-      this.pasteFallback = { context: 'graph' };
-      return;
-    }
-    this.finishPaste(this.materializePaste(text, { context: 'graph' }));
-  }
-
   /** Paste a section from the system clipboard into the active song. When clipboard reads are
       blocked, fall back to the in-app section clipboard if present, else the paste-text dialog. */
   async pasteSectionFromClipboard(): Promise<void> {
@@ -4552,7 +3521,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.finishPaste(this.materializePaste(text, { context: 'section' }));
   }
 
-  /** Submit manually-pasted text from the graph/section fallback dialog. */
+  /** Submit manually-pasted text from the section fallback dialog. */
   submitPasteFallback(text: string): void {
     const ctx = this.pasteFallback;
     this.pasteFallback = null;
@@ -4594,105 +3563,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     this.songPasteOpen = false;
   }
 
-  /** Author a brand-new, empty trigger graph (just the implicit trigger input) and
-      select it for editing. Returns its key. The label defaults to "New graph N"
-      (first unused N). Persisted via the authored-state autosave. */
-  createGraph(name?: string): string {
-    if (!this.canEditActiveSong) return this.selectedPadKey ?? ''; // viewer or canonical library: authoring no-op
-    this.pushUndoSnapshot();
-    const key = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
-    const label = name?.trim() || graphsLib.nextGraphName(this.graphNames);
-    this.graphs = { ...this.graphs, [key]: graphsLib.buildEmptyGraph() };
-    this.graphNames = { ...this.graphNames, [key]: label };
-    this.selectedPadKey = key;
-    return key;
-  }
-
-  /** Rename ANY graph — its display label in `graphNames`. Works on every graph key (pad graphs
-      included — pad-label hydration seeds their names). The autosave-consistent wrapper the
-      Inspector + Sections rename fields call. A blank name keeps the existing label (mirrors
-      {@link renameSong}); an unknown key (not in `graphs`) is a no-op. Persists via autosave. */
-  renameGraph(key: string, name: string): void {
-    if (!this.canEditGraph(key)) return;
-    if (!(key in this.graphs)) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    this.graphNames = { ...this.graphNames, [key]: trimmed };
-  }
-
-  /** Duplicate ANY graph under a fresh authored key: deep-clone its nodes/edges (independent of
-      the source), label it "<name> copy", and select it for editing. Mirrors
-      {@link duplicateSong}/{@link duplicateSection}. Returns the new key, or null if `key` is
-      unknown. The clone is a first-class generic graph (`graph-<n>` key) regardless of whether
-      the source was a pad or authored graph; its trigger source is copied verbatim, so a
-      duplicated pad graph keeps firing the same drum until rebound. NOT added to any section —
-      the user places it where they want (reuse is by reference). Persists via autosave. */
-  duplicateGraph(key: string): string | null {
-    if (!this.canCopyGraph(key)) return null;
-    const src = this.resolvedView.graphs[key];
-    if (!src) return null;
-    this.pushUndoSnapshot();
-    const newKey = freshId('graph', (k) => k in this.graphs); // global uniqueness (survives reload)
-    const clone = graphsLib.cloneGraph($state.snapshot(src) as TriggerGraph);
-    this.graphs = { ...this.graphs, [newKey]: clone };
-    this.graphNames = { ...this.graphNames, [newKey]: `${this.graphLabel(key)} copy` };
-    this.selectedPadKey = newKey;
-    return newKey;
-  }
-
-  /** Delete ANY graph everywhere: drop it from `graphs` + `graphNames`, and purge its key from
-      EVERY section across ALL songs (no dangling references). Works on every graph key — a pad
-      graph is deletable too; a deleted pad graph leaves its pad SILENT (no respawn) until a
-      graph with a matching trigger source exists again (hit-resolution is by source). When the
-      deleted graph was the open/selected one, clear the selection. An unknown key (not in
-      `graphs`) is a no-op. Persists via the authored autosave. */
-  deleteGraph(key: string): void {
-    if (!this.canEditGraph(key)) return;
-    if (!(key in this.graphs)) return;
-    this.pushUndoSnapshot();
-    const next = graphsLib.removeGraphEverywhere(this.graphs, this.graphNames, this.songs, key);
-    this.graphs = next.graphs;
-    this.graphNames = next.graphNames;
-    this.songs = next.songs;
-    if (this.selectedPadKey === key) this.selectedPadKey = null;
-  }
-
-  // --- trigger source (what fires a graph — U1 model; Inspector UI is a later slice) ---
-
-  /** Set the trigger node's source (drum / midi / osc) for a graph. The future
-      Trigger-node Inspector calls this — an optimistic local write the authored autosave
-      persists (the source lives on the graph's trigger node, already inside `graphs`). No
-      WS message: resolving a fire from the source is a later slice. No-op if the graph or
-      its trigger node is missing. */
-  setTriggerSource(graphKey: string, source: TriggerSource): boolean {
-    if (!this.canEditGraph(graphKey)) return false;
-    const g = this.graphs[graphKey];
-    if (!g) return false;
-    const trig = g.nodes.find((n) => n.kind === 'trigger');
-    if (!trig) return false;
-    // BINDING GUARD — a trigger source may share a note with a zone (same group) but not
-    // with a sequence reset or a global control. See `binding-claims`.
-    const scope = this.bindingScope;
-    if (scope) {
-      const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey, nodeId: trig.id };
-      if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
-    }
-    this.pushUndoSnapshot();
-    const name = this.drumZoneGraphName(source);
-    if (name && this.isDefaultDrumZoneGraphName(this.graphLabel(graphKey))) {
-      this.graphNames = { ...this.graphNames, [graphKey]: name };
-    }
-    trig.source = source;
-    return true;
-  }
-
-  /** The explicit trigger source for a graph (what the Inspector reads). undefined when
-      the graph/trigger is missing, or an authored graph has no source bound yet. */
-  triggerSource(graphKey: string): TriggerSource | undefined {
-    // Resolved (S42): a referenced section's rows read their graph's source from the resolved view.
-    return this.resolvedView.graphs[graphKey]?.nodes.find((n) => n.kind === 'trigger')?.source;
-  }
-
   // --- registries / lookups ------------------------------------------------
 
   /** Every resolvable canvas scene: the core built-in library (read-only, D4/U6) plus this
@@ -4706,874 +3576,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       read-only in the Objects view: duplicate to customise. */
   isBuiltinCanvasScene(id: string): boolean {
     return BUILTIN_CANVAS_SCENES.some((scene) => scene.id === id) && !this.canvasScenes.some((scene) => scene.id === id);
-  }
-
-  /** Virtual `canvas:<id>` effects derived from the built-in + authored scenes — never
-      persisted as real effects (they'd duplicate); the scene doc is the source of truth (U5). */
-  get canvasEffects(): EffectDef[] {
-    return this.allCanvasScenes.map(canvasScenesLib.canvasEffectDef);
-  }
-
-  /** Real effects + virtual canvas effects — the set the gallery/inspector select from. */
-  get selectableEffects(): EffectDef[] {
-    return [...this.effects, ...this.canvasEffects];
-  }
-
-  /** Real presets + each scene's derived default preset (deduped by id). */
-  get allPresets(): Preset[] {
-    const existing = new Set(this.presets.map((p) => p.id));
-    const canvasDefaults = this.allCanvasScenes
-      .map(canvasScenesLib.canvasDefaultPreset)
-      .filter((p) => !existing.has(p.id));
-    return [...this.presets, ...canvasDefaults];
-  }
-
-  effectsForScope(scope: Scope): EffectDef[] {
-    return this.selectableEffects.filter((e) => e.scope === scope);
-  }
-  effectOf(node: GraphNode) {
-    return node.kind === 'play' || node.kind === 'effect' ? this.selectableEffects.find((e) => e.id === node.effectId) : undefined;
-  }
-  presetsForEffect(effectId: string): Preset[] {
-    return this.allPresets.filter((p) => p.effectId === effectId);
-  }
-  presetById(id: string): Preset | undefined {
-    return this.allPresets.find((p) => p.id === id);
-  }
-  /** Live params shown for a play node — always its own node-local copy (a preset is a
-      snapshot, not a live binding — S39). */
-  liveParams(node: GraphNode): voice.ParamValues {
-    if (node.kind !== 'play' && node.kind !== 'effect') return {};
-    return node.params;
-  }
-
-  // --- graph editing (freeform node wiring) --------------------------------
-
-  /** A single copied graph node (deep, non-reactive), ready to paste into any graph.
-      Node-only — wires are NOT captured (they reference other nodes). Transient: a fresh
-      session starts empty. The trigger node is never copyable (a graph has exactly one). */
-  nodeClipboard = $state<GraphNode | null>(null);
-
-  /** Mint a node id guaranteed free within `g` (R15/R25). The `nid` counter resets to its base on
-      every reload, so a bare `nid('n')` could re-mint an id a persisted/pasted node already carries
-      — and a duplicate id silently breaks select-by-id (the inspector resolves to the first match).
-      `freshId` skips any id already present in the graph, closing that hole at the mint sites. */
-  private freshNodeId(g: voice.TriggerGraph): string {
-    return freshId('n', (id) => g.nodes.some((n) => n.id === id));
-  }
-  /** Mint an edge id guaranteed free within `g` — same reload-collision guard as {@link freshNodeId}. */
-  private freshEdgeId(g: voice.TriggerGraph): string {
-    return freshId('e', (id) => g.edges.some((e) => e.id === id));
-  }
-
-  /** Clone `src` into the selected graph with a fresh id at a free position near `(x, y)`,
-      select it, and return it. Node-only (no wires). Refuses the trigger kind + viewers. */
-  private placeClone(src: GraphNode, x: number, y: number): GraphNode | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g || isAnchorNode(src)) return null;
-    const occupied = g.nodes.map((n) => ({ x: n.x, y: n.y, w: 184, h: 76 }));
-    const pos = findFreePosition(occupied, x, y, 184, 76);
-    const clone: GraphNode = { ...structuredClone($state.snapshot(src)), id: this.freshNodeId(g), x: pos.x, y: pos.y };
-    g.nodes.push(clone);
-    return clone;
-  }
-
-  /** Copy a node onto the node clipboard (deep, non-reactive). Node clipboard copying is an
-      authoring operation, not a read-only library export: canonical graphs are copied through
-      copyGraphToSection/copyGraphToClipboard, both of which create or export local content. */
-  copyNode(node: GraphNode): void {
-    if (!this.canMutateNode(node) || isAnchorNode(node)) return;
-    this.nodeClipboard = structuredClone($state.snapshot(node));
-  }
-
-  /** Paste the node clipboard into the selected graph, offset so it doesn't stack on the
-      original. Returns the new node (selected) or null when the clipboard is empty. */
-  pasteNode(): GraphNode | null {
-    if (!this.nodeClipboard) return null;
-    return this.placeClone(this.nodeClipboard, this.nodeClipboard.x + 36, this.nodeClipboard.y + 36);
-  }
-
-  /** Duplicate a node in place (fresh id, offset position), node-only. Returns the copy. */
-  duplicateNode(node: GraphNode): GraphNode | null {
-    return this.placeClone(node, node.x + 36, node.y + 36);
-  }
-
-  /** Add a node of a kind at a canvas position. Play nodes seed the first effect. */
-  addNode(kind: NodeKind, x: number, y: number, options: AddNodeOptions = {}): GraphNode | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g || kind === 'trigger' || kind === 'output') return null;
-    this.pushUndoSnapshot();
-    const nodeId = this.freshNodeId(g);
-    let node: GraphNode;
-    if (kind === 'play' || kind === 'effect') {
-      node = makeNode('effect', nodeId, x, y, graphsLib.playNodeInit(this.effects, (id) => this.presetById(id)));
-    } else if (kind === 'modifier') {
-      node = makeNode('modifier', nodeId, x, y, graphsLib.modifierNodeInit());
-        } else if (kind === 'envelope') {
-      // Seed a modulation-source envelope with a default shape in the well-known slot so it
-      // animates the moment it is wired (the inspector edits this shape via the S24 editor).
-      node = makeNode('envelope', nodeId, x, y, envelopeNodeDefaults(options.envelopePreset));
-    } else if (kind === 'lfo') {
-      // S36 — seed default LFO settings so it animates the moment it is wired.
-      node = makeNode('lfo', nodeId, x, y, {
-        lfo: { ...voice.defaultLfoSettings(), waveform: lfoPresetWaveform(options.lfoWaveform) },
-      });
-    } else if (kind === 'cc') {
-      // Seed a CC source with controller 1 on omni (any channel) so it reads immediately; the
-      // inspector edits the controller/channel or MIDI-learns the next incoming CC. (S37)
-      node = makeNode('cc', nodeId, x, y, { ccController: 1, ccChannel: null });
-    } else if (kind === 'note') {
-      node = makeNode('note', nodeId, x, y, { noteNumber: 60, noteChannel: null, noteMode: 'gate', noteReleaseMs: 0 });
-    } else if (kind === 'osc') {
-      node = makeNode('osc', nodeId, x, y, { oscAddress: '' });
-    } else if (kind === 'audio') {
-      // GH #214 — reads the broadband level until the inspector picks a band.
-      node = makeNode('audio', nodeId, x, y, { audioBand: 'level' });
-    } else if (kind === 'splice') {
-      // Seed four colour splices so a fresh Splice node CUTS VISIBLY on the next hit — an empty
-      // splice node renders nothing at all (every slot blank), which would read as broken.
-      node = makeNode('splice', nodeId, x, y, graphsLib.spliceNodeInit(this.buses));
-    } else if (kind === 'slice') {
-      // Same reasoning as the splice seed: four colour slabs, so a fresh Slice lights at once.
-      node = makeNode('slice', nodeId, x, y, graphsLib.sliceNodeInit(this.buses));
-    } else if (kind === 'randomMod') {
-      node = makeNode('randomMod', nodeId, x, y, { randomDistribution: 'linear', randomSteps: 4 });
-    } else {
-      node = makeNode(kind, nodeId, x, y);
-    }
-    g.nodes.push(node);
-    // R04: a freshly-added Effect auto-wires to the terminal Output so it makes light on the next
-    // hit instead of sitting silent — folded into this add's undo checkpoint (one Ctrl/Z reverts
-    // both), announced with a toast. Only the light-making Effect node auto-wires.
-    // A Splice makes light of its own, so it auto-wires for the same reason an Effect does.
-    if (node.kind === 'effect' || voice.isSpliceLike(node.kind)) this.autoWireEffectToOutput(node);
-    return node;
-  }
-
-  /** Auto-wire a freshly-added Effect to the selected graph's terminal Output anchor (R04) so it
-      renders on the next hit. Routes through the validated {@link connect} path — a rejected wire
-      (never expected for a fresh Effect → Output, but belt-and-braces) is skipped silently — and
-      batches into the add's undo checkpoint so add + wire revert as one. Announces a successful
-      wire with a single toast (R02 conventions). No-op when the graph has no Output anchor. */
-  private autoWireEffectToOutput(node: GraphNode): void {
-    const g = this.selectedGraph;
-    if (!g) return;
-    const output = g.nodes.find((n) => n.kind === 'output');
-    if (!output) return;
-    const rejection = this.batchIntoCurrentUndo(() => this.connect(node.id, output.id));
-    if (rejection === null) {
-      pushToast(`${node.kind === 'splice' ? 'Splice' : node.kind === 'slice' ? 'Slice' : 'Effect'} wired to the Output anchor — it lights on the next hit.`, { tone: 'info' });
-    }
-  }
-
-  /** Add a node AND land a wire on it as ONE undoable action (F8: a connection drag released in
-      empty space summons the palette, and the picked node takes the wire the drag was making).
-      `wire` runs only when the node was actually added, and folds into the add's undo checkpoint
-      — one Ctrl/Z pops the node and its wire together, exactly as R04's Effect auto-wire does.
-
-      `wire` must route through the normal {@link connect} path (the view hands it the same
-      `dropConnect` a wire released ON a node body takes), so a wire the graph would refuse by
-      hand is refused here too — one mutation path, one validity table. */
-  addNodeWired(kind: NodeKind, x: number, y: number, wire: (node: GraphNode) => void): GraphNode | null {
-    const node = this.addNode(kind, x, y);
-    if (node) this.batchIntoCurrentUndo(() => wire(node));
-    return node;
-  }
-
-  /** Add a modifier node pre-set to a specific registered modifier (the category palette adds
-      a chosen modifier directly, vs `addNode('modifier')` which seeds the first one). Unknown
-      ids are still placed — the inspector/chain runner tolerate an unresolved modifierId. */
-  addModifierNode(modifierId: string, x: number, y: number): GraphNode | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g) return null;
-    this.pushUndoSnapshot();
-    const node = makeNode('modifier', this.freshNodeId(g), x, y, {
-      modifierId,
-      params: graphsLib.modifierParamsFor(modifierId),
-    });
-    g.nodes.push(node);
-    return node;
-  }
-
-  moveNode(node: GraphNode, x: number, y: number): void {
-    if (!this.canEditSelectedGraph) return;
-    // R15: only checkpoint undo when the node actually moved. A zero-displacement commit — a drag
-    // (or a splice-drop onto a wire) that ends where it started — must not push an undo entry, or
-    // Ctrl/Z after a splice pops an empty position checkpoint before it reaches the splice wiring.
-    if (node.x !== x || node.y !== y) this.pushUndoSnapshot();
-    node.x = x;
-    node.y = y;
-    this.setLiveNodePosition(node.id, x, y);
-  }
-
-  setLiveNodePosition(nodeId: string, x: number, y: number): void {
-    if (!this.canMutateSelectedGraph || !this.selectedGraph?.nodes.some((node) => node.id === nodeId)) return;
-    this.liveNodePositions = { ...this.liveNodePositions, [nodeId]: { x, y } };
-  }
-
-  liveNodeY(nodeId: string): number | undefined {
-    return this.liveNodePositions[nodeId]?.y;
-  }
-
-  removeNode(node: GraphNode): void {
-    if (!this.canEditSelectedGraph) return;
-    const g = this.selectedGraph;
-    if (!g || isAnchorNode(node)) return;
-    this.pushUndoSnapshot();
-    g.nodes = g.nodes.filter((n) => n.id !== node.id);
-    g.edges = g.edges.filter((e) => e.from !== node.id && e.to !== node.id);
-    if (this.settingsBlock?.id === node.id) this.settingsBlock = null;
-    if (this.galleryBlock?.id === node.id) this.galleryBlock = null;
-    if (this.envTarget?.block.id === node.id) this.envTarget = null;
-  }
-
-  /** Wire a node's output to another's input (rejects dup / cycle / bad direction).
-      `fromPort` is the source handle the wire leaves (a value+bands switch's `band-${i}`);
-      undefined = the node's default single output. `toPort` is the target input handle:
-      `'mod'` routes a modifier-chain wire into a play/modifier node's `mod` input, undefined
-      the trigger-flow `in`. Validation is total — never throws (bad wires are ignored).
-
-      Returns the rejection reason (`direction` / `duplicate` / `cycle`) when the wire was
-      refused, else `null` on success — so the caller can surface *why* (a reason toast, R03).
-      A viewer / missing-graph no-op returns `null` (nothing the user did wrong to explain). */
-  connect(fromId: string, toId: string, fromPort?: string, toPort?: ToPort): WireRejection | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g) return null;
-    const rejection = classifyConnection(g, fromId, toId, fromPort, toPort);
-    if (rejection) return rejection;
-    this.pushUndoSnapshot();
-    // store CANONICAL ports (''/'in' aliases collapse to undefined) so a persisted edge can
-    // never dodge the dedup guard under a differently-spelled duplicate later
-    const edge: GraphEdge = {
-      id: this.freshEdgeId(g),
-      from: fromId,
-      to: toId,
-      fromPort: normalizeFromPort(fromPort),
-      toPort: normalizeToPort(toPort),
-    };
-    // A modulation wire (`param:<key>`) IS one mapping — bake its default settings from the
-    // target param spec (amount 1, no invert, range = spec min/max) so it is editable + persists.
-    const key = voice.paramKeyOf(toPort);
-    if (key !== null) {
-      const to = g.nodes.find((n) => n.id === toId);
-      const spec = to ? this.modTargetSpecs(to).find((s) => s.key === key) : undefined;
-      edge.amount = 1;
-      edge.invert = false;
-      edge.rangeMin = spec?.min ?? 0;
-      edge.rangeMax = spec?.max ?? 1;
-    }
-    g.edges.push(edge);
-    return null;
-  }
-  disconnect(edgeId: string): void {
-    if (!this.canEditSelectedGraph) return;
-    const g = this.selectedGraph;
-    if (!g || !g.edges.some((e) => e.id === edgeId)) return;
-    this.pushUndoSnapshot();
-    g.edges = g.edges.filter((e) => e.id !== edgeId);
-  }
-  /** Re-point an existing edge to a new source/target (an edge-end drag). Validates
-      exactly as connect() does — but ignoring the edge being moved — and leaves the
-      wire untouched if the move would be a dup / wrong-direction / cycle, so a bad
-      reconnect drag snaps back instead of deleting the wire. Returns the rejection reason
-      when the move was refused, else `null` on success (see {@link connect}). */
-  reconnect(
-    edgeId: string,
-    fromId: string,
-    toId: string,
-    fromPort?: string,
-    toPort?: ToPort,
-  ): WireRejection | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g) return null;
-    const rejection = classifyReconnect(g, edgeId, fromId, toId, fromPort, toPort);
-    if (rejection) return rejection;
-    this.pushUndoSnapshot();
-    const edge = g.edges.find((e) => e.id === edgeId)!;
-    edge.from = fromId;
-    edge.to = toId;
-    edge.fromPort = normalizeFromPort(fromPort);
-    edge.toPort = normalizeToPort(toPort);
-    return null;
-  }
-
-  /** Would dropping node `nodeId` onto flow edge `edgeId` splice it in? Read-only mirror of
-      {@link spliceOnDrop}'s guard (R08), so the view can ARM the wire during a drag (pre-release
-      indication) knowing release will actually splice. No side effects. */
-  canSplice(edgeId: string, nodeId: string): boolean {
-    const g = this.selectedGraph;
-    return !!g && this.canMutateSelectedGraph && canSplice(g, edgeId, nodeId);
-  }
-
-  /** Splice dropped node `nodeId` into flow edge `edgeId` (R08): remove the edge and re-wire
-      `source →(source-port) node → target (target-port)`, preserving the source band/output port
-      and the target's input port so routing is unchanged but for the inserted node. Recorded as
-      its OWN undo checkpoint — the caller commits the drag position FIRST (a separate checkpoint),
-      so one Ctrl/Z pops the splice wiring while the node stays where it was dropped. The remove +
-      two connects fold into this single checkpoint (batched) so undo reverts the whole splice at
-      once. No-op (returns false) when the splice is invalid; announces a successful splice with one
-      toast. */
-  spliceOnDrop(edgeId: string, nodeId: string): boolean {
-    if (!this.canEditSelectedGraph) return false;
-    const g = this.selectedGraph;
-    if (!g || !canSplice(g, edgeId, nodeId)) return false;
-    const edge = g.edges.find((e) => e.id === edgeId)!;
-    const { from, to, fromPort, toPort } = edge;
-    this.pushUndoSnapshot();
-    this.batchIntoCurrentUndo(() => {
-      g.edges = g.edges.filter((e) => e.id !== edgeId);
-      this.connect(from, nodeId, fromPort ?? undefined, undefined);
-      this.connect(nodeId, to, undefined, toPort);
-    });
-    pushToast('Node spliced into the wire.', { tone: 'info' });
-    return true;
-  }
-
-  setMixEdgeOpacity(edgeId: string, opacity: number): void {
-    this.editEdge(edgeId, (e) => (e.opacity = Math.max(0, Math.min(1, opacity))));
-  }
-
-  setMixBlendMode(node: GraphNode, mode: BlendMode): void {
-    if (!this.canEditSelectedGraph || node.kind !== 'mix') return;
-    this.pushUndoSnapshot();
-    node.mixBlendMode = mode;
-  }
-
-    /** Change a node's kind, seeding kind-specific defaults and pruning invalid wires. */
-  changeKind(node: GraphNode, kind: NodeKind): void {
-    if (!this.canEditSelectedGraph) return;
-    if (isAnchorNode(node) || kind === 'trigger' || kind === 'output') return;
-    if (node.kind === kind) return;
-
-    this.pushUndoSnapshot();
-
-    const g = this.selectedGraph;
-    node.kind = kind;
-
-    if (kind === 'play' || kind === 'effect') {
-      if (!node.effectId) {
-        const init = graphsLib.playNodeInit(this.effects, (id) => this.presetById(id));
-        node.effectId = init.effectId;
-        node.scope = init.scope;
-        node.presetId = init.presetId;
-        node.params = init.params;
-      }
-      if (g) g.edges = g.edges.filter((e) => e.from !== node.id);
-    } else if (kind === 'modifier') {
-      // Seed a modifier id if the node has none yet. A modifier takes no trigger-flow input,
-      // so drop any flow wire that landed on it (mod wires — `toPort:'mod'` — are kept).
-      if (!node.modifierId) {
-        const init = graphsLib.modifierNodeInit();
-        node.modifierId = init.modifierId;
-        node.params = init.params;
-      }
-      if (g) g.edges = g.edges.filter((e) => !(e.to === node.id && e.toPort !== 'mod'));
-    } else if (kind === 'envelope') {
-      Object.assign(node, envelopeNodeDefaults('pluck'));
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'lfo') {
-      node.lfo = voice.defaultLfoSettings();
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'cc') {
-      node.ccController = 1;
-      node.ccChannel = null;
-      node.ccSource = 'midi';
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'note') {
-      node.noteNumber = 60;
-      node.noteChannel = null;
-      node.noteMode = 'gate';
-      node.noteReleaseMs = 0;
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'osc') {
-      node.oscAddress = '';
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'audio') {
-      node.audioBand = 'level';
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'randomMod') {
-      node.randomDistribution = 'linear';
-      node.randomSteps = 4;
-      if (g) pruneEdgesForModSource(g, node.id);
-    } else if (kind === 'slice' && node.scope === 'hoop') {
-      // Slice's On control offers Kit / Drum / Space only, and would read a kept hoop scope as Kit
-      // while it still cut one hoop — with no click able to fix it.
-      node.scope = 'kit';
-      node.targetId = undefined;
-    }
-  }
-
-  /** Drum info for the current kit, used by the Inspector's scope-target dropdowns. */
-  get kitDrumInfos(): { id: string; label: string; hoopCount: number }[] {
-    return this.labModel.pm.drums.map((d) => ({ id: d.drumId, label: d.label, hoopCount: d.hoopCount }));
-  }
-
-  setMode(node: GraphNode, mode: PlayMode): void {
-    if (!this.canEditSelectedGraph) return;
-    if ((node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind)) || node.mode === mode) return;
-    this.pushUndoSnapshot();
-    node.mode = mode;
-  }
-
-  /** Set the render scope on a play node (kit / drum / hoop). Clearing targetId on
-      scope change prevents a stale targetId from a previous scope from leaking. */
-  setScope(node: GraphNode, scope: Scope): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
-    this.pushUndoSnapshot();
-    node.scope = scope;
-    node.targetId = undefined;
-  }
-
-  /** Set (or clear) the per-play-node target id: drum = drumId, hoop = "drumId#hoopIndex".
-      Pass undefined or empty string to clear (auto = firing/source drum). */
-  setTargetId(node: GraphNode, targetId: string | undefined): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'play' && node.kind !== 'effect' && !voice.isSpliceLike(node.kind) && node.kind !== 'scope' && node.kind !== 'output') return;
-    this.pushUndoSnapshot();
-    node.targetId = targetId || undefined;
-  }
-  setNoRepeat(node: GraphNode, v: boolean): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'random' || node.noRepeat === v) return;
-    this.pushUndoSnapshot();
-    node.noRepeat = v;
-  }
-  setChance(node: GraphNode, p: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'chance' || node.p === p) return;
-    this.pushUndoSnapshot();
-    node.p = p;
-  }
-  setSwitchOn(node: GraphNode, on: SwitchOn): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch') return;
-    this.pushUndoSnapshot();
-    node.on = on;
-    // backfill value-mode fields the first time a node becomes a value switch (a graph
-    // persisted before value-mode lacks them); leaving value collapses band wires.
-    if (on === 'value') this.ensureValueDefaults(node);
-    else this.stripBandPorts(node);
-  }
-
-  // --- value switch (gate + bands) -----------------------------------------
-
-  /** Backfill value-switch fields for a node that lacks them (older persisted graph). */
-  private ensureValueDefaults(node: GraphNode): void {
-    const d = vsw.valueDefaults(node);
-    node.valueMode = d.valueMode;
-    node.threshold = d.threshold;
-    node.invert = d.invert;
-    node.bands = d.bands;
-  }
-
-  /** Drop per-band source ports from a node's outgoing edges, collapsing them to the
-      default output — so leaving bands mode never strands a wire on a handle the node
-      no longer renders (which xyflow can't draw). */
-  private stripBandPorts(node: GraphNode): void {
-    const g = this.selectedGraph;
-    if (!g) return;
-    g.edges = vsw.stripBandPorts(g.edges, node.id);
-  }
-
-  setValueMode(node: GraphNode, mode: ValueMode): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    this.pushUndoSnapshot();
-    node.valueMode = mode;
-    // gate has a single output; collapse any band wires so they fire as default children.
-    if (mode === 'gate') this.stripBandPorts(node);
-  }
-  setThreshold(node: GraphNode, threshold: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    this.pushUndoSnapshot();
-    node.threshold = vsw.clamp01(threshold);
-  }
-  setInvert(node: GraphNode, invert: boolean): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    this.pushUndoSnapshot();
-    node.invert = invert;
-  }
-
-  // --- delay node mutators -------------------------------------------------
-
-  /** Switch a delay node between absolute-time (`'time'`) and musical-division
-      (`'beats'`) modes. Guards `node.kind === 'delay'`. */
-  setDelayMode(node: GraphNode, mode: 'time' | 'beats'): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'delay') return;
-    this.pushUndoSnapshot();
-    node.delayMode = mode;
-  }
-
-  /** Set the absolute delay time in milliseconds. Guards `node.kind === 'delay'`. */
-  setDelayMs(node: GraphNode, ms: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'delay') return;
-    this.pushUndoSnapshot();
-    node.ms = Math.max(0, ms);
-  }
-
-  /** Set the musical division string (e.g. `'1/8'`, `'dotted-1/4'`). Guards
-      `node.kind === 'delay'`. */
-  setDivision(node: GraphNode, division: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'delay') return;
-    this.pushUndoSnapshot();
-    node.division = division;
-  }
-
-  // --- splice node mutators ------------------------------------------------
-  //
-  // A splice node carries a dozen settings and a variable-length list of splices, so these are
-  // PATCH-based rather than the one-setter-per-field style the older single-value nodes use —
-  // fifteen near-identical setters would be noise, and every one of them would repeat the same
-  // viewer guard, kind guard and undo checkpoint. The guards live here once instead.
-
-  /**
-   * What a Slice cuts: the whole kit, one drum, or a box of space. SPACE is the kit scope plus a
-   * region, so it needs no new scope value threaded through every scope consumer — and switching
-   * is ONE undo step rather than a scope change and a region change the author has to undo twice.
-   * A fresh region starts as the kit's own bounds, so choosing SPACE changes nothing visible until
-   * the box is moved or shrunk; that is the least surprising first frame.
-   */
-  setSliceOn(node: GraphNode, on: 'kit' | 'drum' | 'space'): void {
-    if (!this.canEditSelectedGraph || node.kind !== 'slice') return;
-    const current = node.sliceRegion ? 'space' : node.scope === 'drum' ? 'drum' : 'kit';
-    if (current === on) return;
-    this.pushUndoSnapshot();
-    if (on === 'space') {
-      const { min, max } = this.labModel.pm.bounds;
-      node.scope = 'kit';
-      node.targetId = undefined;
-      node.sliceRegion = {
-        cx: Math.round((min.x + max.x) / 2),
-        cy: Math.round((min.y + max.y) / 2),
-        cz: Math.round((min.z + max.z) / 2),
-        sx: Math.max(1, Math.round(max.x - min.x)),
-        sy: Math.max(1, Math.round(max.y - min.y)),
-        sz: Math.max(1, Math.round(max.z - min.z)),
-      };
-      return;
-    }
-    node.sliceRegion = undefined;
-    node.scope = on;
-    if (on === 'kit') node.targetId = undefined;
-  }
-
-  /** Patch a splice node's own settings (count excepted — see {@link setSpliceCount}, which also
-      keeps the authored rows in step). Guards `voice.isSpliceLike` (Splice and Slice). */
-  setSpliceSetting(
-    node: GraphNode,
-    patch: Partial<Pick<GraphNode, 'splicePartition' | 'spliceJitter' | 'spliceSeed' | 'spliceChase' | 'spliceRateMode' | 'spliceRateMs' | 'spliceDivision' | 'spliceDirection' | 'spliceIncrementPx' | 'spliceOffsetMode' | 'spliceOffsetMs' | 'spliceOffsetDivision' | 'spliceOrder' | 'spliceDrumOffsetMode' | 'spliceDrumOffsetMs' | 'spliceDrumOffsetDivision' | 'spliceDrumOrder' | 'spliceSmudge' | 'spliceMotionMode' | 'spliceWaitMode' | 'spliceColorOffsetMode' | 'spliceColorOffsetMs' | 'spliceColorOffsetDivision' | 'spliceColorOrder' | 'spliceRotationDeg' | 'spliceAttackMs' | 'spliceHoldMs' | 'spliceReleaseMs' | 'spliceAttackEase' | 'spliceLoopRetrigger' | 'spliceTint' | 'sliceAxis' | 'sliceRotX' | 'sliceRotY' | 'sliceRotZ' | 'sliceRegion' | 'sliceVelocity' | 'sliceIncrementPct' | 'spliceDrumSequence' | 'spliceHoopSequence'>>,
-  ): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!voice.isSpliceLike(node.kind)) return;
-    this.pushUndoSnapshot();
-    Object.assign(node, patch);
-  }
-
-  /** Set how many splices each hoop / drum / scope is cut into, growing or shrinking the authored
-      rows to match. New rows CYCLE the existing colours (2 rows → 4 gives red, blue, red, blue)
-      rather than arriving blank, so raising the count reads as "cut finer", not "add gaps".
-      Shrinking keeps the trimmed rows out of the way but does not destroy the leading ones. */
-  setSpliceCount(node: GraphNode, count: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!voice.isSpliceLike(node.kind)) return;
-    const next = Math.max(voice.MIN_SPLICE_COUNT, Math.min(voice.MAX_SPLICE_COUNT, Math.round(count)));
-    if (next === (node.spliceCount ?? voice.DEFAULT_SPLICE_COUNT)) return;
-    this.pushUndoSnapshot();
-    const rows = node.splices ?? [];
-    const grown = rows.length
-      ? Array.from({ length: next }, (_, i) => (i < rows.length ? rows[i]! : { ...rows[i % rows.length]! }))
-      : Array.from({ length: next }, () => ({}) as voice.SpliceDef);
-    node.splices = grown;
-    node.spliceCount = next;
-  }
-
-  /** Patch ONE splice row — its colour (`null` clears it), effect (`null` clears it) or mute.
-      Pads the authored rows out to `index` so the inspector can edit a slot that is currently
-      being filled by the cycling fallback. Guards `voice.isSpliceLike` (Splice and Slice). */
-  setSpliceAt(node: GraphNode, index: number, patch: Partial<voice.SpliceDef>): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!voice.isSpliceLike(node.kind) || index < 0 || index >= voice.MAX_SPLICE_COUNT) return;
-    this.pushUndoSnapshot();
-    const rows = [...(node.splices ?? [])];
-    while (rows.length <= index) rows.push({});
-    rows[index] = { ...rows[index]!, ...patch };
-    node.splices = rows;
-  }
-
-  /** Append a splice, keeping the band count in step with the authored rows. */
-  addSplice(node: GraphNode): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!voice.isSpliceLike(node.kind)) return;
-    const rows = node.splices ?? [];
-    if (rows.length >= voice.MAX_SPLICE_COUNT) return;
-    this.pushUndoSnapshot();
-    node.splices = [...rows, rows.length ? { ...rows[rows.length - 1]! } : {}];
-    node.spliceCount = node.splices.length;
-  }
-
-  /** Remove a splice, keeping the band count in step. The last row cannot be removed — a splice
-      node with no splices renders nothing, which is a deletion, not an edit. */
-  removeSplice(node: GraphNode, index: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!voice.isSpliceLike(node.kind)) return;
-    const rows = node.splices ?? [];
-    if (index < 0 || index >= rows.length || rows.length <= 1) return;
-    this.pushUndoSnapshot();
-    node.splices = rows.filter((_, i) => i !== index);
-    node.spliceCount = node.splices.length;
-  }
-
-  /** Bind (or clear, via `null`) the input that snaps a sequence node back to its first step —
-      the node's OWN reset source (issue #159), independent of what fires its graph. Contained in
-      the node: no cross-graph target exists, so song/section copies carry their binding verbatim
-      and can never reset the original. Persists via the authored autosave like every node edit. */
-  setSequenceResetSource(node: GraphNode, source: TriggerSource | null): boolean {
-    if (!this.canEditSelectedGraph) return false;
-    if (node.kind !== 'sequence') return false;
-    // BINDING GUARD — resets share with each other but block pads/triggers and globals.
-    // A `drum` source is never refused: it lives in the pad namespace, which is what keeps
-    // "one pad hit fires the graph AND resets its sequencer" working. See `binding-claims`.
-    const scope = this.bindingScope;
-    if (scope) {
-      const graphKey = this.graphKeyForNode(node.id) ?? '';
-      const self: voice.BindingClaim = { group: 'sequence-reset', kind: 'reset', graphKey, nodeId: node.id };
-      if (this.refuseBindings(voice.sourceBindingRejections(scope, source, self))) return false;
-    }
-    this.pushUndoSnapshot();
-    node.resetSource = source ?? undefined;
-    return true;
-  }
-
-  /** The authored graph a node id belongs to, or null. Needed because node edits are handed
-      the node itself, while a binding claim is identified by (graphKey, nodeId). */
-  private graphKeyForNode(nodeId: string): string | null {
-    for (const [key, graph] of Object.entries(this.graphs)) {
-      if (graph.nodes.some((n) => n.id === nodeId)) return key;
-    }
-    return null;
-  }
-
-  /** Append a band by splitting the final "rest" band (a new cutoff between the last
-      cutoff and 1). Appending never disturbs existing band ports. */
-  addBand(node: GraphNode): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    this.pushUndoSnapshot();
-    node.bands = vsw.addBand(node.bands);
-  }
-  /** Remove cutoff `cutoffIndex` (merging band cutoffIndex+1 down into it), keeping at
-      least one cutoff (≥2 bands). Remaps the outgoing band ports to match. */
-  removeBand(node: GraphNode, cutoffIndex: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    if (!vsw.canRemoveBand(node.bands, cutoffIndex)) return;
-    this.pushUndoSnapshot();
-    node.bands = vsw.removeBandAt(node.bands, cutoffIndex);
-    this.remapBandPorts(node, cutoffIndex);
-  }
-  /** Set cutoff `cutoffIndex`, clamped WITHIN its neighbours so cutoffs stay ascending
-      without reordering — reordering would scramble which band each port maps to. */
-  setBandCutoff(node: GraphNode, cutoffIndex: number, value: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'switch' || node.on !== 'value') return;
-    const bands = node.bands ?? [0.5];
-    if (cutoffIndex < 0 || cutoffIndex >= bands.length) return;
-    this.pushUndoSnapshot();
-    node.bands = vsw.setBandCutoff(bands, cutoffIndex, value);
-  }
-  /** After cutoff `removed` is dropped, band (removed+1) merges into `removed` and every
-      higher band shifts down one — remap edge ports to match, then drop any duplicate
-      (target, port) wires the merge collided. */
-  private remapBandPorts(node: GraphNode, removed: number): void {
-    const g = this.selectedGraph;
-    if (!g) return;
-    g.edges = vsw.remapBandPorts(g.edges, node.id, removed);
-  }
-
-  // --- effect / preset / params / envelopes --------------------------------
-
-  openGallery(node: GraphNode): void {
-    if (isEffectNode(node)) this.galleryBlock = node;
-  }
-  closeGallery(): void {
-    this.galleryBlock = null;
-  }
-  openSettings(node: GraphNode): void {
-    if (isEffectNode(node)) this.settingsBlock = node;
-  }
-  closeSettings(): void {
-    this.settingsBlock = null;
-  }
-  openEnv(node: GraphNode, key: string): void {
-    this.envTarget = { block: node, key };
-  }
-  closeEnv(): void {
-    this.envTarget = null;
-  }
-
-  // --- effect / preset object CRUD (the Objects view consumes these) --------
-  // Effects are foundational: rename + duplicate ONLY, never delete. Presets add delete,
-  // gated to usage-count 0 (and never a live effect's `:default`). Each keeps the sim's
-  // registries in sync so the live preview reflects the edit, and persists via the authored
-  // autosave (effects/presets are part of the snapshot). The pure builders + gating live in
-  // the objects slice; the sim-registry sync stays here.
-
-  /** Rename an effect (its display name) — the only edit effects allow. No-op on an unknown id
-      or a blank name (keeps the old name, mirrors {@link renameSong}). Replaces the EffectDef
-      IMMUTABLY (a built-in's seed array shares the module fixture objects by reference, so an
-      in-place mutation would corrupt the global registry), then re-points the sim's id-map at
-      the new object so the live preview reflects it. Persists via the authored autosave
-      ({@link unionEffects} keeps a built-in's renamed name on reload). */
-  renameEffectDef(id: string, name: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    const cur = this.effects.find((e) => e.id === id);
-    if (!cur) return;
-    const renamed: EffectDef = { ...cur, name: trimmed };
-    this.effects = this.effects.map((e) => (e.id === id ? renamed : e));
-    this.sim.registerEffect(renamed);
-  }
-
-  /** Duplicate an effect: clone its definition under a fresh id named "<name> copy", register
-      it with the sim, and seed its `${newId}:default` preset. This is the ONLY effect-authoring
-      path now (the pattern-authoring EffectCreator was retired with the pattern engine in U3).
-      Returns the new id, or null for an unknown id. The clone is independent (its own id +
-      Default preset); a generator-backed effect keeps its `generatorId` so it renders
-      identically. Persists via the authored autosave. */
-  duplicateEffectDef(id: string): string | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
-    const src = this.effects.find((e) => e.id === id);
-    if (!src) return null;
-    const name = `${src.name} copy`;
-    const newId = objects.freshEffectId(this.effects, name);
-    const eff = objects.cloneEffect($state.snapshot(src) as EffectDef, newId, name);
-    this.effects.push(eff);
-    this.sim.registerEffect(eff);
-    const preset = objects.defaultPresetFor(eff);
-    this.presets.push(preset);
-    this.sim.registerPreset(preset);
-    return newId;
-  }
-
-  /** Rename a preset. No-op on an unknown id or a blank name (mirrors {@link renameSong}).
-      Replaces the Preset IMMUTABLY (re-added built-in presets share the module fixture by
-      reference) and re-points the sim's id-map. Persists via the autosave ({@link unionPresets}
-      keeps a renamed built-in preset on reload). */
-  renamePreset(id: string, name: string): void {
-    if (this.isViewer) return; // read-only viewer (S2): authoring no-op
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    const cur = this.presetById(id);
-    if (!cur) return;
-    const renamed: Preset = { ...cur, name: trimmed };
-    this.presets = this.presets.map((p) => (p.id === id ? renamed : p));
-    this.sim.registerPreset(renamed);
-  }
-
-  /** Duplicate a preset: clone it under a fresh id named "<name> copy" (same effect, an
-      independent copy of its params), and register it with the sim. Returns the new id, or
-      null for an unknown id. Persists via the authored autosave. */
-  duplicatePreset(id: string): string | null {
-    if (this.isViewer) return null; // read-only viewer (S2): authoring no-op
-    const src = this.presetById(id);
-    if (!src) return null;
-    const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
-    const preset = objects.clonePreset(src, newId);
-    this.presets.push(preset);
-    this.sim.registerPreset(preset);
-    return newId;
-  }
-
-  /** How many play nodes — across EVERY graph (pad + authored) — carry this preset as their
-      `presetId` provenance (they forked their own params from it; presets are snapshots now, so
-      no node depends on it at runtime — S39). Advisory: shown in the Objects view and still gates
-      {@link deletePreset}. */
-  presetUsageCount(id: string): number {
-    return objects.presetUsageCount(this.graphs, id);
-  }
-
-  /** Delete a preset — ONLY when it is used nowhere ({@link presetUsageCount} === 0) and it is
-      not a live effect's foundational `:default` (an effect's seeded baseline is never
-      deletable while the effect exists). Removes it from `presets` + the sim registry and
-      returns true; returns false (a no-op) when the id is unknown, the preset is in use, or it
-      is a live effect's `:default`. Persists via the authored autosave. */
-  deletePreset(id: string): boolean {
-    if (this.isViewer) return false; // read-only viewer (S2): authoring no-op
-    const pr = this.presetById(id);
-    const usage = pr ? objects.presetUsageCount(this.graphs, id) : 0;
-    if (!objects.canDeletePreset(pr, usage, this.effects)) return false;
-    this.presets = this.presets.filter((p) => p.id !== id);
-    this.sim.unregisterPreset(id);
-    return true;
-  }
-
-  /** Swap the effect: reset to that effect's Default preset (own instance). Cross-category
-      swaps are allowed; the node's playType follows the selected effect so the gallery is a
-      full-library browser rather than a type-locked picker. */
-  pickEffect(node: GraphNode, effectId: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!isEffectNode(node)) return;
-    const eff = this.selectableEffects.find((e) => e.id === effectId);
-    if (!eff) return;
-
-    const nodeType = eff.playType ?? 'ambient';
-
-    if (nodeType === 'canvas') {
-      this.setCanvasScene(node, effectId.slice('canvas:'.length));
-      return;
-    }
-
-    const pr = this.presetById(`${effectId}:default`);
-    this.pushUndoSnapshot();
-    node.effectId = effectId;
-    node.playType = nodeType;
-    node.canvasScene = undefined;
-    node.scope = eff.scope;
-    node.presetId = `${effectId}:default`;
-    node.busId = ''; // follow the new effect's default layer
-    node.params = { ...(pr?.params ?? defaultParams(eff)) };
-    node.env = {};
-  }
-
-  /** Re-type an effect node to another COLLECTION in place (F3 item 11) — the inspector
-      companion to the Add-node menu's Effect group, which adds a node by collection and
-      seeds that collection's first effect. Re-typing does the same to a node that already
-      exists: canvas selects a scene, every other collection routes through the SAME
-      {@link pickEffect} swap the gallery uses, so preset / params / scope / layer reset
-      exactly as a gallery swap does rather than through a second, drifting path.
-      No-op when the node is already that collection, or when the library has nothing in it
-      (a collection with no non-deprecated effect cannot be entered). */
-  setPlayCollection(node: GraphNode, playType: PlayType): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!isEffectNode(node)) return;
-    if (this.playCollectionOf(node) === playType) return;
-
-    if (playType === 'canvas') {
-      const sceneId = this.allCanvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
-      this.setCanvasScene(node, sceneId);
-      return;
-    }
-    const eff = this.selectableEffects.find((e) => !e.deprecated && e.playType === playType);
-    if (!eff) return;
-    this.pickEffect(node, eff.id);
-  }
-
-  /** An effect node's collection — its own, or the effect's when the node predates D3. */
-  playCollectionOf(node: GraphNode): PlayType {
-    if (!isEffectNode(node)) return 'ambient';
-    return node.playType ?? this.effectOf(node)?.playType ?? 'ambient';
   }
 
   // --- canvas scenes (U5) --------------------------------------------------
@@ -5607,20 +3609,11 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return nextId;
   }
 
-  /** Delete a scene: retarget/clear referencing nodes onto a fallback scene (first remaining,
-      or none), and drop any saved presets for the deleted virtual effect. */
+  /** Delete an authored scene. A Scene Generator still naming it plays nothing until re-pointed. */
   deleteCanvasScene(id: string): boolean {
     if (this.isViewer) return false;
-    const exists = this.canvasScenes.some((scene) => scene.id === id);
-    if (!exists) return false;
-    const remaining = this.canvasScenes.filter((scene) => scene.id !== id);
-    // Prefer the first remaining authored scene, else fall back to the built-in library
-    // (which always exists), so referencing nodes never go sceneless.
-    const fallback = remaining[0] ?? BUILTIN_CANVAS_SCENES.find((scene) => scene.id !== id) ?? null;
-    this.canvasScenes = remaining;
-    this.graphs = canvasScenesLib.retargetSceneRefs(this.graphs, id, fallback);
-    const deletedEffectId = canvasEffectId(id);
-    this.presets = this.presets.filter((preset) => preset.effectId !== deletedEffectId);
+    if (!this.canvasScenes.some((scene) => scene.id === id)) return false;
+    this.canvasScenes = this.canvasScenes.filter((scene) => scene.id !== id);
     return true;
   }
 
@@ -5642,532 +3635,4 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     return { ok: true };
   }
 
-  /** Point a canvas play node at a scene, seeding its default preset params. */
-  setCanvasScene(node: GraphNode, sceneId: string): void {
-    if (!this.canEditSelectedGraph || !isEffectNode(node)) return;
-    const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
-    if (!scene) return;
-    const eff = canvasScenesLib.canvasEffectDef(scene);
-    const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
-    this.pushUndoSnapshot();
-    node.playType = 'canvas';
-    node.canvasScene = scene.id;
-    node.effectId = eff.id;
-    node.scope = eff.scope;
-    node.presetId = preset.id;
-    node.busId = '';
-    node.params = { ...preset.params };
-    node.env = {};
-  }
-
-  /** Add a typed play node (D3). Canvas seeds/selects a scene; other types seed a matching
-      effect. Returns the created node (or null for viewers / no graph). */
-  addPlayNode(playType: PlayType, x: number, y: number): GraphNode | null {
-    if (!this.canEditSelectedGraph) return null;
-    const g = this.selectedGraph;
-    if (!g) return null;
-
-    this.pushUndoSnapshot();
-    const nodeId = this.freshNodeId(g);
-    let node: GraphNode;
-    if (playType === 'canvas') {
-      // Built-ins always exist, so a new canvas node starts on the first library scene.
-      const sceneId = this.allCanvasScenes[0]?.id ?? this.createCanvasScene('New canvas scene');
-      const scene = this.allCanvasScenes.find((s) => s.id === sceneId);
-      if (!scene) return null;
-      const eff = canvasScenesLib.canvasEffectDef(scene);
-      const preset = this.presetById(`${eff.id}:default`) ?? canvasScenesLib.canvasDefaultPreset(scene);
-      node = makeNode('effect', nodeId, x, y, {
-        playType: 'canvas',
-        canvasScene: scene.id,
-        effectId: eff.id,
-        presetId: preset.id,
-        scope: eff.scope,
-        params: { ...preset.params },
-      });
-    } else {
-      const eff =
-        this.selectableEffects.find((e) => !e.deprecated && e.playType === playType) ??
-        this.selectableEffects.find((e) => !e.deprecated);
-      if (!eff) return null;
-      const preset = this.presetById(`${eff.id}:default`);
-      node = makeNode('effect', nodeId, x, y, {
-        playType,
-        effectId: eff.id,
-        presetId: `${eff.id}:default`,
-        scope: eff.scope,
-        params: { ...(preset?.params ?? defaultParams(eff)) },
-      });
-    }
-
-    g.nodes.push(node);
-    return node;
-  }
-
-  /** Route a play node to a layer/bus ('' → the effect's default). */
-  setBus(node: GraphNode, busId: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if ((!isEffectNode(node) && !voice.isSpliceLike(node.kind)) || node.busId === busId) return;
-    this.pushUndoSnapshot();
-    node.busId = busId;
-  }
-  /** The effective layer for a play node (its override, or the effect's default). */
-  busOf(node: GraphNode): string {
-    // `splice` is a layer-producing node too — but deliberately NOT folded into `isEffectNode`,
-    // which also gates the gallery / preset / effect-param paths a splice has no business in.
-    if (!isEffectNode(node) && !voice.isSpliceLike(node.kind)) return '';
-    return node.busId || this.effectOf(node)?.busId || '';
-  }
-
-  /** Select a preset for this play node and APPLY it — points `presetId` at the preset (kept as
-      a provenance label) and forks a private copy of its params onto the node. A preset is a
-      snapshot, never a live binding (S39): later param edits stay node-local. No-op off a play
-      node or for an unknown preset. */
-  selectPreset(node: GraphNode, presetId: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!isEffectNode(node)) return;
-    const pr = this.presetById(presetId);
-    if (!pr) return;
-    this.pushUndoSnapshot();
-    node.presetId = presetId;
-    node.params = { ...pr.params };
-  }
-
-  /** Re-apply the node's CURRENT preset — copy its params onto the node, discarding local edits
-      (the explicit "Apply" action; {@link selectPreset} already applies when the choice changes).
-      No-op when the node's `presetId` resolves to nothing. */
-  applyPreset(node: GraphNode): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!isEffectNode(node)) return;
-    const pr = this.presetById(node.presetId);
-    if (!pr) return;
-    node.params = { ...pr.params };
-  }
-
-  /** Snapshot this play node's current params as a NEW preset for its effect, register it, and
-      point the node's `presetId` at it (provenance). `name` defaults to "<Effect> preset".
-      Returns the new preset id, or null off a play node / unknown effect. Persists via the
-      authored autosave. */
-  saveNodeAsPreset(node: GraphNode, name?: string): string | null {
-    if (!this.canEditSelectedGraph) return null;
-    if (!isEffectNode(node)) return null;
-    const eff = this.effectOf(node);
-    if (!eff) return null;
-    const newId = freshId('preset', (k) => this.presets.some((p) => p.id === k)); // global uniqueness (survives reload)
-    const label = name?.trim() || `${eff.name} preset`;
-    const preset: Preset = { id: newId, name: label, effectId: eff.id, params: { ...node.params } };
-    this.presets.push(preset);
-    this.sim.registerPreset(preset);
-    node.presetId = newId;
-    return newId;
-  }
-
-  /** Author a param value onto a play or modifier node — always node-local now that presets are
-      snapshots (S39: no linked write-through to a shared preset). */
-  setParam(node: GraphNode, key: string, value: ParamValue): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    this.pushUndoSnapshot();
-    node.params = penv.setParamValue(node.params, key, value);
-  }
-
-  /** Author the node's life ENVELOPE — the amplitude-over-life curve that replaces its scalar
-      Life/Decay param (S6b). `null` detaches, restoring the scalar path exactly. Same mutation
-      path and same undo slot as {@link setParam}, so a curve edit is one undo like any other.
-      The scalar param is left untouched underneath: it still sets the envelope's time span, and
-      detaching returns to it with nothing lost. */
-  setLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    this.pushUndoSnapshot();
-    this.writeLifeEnvelope(node, value);
-  }
-
-  /** The same write with NO undo checkpoint — for the live frames of a curve drag, which fire
-      per pointermove. The control commits once at gesture end through {@link setLifeEnvelope},
-      so the stack gets one entry per gesture instead of one per frame. */
-  updateLifeEnvelope(node: GraphNode, value: CurveValue): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    this.writeLifeEnvelope(node, value);
-  }
-
-  private writeLifeEnvelope(node: GraphNode, value: CurveValue | null): void {
-    if (value) node.lifeEnvelope = value;
-    else delete node.lifeEnvelope;
-  }
-
-  /** Set the modifier a modifier node applies (its `modifierId`), seeding the new
-      modifier's default params so its inspector controls resolve. No-op off a modifier. */
-  setModifierId(node: GraphNode, modifierId: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'modifier' || node.modifierId === modifierId) return;
-    this.pushUndoSnapshot();
-    node.modifierId = modifierId;
-    node.params = graphsLib.modifierParamsFor(modifierId);
-    node.env = {};
-  }
-  /** Toggle a modifier node's bypass (identity when true; the chain keeps its state slot).
-      Renamed from `setModifierBypass` (effect chains: that name is the Effects contract's). */
-  setModifierNodeBypass(node: GraphNode, bypass: boolean): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'modifier') return;
-    this.pushUndoSnapshot();
-    node.bypass = bypass;
-  }
-
-  getEnvelope(node: GraphNode, key: string): Envelope | null {
-    return nodeHasParams(node) ? node.env[key] ?? null : null;
-  }
-  envKind(node: GraphNode, key: string): EnvKind {
-    return nodeHasParams(node) ? node.env[key]?.kind ?? 'none' : 'none';
-  }
-  isEnveloped(node: GraphNode, key: string): boolean {
-    return nodeHasParams(node) && !!node.env[key] && node.env[key]!.kind !== 'none';
-  }
-  /** Set or clear the envelope on a param (seeds a preset curve; 'none' removes it). */
-  setEnvKind(node: GraphNode, key: string, kind: EnvKind): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    this.pushUndoSnapshot();
-    node.env = penv.setEnvKind(node.env, key, kind);
-  }
-  setEnvAmount(node: GraphNode, key: string, amount: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    if (!node.env[key]) return;
-    this.pushUndoSnapshot();
-    node.env = penv.setEnvAmount(node.env, key, amount);
-  }
-  /** Replace the curve breakpoints (marks the envelope as hand-edited / custom). */
-  setEnvPoints(node: GraphNode, key: string, points: EnvPoint[]): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    if (!node.env[key]) return;
-    this.pushUndoSnapshot();
-    node.env = penv.setEnvPoints(node.env, key, points);
-  }
-  /** Set the ADSR shape on a param's envelope (regenerates the render curve). */
-  setEnvAdsr(node: GraphNode, key: string, adsr: AdsrShape): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!nodeHasParams(node)) return;
-    this.pushUndoSnapshot();
-    node.env = penv.setEnvAdsr(node.env, key, adsr);
-  }
-
-  // --- modulation graph layer (doc 10, S34) --------------------------------
-
-  /** The numeric params a target node can expose as modulation targets, normalized to
-      `{ key, label, min, max }` — effect params for play nodes, modifier params for modifier
-      nodes (which use the core `type` spec field). Non-number params are excluded. */
-  modTargetSpecs(node: GraphNode): { key: string; label: string; min?: number; max?: number }[] {
-    return mg.modTargetSpecs(node, this.effectOf(node));
-  }
-
-  /** The ordered exposed modulation-target rows on a node. */
-  modInputsOf(node: GraphNode): { param: string }[] {
-    return mg.modInputsOf(node);
-  }
-
-  /** Numeric params not yet exposed — the "Add parameter" picker options. */
-  availableModParams(node: GraphNode): { key: string; label: string }[] {
-    return mg.availableModParams(node, this.effectOf(node));
-  }
-
-  /** Expose a param as a modulation target (adds a node-face row + input handle). Idempotent. */
-  addModInput(node: GraphNode, param: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (!isEffectNode(node) && node.kind !== 'modifier') return;
-    const next = mg.addModInput(node.modInputs, param);
-    if (!next) return;
-    this.pushUndoSnapshot();
-    node.modInputs = next;
-  }
-
-  // --- face params (S5) ----------------------------------------------------
-  // "Add a param to the node face" ≡ "expose this param for modulation": ONE list
-  // (`node.modInputs`), two views (the node-face rows + the inspector's Parameters section).
-  // These read the SAME rows `modInputsOf` returns; they only widen what may be ADDED, since
-  // a face row is an editing surface first and a modulation target second.
-
-  /** Every param a node declares, normalized across both spec dialects (effect `kind` /
-      modifier `type`) — the face renders a control per declared TYPE. */
-  faceParamSpecs(node: GraphNode): fp.FaceParamSpec[] {
-    return fp.nodeParamSpecs(node, this.effectOf(node));
-  }
-
-  /** Params not yet on the face — the widened "Add parameter" picker (every declared param,
-      not only the modulatable numbers). */
-  availableFaceParams(node: GraphNode): { key: string; label: string }[] {
-    return fp.availableFaceParams(node, this.effectOf(node));
-  }
-
-  /** Whether a param is currently on the node's face (≡ exposed for modulation). */
-  isParamOnFace(node: GraphNode, key: string): boolean {
-    return fp.isParamOnFace(node, key);
-  }
-
-  /** The param a modulation wire dropped on this node's BODY should land on — its first
-      exposed NUMBER row, else the first number param it could expose. Skips non-numeric face
-      rows, which carry no `param:<key>` handle. */
-  modDropTarget(node: GraphNode): string | undefined {
-    return mg.modDropTargetParam(node, this.effectOf(node));
-  }
-
-  /** Put a param on the node face — the same mutation as exposing it for modulation, so the
-      gesture and the list stay one. Idempotent. */
-  addFaceParam(node: GraphNode, param: string): void {
-    this.addModInput(node, param);
-  }
-
-  /** Take a param off the face — the same mutation as un-exposing it, INCLUDING the existing
-      wire-deletion behaviour (the caller confirms first when {@link mappingsFor} is non-empty). */
-  removeFaceParam(node: GraphNode, param: string): void {
-    this.removeModInput(node, param);
-  }
-
-  /** Un-expose a param AND delete its incoming modulation wires (the caller confirms first). */
-  removeModInput(node: GraphNode, param: string): void {
-    if (!this.canEditSelectedGraph) return;
-    this.pushUndoSnapshot();
-    node.modInputs = mg.removeModInput(node.modInputs, param);
-    const g = this.selectedGraph;
-    if (g) g.edges = mg.edgesWithoutParamWires(g.edges, node.id, param);
-  }
-
-  /** The incoming mapping edges for a node's exposed param — one per wire, each editable. */
-  mappingsFor(node: GraphNode, param: string): GraphEdge[] {
-    const g = this.selectedGraph;
-    if (!g) return [];
-    return mg.mappingsFor(g.edges, node.id, param);
-  }
-
-  /** The resolved modulation SOURCES wired into an exposed param row, each with its edge's
-      `invert` — drives the S38 node-face live tick (`paramRowSignal`). Dangling / non-source
-      wires are skipped (never thrown), mirroring `resolveNodeModulations`. */
-  modSourcesFor(node: GraphNode, param: string): { source: voice.ModSource; invert: boolean }[] {
-    const g = this.selectedGraph;
-    if (!g) return [];
-    return mg.modSourcesFor(g.nodes, g.edges, node.id, param);
-  }
-
-  /** A `cc` source node's current live 0..1 level, read from the sim's CC table — or, when the
-      node is in OSC mode, from the sim's OSC table at its address. Drives the node-face value bar
-      + readout (S38); the branch keeps the preview honest for both live inputs. */
-  ccNodeLiveValue(node: GraphNode): number {
-    if (node?.kind !== 'cc') return 0;
-    return voice.sampleCc(this.sim.ccTable, node.ccController ?? 1, node.ccChannel ?? null);
-  }
-
-  oscNodeLiveValue(node: GraphNode): number {
-    return node?.kind === 'osc' ? voice.sampleOsc(this.sim.oscTable, node.oscAddress ?? '') : 0;
-  }
-
-  /** An `audio` source node's live 0..1 band level, read through the SAME freshness rule the
-      render sweep uses (sim clock vs the frame's stamp) — so the node face goes quiet exactly
-      when the mapped params do. */
-  audioNodeLiveValue(node: GraphNode): number {
-    return node?.kind === 'audio' ? voice.sampleAudio(this.sim.audioTable, node.audioBand ?? 'level', this.sim.timeMs) : 0;
-  }
-  audioNodeBand(node: GraphNode): voice.AudioBand {
-    return node?.kind === 'audio' ? node.audioBand ?? 'level' : 'level';
-  }
-  /** Set which feature an audio source reads. Persists with the graph (normal node field). */
-  setAudioNodeBand(node: GraphNode, band: voice.AudioBand): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'audio' || !voice.isAudioBand(band)) return;
-    // Write through the graph's own (reactive) node, not a caller-held raw reference — a plain
-    // object handed back by `addNode` is not the proxy autosave and the canvas observe.
-    const target = this.selectedGraph?.nodes.find((n) => n.id === node.id) ?? node;
-    if (target.audioBand === band) return;
-    this.pushUndoSnapshot();
-    target.audioBand = band;
-  }
-
-  noteNodeLiveValue(node: GraphNode): number {
-    return node?.kind === 'note'
-      ? voice.sampleNote(this.sim.noteTable, node.noteNumber ?? 60, node.noteChannel ?? null, node.noteMode ?? 'gate', node.noteReleaseMs ?? 0, this.sim.timeMs)
-      : 0;
-  }
-
-  /** The live CC value table (sim mirror) — the S38 param-row tick reads it for `cc` sources. */
-  get liveCcTable(): voice.CcTable {
-    return this.sim.ccTable;
-  }
-
-  /** The live OSC value table (sim mirror) — the S38 param-row tick reads it for `osc` sources. */
-  get liveOscTable(): voice.OscTable {
-    return this.sim.oscTable;
-  }
-
-  private editEdge(edgeId: string, mut: (e: GraphEdge) => void): void {
-    if (!this.canEditSelectedGraph) return;
-    const edge = this.selectedGraph?.edges.find((e) => e.id === edgeId);
-    if (edge) mut(edge);
-  }
-  /** Per-mapping depth 0..1 (edited target-side, under the param row). */
-  setMappingAmount(edgeId: string, amount: number): void {
-    this.editEdge(edgeId, (e) => (e.amount = amount));
-  }
-  /** Per-mapping invert (flips the source before scaling into the range). */
-  setMappingInvert(edgeId: string, invert: boolean): void {
-    this.editEdge(edgeId, (e) => (e.invert = invert));
-  }
-  /** Per-mapping output range the source maps into (clamped to the param spec at render). Graph
-      era; reached through the string overload of {@link setMappingRange}. */
-  private setEdgeMappingRange(edgeId: string, min: number, max: number): void {
-    this.editEdge(edgeId, (e) => {
-      e.rangeMin = min;
-      e.rangeMax = max;
-    });
-  }
-
-  // --- envelope SOURCE node shape (the S24 editor drives this via the node inspector) -------
-
-  /** The envelope source node's ADSR shape (stored in the well-known slot). */
-  envelopeNodeAdsr(node: GraphNode): AdsrShape {
-    return (node?.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY]?.adsr : undefined) ?? defaultAdsr();
-  }
-  /** The envelope source node's full envelope (shape + render points), or null. */
-  envelopeNodeEnvelope(node: GraphNode): Envelope | null {
-    return node?.kind === 'envelope' ? node.env[voice.ENVELOPE_NODE_KEY] ?? null : null;
-  }
-  /** Set the envelope source node's shape (regenerates its render curve; single source). */
-  setEnvelopeNodeAdsr(node: GraphNode, adsr: AdsrShape): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'envelope') return;
-    let e = node.env[voice.ENVELOPE_NODE_KEY];
-    if (!e) {
-      e = { kind: 'custom', amount: 1, points: [] };
-      node.env[voice.ENVELOPE_NODE_KEY] = e;
-    }
-    e.adsr = { ...adsr };
-    e.points = adsrToPoints(adsr);
-    e.kind = 'custom';
-  }
-
-  // --- LFO SOURCE node settings (doc 10, S36) — edited via the LFO node inspector ----------
-
-  /** The LFO source node's settings (defaults when unset). */
-  lfoSettings(node: GraphNode): voice.LfoSettings {
-    return (node?.kind === 'lfo' ? node.lfo : undefined) ?? voice.defaultLfoSettings();
-  }
-  /** Patch the LFO source node's settings (seeds defaults first so partial edits are safe). */
-  setLfo(node: GraphNode, patch: Partial<voice.LfoSettings>): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'lfo') return;
-    node.lfo = { ...(node.lfo ?? voice.defaultLfoSettings()), ...patch };
-  }
-
-  // --- CC SOURCE node settings (S37) ---------------------------------------
-  // The node's controller number + channel filter drive an engine CC-table read at sample
-  // time. MIDI-learn reuses the shared learn flow (see startMidiLearn + applyCcLearn).
-
-  /** The CC source node's controller number (default 1). */
-  ccNodeController(node: GraphNode): number {
-    return node?.kind === 'cc' ? node.ccController ?? 1 : 1;
-  }
-  /** The CC source node's channel filter (1..16), or null for omni (any channel). */
-  ccNodeChannel(node: GraphNode): number | null {
-    return node?.kind === 'cc' ? node.ccChannel ?? null : null;
-  }
-
-  /** Whether a controller number is bindable — rejects the reserved section-recall CC 0 and
-      anything outside the MIDI range (1..127). Drives the inspector's validation. */
-  isBindableCcController(controller: number): boolean {
-    return Number.isFinite(controller) && controller >= 1 && controller <= 127;
-  }
-
-  /** Set the CC node's controller. Controller 0 is reserved for section recall and REJECTED
-      (validation, not a throw); an out-of-range value is likewise ignored, leaving the prior
-      binding untouched. Valid range 1..127. */
-  setCcController(node: GraphNode, controller: number): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'cc') return;
-    if (!this.isBindableCcController(controller)) return; // 0 reserved + out-of-range rejected
-    node.ccController = Math.round(controller);
-  }
-
-  /** Set the CC node's channel filter (1..16), or null for omni (any channel). Out-of-range
-      numeric channels are ignored (the prior filter stays). */
-  setCcChannel(node: GraphNode, channel: number | null): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'cc') return;
-    if (channel === null) {
-      node.ccChannel = null;
-      return;
-    }
-    if (!Number.isFinite(channel) || channel < 1 || channel > 16) return;
-    node.ccChannel = Math.round(channel);
-  }
-
-  // --- OSC modulation input (the cc source node's alternate live input) ------
-  // A cc node reads MIDI CC by default; switched to OSC it reads a live 0..1 value at an OSC
-  // address instead (nodeModSource maps it to an `osc` ModSource). Both are "controller" inputs.
-
-  /** The cc node's live input mode: 'midi' (Control Change) or 'osc' (address). Default 'midi'. */
-  ccNodeSource(node: GraphNode): 'midi' | 'osc' {
-    return node?.kind === 'cc' ? node.ccSource ?? 'midi' : 'midi';
-  }
-  /** Switch the cc node between MIDI CC and OSC as its live input. */
-  setCcNodeSource(node: GraphNode, source: 'midi' | 'osc'): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'cc') return;
-    node.ccSource = source;
-  }
-  /** The cc node's OSC address (read when in OSC mode); '' until one is set. */
-  oscNodeAddress(node: GraphNode): string {
-    return node?.kind === 'osc' ? node.oscAddress ?? '' : '';
-  }
-  /** Set the cc node's OSC address (trimmed). Empty is allowed (⇒ neutral until set). */
-  setOscNodeAddress(node: GraphNode, address: string): void {
-    if (!this.canEditSelectedGraph) return;
-    if (node.kind !== 'osc') return;
-    node.oscAddress = address.trim();
-  }
-
-  noteNodeNumber(node: GraphNode): number {
-    return node?.kind === 'note' ? node.noteNumber ?? 60 : 60;
-  }
-  noteNodeChannel(node: GraphNode): number | null {
-    return node?.kind === 'note' ? node.noteChannel ?? null : null;
-  }
-  noteNodeMode(node: GraphNode): voice.NoteModMode {
-    return node?.kind === 'note' ? node.noteMode ?? 'gate' : 'gate';
-  }
-  noteNodeReleaseMs(node: GraphNode): number {
-    return node?.kind === 'note' ? node.noteReleaseMs ?? 0 : 0;
-  }
-  setNoteNodeNumber(node: GraphNode, note: number): void {
-    if (!this.canMutateNode(node) || node.kind !== 'note' || !Number.isFinite(note)) return;
-    node.noteNumber = Math.max(0, Math.min(127, Math.round(note)));
-  }
-  setNoteNodeChannel(node: GraphNode, channel: number | null): void {
-    if (!this.canMutateNode(node) || node.kind !== 'note') return;
-    if (channel === null) node.noteChannel = null;
-    else if (Number.isFinite(channel) && channel >= 1 && channel <= 16) node.noteChannel = Math.round(channel);
-  }
-  setNoteNodeMode(node: GraphNode, mode: voice.NoteModMode): void {
-    if (!this.canMutateNode(node) || node.kind !== 'note') return;
-    node.noteMode = mode;
-  }
-  setNoteNodeReleaseMs(node: GraphNode, releaseMs: number): void {
-    if (!this.canMutateNode(node) || node.kind !== 'note' || !Number.isFinite(releaseMs)) return;
-    node.noteReleaseMs = Math.max(0, Math.round(releaseMs));
-  }
-
-  randomDistribution(node: GraphNode): voice.RandomDistribution {
-    return node?.kind === 'randomMod' ? node.randomDistribution ?? 'linear' : 'linear';
-  }
-  setRandomDistribution(node: GraphNode, distribution: voice.RandomDistribution): void {
-    if (!this.canMutateNode(node) || node.kind !== 'randomMod') return;
-    node.randomDistribution = distribution;
-  }
-  randomSteps(node: GraphNode): number {
-    return node?.kind === 'randomMod' ? node.randomSteps ?? 4 : 4;
-  }
-  setRandomSteps(node: GraphNode, steps: number): void {
-    if (!this.canMutateNode(node) || node.kind !== 'randomMod' || !Number.isFinite(steps)) return;
-    node.randomSteps = Math.max(2, Math.min(64, Math.round(steps)));
-  }
 }

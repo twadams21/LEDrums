@@ -59,7 +59,7 @@ function installLaterWindowListener(): ReturnType<typeof vi.fn> {
 function fixture() {
   const stepSetlist = vi.fn(() => true);
   const store: AppKeyboardStore = {
-    fireSectionGraph: vi.fn(),
+    fireEffectAt: vi.fn(),
     stepSetlist,
   };
   const shell: AppKeyboardShell = {
@@ -85,7 +85,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const duplicateEvent = key(document.body, 'd', { metaKey: true });
     const deleteEvent = key(document.body, 'Backspace');
 
-    expect(store.fireSectionGraph).toHaveBeenCalledWith(0);
+    expect(store.fireEffectAt).toHaveBeenCalledWith(0);
     expect(store.stepSetlist).toHaveBeenCalledWith('section', 1);
     expect(duplicate).toHaveBeenCalledOnce();
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -112,7 +112,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const event = key(document.body, keyName);
 
     expect(store.stepSetlist).toHaveBeenCalledWith('section', delta);
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -127,7 +127,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     laterWindow.mockClear();
     const deleteEvent = key(overlay, 'Backspace');
 
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -152,7 +152,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     laterWindow.mockClear();
     const deleteEvent = key(popover, 'Backspace');
 
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -176,7 +176,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     laterWindow.mockClear();
     const deleteEvent = key(item, 'Backspace');
 
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(shortcut.defaultPrevented).toBe(true);
     expect(deleteEvent.defaultPrevented).toBe(true);
@@ -211,14 +211,14 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     const nativeDelete = key(native, 'Backspace');
     native.remove();
 
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
     expect(duplicate).not.toHaveBeenCalled();
     expect(nativeDelete.defaultPrevented).toBe(true);
     expect(laterWindow).not.toHaveBeenCalled();
   });
 
   it('consumes Cmd+D inside a modal with the real App registry, so SectionsView cannot duplicate behind it', () => {
-    const store: AppKeyboardStore = { fireSectionGraph: vi.fn(), stepSetlist: vi.fn(() => true) };
+    const store: AppKeyboardStore = { fireEffectAt: vi.fn(), stepSetlist: vi.fn(() => true) };
     const shell: AppKeyboardShell = { view: 'sections', settingsPane: null };
     const shortcuts = createAppShortcuts({ undo: vi.fn(() => false) });
     render(AppKeyboardCapture, { props: { store, shell, shortcuts, shortcutPlatform: 'mac' } });
@@ -257,7 +257,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(received).toHaveBeenCalledTimes(2);
     expect(arrow.defaultPrevented).toBe(false);
     expect(digit.defaultPrevented).toBe(false);
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
   });
 
   it('lets marked keyboard controls receive Perform arrows and digits inside a modal and popup', () => {
@@ -285,7 +285,7 @@ describe('AppKeyboardCapture — mounted App-level shortcut seam', () => {
     expect(modalDigit.defaultPrevented).toBe(false);
     expect(popupArrow.defaultPrevented).toBe(false);
     expect(popupDigit.defaultPrevented).toBe(false);
-    expect(store.fireSectionGraph).not.toHaveBeenCalled();
+    expect(store.fireEffectAt).not.toHaveBeenCalled();
   });
 
   it('claims Backspace outside text without stopping it, and leaves editable text alone', () => {

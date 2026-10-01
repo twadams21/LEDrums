@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { InputMap, KitConfig, voice } from '@ledrums/core';
+import { effectChain, type InputMap, type KitConfig } from '@ledrums/core';
 import type { HoopRef, PatchRouting } from '../patch-routing';
-import { makeNode } from '../../trigger-lab/sim.graph-compilation';
 import {
   addDeclaredZone,
   defaultZoneName,
-  boundTriggerFor,
+  drumEffectNames,
   buildPixelOutputTable,
   hoopPixelSpan,
   nextZoneSlot,
@@ -209,23 +208,18 @@ describe('buildPixelOutputTable', () => {
   });
 });
 
-describe('boundTriggerFor', () => {
-  const drumGraph = (drumId: string, zone: string): voice.TriggerGraph => ({
-    nodes: [makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'drum', drumId, zone } })],
-    edges: [],
-  });
-  const midiGraph = (): voice.TriggerGraph => ({
-    nodes: [makeNode('trigger', 'trigger', 0, 0, { source: { kind: 'midi', note: 60 } })],
-    edges: [],
+describe('drumEffectNames', () => {
+  const fx = (id: string, name: string, row: string) =>
+    effectChain.parseEffect({ id, name, cell: { row, column: { kind: 'zone', slot: 0 } }, generator: { kind: 'solid' } });
+
+  it('lists the section Effects on the drum row, in stack order, unnamed ones by generator kind', () => {
+    const section = { effects: [fx('e1', 'Pulse', 'kick'), fx('e2', 'Rim', 'snare'), fx('e3', '', 'kick')] };
+    expect(drumEffectNames('kick', section)).toEqual(['Pulse', 'solid']);
   });
 
-  it('finds the first graph bound to the drum by identity, labelled drumId:zone', () => {
-    const graphs = { 'graph-1': midiGraph(), 'kick:center': drumGraph('kick', 'center') };
-    expect(boundTriggerFor('kick', graphs)).toEqual({ graphKey: 'kick:center', label: 'kick:center' });
-  });
-
-  it('returns null when no graph carries a matching drum source', () => {
-    expect(boundTriggerFor('snare', { 'graph-1': midiGraph(), 'kick:center': drumGraph('kick', 'center') })).toBeNull();
+  it('is empty for a drum with no Effects, or no section', () => {
+    expect(drumEffectNames('tom1', { effects: [fx('e1', 'Pulse', 'kick')] })).toEqual([]);
+    expect(drumEffectNames('kick', null)).toEqual([]);
   });
 });
 

@@ -52,11 +52,6 @@ function connected(sent: ClientMessage[]): TriggerLab {
   return store;
 }
 
-/** The first graph key + its sequence/trigger nodes, for the graph-side guards. */
-function firstGraphKey(store: TriggerLab): string {
-  return Object.keys(store.graphs)[0]!;
-}
-
 const inputMapMessages = (sent: ClientMessage[]): ClientMessage[] => sent.filter((m) => m.t === 'setInputMap');
 
 describe('global control vs drum zone', () => {
@@ -147,70 +142,6 @@ describe('global control uniqueness', () => {
   });
 });
 
-describe('sequence reset vs the other groups', () => {
-  it('refuses a reset note a global control owns', () => {
-    const store = connected([]);
-    const key = firstGraphKey(store);
-    const node = { id: 'seq-guard-1', kind: 'sequence' as const, x: 0, y: 0, params: {} };
-    store.graphs[key]!.nodes.push(node as never);
-    store.setGlobalControlBinding('nextSong', { midiNote: 60 });
-
-    store.setSequenceResetSource(store.graphs[key]!.nodes.at(-1)!, { kind: 'midi', note: 60 });
-
-    expect(store.graphs[key]!.nodes.at(-1)!.resetSource).toBeUndefined();
-  });
-
-  it('refuses a global note a sequence reset owns (the reverse direction)', () => {
-    const store = connected([]);
-    const key = firstGraphKey(store);
-    store.graphs[key]!.nodes.push({ id: 'seq-guard-2', kind: 'sequence', x: 0, y: 0, params: {} } as never);
-    store.setSequenceResetSource(store.graphs[key]!.nodes.at(-1)!, { kind: 'midi', note: 61 });
-
-    store.setGlobalControlBinding('nextSong', { midiNote: 61 });
-
-    expect(store.globalControls.nextSong).toBeUndefined();
-  });
-
-  it('lets two sequence resets share a note', () => {
-    const store = connected([]);
-    const key = firstGraphKey(store);
-    store.graphs[key]!.nodes.push({ id: 'seq-guard-3', kind: 'sequence', x: 0, y: 0, params: {} } as never);
-    store.graphs[key]!.nodes.push({ id: 'seq-guard-4', kind: 'sequence', x: 0, y: 0, params: {} } as never);
-    const nodes = store.graphs[key]!.nodes;
-
-    store.setSequenceResetSource(nodes.at(-2)!, { kind: 'midi', note: 62 });
-    store.setSequenceResetSource(nodes.at(-1)!, { kind: 'midi', note: 62 });
-
-    expect(nodes.at(-2)!.resetSource).toEqual({ kind: 'midi', note: 62 });
-    expect(nodes.at(-1)!.resetSource).toEqual({ kind: 'midi', note: 62 });
-  });
-
-  it('allows a DRUM reset source even when that pad’s note is globally bound (issue #159)', () => {
-    const store = connected([]);
-    const key = firstGraphKey(store);
-    store.graphs[key]!.nodes.push({ id: 'seq-guard-5', kind: 'sequence', x: 0, y: 0, params: {} } as never);
-    store.setGlobalControlBinding('nextSong', { midiNote: 63 });
-
-    // The drum namespace is untouched by the rule, so one pad can still both fire its
-    // graph and reset this sequencer.
-    store.setSequenceResetSource(store.graphs[key]!.nodes.at(-1)!, { kind: 'drum', drumId: 'kick', zone: '0' });
-
-    expect(store.graphs[key]!.nodes.at(-1)!.resetSource).toEqual({ kind: 'drum', drumId: 'kick', zone: '0' });
-  });
-
-  it('lets a reset re-commit its own note', () => {
-    const store = connected([]);
-    const key = firstGraphKey(store);
-    store.graphs[key]!.nodes.push({ id: 'seq-guard-6', kind: 'sequence', x: 0, y: 0, params: {} } as never);
-    const node = store.graphs[key]!.nodes.at(-1)!;
-
-    store.setSequenceResetSource(node, { kind: 'midi', note: 64 });
-    store.setSequenceResetSource(node, { kind: 'midi', note: 64 });
-
-    expect(node.resetSource).toEqual({ kind: 'midi', note: 64 });
-  });
-});
-
 describe('Learn survives a refusal', () => {
   /** Feed a heard note through the store's channel-gated MIDI input path. */
   function hearNote(store: TriggerLab, note: number): void {
@@ -245,24 +176,35 @@ describe('Learn survives a refusal', () => {
   });
 });
 
-describe('trigger source vs the other groups', () => {
-  it('refuses a trigger source note a global control owns', () => {
+describe('Cue source vs the other groups', () => {
+  /** A Cue Effect whose MIDI source learns the next heard note. */
+  function armCue(store: TriggerLab): string {
+    const id = store.addEffect({ row: 'kit', column: { kind: 'cue' } }, 'solid')!;
+    store.startCueLearn(id, 'midi');
+    return id;
+  }
+  function hearNote(store: TriggerLab, note: number): void {
+    (store as unknown as { midi: { applyNoteLearn: (n: number) => void } }).midi.applyNoteLearn(note);
+  }
+
+  it('refuses a Cue note a global control owns (the learn stays armed)', () => {
     const store = connected([]);
-    const key = firstGraphKey(store);
     store.setGlobalControlBinding('nextSong', { midiNote: 65 });
+    const id = armCue(store);
 
-    store.setTriggerSource(key, { kind: 'midi', note: 65 });
+    hearNote(store, 65);
 
-    expect(store.graphs[key]!.nodes.find((n) => n.kind === 'trigger')?.source).not.toEqual({ kind: 'midi', note: 65 });
+    expect(store.effectById(id)!.trigger).not.toEqual({ kind: 'cue', source: { midiNote: 65 } });
+    expect(store.cueLearnEffectId).toBe(id);
   });
 
-  it('allows a trigger source note that only a drum zone owns — same group, shares by design', () => {
+  it('allows a Cue note that only a drum zone owns — same group, shares by design', () => {
     const store = connected([]);
-    const key = firstGraphKey(store);
     store.setInputMap({ ...store.project!.inputMap, midiNotes: [{ note: 66, drumId: 'kick', slot: 0 }] });
+    const id = armCue(store);
 
-    store.setTriggerSource(key, { kind: 'midi', note: 66 });
+    hearNote(store, 66);
 
-    expect(store.graphs[key]!.nodes.find((n) => n.kind === 'trigger')?.source).toEqual({ kind: 'midi', note: 66 });
+    expect(store.effectById(id)!.trigger).toEqual({ kind: 'cue', source: { midiNote: 66 } });
   });
 });

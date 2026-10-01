@@ -1,5 +1,5 @@
 /* Id factory (#12) — the ONE place the store mints ids. Every domain (shows, songs,
-   sections, graphs, nodes, edges, presets) used to carry its own ad-hoc `nid()` /
+   sections, Effects, devices, scenes, mappings) used to carry its own ad-hoc `nid()` /
    collision loop; they all funnel here now so the counter + the "survives reload" loop
    live once. Pure (no runes/DOM): a module-global monotonic counter, exactly as the old
    `store.svelte.ts` module scope held it — shared across every TriggerLab instance so a
@@ -9,11 +9,10 @@
     `let idSeq` in store.svelte.ts), so ids stay unique across stores + reloads. */
 let idSeq = 1000;
 
-/** Every prefix the app mints through {@link nid} / {@link freshId}. Effect chains add `fx`
-    (Effect ids), `mod` / `ctl` / `dev` (device uids — `effects-doc.ts` / `effects-files.ts`) and
-    `scene` (canvas scenes a file load brings in), and MIDI-map adds `map` (InputMapping ids);
-    a reload must reserve them too. */
-const GENERATED_ID_RE = /^(show|graph|song|section|n|e|preset|fx|mod|ctl|dev|scene|map)-(\d+)$/;
+/** Every prefix the app mints through {@link nid} / {@link freshId}: shows, songs, sections,
+    `fx` (Effect ids), `mod` / `ctl` / `dev` (device uids — `effects-doc.ts` / `effects-files.ts`),
+    `scene` (canvas scenes) and `map` (InputMapping ids); a reload must reserve them all. */
+const GENERATED_ID_RE = /^(show|song|section|fx|mod|ctl|dev|scene|map)-(\d+)$/;
 
 /** Mint a fresh `"<prefix>-<n>"` id (the raw counter bump). */
 export function nid(prefix: string): string {
@@ -35,7 +34,7 @@ export function reserveIds(ids: Iterable<string>): void {
 
 /** Mint a fresh id that is not already taken (the "survives reload" loop the domains
     repeated: keep bumping until `exists` says the id is free). `exists` is the domain's
-    membership test (e.g. `(id) => id in this.graphs`). */
+    membership test (e.g. `(id) => this.mappings.some((m) => m.id === id)`). */
 export function freshId(prefix: string, exists: (id: string) => boolean): string {
   let id = nid(prefix);
   while (exists(id)) id = nid(prefix);

@@ -34,64 +34,30 @@ afterEach(() => {
 });
 
 describe('canvas scene store mutators', () => {
-  it('createCanvasScene appends a scene + a derived canvas effect', () => {
+  it('createCanvasScene appends an authored scene under a fresh id', () => {
     const store = new TriggerLab(fakeClient);
     const id = store.createCanvasScene('Aurora');
     expect(id).toMatch(/^scene/);
-    expect(store.canvasScenes.some((s) => s.id === id)).toBe(true);
-    expect(store.selectableEffects.some((e) => e.id === `canvas:${id}`)).toBe(true);
-    expect(store.canvasEffects[0]?.playType).toBe('canvas');
+    expect(store.canvasScenes.map((s) => [s.id, s.name])).toEqual([[id, 'Aurora']]);
+    expect(store.allCanvasScenes.some((s) => s.id === id)).toBe(true);
+    expect(store.isBuiltinCanvasScene(id)).toBe(false);
   });
 
-  it("addPlayNode('canvas') seeds a scene + canvas node", () => {
+  it('duplicateCanvasScene forks a built-in into an editable authored copy', () => {
     const store = new TriggerLab(fakeClient);
-    const node = store.addPlayNode('canvas', 0, 0);
-    expect(node).not.toBeNull();
-    expect(node!.playType).toBe('canvas');
-    expect(node!.canvasScene).toBeTruthy();
-    expect(node!.effectId).toBe(`canvas:${node!.canvasScene}`);
+    const builtin = store.allCanvasScenes.find((s) => store.isBuiltinCanvasScene(s.id))!;
+    const copy = store.duplicateCanvasScene(builtin.id)!;
+    expect(store.canvasScenes.find((s) => s.id === copy)!.name).toBe(`${builtin.name} copy`);
+    expect(store.isBuiltinCanvasScene(copy)).toBe(false);
   });
 
-  it("addPlayNode('particles') selects a particle effect", () => {
+  it('deleteCanvasScene removes an authored scene and refuses a built-in', () => {
     const store = new TriggerLab(fakeClient);
-    const node = store.addPlayNode('particles', 0, 0);
-    expect(node).not.toBeNull();
-    expect(node!.playType).toBe('particles');
-    const eff = store.selectableEffects.find((e) => e.id === node!.effectId);
-    expect(eff?.playType).toBe('particles');
-  });
-
-  it('pickEffect allows cross-category swaps and updates the node play type', () => {
-    const store = new TriggerLab(fakeClient);
-    const node = store.addPlayNode('particles', 0, 0)!;
-    const wave = store.selectableEffects.find((e) => e.playType === 'waves' && !e.deprecated);
-    expect(wave).toBeDefined();
-    store.pickEffect(node, wave!.id);
-    expect(node.effectId).toBe(wave!.id);
-    expect(node.playType).toBe('waves');
-  });
-
-  it('setCanvasScene repoints a canvas node', () => {
-    const store = new TriggerLab(fakeClient);
-    const node = store.addPlayNode('canvas', 0, 0)!;
-    const second = store.createCanvasScene('Second');
-    store.setCanvasScene(node, second);
-    expect(node.canvasScene).toBe(second);
-    expect(node.effectId).toBe(`canvas:${second}`);
-  });
-
-  it('deleteCanvasScene retargets nodes to the fallback scene', () => {
-    const store = new TriggerLab(fakeClient);
-    const a = store.createCanvasScene('A');
-    const b = store.createCanvasScene('B');
-    const node = store.addPlayNode('canvas', 0, 0)!;
-    store.setCanvasScene(node, a);
-    expect(node.canvasScene).toBe(a);
-    store.deleteCanvasScene(a);
-    expect(store.canvasScenes.some((s) => s.id === a)).toBe(false);
-    // retargetSceneRefs rebuilds the graph's nodes, so re-read from the store (the UI does too).
-    const updated = store.selectedGraph!.nodes.find((n) => n.id === node.id)!;
-    expect(updated.canvasScene).toBe(b); // retargeted to remaining scene
+    const id = store.createCanvasScene('Doomed');
+    expect(store.deleteCanvasScene(id)).toBe(true);
+    expect(store.canvasScenes).toEqual([]);
+    const builtin = store.allCanvasScenes.find((s) => store.isBuiltinCanvasScene(s.id))!;
+    expect(store.deleteCanvasScene(builtin.id)).toBe(false);
   });
 
   it('updateCanvasSceneJson rejects an id change', () => {

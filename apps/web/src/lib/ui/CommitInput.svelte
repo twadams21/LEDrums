@@ -1,7 +1,7 @@
 <script lang="ts">
   /* The canonical inline-edit primitive. ONE field that COMMITS ON CHANGE (Enter / blur),
      never per keystroke, and reverts on Escape — used both for transient inline renames
-     (section / song / graph / show names) and for persistent Inspector fields (numbers,
+     (section / song / effect / show names) and for persistent Inspector fields (numbers,
      OSC addresses, host/iface). It owns a local `draft`: seeded from `value`, re-synced from
      `value` whenever the field is NOT focused (so a committed store value — or a different
      selection — flows back in), and uncontrolled while you type.

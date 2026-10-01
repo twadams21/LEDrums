@@ -26,14 +26,14 @@ describe('TrackInputsPanel', () => {
   });
   it('does not permit viewers to change the Audio source', () => {
     render(TrackInputsPanel, { status, canEdit: false });
-    expect(screen.getByRole('button', { name: 'Audio source for graph nodes' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Audio source for Effects' }).hasAttribute('disabled')).toBe(true);
   });
   it('lets an offline editor explicitly switch an unavailable track back to browser capture', async () => {
     const onSelect = vi.fn();
     const view = render(TrackInputsPanel, { status, selected: 'audio-track', canEdit: true, onSelect });
     await view.rerender({ status: null });
     expect(onSelect).not.toHaveBeenCalled();
-    const selector = screen.getByRole('button', { name: 'Audio source for graph nodes' });
+    const selector = screen.getByRole('button', { name: 'Audio source for Effects' });
     expect(selector.hasAttribute('disabled')).toBe(false);
     await fireEvent.keyDown(selector, { key: 'Enter' });
     expect(await screen.findByRole('option', { name: 'Browser / loopback capture' })).toBeTruthy();
@@ -47,7 +47,7 @@ describe('TrackInputsPanel', () => {
   it('keeps the offline selector disabled for viewers even with a saved source', async () => {
     const onSelect = vi.fn();
     render(TrackInputsPanel, { selected: 'audio-track', canEdit: false, onSelect });
-    const selector = screen.getByRole('button', { name: 'Audio source for graph nodes' });
+    const selector = screen.getByRole('button', { name: 'Audio source for Effects' });
     expect(selector.hasAttribute('disabled')).toBe(true);
     await fireEvent.click(selector);
     expect(onSelect).not.toHaveBeenCalled();

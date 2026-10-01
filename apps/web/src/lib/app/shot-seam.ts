@@ -114,8 +114,6 @@ class ShotSeamImpl implements ShotSeam {
 
   reset(): void {
     this.shell.setMapMode(false);
-    this.store.closeGallery();
-    this.store.closeSettings();
     this.shell.closeSettings();
     this.shell.clearSelection();
     sectionsDndPreview.clear();

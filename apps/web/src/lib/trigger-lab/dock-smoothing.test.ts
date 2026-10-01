@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { groupVoicesByBus, smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
+import { smoothBusLevels, smoothDockVoices, smoothingAlpha } from './dock-smoothing';
 import type { DockVoice } from './dock-voices';
 
 const dv = (id: string, busId: string, level: number): DockVoice => ({
-  id, busId, effectId: 'fx', mode: 'oneshot', level, hue: 0, releasing: false, via: '', pad: 'graph:1',
+  id, busId, effectId: 'fx', mode: 'oneshot', level, hue: 0, releasing: false, via: '',
 });
 
 describe('smoothingAlpha', () => {
@@ -54,15 +54,5 @@ describe('smoothDockVoices', () => {
     const v = dv('v1', 'base', 0.7);
     const out = smoothDockVoices(levels, [v], 0.1);
     expect(out[0]).toBe(v);
-  });
-});
-
-describe('groupVoicesByBus', () => {
-  it('groups in one pass preserving order', () => {
-    const vs = [dv('a', 'base', 1), dv('b', 'lead', 1), dv('c', 'base', 0.5)];
-    const g = groupVoicesByBus(vs);
-    expect(g.get('base')!.map((v) => v.id)).toEqual(['a', 'c']);
-    expect(g.get('lead')!.map((v) => v.id)).toEqual(['b']);
-    expect(g.get('none')).toBeUndefined();
   });
 });

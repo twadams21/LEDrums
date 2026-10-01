@@ -15,16 +15,13 @@
 
     Reactivity lives here (Svelte 5 runes fields); the store delegates its public surface via
     getter/setter/forwarders so callers + tests are unchanged. The authored-state SWAP machinery
-    (reset-to-seed / apply-authored / graph normalize) spans EVERY authored cluster — graphs, buses,
-    presets, effects, sections — not just shows/songs, so it stays in the store and is reached through
-    the injected {@link ShowsControllerHost} (`toAuthored`/`replaceDocument`). The graph MODEL the resolution + closure extraction read/merge is likewise
-    store-owned and reached through the host, as is the section-arrangement boundary (R24 owns
-    `activeSectionId`) and the WS link. The store keeps the sim-play + section-arrangement surfaces. */
+    (reset-to-seed / apply-authored) spans every authored cluster, so it stays in the store and is
+    reached through the injected {@link ShowsControllerHost} (`toAuthored`/`replaceDocument`), as is
+    the section-arrangement boundary (R24 owns `activeSectionId`) and the WS link. */
 
 import type { CanvasScene } from '@ledrums/core';
 import type { ClientMessage } from '../ws/protocol-types';
 import { trackDocument } from './store/track-document';
-import type { EffectDef, Preset, TriggerGraph } from './sim';
 import type { Song } from '../app/setlist';
 import * as setlist from '../app/setlist';
 import {
@@ -47,8 +44,16 @@ import { nid, freshId, reserveIds } from './store/ids';
 import { seedDocumentV3 } from './store/seed';
 import { authoredIdsFromLibraryV3, idsFromSongLibraryV2 } from './store/reserve-library-ids';
 import * as showsLib from './store/shows';
-import * as songRefsLib from './store/song-library-refs';
-import { detachEffectSong, extractEffectSong, resolveEffectSongRefs, toStoreSong } from './store/effect-song-library';
+import {
+  addSongRef,
+  detachEffectSong,
+  extractEffectSong,
+  removeSongRef,
+  resolveEffectSongRefs,
+  showsUsingSong,
+  toStoreSong,
+  type RefBearingShow,
+} from './store/effect-song-library';
 import { importLegacyShows, type LegacyLibrary } from './legacy-import';
 
 // --- persistence (show library + song pool ⇄ localStorage) --------------------------------------
@@ -88,18 +93,9 @@ function writeStoredKey(key: string, payload: unknown): boolean {
 }
 
 /** The store-side surface the shows controller depends on — injected so it stays free of the
-    authored-state swap machinery, the graph MODEL, the section-arrangement cluster (R24), and the WS
-    client lifecycle. All graph-model reads are reactive (they read the store's runes), so the
-    resolution deriveds re-run when the graphs change. */
+    authored-state swap machinery, the section-arrangement cluster (R24), and the WS client
+    lifecycle. */
 export interface ShowsControllerHost {
-  /** The live trigger graphs (reactive) — resolution + closure extraction read them. */
-  graphs(): Record<string, TriggerGraph>;
-  /** The live graph display labels (reactive). */
-  graphNames(): Record<string, string>;
-  /** The live effect registry (reactive). */
-  effects(): EffectDef[];
-  /** The live preset library (reactive). */
-  presets(): Preset[];
   /** The show's authored canvas scenes (reactive) — a song export carries the ones it plays. */
   canvasScenes(): CanvasScene[];
   /** Union scenes a detached library song brings into the show (by id; the store owns them). */
@@ -137,9 +133,8 @@ export class ShowsController {
   /** Which show is live — its `authored` is what the store's authored runes mirror. */
   activeShowId = $state<string>('');
 
-  // --- setlist (songs → sections → flat ordered graph lists) ---------------
-  /** authored arrangement: songs, each with sections that hold a FLAT ordered list of graph KEYS
-      (reuse-by-reference; layering = two graphs sharing a source). */
+  // --- setlist (songs → sections → Effect stacks) ----------------------------
+  /** authored arrangement: songs, each with sections that hold an Effect stack + Master chain. */
   songs = $state<Song[]>(seedDocumentV3().songs.map(toStoreSong));
   /** Library-song references (S41): ids into {@link songLibrary} this show resolves into its runtime
       view (canonical propagation — the referenced closure lives in the library, edited once,
@@ -201,20 +196,12 @@ export class ShowsController {
   }
 
   // --- resolved view (S41/S42): the active show with its library references materialized in ------
-  // The active show's runtime view is the INVERSE of closure extraction (S41): local songs + resolved
-  // references appear as one list; referenced graphs/effects/presets union in collision-free (per-song
-  // `lib:<id>/` namespace). The persisted authored state stays UN-resolved (refs, not copies) — every
-  // consumer that must SELECT / PLAY / EDIT a referenced song reads through here, so an edit writes to
-  // the library rune (canonical propagation) while persistence keeps refs.
-  // Effect chains (S05): a library song carries its Effects inline, so resolution is the song list
-  // only (core `buildRuntimeShow`'s policy). The graph-era registries pass through as the store's
-  // own (transient until S08) so the legacy graph surfaces keep compiling.
-  resolvedView: songRefsLib.ResolvableView = $derived.by(() => ({
+  // Local songs + resolved references appear as one list (per-song `lib:<id>/` section namespace).
+  // The persisted authored state stays UN-resolved (refs, not copies) — every consumer that must
+  // SELECT / PLAY a referenced song reads through here, while persistence keeps refs. A library song
+  // carries its Effects inline, so resolution is the song list only (core `buildRuntimeShow`'s policy).
+  resolvedView: { songs: Song[] } = $derived.by(() => ({
     songs: resolveEffectSongRefs(this.songs, this.songRefs, this.songLibrary),
-    graphs: this.host.graphs(),
-    graphNames: this.host.graphNames(),
-    effects: this.host.effects(),
-    presets: this.host.presets(),
   }));
   /** The materialized song list (local + referenced) — the setlist the Songs rail + engine read. */
   resolvedSongs = $derived(this.resolvedView.songs);
@@ -224,7 +211,7 @@ export class ShowsController {
     Object.values(this.songLibrary.songs).map((s) => ({
       id: s.id,
       name: s.name,
-      usedBy: songRefsLib.showsUsingSong(this.refBearingShows(), s.id),
+      usedBy: showsUsingSong(this.refBearingShows(), s.id),
     })),
   );
 
@@ -253,7 +240,7 @@ export class ShowsController {
     void this.activeShowId;
   }
 
-  /** The canonical pool IS deeply editable (referenced graphs expose rune proxies). */
+  /** The canonical pool IS deeply editable (its sections expose rune proxies). */
   trackSongLibraryChanges(): void {
     trackDocument(this.songLibrary);
   }
@@ -390,7 +377,7 @@ export class ShowsController {
 
   /** The show list adapted to the delete guard's shape — each show's `songRefs` (the ACTIVE show's
       LIVE refs, inactive shows their saved slot), so "used by" reflects unsaved edits too. */
-  private refBearingShows(): songRefsLib.RefBearingShow[] {
+  private refBearingShows(): RefBearingShow[] {
     return Object.values(this.showLibrary).map((s) => ({
       id: s.id,
       name: s.name,
@@ -427,7 +414,7 @@ export class ShowsController {
   importSongReference(librarySongId: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
     if (!this.songLibrary.songs[librarySongId]) return; // nothing to reference
-    this.setSongRefs(songRefsLib.addSongRef(this.songRefs, librarySongId));
+    this.setSongRefs(addSongRef(this.songRefs, librarySongId));
   }
 
   /** Drop a library-song reference from the active show WITHOUT cloning — the exact inverse of
@@ -436,7 +423,7 @@ export class ShowsController {
       Distinct from {@link detachSongReference}, which keeps the content as a local copy. */
   removeSongReference(librarySongId: string): void {
     if (this.host.isViewer()) return; // read-only viewer (S2): authoring no-op
-    this.setSongRefs(songRefsLib.removeSongRef(this.songRefs, librarySongId));
+    this.setSongRefs(removeSongRef(this.songRefs, librarySongId));
   }
 
   /** Detach a referenced library song into a LOCAL copy of the active show — clones the closure under
@@ -450,7 +437,7 @@ export class ShowsController {
     const detached = detachEffectSong($state.snapshot(libSong), newId, () => nid('section'));
     this.host.mergeCanvasScenes(detached.canvasScenes);
     this.songs = [...this.songs, detached.song];
-    this.setSongRefs(songRefsLib.removeSongRef(this.songRefs, librarySongId));
+    this.setSongRefs(removeSongRef(this.songRefs, librarySongId));
     return newId;
   }
 
@@ -470,7 +457,7 @@ export class ShowsController {
   deleteLibrarySong(librarySongId: string): { id: string; name: string }[] {
     if (this.host.isViewer()) return []; // read-only viewer (S2): authoring no-op
     if (!this.songLibrary.songs[librarySongId]) return [];
-    const usedBy = songRefsLib.showsUsingSong(this.refBearingShows(), librarySongId);
+    const usedBy = showsUsingSong(this.refBearingShows(), librarySongId);
     if (usedBy.length > 0) return usedBy;
     const songs = { ...this.songLibrary.songs };
     delete songs[librarySongId];
@@ -481,7 +468,7 @@ export class ShowsController {
   /** Which shows (id + name) reference a library song — the "used by" list the UI shows and the
       delete guard reports. */
   showsUsingSong(librarySongId: string): { id: string; name: string }[] {
-    return songRefsLib.showsUsingSong(this.refBearingShows(), librarySongId);
+    return showsUsingSong(this.refBearingShows(), librarySongId);
   }
 
   // --- legacy import (effect chains S05) --------------------------------------------------------
@@ -544,12 +531,9 @@ export class ShowsController {
   }
 
   /** Duplicate a song: append a fully INDEPENDENT "<name> copy" and make it active. Every section is
-      deep-copied under a fresh id AND every graph the song references is deep-copied under a fresh
-      key ({@link cloneSongGraphs}), so authoring inside the copy never writes through into the source
-      song. Graph keys used to stay shared here — which made "duplicate the template, then edit"
-      silently edit the template instead. Matches what a clipboard Copy → Paste of the same song
-      already produced (clipdoc mints fresh graph keys), so the two paths no longer disagree.
-      Effects/presets stay show-level shared. Returns the new id, or null if `id` is unknown. */
+      deep-copied under a fresh id (its Effect stack and Master chain included), so authoring inside
+      the copy never writes through into the source song. Returns the new id, or null if `id` is
+      unknown. */
   duplicateSong(id: string): string | null {
     if (this.host.isViewer()) return null; // read-only viewer (S2): authoring no-op
     const src = this.songs.find((s) => s.id === id);
@@ -591,7 +575,7 @@ export class ShowsController {
       Presence arrives before this state on a (re)connect, so the viewer role is already settled. */
   reconcileOnState(rawShowLibrary: unknown, rawSongLibrary: unknown): void {
     // Resolve the canonical pool FIRST: document replacement constructs its runtime immediately,
-    // so its referenced effects/presets must come from this state message, not the outgoing pool.
+    // so the referenced songs must come from this state message, not the outgoing pool.
     this.songSync.markServerStateSeen();
     const songPlan = this.songSync.planReconcile(rawSongLibrary, this.bootedFromLocalSongLibrary, this.host.isViewer());
     if (songPlan.kind === 'adopt') {

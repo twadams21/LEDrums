@@ -11,7 +11,6 @@
   import { createAppShortcuts } from './lib/app/app-shortcuts';
   import AppKeyboardCapture from './lib/app/AppKeyboardCapture.svelte';
   import Shell from './lib/app/AuthorShell.svelte';
-  import Overlays from './lib/app/Overlays.svelte';
   import PinGate from './lib/app/chrome/PinGate.svelte';
   // S08: the single app-root desktop-bridge start + the boot overlay it drives.
   import { desktopBridge } from './lib/app/desktop-bridge.svelte';
@@ -51,8 +50,6 @@
 </div>
 
 <AppKeyboardCapture {store} {shell} {shortcuts} {shortcutPlatform} />
-
-<Overlays {store} />
 
 <PinGate {store} />
 
