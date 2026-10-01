@@ -142,6 +142,8 @@ export interface EffectsAuthoringApi {
   /** Swap the Generator (kind / Style); keeps modifiers, controls, target. */
   setGenerator(effectId: string, kind: GeneratorKind, style?: string): void;
   setGeneratorParam(effectId: string, key: string, value: ParamValue): void;
+  /** Several Generator params as one undo step; `undefined` removes a param. */
+  setGeneratorParams(effectId: string, patch: Readonly<Record<string, ParamValue | undefined>>): void;
   setSpliceSlots(effectId: string, slots: SpliceSlot[]): void;
 
   // ---- Modifiers (effectId = MASTER_CELL addresses the section master chain) --------------------

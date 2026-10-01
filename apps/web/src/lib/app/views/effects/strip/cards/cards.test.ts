@@ -11,6 +11,7 @@ import GeneratorCard from './GeneratorCard.svelte';
 import ModifierCard from './ModifierCard.svelte';
 import ControlCard from './ControlCard.svelte';
 import TriggerCard from '../TriggerCard.svelte';
+import ParamRows from './ParamRows.svelte';
 
 beforeAll(() => {
   // jsdom has no IntersectionObserver / canvas; the live thumbnail needs neither to mount.
@@ -32,6 +33,16 @@ function demo(extra: Record<string, unknown> = {}, opts: { canEdit?: boolean } =
 }
 
 describe('GeneratorCard', () => {
+  it('a long param list runs in columns of at most 12 rows; a Wave card stays portrait', () => {
+    const many = Array.from({ length: 22 }, (_, k) => ({ key: `p${k}`, label: `P${k}`, kind: 'number' as const, min: 0, max: 1, step: 0.01, default: 0 }));
+    const rows = render(ParamRows, { props: { params: many, values: {}, onChange: () => {} } }).container.querySelector<HTMLElement>('.rows')!;
+    expect(rows.classList.contains('cols')).toBe(true);
+    expect(rows.style.getPropertyValue('--param-rows')).toBe('11'); // two columns of 11
+    const wave = demo();
+    const portrait = render(GeneratorCard, { props: { api: wave.api, effect: wave.effect() } });
+    expect(portrait.container.querySelector('.card')!.classList.contains('landscape')).toBe(false);
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
@@ -77,13 +88,15 @@ describe('GeneratorCard', () => {
     expect((getByRole('button', { name: 'Noise' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('shows the slots editor for a Splice and appends a coloured slot', async () => {
-    const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }] } });
+  it('shows one Splices row per band (Count), and Add appends after them, raising Count — one undo step', async () => {
+    const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }, { color: '#0000ff' }] } });
     const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelector('.preview')).toBeNull(); // a splice previews through its slots
+    expect(container.querySelectorAll('.slot')).toHaveLength(4); // Count 4: the two authored, cycling
     await fireEvent.click(getByRole('button', { name: 'Add splice' }));
-    expect(effect().generator.slots).toHaveLength(2);
-    expect(typeof effect().generator.slots![1]!.color).toBe('string');
+    expect(effect().generator.slots!.map((s) => s.color)).toEqual(['#ff0000', '#0000ff', '#ff0000', '#0000ff', '#0000ff']);
+    expect(effect().generator.params.count).toBe(5);
+    expect(api.undoDepth).toBe(1);
   });
 
   it('mutes a slot from its power toggle', async () => {

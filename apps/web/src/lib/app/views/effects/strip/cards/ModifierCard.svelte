@@ -30,6 +30,7 @@
     MODIFIER_ENVELOPE_PARAMS,
     adsrPath,
     enumLabel,
+    isLandscape,
     modifierCategory,
     modifierLabel,
     modifierParams,
@@ -53,6 +54,7 @@
   const name = $derived(modifierLabel(modifier.modifierId));
   const category = $derived(modifierCategory(modifier.modifierId));
   const params = $derived(modifierParams(modifier.modifierId));
+  const landscape = $derived(isLandscape(params.length));
   const modulated = $derived(modulatedKeys(effect, modifier.uid));
   const disabled = $derived(!api.canEdit);
   const envelope = $derived(modifier.envelope);
@@ -103,6 +105,7 @@
   title={name}
   eyebrow={isMaster ? `Master${category ? ` · ${enumLabel(category)}` : ''}` : category ? enumLabel(category) : 'Modifier'}
   power={{ on: !modifier.bypass, onToggle: (on) => api.setModifierBypass(effectId, modifier.uid, !on), map: bypassMap }}
+  landscape={landscape}
   {disabled}
   selected={api.selectedDevice?.kind === 'modifier' && api.selectedDevice.owner === effectId && api.selectedDevice.uid === modifier.uid}
   onSelect={() => api.selectDevice({ kind: 'modifier', owner: effectId, uid: modifier.uid })}
@@ -126,6 +129,8 @@
     onGestureEnd={end}
   />
 
+  <!-- Mix + envelope: under the params, or (landscape) a column of their own beside them. -->
+  <div class="side">
   <div class="mix">
     <span class="mixlabel">Mix</span>
     <span class="mixctl" {@attach mixMap && mappable(mixMap)}>
@@ -183,9 +188,20 @@
       {/if}
     {/if}
   </div>
+  </div>
 </DeviceCard>
 
 <style>
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: none;
+    min-width: 0;
+  }
+  :global(.card.landscape) .side {
+    width: 232px;
+  }
   .menubtn {
     display: inline-flex;
     align-items: center;

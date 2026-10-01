@@ -1,8 +1,9 @@
 <script lang="ts">
-  /* The Splice / Slice slots, on the Generator card: one row per slot — a colour, a nested
-     Generator, or both (the colour then tints the Generator), or neither (blank). Reshaped from
-     the graph Splice inspector's rows (`docks/inspectors/SpliceRows.svelte`) onto the authoring
-     api: every edit writes the whole slot list through `setSpliceSlots`, one undo step each.
+  /* The Splice / Slice slots, on the Generator card: one row per band — a colour, a nested
+     Generator, or both (the colour then tints the Generator), or neither (blank). As the graph
+     Splice inspector's rows (`docks/inspectors/SpliceRows.svelte`) did, there are exactly Count
+     rows: rows past the authored slots show what the cycling fallback renders there, and editing
+     one materialises it. Add / remove keep Count in step. Every edit is one undo step.
 
      Slots reorder by their grip (Tim, 2026-09-28: re-ordering a set of colours meant dialling each
      one again): drag it to a new place, or focus it and press ↑ / ↓. A slot moves whole — colour,
@@ -22,6 +23,8 @@
   import { tick } from 'svelte';
   import { gapAt, gapToIndex, nudgeIndex } from '../strip-model';
   import GestureScope from './GestureScope.svelte';
+  import ParamRows from './ParamRows.svelte';
+  import { slotsAtCount, spliceCountOf } from './splice-face';
   import {
     SLOT_NO_GENERATOR,
     currentStyle,
@@ -29,6 +32,7 @@
     isBlankSlot,
     slotGeneratorOptions,
     styleOptions,
+    type CardParam,
     type SpliceSlot,
   } from './card-model';
 
@@ -40,7 +44,9 @@
   let { api, effect }: Props = $props();
 
   const noun = $derived(effect.generator.kind === 'slice' ? 'Slice' : 'Splice');
-  const slots = $derived(effect.generator.slots ?? []);
+  const authored = $derived(effect.generator.slots ?? []);
+  const count = $derived(spliceCountOf(effect.generator.params));
+  const slots = $derived(slotsAtCount(authored, count));
   const genOptions = slotGeneratorOptions();
   const disabled = $derived(!api.canEdit);
 
@@ -49,6 +55,13 @@
 
   function write(next: SpliceSlot[]): void {
     api.setSpliceSlots(effect.id, next);
+  }
+  /** Slots and Count together, as one undo step. */
+  function writeWithCount(next: SpliceSlot[]): void {
+    api.beginGesture();
+    api.setSpliceSlots(effect.id, next);
+    api.setGeneratorParam(effect.id, 'count', next.length);
+    api.endGesture();
   }
   function patch(index: number, change: Partial<SpliceSlot>): void {
     write(
@@ -61,11 +74,16 @@
       }),
     );
   }
+  /** A new row copies the last one (as the inspector did); the first gets a palette colour. */
   function add(): void {
-    write([...slots, { color: NEW_SLOT_COLOURS[slots.length % NEW_SLOT_COLOURS.length]! }]);
+    if (slots.length >= 64) return;
+    const last = slots[slots.length - 1];
+    const next = last && !isBlankSlot(last) ? (JSON.parse(JSON.stringify(last)) as SpliceSlot) : { color: NEW_SLOT_COLOURS[slots.length % NEW_SLOT_COLOURS.length]! };
+    writeWithCount([...slots, next]);
   }
   function remove(index: number): void {
-    write(slots.filter((_, i) => i !== index));
+    if (slots.length <= 1) return;
+    writeWithCount(slots.filter((_, i) => i !== index));
   }
   function setGenerator(index: number, kind: string): void {
     patch(index, { generator: kind === SLOT_NO_GENERATOR ? undefined : { kind: kind as effectChain.GeneratorKind, style: '', params: {} } });
@@ -130,6 +148,10 @@
   }
 
   const allBlank = $derived(slots.every(isBlankSlot));
+
+  // Tint: how strongly a slot's colour recolours its Generator — shown once a row has both.
+  const anyTinted = $derived(slots.some((s) => !s.muted && !!s.color && !!s.generator));
+  const TINT: CardParam = { key: 'tint', label: 'Tint', kind: 'number', min: 0, max: 1, step: 0.01, default: 1, percent: true, unit: '%' };
 </script>
 
 <section class="slots" aria-label={`${noun}s`}>
@@ -139,9 +161,6 @@
     <IconButton icon={Plus} label={`Add ${noun.toLowerCase()}`} size={14} {disabled} onclick={add} />
   </div>
 
-  {#if slots.length === 0 || allBlank}
-    <p class="hint">Give a {noun.toLowerCase()} a colour, a generator, or both. With both, the colour tints the generator.</p>
-  {/if}
 
   <ol class="list" bind:this={list}>
     {#each slots as slot, i (i)}
@@ -197,24 +216,30 @@
             onclick={() => remove(i)}
           />
         </div>
-        <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
-          <ColorField
-            value={slot.color ?? null}
-            {disabled}
-            ariaLabel={`${noun} ${i + 1} colour`}
-            onChange={(v) => patch(i, { color: v ?? undefined })}
-          />
-        </GestureScope>
-        <div class="gen">
-          <Select
-            value={slot.generator?.kind ?? SLOT_NO_GENERATOR}
-            options={genOptions}
-            segment={false}
-            {disabled}
-            ariaLabel={`${noun} ${i + 1} generator`}
-            onChange={(v) => setGenerator(i, v)}
-          />
-          {#if slot.generator && styles.length > 1}
+        <!-- Colour and generator side by side, as the inspector's rows had them. -->
+        <div class="body">
+          <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
+            <ColorField
+              value={slot.color ?? null}
+              {disabled}
+              ariaLabel={`${noun} ${i + 1} colour`}
+              onChange={(v) => patch(i, { color: v ?? undefined })}
+            />
+          </GestureScope>
+          <div class="gen">
+            <Select
+              value={slot.generator?.kind ?? SLOT_NO_GENERATOR}
+              options={genOptions}
+              segment={false}
+              {disabled}
+              ariaLabel={`${noun} ${i + 1} generator`}
+              onChange={(v) => setGenerator(i, v)}
+              class="slotsel"
+            />
+          </div>
+        </div>
+        {#if slot.generator && styles.length > 1}
+          <div class="gen">
             <Select
               value={currentStyle(slot.generator)}
               options={styles}
@@ -223,11 +248,27 @@
               ariaLabel={`${noun} ${i + 1} style`}
               onChange={(v) => setStyle(i, v)}
             />
-          {/if}
-        </div>
+          </div>
+        {/if}
       </li>
     {/each}
   </ol>
+
+  {#if anyTinted}
+    <ParamRows
+      params={[TINT]}
+      values={effect.generator.params}
+      {disabled}
+      labelPrefix={noun}
+      onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
+      onGestureStart={() => api.beginGesture()}
+      onGestureEnd={() => api.endGesture()}
+    />
+  {:else if allBlank}
+    <!-- The one explanation that earns its space: the empty state, where nothing on screen says
+         yet what a row is for. -->
+    <p class="hint">Give a {noun.toLowerCase()} a colour, a generator, or both. With both, the colour tints the generator.</p>
+  {/if}
 </section>
 
 <style>
@@ -381,9 +422,32 @@
     outline: none;
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
+  .body {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1_5);
+    min-width: 0;
+  }
+  /* The swatch (+ clear) only — the row's header already spells the colour out — and the
+     generator takes the rest of the row. */
+  .body :global(.colorfield) {
+    flex: none;
+    width: auto;
+  }
+  .body :global(.colorfield .hex) {
+    display: none;
+  }
+  .body > .gen {
+    flex: 1 1 0;
+  }
+  .body :global(.slotsel) {
+    width: 100%;
+    min-width: 0;
+  }
   .gen {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
+    min-width: 0;
   }
 </style>

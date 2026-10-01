@@ -17,7 +17,8 @@ const GREEN = { color: '#00ff00', muted: true };
 const BLUE = { color: '#0000ff' };
 
 function demo(kind: 'splice' | 'slice' = 'splice', slots: Array<Record<string, unknown>> = [RED, GREEN, BLUE], opts: { canEdit?: boolean } = {}) {
-  const parsed = effectChain.parseEffect({ id: 'e1', name: 'Cut', cell, generator: { kind, slots } });
+  // Count in step with the slots, as the editor keeps them (one row per band — Count).
+  const parsed = effectChain.parseEffect({ id: 'e1', name: 'Cut', cell, generator: { kind, slots, params: { count: slots.length } } });
   const api = createStandaloneEffectsApi({ effects: [parsed], master: [] }, kit, opts);
   const effect = () => api.effectById('e1')!;
   const view = render(SlotsEditor, { props: { api, effect: effect() } });

@@ -396,6 +396,9 @@ export class EffectsController implements EffectsAuthoringApi {
   setGenerator(effectId: string, kind: GeneratorKind, style?: string): void {
     this.#edit((s) => doc.setGenerator(s, effectId, kind, style));
   }
+  setGeneratorParams(effectId: string, patch: Readonly<Record<string, ParamValue | undefined>>): void {
+    this.#edit((s) => doc.setGeneratorParams(s, effectId, patch));
+  }
   setGeneratorParam(effectId: string, key: string, value: ParamValue): void {
     this.#edit((s) => doc.setGeneratorParam(s, effectId, key, value));
   }

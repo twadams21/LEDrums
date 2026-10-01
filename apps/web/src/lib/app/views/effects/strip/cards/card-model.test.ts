@@ -8,8 +8,10 @@ import {
   envelopeShapeOf,
   formatParam,
   generatorParams,
+  isLandscape,
   mappingTargets,
   modulatedKeys,
+  paramColumns,
   paramValue,
   parseMapTargetKey,
   mapTargetKey,
@@ -172,5 +174,20 @@ describe('splice slots', () => {
     expect(describeSlot({ muted: true, color: '#ff0000' })).toBe('Off');
     expect(describeSlot({ color: '#ff0000' })).toBe('#FF0000');
     expect(describeSlot({ color: '#ff0000', generator: { kind: 'wave', style: 'radial', params: {} } })).toBe('Wave · Radial, tinted');
+  });
+});
+
+describe('paramColumns — landscape cards (Tim, 2026-10-01: at most 12 rows down, then across)', () => {
+  it('keeps up to 12 rows in one column', () => {
+    expect(paramColumns(0)).toEqual({ columns: 1, rows: 1 });
+    expect(paramColumns(12)).toEqual({ columns: 1, rows: 12 });
+    expect(isLandscape(12)).toBe(false);
+  });
+
+  it('past 12, uses as few columns as keep each at 12 or under, spread evenly', () => {
+    expect(paramColumns(13)).toEqual({ columns: 2, rows: 7 });
+    expect(paramColumns(22)).toEqual({ columns: 2, rows: 11 }); // Splice: two columns, not three
+    expect(paramColumns(30)).toEqual({ columns: 3, rows: 10 });
+    expect(isLandscape(13)).toBe(true);
   });
 });

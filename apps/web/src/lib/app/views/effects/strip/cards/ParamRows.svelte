@@ -7,9 +7,11 @@
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
   import GestureScope from './GestureScope.svelte';
+  import Tooltip from '../../../../../ui/Tooltip.svelte';
+  import Info from '@lucide/svelte/icons/info';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import { mappable } from '../../../../map-mode/mappable.svelte';
-  import { enumLabel, formatParam, paramValue, type CardParam, type ParamValue } from './card-model';
+  import { enumLabel, formatParam, paramColumns, paramValue, type CardParam, type ParamValue } from './card-model';
 
   interface Props {
     params: readonly CardParam[];
@@ -39,16 +41,19 @@
     mapParam,
   }: Props = $props();
 
+  // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
+  const layout = $derived(paramColumns(params.length));
+
   const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
 </script>
 
 {#if params.length}
-  <ul class="rows">
+  <ul class="rows" class:cols={layout.columns > 1} style:--param-rows={layout.rows}>
     {#each params as p (p.key)}
       {@const v = paramValue(p, values)}
       {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
       <li class="row" class:modulated={modulated?.has(p.key)}>
-        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}</span>
+        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
         <span class="ctl" {@attach map && mappable(map)}>
           {#if p.kind === 'enum'}
             <Select
@@ -102,6 +107,15 @@
     padding: 0;
     list-style: none;
   }
+  /* Landscape: rows go down a column to --param-rows, then the next column starts to the right. */
+  .rows.cols {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(var(--param-rows), auto);
+    grid-auto-columns: var(--param-col-w, 240px);
+    align-content: start;
+    column-gap: var(--space-4);
+  }
   .row {
     display: flex;
     align-items: center;
@@ -122,6 +136,12 @@
     margin-left: var(--space-1);
     font-family: var(--font-mono);
     font-size: 0.6875rem;
+    color: var(--text-faint);
+  }
+  .info {
+    display: inline-flex;
+    margin-left: 4px;
+    vertical-align: -1px;
     color: var(--text-faint);
   }
   .row.modulated .label {

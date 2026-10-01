@@ -11,6 +11,7 @@
   import TargetCard from '../../app/views/effects/strip/TargetCard.svelte';
   import AddDeviceSlot from '../../app/views/effects/strip/AddDeviceSlot.svelte';
   import DeviceCard from '../../app/views/effects/strip/DeviceCard.svelte';
+  import GeneratorCard from '../../app/views/effects/strip/cards/GeneratorCard.svelte';
   import type { StripKitInfo } from '../../app/views/effects/strip/strip-model';
   import DemoCard from '../DemoCard.svelte';
 
@@ -100,6 +101,26 @@
     },
     DEFAULT_KIT,
   );
+
+  /* The Splice card (its own sectioned face) and a long generic one (Slice) — both landscape. */
+  const spliceApi = createStandaloneEffectsApi(
+    {
+      effects: [
+        fx({
+          id: 'fx-splice',
+          name: 'Splice',
+          cell: kickHead,
+          target: { kind: 'kit' },
+          generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
+        }),
+        fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
+      ],
+      master: [],
+    },
+    DEFAULT_KIT,
+  );
+  const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
+  const sliceFx = $derived(spliceApi.effectById('fx-slice')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -135,6 +156,24 @@
 
     <DemoCard title="Device strip — Master" src="lib/app/views/effects/strip/DeviceStrip" note="The section's master modifier chain: modifiers only." wide>
       <div class="frame short"><DeviceStrip {api} cell={MASTER_CELL} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — Splice"
+      src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/SlotsEditor']}
+      note="The graph-era Splice inspector's sections and words, one column each: SPLICE · MOVE AROUND · MOVE THROUGH · BRIGHTNESS ENVELOPE, the Splices rows (one per band — Count) beside the kind picker. Timings are one dropdown (divisions, None, Free (ms)); an active cascade shows its Order — drag the chips or pick a pattern. Rows a mode makes meaningless stay hidden."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — Slice"
+      src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/ParamRows']}
+      note="The graph-era Slice inspector on the same face: SLICE — On (Kit · Drum · Space; it writes the Effect's Target, Space adds a box of the room, seeded from the kit's bounds), Axis, Tilt X/Y/Z, Slices, Random lengths, Smudge, Seed, Velocity (ⓘ) — then MOVE AROUND (Sweep, not Spin), MOVE THROUGH (THROUGH KIT · THROUGH SLICES · COLOUR CHASE), BRIGHTNESS ENVELOPE. A new Slice cuts the whole kit. Past 12 rows any card's param list goes landscape in balanced columns (PARAM_ROWS_MAX)."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}

@@ -157,6 +157,9 @@ export function addEffect<S extends EffectsSection>(
     name: defaultEffectName(generator, style),
     cell: cloneJson(cell),
     generator: { kind: generator, style: style ?? '' },
+    // A Slice cuts through the whole kit by default (the graph Slice node's "On: Kit"), so its
+    // slabs read across drums instead of only across the drum whose cell it sits in.
+    ...(generator === 'slice' ? { target: { kind: 'kit' as const } } : {}),
   });
   if (!effect) return { section, id: null };
   return { section: withEffects(section, [...section.effects, effect]), id };
@@ -284,7 +287,9 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
     const keepSlots = SLOTTED.has(kind) && SLOTTED.has(e.generator.kind) && e.generator.slots;
     const generator: effectChain.GeneratorDevice = { kind, style: nextStyle, params: {} };
     if (keepSlots) generator.slots = cloneJson(e.generator.slots);
-    return { ...e, generator };
+    // Switching TO Slice from a drum's default Target widens it to the kit, as a new Slice starts.
+    const widen = kind === 'slice' && e.generator.kind !== 'slice' && JSON.stringify(e.target) === JSON.stringify(effectChain.defaultTargetForRow(e.cell.row));
+    return widen ? { ...e, generator, target: { kind: 'kit' } } : { ...e, generator };
   });
 }
 
@@ -292,6 +297,26 @@ export function setGeneratorParam<S extends EffectsSection>(section: S, effectId
   return updateEffect(section, effectId, (e) =>
     e.generator.params[key] === value ? null : { ...e, generator: { ...e.generator, params: { ...e.generator.params, [key]: value } } },
   );
+}
+
+/** Several Generator params in one edit; `undefined` removes a param (a Slice's Space box). */
+export function setGeneratorParams<S extends EffectsSection>(section: S, effectId: string, patch: Readonly<Record<string, ParamValue | undefined>>): S {
+  return updateEffect(section, effectId, (e) => {
+    const params: Record<string, ParamValue> = { ...e.generator.params };
+    let changed = false;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) {
+        if (key in params) {
+          delete params[key];
+          changed = true;
+        }
+      } else if (params[key] !== value) {
+        params[key] = value;
+        changed = true;
+      }
+    }
+    return changed ? { ...e, generator: { ...e.generator, params } } : null;
+  });
 }
 
 /** Only a Splice / Slice Generator has slots. */

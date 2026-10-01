@@ -212,6 +212,31 @@ describe('effects-doc: Generator', () => {
   });
 });
 
+describe('effects-doc: a Slice cuts the whole kit by default (the graph Slice node’s On: Kit)', () => {
+  const empty: EffectsSection = { effects: [], master: [] };
+
+  it('a new Slice targets the kit; a new Wave keeps its drum', () => {
+    const slice = doc.addEffect(empty, kickHead, 'slice');
+    expect(slice.section.effects[0]!.target).toEqual({ kind: 'kit' });
+    const wave = doc.addEffect(empty, kickHead, 'wave');
+    expect(wave.section.effects[0]!.target).toEqual({ kind: 'select', drums: [{ drumId: 'kick' }] });
+  });
+
+  it('switching to Slice widens the row’s default Target to the kit, but keeps a Target someone chose', () => {
+    const base: EffectsSection = { effects: [fx('a', kickHead), fx('b', kickHead, { target: { kind: 'hitDrum' } })], master: [] };
+    let s = doc.setGenerator(base, 'a', 'slice');
+    s = doc.setGenerator(s, 'b', 'slice');
+    expect(s.effects.map((e) => e.target)).toEqual([{ kind: 'kit' }, { kind: 'hitDrum' }]);
+  });
+
+  it('setGeneratorParams writes several params at once, and undefined removes one', () => {
+    const base: EffectsSection = { effects: [fx('a', kickHead, { generator: { kind: 'slice', params: { regionCx: 1, count: 3 } } })], master: [] };
+    const s = doc.setGeneratorParams(base, 'a', { regionCx: undefined, axis: 'y' });
+    expect(s.effects[0]!.generator.params).toEqual({ count: 3, axis: 'y' });
+    expect(doc.setGeneratorParams(s, 'a', { regionCx: undefined })).toBe(s); // nothing to change
+  });
+});
+
 describe('effects-doc: Modifiers', () => {
   for (const owner of ['a', MASTER_CELL] as const) {
     const chain = (s: EffectsSection) => (owner === MASTER_CELL ? s.master : doc.effectById(s, 'a')!.modifiers);

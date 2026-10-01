@@ -16,6 +16,7 @@
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
   import SlotsEditor from './SlotsEditor.svelte';
+  import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
   import { effectDisplayName } from '../strip-model';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
@@ -25,6 +26,7 @@
     generatorKinds,
     generatorLabel,
     generatorParams,
+    isLandscape,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -45,6 +47,9 @@
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
   const params = $derived(generatorParams(device));
+  // Splice and Slice have their own sectioned face, always laid out left to right; others go landscape when long.
+  const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
+  const landscape = $derived(spliceFace || isLandscape(params.length));
   const thumb = $derived(thumbSource(device));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
@@ -96,6 +101,7 @@
   title={label}
   eyebrow="Generator"
   width={272}
+  {landscape}
   {disabled}
   selected={api.selectedDevice?.kind === 'stage' && api.selectedDevice.effectId === effect.id && api.selectedDevice.stage === 'generator'}
   onSelect={() => api.selectDevice({ kind: 'stage', effectId: effect.id, stage: 'generator' })}
@@ -105,6 +111,8 @@
     <IconButton icon={Download} label="Save generator to file…" size={14} onclick={() => void api.saveDeviceToFile(effect.id, 'generator')} />
   {/snippet}
 
+  <!-- The lead column: kind, preview, style, slots. Landscape, the params run in columns beside it. -->
+  <div class="lead">
   <div class="kinds" role="group" aria-label="Generator kind" data-keyboard-owner="roving">
     {#each kinds as k, i (k.kind)}
       {@const Icon = GENERATOR_ICON[k.kind]}
@@ -171,18 +179,23 @@
   {#if slotted}
     <SlotsEditor {api} {effect} />
   {/if}
+  </div>
 
-  <ParamRows
-    {params}
-    values={device.params}
-    {modulated}
-    {disabled}
-    labelPrefix={label}
-    {mapParam}
-    onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
-    onGestureStart={() => api.beginGesture()}
-    onGestureEnd={() => api.endGesture()}
-  />
+  {#if spliceFace}
+    <SpliceFace {api} {effect} {modulated} {mapParam} />
+  {:else}
+    <ParamRows
+      {params}
+      values={device.params}
+      {modulated}
+      {disabled}
+      labelPrefix={label}
+      {mapParam}
+      onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
+      onGestureStart={() => api.beginGesture()}
+      onGestureEnd={() => api.endGesture()}
+    />
+  {/if}
 </DeviceCard>
 
 <style>
@@ -228,6 +241,17 @@
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
 
+  .lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    flex: none;
+    min-width: 0;
+  }
+  /* Landscape: the lead keeps the portrait card's inner width as its own column. */
+  :global(.card.landscape) .lead {
+    width: 256px;
+  }
   .preview {
     display: flex;
     align-items: center;
