@@ -297,6 +297,35 @@ export const masterChainSchema = z.array(modifierDeviceSchema).default([]);
 
 // ---- Inferred types ------------------------------------------------------------
 
+// ---- Cell play (how a cell's stack plays a hit) --------------------------------------------
+
+/**
+ * How a cell's stack answers one fire (Tim, 2026-10-01 — the graph's Sequence and Random nodes,
+ * re-homed on the cell, because they choose BETWEEN Effects rather than live inside one):
+ * - `layer` (the default, and what a cell with no entry does): every Effect in the stack fires.
+ * - `sequence`: ONE Effect per fire, in stack order, wrapping round.
+ * - `random`: ONE Effect per fire, picked at random, never the same one twice in a row.
+ * Only zone, Clock and Cue cells have fires to answer; an Always cell plays its whole stack.
+ */
+export const cellPlayModeSchema = z.enum(['layer', 'sequence', 'random']);
+
+/** The input that sends a sequenced / random cell back to its first step. A zone reset fires on
+    that zone's hit; a note / CC / OSC reset on that message — even one a zone also uses, in which
+    case the one hit does both jobs. The section starting always resets every cell too. */
+export const cellResetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('zone'), drumId: z.string().min(1), slot: z.number().int().min(0) }),
+  z.object({ kind: z.literal('midiNote'), note: z.number().int().min(0).max(127) }),
+  z.object({ kind: z.literal('midiCc'), cc: z.number().int().min(0).max(127) }),
+  z.object({ kind: z.literal('osc'), address: z.string().min(1) }),
+]);
+
+/** One cell's play settings. A section lists only the cells that don't simply layer. */
+export const cellPlaySchema = z.object({
+  cell: effectCellSchema,
+  mode: cellPlayModeSchema,
+  reset: cellResetSchema.optional(),
+});
+
 export type EffectCell = z.output<typeof effectCellSchema>;
 export type EffectColumn = z.output<typeof effectColumnSchema>;
 export type EffectTrigger = z.output<typeof effectTriggerSchema>;
@@ -322,6 +351,9 @@ export type ModifierDevice = z.output<typeof modifierDeviceSchema>;
 export type ControlMapping = z.output<typeof controlMappingSchema>;
 export type ControlDevice = z.output<typeof controlDeviceSchema>;
 export type ControlKind = ControlDevice['kind'];
+export type CellPlayMode = z.output<typeof cellPlayModeSchema>;
+export type CellReset = z.output<typeof cellResetSchema>;
+export type CellPlay = z.output<typeof cellPlaySchema>;
 export type EffectTarget = z.output<typeof effectTargetSchema>;
 export type Effect = z.output<typeof effectSchema>;
 /** What a caller may hand the schema: every defaulted field optional. */

@@ -269,6 +269,12 @@ function* remapResultIds(res: RemapResult): Iterable<string> {
   for (const scene of res.canvasScenes) yield scene.id;
 }
 
+/** The Effect id of a server `effect-fired` Monitor line (see voice-engine-host), or null. */
+function serverFiredEffectId(event: { type?: string; source?: string; destination?: string }): string | null {
+  if (event.type !== 'effect' || event.source !== 'server/voice') return null;
+  return event.destination?.startsWith('effect:') ? event.destination.slice('effect:'.length) || null : null;
+}
+
 /** The success message for a materialized authored paste. */
 function pasteSuccessMessage(res: RemapResult): string {
   return res.kind === 'section' ? 'Pasted section.' : 'Pasted song.';
@@ -845,6 +851,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     setInputMap: (inputMap) => this.setInputMap(inputMap),
     setGlobalControlBinding: (action, patch) => this.setGlobalControlBinding(action, patch),
     setCueMidiSource: (effectId, source) => this.setCueSource(effectId, source),
+    setCellResetFromLearn: (cell, reset) => this.setCellResetFromLearn(cell, reset),
     bindMapSource: (target, source) => this.bindFromMapLearn(target, source),
   });
   /** OSC learn — bind the next heard address (Settings → Global controls). A separate arm
@@ -858,6 +865,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       return true;
     },
     setCueOscAddress: (effectId, address) => this.setCueSource(effectId, { oscAddress: address }),
+    setCellResetFromLearn: (cell, reset) => this.setCellResetFromLearn(cell, reset),
     bindMapOscAddress: (target, address) => this.bindFromMapLearn(target, { oscAddress: address }),
   });
   /** Audio input capture (GH #214): lifecycle, meter and local preferences live on the
@@ -1209,6 +1217,17 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         const osc = this.osc.target;
         return osc?.kind === 'cue' ? osc.effectId : null;
       },
+      startReset: (cell, via) => {
+        this.cancelCueLearnArms();
+        if (via === 'midi') this.midi.startLearn({ kind: 'cell-reset', cell });
+        else this.osc.start({ kind: 'cell-reset', cell });
+      },
+      resetCell: () => {
+        const midi = this.midi.learnTarget;
+        if (midi?.kind === 'cell-reset') return midi.cell;
+        const osc = this.osc.target;
+        return osc?.kind === 'cell-reset' ? osc.cell : null;
+      },
     },
     legacyImport: {
       available: () => this.legacyImportAvailable,
@@ -1254,7 +1273,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
         : {
             ...song,
             sections: song.sections.map((section) =>
-              section.id === sectionId ? { ...section, effects: next.effects, master: next.master } : section,
+              section.id === sectionId
+                ? { ...section, effects: next.effects, master: next.master, ...(next.cellPlay !== undefined ? { cellPlay: next.cellPlay } : {}) }
+                : section,
             ),
           },
     );
@@ -1424,6 +1445,36 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   }
   get cueLearnEffectId(): string | null {
     return this.effectsCtl.cueLearnEffectId;
+  }
+  cellPlay(cell: effectChain.EffectCell): effectChain.CellPlay | null {
+    return this.effectsCtl.cellPlay(cell);
+  }
+  setCellPlayMode(cell: effectChain.EffectCell, mode: effectChain.CellPlayMode): void {
+    this.effectsCtl.setCellPlayMode(cell, mode);
+  }
+  setCellReset(cell: effectChain.EffectCell, reset: effectChain.CellReset | null): void {
+    this.effectsCtl.setCellReset(cell, reset);
+  }
+  startCellResetLearn(cell: effectChain.EffectCell, via: 'midi' | 'osc'): void {
+    this.effectsCtl.startCellResetLearn(cell, via);
+  }
+  get cellResetLearnCell(): effectChain.EffectCell | null {
+    return this.effectsCtl.cellResetLearnCell;
+  }
+  lastPlayedStep(cell: effectChain.EffectCell): number | null {
+    return this.effectsCtl.lastPlayedStep(cell);
+  }
+  /** Learn bound a cell's reset. Always accepted: a reset may share a note with a zone or Cue —
+      the one hit then does both jobs — so say so rather than refuse (the old Sequence node
+      refused, which left a zone-mapped kit with no note to pick; Tim, 2026-09-27). */
+  private setCellResetFromLearn(cell: effectChain.EffectCell, reset: effectChain.CellReset): boolean {
+    if (!this.effectsCtl.cellPlay(cell)) return true; // the cell went back to Layer: nothing to bind
+    this.effectsCtl.setCellReset(cell, reset);
+    const note = reset.kind === 'midiNote' ? reset.note : null;
+    if (note !== null && this.project?.inputMap.midiNotes.some((m) => m.note === note)) {
+      pushToast('That note also plays a drum zone — one hit will both play it and reset this cell.', { tone: 'info' });
+    }
+    return true;
   }
 
   /** Disarm a cue learn on either transport (another target's arm is left alone). */
@@ -1725,7 +1776,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   ): ApplyResult {
     const section = this.activeEffectsSection;
     if (!section || !this.effectsCtl.canEdit) return READ_ONLY;
-    const plain = $state.snapshot({ effects: section.effects, master: section.master }) as EffectsSection;
+    const plain = $state.snapshot({ effects: section.effects, master: section.master, ...(section.cellPlay ? { cellPlay: section.cellPlay } : {}) }) as EffectsSection;
     const out = apply(plain, { canvasScenes: $state.snapshot(this.canvasScenes) as CanvasScene[] });
     if (!out.result.ok) return out.result;
     this.pushUndoSnapshot();
@@ -1803,6 +1854,22 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private matchActiveEffects(event: effectChain.EffectInputEvent): effectChain.Effect[] {
     const section = this.activeSection;
     return section ? effectChain.matchSectionEffects({ effects: section.effects ?? EMPTY_EFFECTS }, event) : [];
+  }
+
+  /** Is this input some Sequence / Random cell's reset? Such an input must still reach the
+      engine even when it fires no Effect itself — dropping it as "routes nowhere" would mean a
+      reset-only zone or note never rewinds anything. */
+  private isActiveCellReset(event: effectChain.EffectInputEvent): boolean {
+    const section = this.activeSection;
+    return !!section && effectChain.isCellReset(section, event);
+  }
+
+  /** Flash a local intent's Effects at once — except a Sequence / Random cell's, where the input
+      reaches every step but only ONE plays: those flash when the engine reports the fire (the
+      Sim offline, the server connected), so the ▶ marker is never a guess. */
+  private stampLocalFires(fired: readonly effectChain.Effect[]): void {
+    const section = this.activeSection;
+    this.stampEffectFires(fired.filter((e) => !section || effectChain.cellPlayMode(section, e.cell) === 'layer').map((e) => e.id));
   }
 
   /** Audition Effects by id: the `fireEffect` intent connected, the Sim's engine offline. */
@@ -2482,8 +2549,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       },
       onMonitor: (event) => {
         this.addMonitor(event);
-        // Effect fires connected: the server does not (yet) report `effect-fired` on the monitor
-        // stream, so connected fire flashes come from the local intents (hit / audition) only.
+        // Connected, the server reports every Effect its engine fired (`effect:<id>`): flash it.
+        // That is the only source for a Sequence / Random cell, whose step only the engine knows.
+        const fired = serverFiredEffectId(event);
+        if (fired) this.stampEffectFires([fired]);
       },
       onSend: (msg) => this.addMonitor(this.monitorForClientMessage(msg)),
     });
@@ -2804,9 +2873,10 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     const raw = Math.max(0, Math.min(1, value / 127));
     // Offline the local sim IS the engine, so this path is both the echo and the fire.
     this.recordVelocityHit(claim?.drumId, raw);
-    const fired = this.matchActiveEffects({ drumId: claim?.drumId, slot: claim?.slot, midiNote: note });
-    if (fired.length === 0) return;
-    this.stampEffectFires(fired.map((e) => e.id));
+    const input = { drumId: claim?.drumId, slot: claim?.slot, midiNote: note };
+    const fired = this.matchActiveEffects(input);
+    if (fired.length === 0 && !this.isActiveCellReset(input)) return;
+    this.stampLocalFires(fired);
     this.ensureSimShow();
     this.sim.hitEffects({
       ...(claim ? { drumId: claim.drumId, zone: String(claim.slot) } : {}),
@@ -2817,7 +2887,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       type: 'effect',
       direction: 'local',
       source: `midi:${note}`,
-      label: fired.map((e) => e.name).join(', '),
+      label: fired.length > 0 ? fired.map((e) => e.name).join(', ') : 'Sequence reset',
       detail: fired.map((e) => `▶ ${e.name}`).join(' | '),
     });
     this.renderFrame();
@@ -2834,10 +2904,11 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     // that routes nowhere is still a hit worth plotting while tuning. Connected, the server's
     // `key` echo carries this same pair, so recording here too would double-plot it.
     if (this.link !== 'open') this.recordVelocityHit(pad.drumId, this.velocity);
-    const fired = this.matchActiveEffects({ drumId: pad.drumId, slot: Number(pad.zone) });
-    if (fired.length === 0) return;
+    const input = { drumId: pad.drumId, slot: Number(pad.zone) };
+    const fired = this.matchActiveEffects(input);
+    if (fired.length === 0 && !this.isActiveCellReset(input)) return;
     // Fire flashes react to the local intent, online and offline (display-only).
-    this.stampEffectFires(fired.map((e) => e.id));
+    this.stampLocalFires(fired);
     if (this.link === 'open') {
       this.client.send({ t: 'key', drumId: pad.drumId, zone: String(pad.zone), velocity: this.velocity });
       return;
@@ -2848,7 +2919,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       type: 'effect',
       direction: 'local',
       source: `${pad.drumId}:${pad.zone}`,
-      label: fired.map((e) => e.name).join(', '),
+      label: fired.length > 0 ? fired.map((e) => e.name).join(', ') : 'Sequence reset',
       detail: fired.map((e) => `▶ ${e.name}`).join(' | '),
     });
     this.renderFrame();

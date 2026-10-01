@@ -52,6 +52,7 @@ import {
   type ContinuousInputBinding,
   type EffectInputEvent,
 } from '../effect-chain/resolver';
+import { pickCellPlay, resetCellSteps, type CellSteps } from '../effect-chain/cell-play';
 import {
   isContinuousTarget,
   matchInputMapping,
@@ -276,6 +277,11 @@ class VoiceBusEngine implements RenderEngine {
 
   private prng = new Prng(PRNG_SEED);
 
+  /** Where each Sequence / Random cell of the active section is in its stack (`cell-play`).
+      Changed only by fires, resets and section starts inside the queue drain / tick, so it is a
+      pure function of the event log like every other live table here. */
+  private cellSteps: CellSteps = new Map();
+
   /**
    * Live MIDI CC value table (S37): keyed by controller+channel → 0..1 (see `ccKey`).
    * Updated ONLY inside the queue drain (`processEvent`), so it is a pure function of the
@@ -396,6 +402,7 @@ class VoiceBusEngine implements RenderEngine {
     this.latched.clear();
     this.spliceMotionMs.clear(); // authored content replaced → latched motion starts fresh
     this.prng.reseed(PRNG_SEED);
+    this.cellSteps = new Map(); // fresh content → every sequence starts at step 1
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
@@ -501,6 +508,8 @@ class VoiceBusEngine implements RenderEngine {
     for (const v of this.voices.pool) {
       if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
     }
+    // A section start sends every Sequence / Random cell back to its first step.
+    this.cellSteps = new Map();
     const effectSection = this.activeEffectSection();
     if (effectSection) {
       for (const effect of alwaysEffects(effectSection)) this.fireChainEffect(effectSection, effect, 1, null, null, 'always');
@@ -705,7 +714,13 @@ class VoiceBusEngine implements RenderEngine {
   ): void {
     const input = describeInputEvent(e);
     const matched = section ? matchSectionEffects(section, event) : [];
+    // A cell's reset input rewinds it BEFORE this fire is narrowed, so a pad that both resets
+    // and plays a cell plays its first step.
+    const rewound = section ? resetCellSteps(section, event, this.cellSteps) : this.cellSteps;
+    const wasReset = rewound !== this.cellSteps;
+    this.cellSteps = rewound;
     if (!section || matched.length === 0) {
+      if (wasReset) return; // a reset-only message did its job: not a miss
       if (e.kind === 'cc') return; // a CC edge with no Cue is ordinary modulation, not a miss
       if ((e.kind === 'noteOn' || e.kind === 'osc') && !e.drumId) {
         this.onDiagnostic?.({ kind: 'input-unrouted', input });
@@ -714,7 +729,9 @@ class VoiceBusEngine implements RenderEngine {
       }
       return;
     }
-    for (const effect of matched) {
+    const played = pickCellPlay(section, matched, this.cellSteps, () => this.prng.next());
+    this.cellSteps = played.steps;
+    for (const effect of played.fire) {
       this.fireChainEffect(section, effect, velocity, sourceDrumId, input, effect.trigger.kind);
     }
   }
@@ -926,7 +943,9 @@ class VoiceBusEngine implements RenderEngine {
     if (prev === null) return;
     const section = this.activeEffectSection();
     if (!section) return;
-    for (const effect of clockEffectsCrossed(section, prev, beat, this.beatsPerBar)) {
+    const played = pickCellPlay(section, clockEffectsCrossed(section, prev, beat, this.beatsPerBar), this.cellSteps, () => this.prng.next());
+    this.cellSteps = played.steps;
+    for (const effect of played.fire) {
       this.fireChainEffect(section, effect, 1, null, null, 'clock');
     }
   }

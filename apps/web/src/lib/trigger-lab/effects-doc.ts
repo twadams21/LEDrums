@@ -38,6 +38,8 @@ type ParamValue = number | boolean | string;
 export interface EffectsSection {
   effects: Effect[];
   master: ModifierDevice[];
+  /** Sequence / Random cells (see core `effect-chain/cell-play`). Absent = all cells layer. */
+  cellPlay?: effectChain.CellPlay[];
 }
 
 /** An op that mints an id: the new section plus the id (null + the input section on a no-op). */
@@ -509,5 +511,38 @@ export function pasteCell<S extends EffectsSection>(section: S, cell: EffectCell
 
 export function clearCell<S extends EffectsSection>(section: S, cell: EffectCell): S {
   if (!section.effects.some((e) => sameCell(e.cell, cell))) return section;
-  return withEffects(section, section.effects.filter((e) => !sameCell(e.cell, cell)));
+  const cleared = withEffects(section, section.effects.filter((e) => !sameCell(e.cell, cell)));
+  // An emptied cell starts over: it layers again, with no reset.
+  return section.cellPlay?.some((p) => sameCell(p.cell, cell))
+    ? { ...cleared, cellPlay: section.cellPlay.filter((p) => !sameCell(p.cell, cell)) }
+    : cleared;
+}
+
+// ---- Cell play (Layer / Sequence / Random) -----------------------------------------------
+
+/**
+ * Set how a cell's stack plays a hit. `layer` removes the entry (the default needs none). Switching
+ * between Sequence and Random keeps the reset. An Always cell has no hits to answer: refused.
+ */
+export function setCellPlayMode<S extends EffectsSection>(section: S, cell: EffectCell, mode: effectChain.CellPlayMode): S {
+  if (cell.column.kind === 'always') return section;
+  const entries = section.cellPlay ?? [];
+  const current = entries.find((p) => sameCell(p.cell, cell));
+  if ((current?.mode ?? 'layer') === mode) return section;
+  const rest = entries.filter((p) => !sameCell(p.cell, cell));
+  const next = mode === 'layer' ? rest : [...rest, { cell: cloneJson(cell), mode, ...(current?.reset ? { reset: cloneJson(current.reset) } : {}) }];
+  return { ...section, cellPlay: next };
+}
+
+/** Set (or, with null, clear) the input that rewinds a Sequence / Random cell. No-op on a layering cell. */
+export function setCellReset<S extends EffectsSection>(section: S, cell: EffectCell, reset: effectChain.CellReset | null): S {
+  const entries = section.cellPlay ?? [];
+  const index = entries.findIndex((p) => sameCell(p.cell, cell));
+  if (index < 0) return section;
+  const current = entries[index]!;
+  if (reset !== null && !effectChain.cellResetSchema.safeParse(reset).success) return section;
+  if (JSON.stringify(current.reset ?? null) === JSON.stringify(reset)) return section;
+  const { reset: _old, ...base } = current;
+  const updated: effectChain.CellPlay = reset === null ? base : { ...base, reset: cloneJson(reset) };
+  return { ...section, cellPlay: entries.map((p, i) => (i === index ? updated : p)) };
 }

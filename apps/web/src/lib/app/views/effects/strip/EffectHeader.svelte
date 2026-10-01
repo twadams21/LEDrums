@@ -34,12 +34,16 @@
     index: number;
     count: number;
     selected?: boolean;
+    /** On a Sequence / Random cell: this Effect's step number (1-based), and whether it is the
+        step that played most recently. Absent on a layering cell. */
+    step?: number | null;
+    lastPlayed?: boolean;
     onGripDragStart?: (event: DragEvent) => void;
     onGripDragEnd?: () => void;
     onNudge?: (delta: -1 | 1) => void;
   };
 
-  let { api, effect, index, count, selected = false, onGripDragStart, onGripDragEnd, onNudge }: Props = $props();
+  let { api, effect, index, count, selected = false, step = null, lastPlayed = false, onGripDragStart, onGripDragEnd, onNudge }: Props = $props();
 
   const FLASH_MS = 360;
   let renaming = $state(false);
@@ -88,6 +92,14 @@
         <GripVertical size={14} aria-hidden="true" />
       </button>
     </Tooltip>
+
+    {#if step !== null}
+      <!-- The step number on a Sequence / Random cell; ▶ marks the one that played last. -->
+      <span class="step" class:played={lastPlayed} aria-label={`Step ${step}${lastPlayed ? ', played last' : ''}`}>
+        <!-- The ▶ always holds its width, so a hit never shifts the header row. -->
+        <span class="mark" aria-hidden="true">▶</span>{step}
+      </span>
+    {/if}
 
     <Tooltip text={effect.bypass ? 'Enable Effect' : 'Bypass Effect'}>
       <button
@@ -307,5 +319,32 @@
   }
   .head :global(.blend) {
     min-width: 7rem;
+  }
+  /* Step badge (Sequence / Random cells): a quiet number, accented on the step that played last. */
+  .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    min-width: 22px;
+    height: 18px;
+    padding: 0 5px;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .step .mark {
+    visibility: hidden;
+  }
+  .step.played .mark {
+    visibility: visible;
+  }
+  .step.played {
+    color: var(--ink);
+    border-color: var(--accent);
+    background: color-mix(in oklch, var(--accent) 18%, transparent);
   }
 </style>

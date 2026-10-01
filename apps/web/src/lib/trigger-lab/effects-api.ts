@@ -138,6 +138,21 @@ export interface EffectsAuthoringApi {
   readonly canPasteCell: boolean;
   clearCell(cell: EffectCell): void;
 
+  // ---- Cell play: Layer / Sequence / Random (Tim, 2026-10-01) -----------------------------------
+  /** The cell's play settings, or null when it layers (every Effect fires on each hit). */
+  cellPlay(cell: EffectCell): effectChain.CellPlay | null;
+  /** Layer, or one Effect per hit in stack order (Sequence) or at random (Random). One undo step. */
+  setCellPlayMode(cell: EffectCell, mode: effectChain.CellPlayMode): void;
+  /** The input that rewinds a Sequence / Random cell to its first step; null clears it. */
+  setCellReset(cell: EffectCell, reset: effectChain.CellReset | null): void;
+  /** Arm Learn: the next MIDI note / CC (or OSC address) becomes the cell's reset. */
+  startCellResetLearn(cell: EffectCell, via: 'midi' | 'osc'): void;
+  /** The cell whose reset Learn is armed, or null. `cancelCueLearn` disarms it too. */
+  readonly cellResetLearnCell: EffectCell | null;
+  /** Which step (0-based, stack order) the cell played most recently, from the fire flashes; null
+      before any. The UI marks it — it follows the engine in both offline and connected play. */
+  lastPlayedStep(cell: EffectCell): number | null;
+
   // ---- Cue learn (MIDI / OSC) --------------------------------------------------------------------
   startCueLearn(effectId: string, via: 'midi' | 'osc'): void;
   cancelCueLearn(): void;
