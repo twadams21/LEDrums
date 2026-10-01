@@ -70,8 +70,14 @@ export const effectTriggerSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cue'), source: cueSourceSchema.default({}) }),
 ]);
 
-/** What a repeated fire does while this Effect is already playing. */
-export const retriggerSchema = z.enum(['overlap', 'restart', 'ignore']);
+/**
+ * What a fire does to light already playing. `overlap` plays on top; `restart` releases this
+ * Effect's own earlier voices (they fade on their release); `ignore` skips the fire while this
+ * Effect is still playing; `cut` stops, at once and with no release fade, every EARLIER voice in
+ * this Effect's cell — its own and its cell-mates' — so a new hit (or a Sequence's next step)
+ * replaces what was lit (Tim, 2026-10-01). Voices born on the same hit are never cut.
+ */
+export const retriggerSchema = z.enum(['overlap', 'restart', 'ignore', 'cut']);
 
 // ---- Amplitude envelope --------------------------------------------------------
 
@@ -324,9 +330,6 @@ export const cellPlaySchema = z.object({
   cell: effectCellSchema,
   mode: cellPlayModeSchema,
   reset: cellResetSchema.optional(),
-  /** Sequence / Random only: when a step plays, the cell's other steps stop at once — no release
-      fade — so one step is lit at a time (Tim, 2026-10-01). Absent = they play out. */
-  cut: z.boolean().optional(),
 });
 
 export type EffectCell = z.output<typeof effectCellSchema>;

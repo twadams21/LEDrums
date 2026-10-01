@@ -90,14 +90,13 @@ export function pickCellPlay(
 }
 
 /**
- * The Effects to cut when `effect` plays: with its cell on Sequence / Random and `cut` set, every
- * OTHER Effect in that cell (bypassed ones included — a step bypassed mid-tail is still cut).
- * Empty for a layering cell or without `cut`.
+ * The Effects whose earlier light a fire of `effect` cuts: with Retrigger `cut`, every Effect in
+ * its cell, itself included (bypassed ones too — a step bypassed mid-tail is still cut). Empty for
+ * any other Retrigger.
  */
-export function cellCutTargets(section: CellPlaySection, effect: Effect): string[] {
-  const play = cellPlayOf(section, effect.cell);
-  if (!play?.cut || play.mode === 'layer') return [];
-  return (section.effects ?? []).filter((other) => other.id !== effect.id && sameEffectCell(other.cell, effect.cell)).map((other) => other.id);
+export function retriggerCutTargets(section: CellPlaySection, effect: Effect): string[] {
+  if (effect.retrigger !== 'cut') return [];
+  return (section.effects ?? []).filter((other) => sameEffectCell(other.cell, effect.cell)).map((other) => other.id);
 }
 
 /** Does this input carry the cell's reset? (A zone-mapped note carries its zone AND its note.) */

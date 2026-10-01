@@ -61,7 +61,9 @@ function harness(cellPlay: CellPlay[], extraSection?: SongSection, stack: Effect
     send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 });
     return lit();
   };
-  return { hit, strike, send, diags };
+  /** Live voices playing now (a cut voice is reaped on the next frame). */
+  const voices = (): number => engine.stats().voices.length;
+  return { hit, strike, send, diags, voices };
 }
 
 describe('Sequence cell', () => {
@@ -111,26 +113,40 @@ describe('Random cell', () => {
   });
 });
 
-describe('Cut previous', () => {
+describe('Retrigger Cut', () => {
   /** Long Effects with a long release, so a step is still lit when the next one plays. */
-  const long = (id: string, color: string): Effect =>
-    parseEffect({ id, cell: KICK, generator: { kind: 'solid', style: 'solid', params: { color } }, amp: { attackMs: 0, length: { ms: 2000 }, releaseMs: 1000 } });
+  const long = (id: string, color: string, retrigger: Effect['retrigger'] = 'cut'): Effect =>
+    parseEffect({ id, cell: KICK, retrigger, generator: { kind: 'solid', style: 'solid', params: { color } }, amp: { attackMs: 0, length: { ms: 2000 }, releaseMs: 1000 } });
   const LONG = [long('r', '#ff0000'), long('g', '#00ff00'), long('b', '#0000ff')];
 
-  it('without it, a step is still lit when the next one plays', () => {
-    const h = harness([{ cell: KICK, mode: 'sequence' }], undefined, LONG);
+  it('Overlap leaves a step lit when the next one plays', () => {
+    const h = harness([{ cell: KICK, mode: 'sequence' }], undefined, LONG.map((e) => ({ ...e, retrigger: 'overlap' as const })));
     expect([h.strike(), h.strike()]).toEqual(['r', 'rg']);
   });
 
-  it('with it, the step that plays stops the others at once — no release fade', () => {
-    const h = harness([{ cell: KICK, mode: 'sequence', cut: true }], undefined, LONG);
+  it('in a Sequence, each step cuts the one before at once — no release fade', () => {
+    const h = harness([{ cell: KICK, mode: 'sequence' }], undefined, LONG);
     expect([h.strike(), h.strike(), h.strike(), h.strike()]).toEqual(['r', 'g', 'b', 'r']);
   });
 
-  it('works on a Random cell too, and never on a Layer cell', () => {
-    const random = harness([{ cell: KICK, mode: 'random', cut: true }], undefined, LONG);
-    for (let i = 0; i < 6; i++) expect(random.strike()).toHaveLength(1);
-    const layer = harness([{ cell: KICK, mode: 'layer', cut: true }], undefined, LONG);
-    expect(layer.strike()).toBe('rgb');
+  it('in a Random cell too', () => {
+    const h = harness([{ cell: KICK, mode: 'random' }], undefined, LONG);
+    for (let i = 0; i < 6; i++) expect(h.strike()).toHaveLength(1);
+  });
+
+  it('on a Layer cell, Effects of the SAME hit never cut each other', () => {
+    const h = harness([], undefined, LONG);
+    expect([h.strike(), h.strike()]).toEqual(['rgb', 'rgb']);
+  });
+
+  it('on a single Effect, a new hit replaces its own earlier light instead of stacking it', () => {
+    const one = (retrigger: Effect['retrigger']) => {
+      const h = harness([], undefined, [long('r', '#ff0000', retrigger)]);
+      h.strike();
+      h.strike();
+      return h.voices();
+    };
+    expect(one('overlap')).toBe(2);
+    expect(one('cut')).toBe(1);
   });
 });

@@ -5,8 +5,7 @@
      The steps ARE the Effect rows below, so editing, reordering and auditioning a step is just
      using the strip — there is no separate step editor to open.
 
-     Cut previous (Sequence / Random): the step that plays stops the cell's other steps at once,
-     no release fade. Retrigger is per Effect, so it never reaches across steps.
+     To have each step stop the one before at once, set the steps' Retrigger to Cut.
 
      A Sequence / Random cell rewinds to step 1 whenever its section starts, and optionally on an
      input: a drum zone, a MIDI note or CC (with Learn), or an OSC address. A reset note may also
@@ -18,7 +17,6 @@
   import CommitInput from '../../../../ui/CommitInput.svelte';
   import LearnButton from '../../../../ui/LearnButton.svelte';
   import Tooltip from '../../../../ui/Tooltip.svelte';
-  import Switch from '../../../../ui/Switch.svelte';
   import Info from '@lucide/svelte/icons/info';
   import { formatMidiNote, parseMidiNote } from '../../../../midi/midi-note';
 
@@ -39,15 +37,12 @@
     { value: 'midiCc', label: 'MIDI CC' },
     { value: 'osc', label: 'OSC address' },
   ];
-  const CUT_INFO =
-    'When a step plays, the step before it stops at once instead of fading out, so only one is lit at a time. Retrigger only affects an Effect hit again, not the next step.';
   const MODE_INFO =
-    'Layer plays every Effect in this cell on each hit. Sequence plays one per hit, top to bottom, then starts over. Random plays one per hit, never the same one twice in a row. Reorder the rows below to change the order.';
+    'Layer plays every Effect in this cell on each hit. Sequence plays one per hit, top to bottom, then starts over. Random plays one per hit, never the same one twice in a row. Reorder the rows below to change the order. Set Retrigger to Cut on the steps to stop the previous step the moment the next one plays.';
 
   const play = $derived(api.cellPlay(cell));
   const mode = $derived(play?.mode ?? 'layer');
   const reset = $derived(play?.reset ?? null);
-  const cut = $derived(!!play?.cut);
   const disabled = $derived(!api.canEdit);
   const learning = $derived.by(() => {
     const armed = api.cellResetLearnCell;
@@ -99,15 +94,6 @@
   {/if}
 
   {#if mode !== 'layer'}
-    <span class="cut">
-      <Switch checked={cut} {disabled} onChange={(v) => api.setCellCut(cell, v)} ariaLabel="Cut previous step" />
-      <span class="lab">
-        Cut previous
-        <Tooltip text={CUT_INFO} side="top">
-          <span class="info" aria-label="About Cut previous"><Info size={12} aria-hidden="true" /></span>
-        </Tooltip>
-      </span>
-    </span>
     <span class="lab reset-lab">Reset</span>
     <span class="field">
       <Select
@@ -211,12 +197,7 @@
   .reset-lab {
     margin-left: var(--space-2);
   }
-  .cut {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1_5);
-    margin-left: var(--space-2);
-  }
+
   .info {
     display: inline-flex;
     color: var(--text-faint);

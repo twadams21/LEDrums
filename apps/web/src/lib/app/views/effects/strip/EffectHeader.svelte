@@ -16,6 +16,7 @@
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Info from '@lucide/svelte/icons/info';
   import type { EffectsAuthoringApi } from '../../../../trigger-lab/effects-api';
   import CommitInput from '../../../../ui/CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../../../ui/ContextMenu.svelte';
@@ -25,7 +26,7 @@
   import { pushToast } from '../../../../ui/toast.svelte';
   import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICON } from './generator-icons';
-  import { BLEND_OPTIONS, RETRIGGER_OPTIONS, effectDisplayName, percent } from './strip-model';
+  import { BLEND_OPTIONS, RETRIGGER_INFO, RETRIGGER_OPTIONS, effectDisplayName, percent } from './strip-model';
 
   type Props = {
     api: EffectsAuthoringApi;
@@ -177,7 +178,12 @@
           onChange={(v) => api.setEffectOpacity(effect.id, Number(v))} />
       </span>
       <span class="ctl">
-        <span class="k">Retrigger</span>
+        <span class="k">
+          Retrigger
+          <Tooltip text={RETRIGGER_INFO} side="top">
+            <span class="info" aria-label="About Retrigger"><Info size={11} aria-hidden="true" /></span>
+          </Tooltip>
+        </span>
         <Select value={effect.retrigger} options={RETRIGGER_OPTIONS} ariaLabel="Retrigger" {disabled}
           onChange={(v) => api.setRetrigger(effect.id, v as effectChain.Retrigger)} />
       </span>
@@ -314,8 +320,15 @@
     flex: none;
   }
   .k {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     color: var(--text-faint);
     font-size: var(--text-2xs);
+  }
+  .info {
+    display: inline-flex;
+    color: var(--text-faint);
   }
   .head :global(.blend) {
     min-width: 7rem;

@@ -145,8 +145,6 @@ export interface EffectsAuthoringApi {
   setCellPlayMode(cell: EffectCell, mode: effectChain.CellPlayMode): void;
   /** The input that rewinds a Sequence / Random cell to its first step; null clears it. */
   setCellReset(cell: EffectCell, reset: effectChain.CellReset | null): void;
-  /** Cut previous: on a Sequence / Random cell, the step that plays stops the others at once. */
-  setCellCut(cell: EffectCell, cut: boolean): void;
   /** Arm Learn: the next MIDI note / CC (or OSC address) becomes the cell's reset. */
   startCellResetLearn(cell: EffectCell, via: 'midi' | 'osc'): void;
   /** The cell whose reset Learn is armed, or null. `cancelCueLearn` disarms it too. */

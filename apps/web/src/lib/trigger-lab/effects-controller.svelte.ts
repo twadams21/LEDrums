@@ -369,9 +369,6 @@ export class EffectsController implements EffectsAuthoringApi {
     if (!cellEnabled(this.host.kit(), this.host.inputMap(), cell)) return;
     this.#edit((s) => doc.setCellPlayMode(s, cell, mode));
   }
-  setCellCut(cell: EffectCell, cut: boolean): void {
-    this.#edit((s) => doc.setCellCut(s, cell, cut));
-  }
   setCellReset(cell: EffectCell, reset: effectChain.CellReset | null): void {
     this.#edit((s) => doc.setCellReset(s, cell, reset));
   }

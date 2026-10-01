@@ -96,7 +96,7 @@
         fx({ id: 'fx-s3', name: 'Ripple blue', cell: snareHead, generator: { kind: 'wave', style: '' } }),
       ],
       master: [],
-      cellPlay: [{ cell: snareHead, mode: 'sequence', reset: { kind: 'midiNote', note: 48 }, cut: true }],
+      cellPlay: [{ cell: snareHead, mode: 'sequence', reset: { kind: 'midiNote', note: 48 } }],
     },
     DEFAULT_KIT,
   );
@@ -127,7 +127,7 @@
     <DemoCard
       title="Device strip — Sequence / Random cell"
       src={['lib/app/views/effects/strip/CellPlayBar', 'lib/app/views/effects/strip/EffectHeader']}
-      note="The Play bar above the stack: Layer (every Effect per hit, the default) · Sequence (one per hit, top to bottom) · Random (one per hit, no immediate repeat). Steps are the un-bypassed rows, numbered in their headers; ▶ marks the one played last. Cut previous (on here) stops the other steps the instant one plays, with no release fade. Reset rewinds to step 1 on section start, and optionally on a drum zone, MIDI note or CC (typed or learned) or an OSC address. Hidden on Always cells and empty cells."
+      note="The Play bar above the stack: Layer (every Effect per hit, the default) · Sequence (one per hit, top to bottom) · Random (one per hit, no immediate repeat). Steps are the un-bypassed rows, numbered in their headers; ▶ marks the one played last. A step's Retrigger Cut stops the previous step the instant it plays, with no release fade. Reset rewinds to step 1 on section start, and optionally on a drum zone, MIDI note or CC (typed or learned) or an OSC address. Hidden on Always cells and empty cells."
       wide
     >
       <div class="frame tall"><DeviceStrip api={sequenced} cell={snareHead} /></div>

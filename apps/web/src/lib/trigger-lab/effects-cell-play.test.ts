@@ -100,12 +100,12 @@ describe('saving', () => {
       songs: [{ id: 'song', name: 'Song', sections: [{
         id: 's', name: 'S', effects: [], master: [],
         cellPlay: [
-          { cell: KICK, mode: 'random', reset: { kind: 'osc', address: '/r' }, cut: true },
+          { cell: KICK, mode: 'random', reset: { kind: 'osc', address: '/r' } },
           { cell: KICK, mode: 'bogus' },
           { cell: ALWAYS, mode: 'layer' },
         ],
       }] }],
     });
-    expect(authored.songs![0]!.sections[0]!.cellPlay).toEqual([{ cell: KICK, mode: 'random', reset: { kind: 'osc', address: '/r' }, cut: true }]);
+    expect(authored.songs![0]!.sections[0]!.cellPlay).toEqual([{ cell: KICK, mode: 'random', reset: { kind: 'osc', address: '/r' } }]);
   });
 });
