@@ -28,7 +28,7 @@ import {
 } from './effects-api';
 import * as doc from './effects-doc';
 import type { ChainOwner, EffectsSection } from './effects-doc';
-import { cellEnabled, cellSummary, effectsInGridOrder, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
+import { auditionSlots, cellEnabled, cellSummary, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
 
 type Effect = effectChain.Effect;
 type EffectCell = effectChain.EffectCell;
@@ -76,6 +76,10 @@ export interface EffectsControllerHost {
     cell(cell: EffectCell): void;
     effectFireAt(effectId: string): number;
     cellFireAt(cell: EffectCell): number;
+    /** Play a zone cell as a real hit on its drum zone, through the engine — so a Sequence /
+        Random cell steps exactly as the drum would step it. False when the host can't (no pad
+        for that zone, or no engine): the caller then auditions a step itself. */
+    hit?(cell: EffectCell): boolean;
   };
   files: {
     saveEffect(effect: Effect): Promise<void>;
@@ -88,6 +92,9 @@ export interface EffectsControllerHost {
     start(effectId: string, via: 'midi' | 'osc'): void;
     cancel(): void;
     effectId(): string | null;
+    /** Arm Learn for a cell's reset (the next note / CC / OSC address binds it). */
+    startReset(cell: EffectCell, via: 'midi' | 'osc'): void;
+    resetCell(): EffectCell | null;
   };
   legacyImport: {
     available(): boolean;
@@ -277,10 +284,29 @@ export class EffectsController implements EffectsAuthoringApi {
     if (this.effectById(effectId)) this.host.fire.effect(effectId);
   }
   fireEffectAt(index: number): void {
-    const effect = effectsInGridOrder(this.host.getSection(), this.gridRows, this.gridColumns)[index];
-    if (effect) this.host.fire.effect(effect.id);
+    const slot = auditionSlots(this.host.getSection(), this.gridRows, this.gridColumns)[index];
+    if (slot?.kind === 'effect') this.host.fire.effect(slot.effect.id);
+    else if (slot) this.fireCell(slot.cell);
   }
   fireCell(cell: EffectCell): void {
+    const play = this.cellPlay(cell);
+    if (play && play.mode !== 'layer') {
+      // A zone cell plays as a hit on its zone, so the engine's own step advances: the key, the
+      // grid and the drum all walk ONE sequence.
+      if (cell.column.kind === 'zone' && this.host.fire.hit?.(cell)) return;
+      // Auditioning a Sequence / Random cell plays ONE step, like a hit would: the step after the
+      // last one played (so repeated auditions walk the steps), or another one at random. A UI
+      // preview — it does not move the engine's own step.
+      const steps = this.cellEffects(cell).filter((e) => !e.bypass);
+      if (steps.length === 0) return;
+      const last = this.lastPlayedStep(cell);
+      let index: number;
+      if (play.mode === 'sequence') index = last === null ? 0 : (last + 1) % steps.length;
+      else if (steps.length === 1 || last === null) index = Math.floor(Math.random() * steps.length);
+      else index = (last + 1 + Math.floor(Math.random() * (steps.length - 1))) % steps.length;
+      this.host.fire.effect(steps[index]!.id);
+      return;
+    }
     if (this.cellEffects(cell).length > 0) this.host.fire.cell(cell);
   }
 
@@ -451,6 +477,41 @@ export class EffectsController implements EffectsAuthoringApi {
     this.#edit((s) => doc.clearCell(s, cell));
   }
 
+  // ---- Cell play ---------------------------------------------------------------------------
+
+  cellPlay(cell: EffectCell): effectChain.CellPlay | null {
+    const section = this.host.getSection();
+    return section ? effectChain.cellPlayOf(section, cell) : null;
+  }
+  setCellPlayMode(cell: EffectCell, mode: effectChain.CellPlayMode): void {
+    if (!cellEnabled(this.host.kit(), this.host.inputMap(), cell)) return;
+    this.#edit((s) => doc.setCellPlayMode(s, cell, mode));
+  }
+  setCellReset(cell: EffectCell, reset: effectChain.CellReset | null): void {
+    this.#edit((s) => doc.setCellReset(s, cell, reset));
+  }
+  startCellResetLearn(cell: EffectCell, via: 'midi' | 'osc'): void {
+    if (!this.canEdit || !this.cellPlay(cell)) return;
+    this.host.learn.startReset(doc.cloneJson(cell), via);
+  }
+  get cellResetLearnCell(): EffectCell | null {
+    return this.host.learn.resetCell();
+  }
+  lastPlayedStep(cell: EffectCell): number | null {
+    // The steps are the cell's un-bypassed Effects in stack order — exactly what the engine steps.
+    const steps = this.cellEffects(cell).filter((e) => !e.bypass);
+    let best = -1;
+    let at = 0;
+    steps.forEach((effect, index) => {
+      const fired = this.effectFireAt(effect.id);
+      if (fired > at) {
+        at = fired;
+        best = index;
+      }
+    });
+    return best < 0 ? null : best;
+  }
+
   // ---- Cue learn -------------------------------------------------------------------------
 
   startCueLearn(effectId: string, via: 'midi' | 'osc'): void {
@@ -601,6 +662,7 @@ export function createStandaloneEffectsApi(
   let fired = $state.raw<string[]>([]);
   let fireTimes = $state.raw<Record<string, number>>({});
   let learnId = $state.raw<string | null>(null);
+  let resetLearn = $state.raw<EffectCell | null>(null);
   const state: StandaloneState = {
     get section() { return section; },
     set section(next) { section = next; },
@@ -663,8 +725,13 @@ export function createStandaloneEffectsApi(
       },
       cancel: () => {
         learnId = null;
+        resetLearn = null;
       },
       effectId: () => learnId,
+      startReset: (cell) => {
+        resetLearn = cell;
+      },
+      resetCell: () => resetLearn,
     },
     legacyImport: {
       available: () => false,

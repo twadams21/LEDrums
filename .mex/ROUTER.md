@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 ---
 
 # Session Bootstrap
@@ -79,6 +79,28 @@ Bugs found and fixed along the way:
 Process: built in waves with dynamic Workflows (opus/medium implementers and reviewers, isolated worktrees, pool of 5) against two orchestrator-written contracts: `trigger-lab/effects-api.ts` and `map-api.ts`.
 
 Verification: each wave's integration branch passed typecheck, the full serial sweep and `ui-shot --all --strict` offline. Merge through gh-stack only, after Trent's review.
+
+**Cell Sequence / Random + reset (2026-10-01, branch `feat/cell-sequencer`, stacked on #253):**
+Session on Tim's MacBook Pro (`scutil --get ComputerName` = "Timothy’s MacBook Pro").
+
+Sources:
+- Tim asked to re-implement the sequencer in the new layout, "streamlined and not clunky to access all the individual effects", and asked whether it belongs in the Effects panel or the grid.
+- Tim chose "Cell: panel + grid badge" and "add Random" (AskUserQuestion), then confirmed they want the reset, including reset from a MIDI note.
+- This re-adds a behaviour Trent dropped in v1 (spec: the routing nodes were cut, "only add it in when we want it"). Tim asked for it; Trent has not reviewed the design.
+
+What it is:
+- A cell's play mode, stored on the section as `cellPlay: [{cell, mode, reset?}]` (`effect-chain/types.ts`, logic in `effect-chain/cell-play.ts`, pure). Layer (default, no entry) plays every Effect; Sequence plays one per hit in stack order; Random plays one per hit with no immediate repeat, on the engine's seeded PRNG.
+- The steps are the cell's un-bypassed matched Effects, so reordering, bypassing and editing a step is just using the strip. No separate step editor.
+- Reset rewinds to step 1 on section start / `setShow`, and optionally on a drum zone, MIDI note, MIDI CC or OSC address (typed or learned). A reset-only input is not reported as a miss.
+- UI: the Play bar (`strip/CellPlayBar.svelte`) above the stack, step numbers with ▶ (played last) in each Effect header, and a "Seq 2/3" / "Rnd …" badge on the grid cell. Always cells always layer.
+
+Agent-chosen (assumed, not reviewed by Tim or Trent):
+- A reset note may also be a drum zone's note; the one hit then plays the zone AND resets, with a toast when Learn binds it.
+- Retrigger **Cut** (Tim 2026-10-01: "instantly cut one effect off when the new effect is pressed"; first built as a cell-level Cut previous switch, then Tim asked for it in the Retrigger section "as it still relates to any hit, regardless of it being in a sequencer or not"). `retriggerSchema` gains `cut`: a fire stops, at once with no release ramp, every EARLIER voice in the Effect's cell, its own and its cell-mates' (`retriggerCutTargets`, `VoicePool.cutChainVoices` spares voices born at the same time, so one hit's layers never cut each other). The cell scope is an agent choice: it is what makes a Sequence step cut the previous step. Restart still only releases the SAME Effect, which is why Tim's Restart test across steps did nothing.
+- Auditioning a Sequence / Random cell plays one step. Number keys: a Sequence / Random cell takes ONE key (Tim, 2026-10-01: "it should be the same number"), and on a zone cell the key and the grid audition are a real hit on that zone, so the engine's own step advances and keys, grid and drum walk one sequence (`grid-model.ts` `auditionSlots`, host `fire.hit`).
+- Local hits do not pre-flash a sequenced cell: the server now forwards `effect-fired` diagnostics as `server/voice` monitor events, and those stamp the flash, so ▶ shows the step the engine actually played.
+
+Bug found in browser verification: `store.hit` / `fireRawMidiLocal` dropped any input that fired no Effect before it reached the engine, so a reset-only zone never reset. They now pass an input that is some cell's reset (`isCellReset`). Verified on a real server: sequence 1,2,3,1; Tom 1 zone reset; MIDI note 100 reset; Random with no repeats over 10 hits.
 
 **Section and graph authoring fixes (2026-09-25, branch `fix/section-authoring`):**
 Requested by Trent in this session on Trent's MacBook Pro (machine identity checked), based on

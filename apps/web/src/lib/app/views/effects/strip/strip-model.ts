@@ -64,7 +64,12 @@ export const RETRIGGER_OPTIONS: Option<Retrigger>[] = [
   { value: 'overlap', label: 'Overlap' },
   { value: 'restart', label: 'Restart' },
   { value: 'ignore', label: 'Ignore' },
+  { value: 'cut', label: 'Cut' },
 ];
+
+/** The Retrigger ⓘ: what each option does to light already playing. */
+export const RETRIGGER_INFO =
+  'What a hit does to light already playing. Overlap: plays on top. Restart: this Effect’s earlier light fades out on its release. Ignore: skips the hit while this Effect is still lit. Cut: stops all earlier light in this cell at once, with no fade — including the previous step of a Sequence or Random cell.';
 
 /** The name the header shows: the authored name, else the Generator's default label. */
 export function effectDisplayName(effect: Effect): string {

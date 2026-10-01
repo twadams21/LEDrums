@@ -67,6 +67,8 @@ export interface EffectSection {
   bpm?: number;
   effects: Effect[];
   master: ModifierDevice[];
+  /** Sequence / Random cells (absent = every cell layers). */
+  cellPlay?: effectChain.CellPlay[];
 }
 
 export interface EffectSong {
@@ -171,6 +173,14 @@ function coerceEffectSection(raw: unknown): EffectSection | null {
   };
   if (isFiniteNumber(raw.bars)) section.bars = raw.bars;
   if (isFiniteNumber(raw.bpm)) section.bpm = raw.bpm;
+  // Settings, not content: an unreadable entry is dropped (that cell layers), never the section.
+  if (Array.isArray(raw.cellPlay)) {
+    const cellPlay = raw.cellPlay.flatMap((entry) => {
+      const parsed = effectChain.cellPlaySchema.safeParse(entry);
+      return parsed.success && parsed.data.mode !== 'layer' ? [parsed.data] : [];
+    });
+    if (cellPlay.length > 0) section.cellPlay = cellPlay;
+  }
   return section;
 }
 

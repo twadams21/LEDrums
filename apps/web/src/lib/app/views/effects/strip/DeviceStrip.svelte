@@ -16,6 +16,7 @@
   import EffectHeader from './EffectHeader.svelte';
   import EffectChain from './EffectChain.svelte';
   import ModifierRun from './ModifierRun.svelte';
+  import CellPlayBar from './CellPlayBar.svelte';
   import { GENERATOR_ICON } from './generator-icons';
   import { gapAt, gapToIndex, nudgeIndex } from './strip-model';
 
@@ -33,6 +34,14 @@
     return `${row} · ${summary?.label ?? ''}`;
   });
   const canAdd = $derived(api.canEdit && (summary?.enabled ?? false));
+  // Sequence / Random: the un-bypassed rows are the steps, numbered in stack order.
+  const playMode = $derived(zoneCell ? (api.cellPlay(zoneCell)?.mode ?? 'layer') : 'layer');
+  const stepOf = $derived.by(() => {
+    const steps = new Map<string, number>();
+    effects.filter((e) => !e.bypass).forEach((e, i) => steps.set(e.id, i));
+    return steps;
+  });
+  const lastStep = $derived(zoneCell && playMode !== 'layer' ? api.lastPlayedStep(zoneCell) : null);
 
   function addEffect(kind: effectChain.GeneratorKind): void {
     if (zoneCell) api.addEffect(zoneCell, kind);
@@ -130,6 +139,10 @@
       </DropdownMenu.Root>
     </header>
 
+    {#if zoneCell && zoneCell.column.kind !== 'always' && effects.length > 0}
+      <CellPlayBar {api} cell={zoneCell} steps={stepOf.size} />
+    {/if}
+
     {#if effects.length === 0}
       <p class="empty">No Effects in this cell yet. Add one to start from a Generator.</p>
     {:else}
@@ -152,6 +165,8 @@
               index={i}
               count={effects.length}
               selected={api.selectedEffectId === effect.id}
+              step={playMode !== 'layer' && stepOf.has(effect.id) ? stepOf.get(effect.id)! + 1 : null}
+              lastPlayed={playMode !== 'layer' && lastStep !== null && stepOf.get(effect.id) === lastStep}
               onGripDragStart={(e) => onGripDragStart(e, i)}
               onGripDragEnd={reset}
               onNudge={(d) => nudge(i, d)}

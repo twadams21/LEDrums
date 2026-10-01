@@ -16,6 +16,7 @@
   import FolderOpen from '@lucide/svelte/icons/folder-open';
   import Copy from '@lucide/svelte/icons/copy';
   import Trash2 from '@lucide/svelte/icons/trash-2';
+  import Info from '@lucide/svelte/icons/info';
   import type { EffectsAuthoringApi } from '../../../../trigger-lab/effects-api';
   import CommitInput from '../../../../ui/CommitInput.svelte';
   import ContextMenu, { type ContextMenuAction } from '../../../../ui/ContextMenu.svelte';
@@ -25,7 +26,7 @@
   import { pushToast } from '../../../../ui/toast.svelte';
   import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICON } from './generator-icons';
-  import { BLEND_OPTIONS, RETRIGGER_OPTIONS, effectDisplayName, isControlPress, percent } from './strip-model';
+  import { BLEND_OPTIONS, RETRIGGER_INFO, RETRIGGER_OPTIONS, effectDisplayName, isControlPress, percent } from './strip-model';
 
   type Props = {
     api: EffectsAuthoringApi;
@@ -34,12 +35,16 @@
     index: number;
     count: number;
     selected?: boolean;
+    /** On a Sequence / Random cell: this Effect's step number (1-based), and whether it is the
+        step that played most recently. Absent on a layering cell. */
+    step?: number | null;
+    lastPlayed?: boolean;
     onGripDragStart?: (event: DragEvent) => void;
     onGripDragEnd?: () => void;
     onNudge?: (delta: -1 | 1) => void;
   };
 
-  let { api, effect, index, count, selected = false, onGripDragStart, onGripDragEnd, onNudge }: Props = $props();
+  let { api, effect, index, count, selected = false, step = null, lastPlayed = false, onGripDragStart, onGripDragEnd, onNudge }: Props = $props();
 
   const FLASH_MS = 360;
   let renaming = $state(false);
@@ -99,6 +104,14 @@
         <GripVertical size={14} aria-hidden="true" />
       </button>
     </Tooltip>
+
+    {#if step !== null}
+      <!-- The step number on a Sequence / Random cell; ▶ marks the one that played last. -->
+      <span class="step" class:played={lastPlayed} aria-label={`Step ${step}${lastPlayed ? ', played last' : ''}`}>
+        <!-- The ▶ always holds its width, so a hit never shifts the header row. -->
+        <span class="mark" aria-hidden="true">▶</span>{step}
+      </span>
+    {/if}
 
     <Tooltip text={effect.bypass ? 'Enable Effect' : 'Bypass Effect'}>
       <button
@@ -176,7 +189,12 @@
           onChange={(v) => api.setEffectOpacity(effect.id, Number(v))} />
       </span>
       <span class="ctl">
-        <span class="k">Retrigger</span>
+        <span class="k">
+          Retrigger
+          <Tooltip text={RETRIGGER_INFO} side="top">
+            <span class="info" aria-label="About Retrigger"><Info size={11} aria-hidden="true" /></span>
+          </Tooltip>
+        </span>
         <Select value={effect.retrigger} options={RETRIGGER_OPTIONS} ariaLabel="Retrigger" {disabled}
           onChange={(v) => api.setRetrigger(effect.id, v as effectChain.Retrigger)} />
       </span>
@@ -313,10 +331,44 @@
     flex: none;
   }
   .k {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     color: var(--text-faint);
     font-size: var(--text-2xs);
   }
+  .info {
+    display: inline-flex;
+    color: var(--text-faint);
+  }
   .head :global(.blend) {
     min-width: 7rem;
+  }
+  /* Step badge (Sequence / Random cells): a quiet number, accented on the step that played last. */
+  .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex: none;
+    min-width: 22px;
+    height: 18px;
+    padding: 0 5px;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    border: 1px solid var(--border-faint);
+    border-radius: var(--radius-1);
+  }
+  .step .mark {
+    visibility: hidden;
+  }
+  .step.played .mark {
+    visibility: visible;
+  }
+  .step.played {
+    color: var(--ink);
+    border-color: var(--accent);
+    background: color-mix(in oklch, var(--accent) 18%, transparent);
   }
 </style>

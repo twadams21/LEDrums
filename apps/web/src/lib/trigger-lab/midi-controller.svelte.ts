@@ -13,7 +13,7 @@
     map read/write, and the binding writers each target kind needs. */
 
 import { initMidi, type MidiDeviceInfo, type MidiEventHandler, type MidiInitResult } from '../midi/webmidi';
-import type { GlobalControlAction, GlobalControlBinding, InputMap } from '@ledrums/core';
+import type { GlobalControlAction, GlobalControlBinding, InputMap, effectChain } from '@ledrums/core';
 import type { MapTarget } from './map-api';
 
 /** MIDI controller 0 is reserved for global section recall (see server `SECTION_RECALL_CC`),
@@ -32,6 +32,8 @@ export type MidiLearnTarget =
   /** Effect chains (S05): a Cue Effect's MIDI source — the next note OR controller binds it
       (whichever arrives first; CC 0 stays reserved). */
   | { kind: 'cue'; effectId: string }
+  /** A Sequence / Random cell's reset — the next note OR controller binds it (CC 0 stays reserved). */
+  | { kind: 'cell-reset'; cell: effectChain.EffectCell }
   /** Effect chains (S07): MIDI-map mode's armed control — the next note OR controller binds it
       (CC 0 stays reserved). Unlike every other target it stays ARMED after a bind: map mode
       re-binds on each new input until the user disarms (clicks away, Escape, leaves the mode). */
@@ -56,6 +58,8 @@ export interface MidiControllerHost {
   /** Set a Cue Effect's MIDI source (a cue learn binds through here — the Effect's undo / guard
       path). Same accepted / refused contract as the other writers. */
   setCueMidiSource(effectId: string, source: { midiNote: number } | { midiCc: number }): boolean;
+  /** Bind a cell's reset (always accepted — see the store). */
+  setCellResetFromLearn(cell: effectChain.EffectCell, reset: effectChain.CellReset): boolean;
   /** Bind MIDI-map mode's armed control (the store's `bindTarget` path, which records a refusal
       for the overlay). The arm stays up either way, so the result is not read. */
   bindMapSource(target: MapTarget, source: { midiNote: number } | { midiCc: number }): void;
@@ -142,6 +146,8 @@ export class MidiController {
       accepted = this.host.setGlobalControlBinding(target.action, { midiNote: note });
     } else if (target.kind === 'cue') {
       accepted = this.host.setCueMidiSource(target.effectId, { midiNote: note });
+    } else if (target.kind === 'cell-reset') {
+      accepted = this.host.setCellResetFromLearn(target.cell, { kind: 'midiNote', note });
     } else if (target.kind === 'map') {
       this.host.bindMapSource(target.target, { midiNote: note });
       return; // map learn stays armed (see MidiLearnTarget)
@@ -168,6 +174,10 @@ export class MidiController {
     }
     if (target.kind === 'cue') {
       if (this.host.setCueMidiSource(target.effectId, { midiCc: controller })) this.learnTarget = null;
+      return;
+    }
+    if (target.kind === 'cell-reset') {
+      if (this.host.setCellResetFromLearn(target.cell, { kind: 'midiCc', cc: controller })) this.learnTarget = null;
       return;
     }
     if (target.kind === 'map') {
