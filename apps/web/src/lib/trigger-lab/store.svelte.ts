@@ -1190,6 +1190,13 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
       cell: (cell) => this.auditionEffects(this.effectsCtl.cellEffects(cell).map((e) => e.id), 'cell'),
       effectFireAt: (effectId) => this.effectFireStamps[effectId] ?? 0,
       cellFireAt: (cell) => this.effectsCtl.cellEffects(cell).reduce((at, e) => Math.max(at, this.effectFireStamps[e.id] ?? 0), 0),
+      hit: (cell) => {
+        const slot = cell.column.kind === 'zone' ? cell.column.slot : null;
+        const pad = slot === null ? undefined : this.pads.find((p) => p.drumId === cell.row && Number(p.zone) === slot);
+        if (!pad) return false;
+        this.hit(pad);
+        return true;
+      },
     },
     files: {
       saveEffect: async (effect) => {

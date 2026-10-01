@@ -96,7 +96,7 @@ What it is:
 
 Agent-chosen (assumed, not reviewed by Tim or Trent):
 - A reset note may also be a drum zone's note; the one hit then plays the zone AND resets, with a toast when Learn binds it.
-- Auditioning a Sequence / Random cell plays one step.
+- Auditioning a Sequence / Random cell plays one step. Number keys: a Sequence / Random cell takes ONE key (Tim, 2026-10-01: "it should be the same number"), and on a zone cell the key and the grid audition are a real hit on that zone, so the engine's own step advances and keys, grid and drum walk one sequence (`grid-model.ts` `auditionSlots`, host `fire.hit`).
 - Local hits do not pre-flash a sequenced cell: the server now forwards `effect-fired` diagnostics as `server/voice` monitor events, and those stamp the flash, so ▶ shows the step the engine actually played.
 
 Bug found in browser verification: `store.hit` / `fireRawMidiLocal` dropped any input that fired no Effect before it reached the engine, so a reset-only zone never reset. They now pass an input that is some cell's reset (`isCellReset`). Verified on a real server: sequence 1,2,3,1; Tom 1 zone reset; MIDI note 100 reset; Random with no repeats over 10 hits.

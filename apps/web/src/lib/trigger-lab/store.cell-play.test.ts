@@ -77,12 +77,20 @@ describe('fire flashes on a sequenced cell', () => {
     expect(store.lastPlayedStep(KICK_0)).toBe(1);
   });
 
-  it('auditioning the cell plays ONE step, and the next audition the next one', () => {
+  it('auditioning the cell offline plays ONE step through the Sim, and the next audition the next one', () => {
     const { store, ids } = sequencedKick();
-    store.fireCell(KICK_0);
+    // The Sim plays an input on its next tick, and the poll stamps the flash at the next snapshot.
+    const sim = (store as unknown as { sim: { tick(dtMs: number): void } }).sim;
+    const press = () => {
+      store.fireCell(KICK_0);
+      sim.tick(16);
+      (store as unknown as { snapshot(): void }).snapshot();
+    };
+    sim.tick(16);
+    press();
     expect(store.lastPlayedStep(KICK_0)).toBe(0);
     expect(store.effectFireAt(ids[1]!)).toBe(0);
-    store.fireCell(KICK_0);
+    press();
     expect(store.lastPlayedStep(KICK_0)).toBe(1);
   });
 });
@@ -100,5 +108,18 @@ describe('a reset-only input', () => {
     store.setCellReset(KICK_0, { kind: 'zone', drumId: quiet.drumId, slot: quiet.zone });
     store.hit(quiet);
     expect(keys()).toBe(1); // the kick sequence's reset: sent, so the engine rewinds it
+  });
+});
+
+describe('the number key of a sequenced zone cell', () => {
+  it('is a real hit on the zone, so the engine steps it like the drum would', () => {
+    const { store, h } = sequencedKick();
+    (store as unknown as { wireClient(): void }).wireClient();
+    h.cb.onConnection!('open');
+    const before = h.sent.length;
+    store.fireCell(KICK_0);
+    const sent = h.sent.slice(before);
+    expect(sent.some((m) => m.t === 'key' && m.drumId === 'kick' && m.zone === '0')).toBe(true);
+    expect(sent.some((m) => m.t === 'fireEffect')).toBe(false); // not a client-side guess at the step
   });
 });

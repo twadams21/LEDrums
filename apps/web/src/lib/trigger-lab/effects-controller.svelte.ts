@@ -26,7 +26,7 @@ import {
 } from './effects-api';
 import * as doc from './effects-doc';
 import type { ChainOwner, EffectsSection } from './effects-doc';
-import { cellEnabled, cellSummary, effectsInGridOrder, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
+import { auditionSlots, cellEnabled, cellSummary, gridColumns, gridRows, zoneSlotsForDrum } from './grid-model';
 
 type Effect = effectChain.Effect;
 type EffectCell = effectChain.EffectCell;
@@ -68,6 +68,10 @@ export interface EffectsControllerHost {
     cell(cell: EffectCell): void;
     effectFireAt(effectId: string): number;
     cellFireAt(cell: EffectCell): number;
+    /** Play a zone cell as a real hit on its drum zone, through the engine — so a Sequence /
+        Random cell steps exactly as the drum would step it. False when the host can't (no pad
+        for that zone, or no engine): the caller then auditions a step itself. */
+    hit?(cell: EffectCell): boolean;
   };
   files: {
     saveEffect(effect: Effect): Promise<void>;
@@ -162,12 +166,16 @@ export class EffectsController implements EffectsAuthoringApi {
     if (this.effectById(effectId)) this.host.fire.effect(effectId);
   }
   fireEffectAt(index: number): void {
-    const effect = effectsInGridOrder(this.host.getSection(), this.gridRows, this.gridColumns)[index];
-    if (effect) this.host.fire.effect(effect.id);
+    const slot = auditionSlots(this.host.getSection(), this.gridRows, this.gridColumns)[index];
+    if (slot?.kind === 'effect') this.host.fire.effect(slot.effect.id);
+    else if (slot) this.fireCell(slot.cell);
   }
   fireCell(cell: EffectCell): void {
     const play = this.cellPlay(cell);
     if (play && play.mode !== 'layer') {
+      // A zone cell plays as a hit on its zone, so the engine's own step advances: the key, the
+      // grid and the drum all walk ONE sequence.
+      if (cell.column.kind === 'zone' && this.host.fire.hit?.(cell)) return;
       // Auditioning a Sequence / Random cell plays ONE step, like a hit would: the step after the
       // last one played (so repeated auditions walk the steps), or another one at random. A UI
       // preview — it does not move the engine's own step.

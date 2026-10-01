@@ -75,6 +75,25 @@ describe('the authoring api', () => {
   });
 });
 
+describe('number keys', () => {
+  it('a Sequence / Random cell is ONE key, and pressing it again plays the next step', () => {
+    const api = demo(); // a, b, c on the kick head; nothing else in the section
+    expect([0, 1, 2].map((i) => { api.fireEffectAt(i); return api.lastPlayedStep(KICK); })).toEqual([0, 1, 2]); // Layer: a key each
+    api.setCellPlayMode(KICK, 'sequence');
+    const played = [0, 0, 0, 0].map((i) => { api.fireEffectAt(i); return api.lastPlayedStep(KICK); });
+    expect(played).toEqual([0, 1, 2, 0]);
+  });
+
+  it('keys after a stepped cell move up to fill the keys it no longer takes', () => {
+    const snare: EffectCell = { row: 'snare', column: { kind: 'zone', slot: 0 } };
+    const twoDrums: KitConfig = { ...kit, drums: [...kit.drums, { ...DEFAULT_KIT.drums[0]!, id: 'snare', label: 'Snare' }] };
+    const api = createStandaloneEffectsApi({ effects: [fx('a'), fx('b'), effectChain.parseEffect({ id: 's', name: 's', cell: snare, generator: { kind: 'solid' } })], master: [] }, twoDrums);
+    api.setCellPlayMode(KICK, 'random');
+    api.fireEffectAt(1);
+    expect(api.effectFireAt('s')).toBeGreaterThan(0); // key 2 is the snare now, not kick's second step
+  });
+});
+
 describe('saving', () => {
   it('a saved section keeps its cell play; an unreadable or Layer entry is dropped', () => {
     const authored = coerceAuthoredV3({
