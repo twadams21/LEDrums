@@ -315,7 +315,7 @@ describe('typing a value', () => {
 });
 
 describe('Shift and the arrows (Tim, 2026-10-02: "the shift key doesn\u2019t work")', () => {
-  function rail(view: ReturnType<typeof render>): HTMLElement {
+  function rail(view: { container: HTMLElement }): HTMLElement {
     const el = view.container.querySelector<HTMLElement>('.rail')!;
     el.setPointerCapture = () => {};
     el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 16, right: 100, bottom: 16, x: 0, y: 0, toJSON() {} }) as DOMRect;
