@@ -85,6 +85,14 @@ function documentHasOpenPopup(): boolean {
 /** Read the keyboard surface that owns an event, without inspecting focus history or blurring it.
     Bits UI portals its popup content to body, so listbox/option roles cover events in the portal;
     the trigger markers cover the trigger while it is open. */
+/** A checkbox / radio / range / button `<input>` takes no typed text, so it must not keep the
+    digit bank the way a text field does. */
+const NON_TEXT_INPUT = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image']);
+function isTextEntry(element: Element | null): boolean {
+  if (typeof HTMLInputElement !== 'undefined' && element instanceof HTMLInputElement && NON_TEXT_INPUT.has(element.type)) return false;
+  return isEditableShortcutTarget(element);
+}
+
 export function performanceKeyTarget(input: TargetOrEvent): PerformanceKeyTarget {
   const eventPath = eventElements(input);
   const focusPath = typeof document !== 'undefined' ? eventElements(document.activeElement) : [];
@@ -94,7 +102,7 @@ export function performanceKeyTarget(input: TargetOrEvent): PerformanceKeyTarget
   const globallyOpenPopup = documentHasOpenPopup();
 
   return {
-    isEditableTarget: isEditableShortcutTarget(element),
+    isEditableTarget: isTextEntry(element),
     // Items inherit ownership only through an open owning surface in the same composed path.
     // Matching item roles directly would make force-mounted closed items swallow Perform keys.
     inOpenPopup: globallyOpenPopup || elements.some(isOpenPopupSurface) || elements.some(isOpenPopupTrigger),

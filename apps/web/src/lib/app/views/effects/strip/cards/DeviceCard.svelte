@@ -16,6 +16,7 @@
   import Power from '@lucide/svelte/icons/power';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { isControlPress } from '../strip-model';
 
   type Role = 'generator' | 'modifier' | 'control';
 
@@ -37,6 +38,13 @@
     initiallyFolded?: boolean;
     /** Extra title-bar controls (a menu, a save button). */
     actions?: Snippet;
+    /** Highlighted in the strip — the thing Delete / ⌘X / ⌘C act on. */
+    selected?: boolean;
+    /** A press anywhere on the card highlights it (see `selected`). */
+    onSelect?: () => void;
+    /** A second, separate click on an already-highlighted card's own area (not one of its
+        controls) un-highlights it. */
+    onDeselect?: () => void;
     children: Snippet;
     class?: string;
   }
@@ -51,6 +59,9 @@
     width = 248,
     initiallyFolded = false,
     actions,
+    selected = false,
+    onSelect,
+    onDeselect,
     children,
     class: klass,
   }: Props = $props();
@@ -59,12 +70,31 @@
   // svelte-ignore state_referenced_locally
   let folded = $state(initiallyFolded);
   const bypassed = $derived(power ? !power.on : false);
+
+  // Press highlights; a later click on the highlighted card's own area — not a control, and not
+  // the second click of a double-click — un-highlights it (Tim, 2026-10-01).
+  let pressWasSelected = false;
+  function onPress(): void {
+    pressWasSelected = selected;
+    if (!selected) onSelect?.();
+  }
+  function onClickToggle(event: MouseEvent): void {
+    const toggle = pressWasSelected && event.detail <= 1 && !isControlPress(event.target, event.currentTarget as Element);
+    pressWasSelected = false;
+    if (toggle) onDeselect?.();
+  }
 </script>
 
+<!-- A press anywhere on the card highlights it — in the CAPTURE phase, so a control that stops
+     its own pointer events (a face-param drag) still selects the card it sits on. Selecting never
+     moves focus: the control keeps it. -->
 <section
   class={['card', `role-${role}`, klass]}
   class:folded
   class:bypassed
+  class:selected
+  onpointerdowncapture={onPress}
+  onclickcapture={onClickToggle}
   style:--card-w={`${width}px`}
   aria-label={`${eyebrow ? `${eyebrow}: ` : ''}${title}`}
 >
@@ -136,6 +166,22 @@
       inset 0 0 0 1px var(--border-faint);
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
+  }
+  /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
+     keeping the role rule on top. */
+  /* The highlight is a box drawn OVER the card — an inset shadow sits under the title bar's own
+     background, which hid its top edge (Tim, 2026-10-01: "not just the sides and bottom"). */
+  .card.selected {
+    position: relative;
+  }
+  .card.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    pointer-events: none;
   }
   .role-generator { --role: var(--role-content); }
   .role-modifier { --role: var(--role-effect); }
