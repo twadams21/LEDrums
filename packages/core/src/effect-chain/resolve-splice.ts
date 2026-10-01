@@ -9,8 +9,10 @@
  *
  * **Params.** The device's flat params are the node's `splice*` / `slice*` fields with the
  * prefix dropped and the first letter lowered (`spliceRateMs` → `rateMs`, `sliceRotX` → `rotX`).
- * Three node fields are not scalars and are encoded:
- * - `attackEase` (an EaseSpec) → `attackEaseFn` + `attackEaseDir`; absent / `linear` = none.
+ * The brightness envelope is NOT a device param: it is the Effect's own (its amp envelope —
+ * attack, curve, sustain, decay), which `effectPlayAction` puts on the splice config, so a
+ * pulsing part and the whole Effect run one envelope (Tim, 2026-10-01). Two node fields are not
+ * scalars and are encoded:
  * - `drumSequence` / `hoopSequence` (arrays) → comma-separated strings (`"kick,snare"`, `"2,1"`).
  * - `sliceRegion` (a box) → `regionCx` … `regionSz`; the region applies only when all six are
  *   finite numbers.
@@ -40,8 +42,6 @@ import type { MixInputDraft } from '../voice/play-action';
 import { SPLICE_FILL_GENERATOR_ID, resolveSplices, type ResolvedSplices } from '../voice/splice';
 import { resolveSlice } from '../voice/slice';
 import type {
-  EaseDir,
-  EaseFn,
   SpliceNode,
   SliceAxis,
   SpliceChaseMode,
@@ -63,8 +63,8 @@ export interface SpliceResolveOptions {
   bpm?: number;
   beatsPerBar?: number;
   /**
-   * Override for the splice's own attack / hold / release (the per-unit envelope `pulse` runs).
-   * Absent → the device's `attackMs` / `holdMs` / `releaseMs` params, else the splice defaults.
+   * Override for the per-unit envelope `pulse` / `fade` run. Absent → the splice defaults; on
+   * the Effect path `effectPlayAction` replaces it with the Effect's own envelope anyway.
    */
   envelope?: { attackMs: number; sustainMs: number; releaseMs: number };
 }
@@ -80,8 +80,6 @@ const ORDERS: readonly SpliceOrder[] = ['up', 'down', 'outside-in', 'random'];
 const MOTION_MODES: readonly SpliceMotionMode[] = ['restart', 'continuous', 'latched'];
 const WAIT_MODES: readonly SpliceWaitMode[] = ['lit', 'dark', 'fade', 'pulse'];
 const RATE_MODES = ['beats', 'time'] as const;
-const EASE_FNS: readonly EaseFn[] = ['linear', 'quad', 'cubic', 'quart', 'expo', 'sine', 'circ', 'back', 'bounce', 'elastic'];
-const EASE_DIRS: readonly EaseDir[] = ['in', 'out', 'inOut'];
 const AXES: readonly SliceAxis[] = ['x', 'y', 'z'];
 /** The "no division chosen" value of a cascade-offset division (→ no cascade in `beats` mode). */
 export const SPLICE_NO_DIVISION = 'none';
@@ -107,12 +105,6 @@ function csv(p: Params, key: string): string[] | undefined {
   const v = str(p, key);
   if (v === undefined) return undefined;
   return v.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-}
-
-function attackEase(p: Params): SpliceNode['spliceAttackEase'] {
-  const fn = oneOf(p, 'attackEaseFn', EASE_FNS);
-  if (!fn || fn === 'linear') return undefined;
-  return { fn, dir: oneOf(p, 'attackEaseDir', EASE_DIRS) ?? 'in' };
 }
 
 function region(p: Params): SpliceNode['sliceRegion'] {
@@ -187,10 +179,6 @@ export function spliceDeviceNode(device: GeneratorDevice): SpliceNode {
     spliceColorOrder: oneOf(p, 'colorOrder', ORDERS),
     spliceRotationDeg: num(p, 'rotationDeg'),
     spliceWaitMode: oneOf(p, 'waitMode', WAIT_MODES),
-    spliceAttackMs: num(p, 'attackMs'),
-    spliceHoldMs: num(p, 'holdMs'),
-    spliceReleaseMs: num(p, 'releaseMs'),
-    spliceAttackEase: attackEase(p),
     spliceTint: num(p, 'tint'),
     spliceDrumSequence: csv(p, 'drumSequence'),
     spliceHoopSequence: csv(p, 'hoopSequence')?.map(Number),
@@ -290,11 +278,6 @@ const SPLICE_PARAM_SPEC: readonly ParamSpec[] = [
   e('colorOffsetDivision', 'Colour offset', SPLICE_NO_DIVISION, DIVISION_OPTIONS),
   n('colorOffsetMs', 'Colour offset', 0, 0, 10000, 1, 'ms'),
   e('colorOrder', 'Colour order', 'up', ORDERS),
-  n('attackMs', 'Attack', 10, 0, 120000, 1, 'ms'),
-  n('holdMs', 'Hold', 400, 0, 120000, 1, 'ms'),
-  n('releaseMs', 'Release', 300, 0, 120000, 1, 'ms'),
-  e('attackEaseFn', 'Attack curve', 'linear', EASE_FNS),
-  e('attackEaseDir', 'Attack curve direction', 'in', EASE_DIRS),
 ];
 
 /** Slice drops the partition (it cuts through space) and adds its geometry. */

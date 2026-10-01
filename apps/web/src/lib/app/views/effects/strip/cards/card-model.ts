@@ -149,7 +149,6 @@ function spliceParamHidden(key: string, params: Readonly<Record<string, ParamVal
     if (key === beats && val(mode) === 'time') return true;
     if (key === ms && val(mode) !== 'time') return true;
   }
-  if (key === 'attackEaseDir' && (val('attackEaseFn') ?? 'linear') === 'linear') return true;
   return false;
 }
 

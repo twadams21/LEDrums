@@ -59,11 +59,6 @@ describe('generatorParams — what the Generator card shows', () => {
     expect(slice).not.toContain('partition');
   });
 
-  it('hides the attack-curve direction on a linear attack', () => {
-    expect(keys(generatorParams({ kind: 'splice', style: '', params: {} }))).not.toContain('attackEaseDir');
-    expect(keys(generatorParams({ kind: 'splice', style: '', params: { attackEaseFn: 'cubic' } }))).toContain('attackEaseDir');
-  });
-
   it('gives Splice / Slice no Style choices and no thumbnail source', () => {
     expect(styleOptions('splice')).toEqual([]);
     expect(thumbSource({ kind: 'splice', style: '', params: {} })).toBeNull();

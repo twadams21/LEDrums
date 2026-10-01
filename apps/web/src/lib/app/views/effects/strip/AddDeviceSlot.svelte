@@ -84,7 +84,7 @@
     gap: var(--space-2);
     flex: none;
     width: 40px;
-    height: var(--device-h, 240px);
+    min-height: var(--device-h, 240px);
     padding: 0;
     color: var(--text-faint);
     background: transparent;

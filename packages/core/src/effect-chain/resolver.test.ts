@@ -181,3 +181,25 @@ describe('effectPlayAction', () => {
     expect(effectPlayAction(zone('u', 'kick', 0, { generator: { kind: 'pattern', style: 'nope' } }), ctx)).toBeNull();
   });
 });
+
+describe('the brightness envelope — one per Effect (Tim, 2026-10-01)', () => {
+  const effect = (over: Record<string, unknown>): Effect => zone('e', 'kick', 0, over);
+
+  it('an attack curve reaches the voice; linear (or none) leaves the ramp straight', () => {
+    const eased = effectPlayAction(effect({ amp: { attackMs: 40, attackEase: { fn: 'quad', dir: 'in' } } }), ctx)!;
+    expect(eased.attackEase).toEqual({ fn: 'quad', dir: 'in' });
+    expect(effectPlayAction(effect({ amp: { attackMs: 40, attackEase: { fn: 'linear', dir: 'in' } } }), ctx)!.attackEase).toBeUndefined();
+    expect(effectPlayAction(effect({}), ctx)!.attackEase).toBeUndefined();
+  });
+
+  it('a Splice’s parts run the Effect’s envelope — Attack, Sustain (the length after the attack), Decay — and its curve', () => {
+    const splice = effect({
+      generator: { kind: 'splice', slots: [{ color: '#ff0000' }], params: { waitMode: 'pulse' } },
+      amp: { attackMs: 30, attackEase: { fn: 'cubic', dir: 'out' }, length: { ms: 500 }, releaseMs: 200 },
+    });
+    const action = effectPlayAction(splice, ctx)!;
+    expect(action.splice!.envelope).toEqual({ attackMs: 30, sustainMs: 470, releaseMs: 200 });
+    expect(action.splice!.attackEase).toEqual({ fn: 'cubic', dir: 'out' });
+    expect([action.attackMs, action.sustainMs, action.releaseMs]).toEqual([30, 470, 200]); // the voice too
+  });
+});

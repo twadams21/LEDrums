@@ -135,7 +135,9 @@
     flex-direction: column;
     flex: none;
     width: var(--device-w, 232px);
-    height: var(--device-h, 240px);
+    /* At least one device row tall, and as tall as its face needs (the Trigger card's brightness
+       envelope): the chain stretches its neighbours to match, so a row stays one height. */
+    min-height: var(--device-h, 240px);
     min-width: 0;
     background: var(--surface-2);
     border-radius: var(--radius-card);

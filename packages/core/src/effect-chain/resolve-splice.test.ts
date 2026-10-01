@@ -33,8 +33,7 @@ const RICH_PARAMS: GeneratorDevice['params'] = {
   division: '1/16', direction: -1, incrementPx: 3, offsetMode: 'time', offsetMs: 120, offsetDivision: '1/4',
   order: 'outside-in', drumOffsetMode: 'beats', drumOffsetMs: 50, drumOffsetDivision: '1/8', drumOrder: 'down',
   smudge: 0.4, motionMode: 'latched', colorOffsetMode: 'beats', colorOffsetMs: 10, colorOffsetDivision: 'triplet-1/8',
-  colorOrder: 'random', rotationDeg: 400, waitMode: 'pulse', attackMs: 25, holdMs: 700, releaseMs: 150,
-  attackEaseFn: 'cubic', attackEaseDir: 'out', tint: 0.6, drumSequence: 'snare, kick', hoopSequence: '2,1',
+  colorOrder: 'random', rotationDeg: 400, waitMode: 'pulse', tint: 0.6, drumSequence: 'snare, kick', hoopSequence: '2,1',
 };
 const RICH_NODE: Partial<SpliceNode> = {
   spliceCount: 6, splicePartition: 'drum', spliceJitter: 0.3, spliceSeed: 7, spliceChase: 'stagger',
@@ -43,7 +42,6 @@ const RICH_NODE: Partial<SpliceNode> = {
   spliceDrumOffsetMode: 'beats', spliceDrumOffsetMs: 50, spliceDrumOffsetDivision: '1/8', spliceDrumOrder: 'down',
   spliceSmudge: 0.4, spliceMotionMode: 'latched', spliceColorOffsetMode: 'beats', spliceColorOffsetMs: 10,
   spliceColorOffsetDivision: 'triplet-1/8', spliceColorOrder: 'random', spliceRotationDeg: 400, spliceWaitMode: 'pulse',
-  spliceAttackMs: 25, spliceHoldMs: 700, spliceReleaseMs: 150, spliceAttackEase: { fn: 'cubic', dir: 'out' },
   spliceTint: 0.6, spliceDrumSequence: ['snare', 'kick'], spliceHoopSequence: [2, 1],
 };
 const COLOUR_SLOTS: SpliceSlot[] = [{ color: '#ff0000' }, { color: '#0000ff' }];
