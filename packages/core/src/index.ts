@@ -82,3 +82,7 @@ export * from './engine/engine';
 // Voice-bus brain (additive, behind a deep-module seam). Namespaced to avoid
 // name clashes with the legacy Engine's InputEvent/EngineStats during migration.
 export * as voice from './voice';
+
+// Effect chains — the authored Effect model, Generator registry and the resolver seam
+// (namespaced for the same reason: `Effect` / `ParamValue` names would clash if flattened).
+export * as effectChain from './effect-chain';

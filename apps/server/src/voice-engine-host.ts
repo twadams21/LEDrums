@@ -1018,6 +1018,10 @@ export class VoiceEngineHost {
       return;
     }
 
+    // Effect-path diagnostics (effect chains S01) get Monitor lines in a later slice; they
+    // must never fall through to the section-recall mirror below.
+    if (d.kind !== 'section-recalled') return;
+
     // This diagnostic is emitted only after the queued engine recall has been accepted.
     // Keep the host mirror downstream of the engine; transport index recalls depend on it.
     const recallSequence = ++this.recallSequence;

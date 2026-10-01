@@ -1,4 +1,5 @@
 import type { InputEvent } from './engine';
+import type { EffectTrigger } from '../effect-chain/types';
 
 export type GraphResolutionPath = 'pad-section' | 'pad-fallback' | 'direct-midi' | 'direct-osc' | 'fire-graph';
 
@@ -14,7 +15,20 @@ export interface VoiceInputDescriptor {
   sectionId?: string | null;
   /** `fireGraph` intent: the explicit graph key the client asked the engine to play. */
   graphKey?: string;
+  /** `fireEffect` intent: the authored Effect id the client asked the engine to audition. */
+  effectId?: string;
 }
+
+/** Why an Effect-path fire did not spawn. */
+export type EffectSkipReason =
+  // The Effect's Generator kind or Style resolves to no known effect generator.
+  | 'unknown-generator'
+  // Retrigger `ignore`: a live voice of this Effect is still playing.
+  | 'retrigger-ignore'
+  // `fireEffect` named an id the active section does not contain.
+  | 'no-such-effect'
+  // `fireEffect` named a bypassed Effect.
+  | 'bypassed';
 
 export type GraphMissReason =
   | 'no-active-section'
@@ -65,6 +79,27 @@ export type VoiceDiagnostic =
       input: VoiceInputDescriptor;
       graphKey: string;
       nodeId: string;
+    }
+  | {
+      // Effect path: one authored Effect fired. `input` is null for Always / Clock fires.
+      kind: 'effect-fired';
+      input: VoiceInputDescriptor | null;
+      sectionId: string;
+      effectId: string;
+      trigger: EffectTrigger['kind'] | 'audition';
+    }
+  | {
+      kind: 'effect-skipped';
+      input: VoiceInputDescriptor | null;
+      sectionId: string | null;
+      effectId: string;
+      reason: EffectSkipReason;
+    }
+  | {
+      // Effect path: a routed input (a known drum zone) that no Effect of the section matched.
+      kind: 'effect-missed';
+      input: VoiceInputDescriptor;
+      sectionId: string;
     }
   | {
       kind: 'section-recalled';

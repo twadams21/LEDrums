@@ -97,7 +97,7 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
   // absolute clock + tempo (LFO) or a live table (CC / OSC). The legacy env sweep folded in S35.
   const mods = v.modulations;
   if (mods && mods.length) {
-    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes, audio });
+    applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes, audio, velocity: v.velocity });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
   return out;
@@ -120,6 +120,7 @@ function writeModCtx(out: ModSampleCtx, v: Voice, frame: FrameModCtx): ModSample
   out.osc = frame.osc;
   out.notes = frame.notes;
   out.audio = frame.audio;
+  out.velocity = v.velocity;
   return out;
 }
 
@@ -303,6 +304,9 @@ function pixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
 }
 
 function rawPixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
+  // An explicit multi-target list (effect chains' Target → chosen drums / hoops) overrides the
+  // scope: the union of each target's range. Each entry is a drum id or a `drum#h1,h2` hoop id.
+  if (v.targets) return v.targets.flatMap((target) => targetPixelRanges(target, model));
   if (v.scope === 'drum') {
     const drumId = v.targetId ?? v.sourceDrumId;
     const d = drumId ? model.drumById.get(drumId) : undefined;
@@ -317,6 +321,19 @@ function rawPixelRangesFor(v: Voice, model: PixelModel): PixelRange[] {
     });
   }
   return [{ start: 0, end: model.pixelCount }];
+}
+
+function targetPixelRanges(target: string, model: PixelModel): PixelRange[] {
+  const { drumId, hoopIndices } = parseScopeTarget(target, null, { sourceDrumOnNoHash: false, emptyFallback: 'none', sort: false });
+  if (drumId == null) return [];
+  if (!target.includes('#')) {
+    const d = model.drumById.get(drumId);
+    return d ? [{ start: d.pixelStart, end: d.pixelStart + d.pixelCount }] : [];
+  }
+  return hoopIndices.flatMap((hoopIndex) => {
+    const range = getHoopPixelRange(model, drumId, hoopIndex);
+    return range ? [{ start: range.start, end: range.end }] : [];
+  });
 }
 
 /**
