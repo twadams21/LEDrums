@@ -215,19 +215,26 @@ describe('number — rail', () => {
 });
 
 describe('number — wheel', () => {
-  it('steps the value one step per tick over the value field', () => {
+  it('a scroll without ⌥ never edits the param', () => {
     const onChange = vi.fn();
     const { getByRole } = render(FaceParamControl, { props: { ...numberProps, value: 0.5, onChange } });
     fireEvent.wheel(getByRole('slider'), { deltaY: -100 });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('steps the value one step per tick over the value field', () => {
+    const onChange = vi.fn();
+    const { getByRole } = render(FaceParamControl, { props: { ...numberProps, value: 0.5, onChange } });
+    fireEvent.wheel(getByRole('slider'), { altKey: true, deltaY: -100 });
     expect(onChange).toHaveBeenLastCalledWith(0.51);
-    fireEvent.wheel(getByRole('slider'), { deltaY: 100 });
+    fireEvent.wheel(getByRole('slider'), { altKey: true, deltaY: 100 });
     expect(onChange).toHaveBeenLastCalledWith(0.49);
   });
 
   it('steps over the rail too, and cancels the page scroll it rode in on', () => {
     const onChange = vi.fn();
     const { container } = render(FaceParamControl, { props: { ...numberProps, value: 0.5, onChange } });
-    const ev = new WheelEvent('wheel', { deltaY: -100, cancelable: true, bubbles: true });
+    const ev = new WheelEvent('wheel', { altKey: true, deltaY: -100, cancelable: true, bubbles: true });
     container.querySelector('.rail')!.dispatchEvent(ev);
     expect(onChange).toHaveBeenLastCalledWith(0.51);
     expect(ev.defaultPrevented).toBe(true);
@@ -236,7 +243,7 @@ describe('number — wheel', () => {
   it('does not edit a read-only viewer’s value', () => {
     const onChange = vi.fn();
     const { getByRole } = render(FaceParamControl, { props: { ...numberProps, disabled: true, onChange } });
-    fireEvent.wheel(getByRole('slider'), { deltaY: -100 });
+    fireEvent.wheel(getByRole('slider'), { altKey: true, deltaY: -100 });
     expect(onChange).not.toHaveBeenCalled();
   });
 });

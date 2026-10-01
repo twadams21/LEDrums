@@ -13,7 +13,7 @@ import type { CanvasScene } from '../canvas/types';
 import type { BlendMode } from '../color/blend';
 import type { Mapping } from './modulation';
 import type { LfoSettings } from './lfo'; // S36
-import type { Effect, ModifierDevice } from '../effect-chain/types';
+import type { CellPlay, Effect, ModifierDevice } from '../effect-chain/types';
 import type { InputMapping } from '../effect-chain/input-mappings';
 
 export type { PlayType };
@@ -502,6 +502,9 @@ export interface SongSection {
   effects: Effect[];
   /** The section's master modifier chain (applied to the whole section's output; S02). */
   master?: ModifierDevice[];
+  /** Cells that play their stack one Effect per fire (Sequence / Random) and what resets them;
+      every other cell layers. See `effect-chain/cell-play`. */
+  cellPlay?: CellPlay[];
 }
 
 /**

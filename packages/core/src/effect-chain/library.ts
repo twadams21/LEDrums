@@ -20,7 +20,7 @@ import { z } from 'zod';
 import type { CanvasScene } from '../canvas/types';
 import { SHOWS_VERSION_EFFECTS, SONGS_VERSION_EFFECTS } from '../model/library-versions';
 import type { Show, SongSection } from '../voice/types';
-import { effectSchema, modifierDeviceSchema, type Effect, type ModifierDevice } from './types';
+import { cellPlaySchema, effectSchema, modifierDeviceSchema, type CellPlay, type Effect, type ModifierDevice } from './types';
 import { parseInputMappings } from './input-mappings';
 
 // ---- Persisted shapes ------------------------------------------------------------
@@ -38,6 +38,7 @@ export const librarySectionV3Schema = z.object({
   name: z.string(),
   effects: z.array(z.unknown()).default([]),
   master: z.array(z.unknown()).default([]),
+  cellPlay: z.array(z.unknown()).default([]),
   bars: optionalNumber,
   bpm: optionalNumber,
 }).passthrough();
@@ -227,7 +228,13 @@ function runtimeSection(songId: string, section: LibrarySectionV3, diagnostics: 
     if (parsed.success) master.push(parsed.data);
     else diagnostics.push({ kind: 'invalid-master-modifier', songId, sectionId: section.id, index, id: readId(raw, 'uid'), message: issueText(parsed.error) });
   });
-  return { id: section.id, name: section.name, effects, master };
+  // Cell play entries are settings, not content: an unreadable one is dropped (that cell layers).
+  const cellPlay: CellPlay[] = [];
+  for (const raw of section.cellPlay) {
+    const parsed = cellPlaySchema.safeParse(raw);
+    if (parsed.success && parsed.data.mode !== 'layer') cellPlay.push(parsed.data);
+  }
+  return cellPlay.length > 0 ? { id: section.id, name: section.name, effects, master, cellPlay } : { id: section.id, name: section.name, effects, master };
 }
 
 function readId(raw: unknown, key: 'id' | 'uid'): string | undefined {

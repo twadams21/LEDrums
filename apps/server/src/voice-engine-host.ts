@@ -966,8 +966,21 @@ export class VoiceEngineHost {
       return;
     }
 
-    // Effect diagnostics (fired / skipped / missed) get Monitor lines in a later slice; they
-    // must never fall through to the section-recall mirror below.
+    // A fired Effect reaches the clients as an `effect` line naming it (`destination`), so their
+    // fire flashes follow what the ENGINE played — on a Sequence / Random cell only the engine
+    // knows which step that was (Tim, 2026-10-01). Skipped / missed get Monitor lines later.
+    if (d.kind === 'effect-fired') {
+      this.monitorSink?.({
+        type: 'effect',
+        direction: 'local',
+        source: 'server/voice',
+        destination: `effect:${d.effectId}`,
+        label: 'Effect fired',
+        detail: `effect=${d.effectId}; trigger=${d.trigger}; section=${d.sectionId}`,
+      });
+      return;
+    }
+    // Other Effect diagnostics must never fall through to the section-recall mirror below.
     if (d.kind !== 'section-recalled') return;
 
     // This diagnostic is emitted only after the queued engine recall has been accepted.
