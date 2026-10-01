@@ -17,6 +17,7 @@ export interface EffectsSectionSource {
   name: string;
   effects: readonly effectChain.Effect[];
   master: readonly effectChain.ModifierDevice[];
+  cellPlay?: readonly effectChain.CellPlay[];
   bars?: number;
   bpm?: number;
 }

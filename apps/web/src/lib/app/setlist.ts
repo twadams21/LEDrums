@@ -12,6 +12,8 @@ export interface SetlistSection {
   name: string;
   effects: effectChain.Effect[];
   master: effectChain.ModifierDevice[];
+  /** Cells that play their stack one Effect per hit (Sequence / Random) and their resets. */
+  cellPlay?: effectChain.CellPlay[];
   bars?: number;
   bpm?: number;
 }

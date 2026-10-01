@@ -5,7 +5,11 @@
 
    Ownership yields to keyboard-native surfaces in every view, which is what keeps the digits
    safe outside Perform. Text fields own digits/caret arrows; open popup controls own
-   typeahead/navigation; and radio/toggle/segmented controls own their roving focus. The caller
+   typeahead/navigation; and radio/toggle/segmented/slider controls own their ARROWS.
+
+   Digits do NOT yield to a focused slider, segmented control, toggle or closed dropdown: none of
+   them uses a digit, and clicking one leaves it focused — so the 1–9,0 bank went dead until you
+   clicked away (Tim, 2026-09-28). Only a field you are typing into, or an open list, keeps them. The caller
    installs this decision in the window's capture-phase listener and must claim an app-owned
    event with both preventDefault and stopPropagation. */
 
@@ -23,7 +27,7 @@ export interface PerformanceKeyInput {
   isEditableTarget: boolean;
   /** An open Bits Select/listbox/combobox popup owns its typeahead and navigation keys. */
   inOpenPopup: boolean;
-  /** Radio/toggle/segmented controls own their keyboard interaction. */
+  /** Radio/toggle/segmented/slider controls own their ARROW keys (not digits — they use none). */
   inKeyboardControl: boolean;
   /** Any modifier reserves the chord for the focused/native surface. */
   ctrlKey: boolean;
@@ -47,7 +51,7 @@ const NOTHING: PerformanceKeyDecision = { claim: false };
 
 export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKeyDecision {
   if (input.settingsOpen) return NOTHING;
-  if (input.isEditableTarget || input.inOpenPopup || input.inKeyboardControl) return NOTHING;
+  if (input.isEditableTarget || input.inOpenPopup) return NOTHING;
   if (input.ctrlKey || input.metaKey || input.altKey || input.shiftKey) return NOTHING;
 
   if (/^[0-9]$/.test(input.key)) {
@@ -58,6 +62,8 @@ export function decidePerformanceKey(input: PerformanceKeyInput): PerformanceKey
   }
 
   if (input.key === 'ArrowLeft' || input.key === 'ArrowRight') {
+    // Arrows are what a focused slider / segmented / toggle control moves by — theirs.
+    if (input.inKeyboardControl) return NOTHING;
     // Setlist stepping is a performance action, not an authoring one - and every authoring
     // view has its own arrow owner.
     if (input.view !== 'perform') return NOTHING;

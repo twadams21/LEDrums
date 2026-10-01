@@ -16,6 +16,7 @@
   import EffectHeader from './EffectHeader.svelte';
   import EffectChain from './EffectChain.svelte';
   import ModifierRun from './ModifierRun.svelte';
+  import CellPlayBar from './CellPlayBar.svelte';
   import { GENERATOR_ICON } from './generator-icons';
   import { gapAt, gapToIndex, nudgeIndex } from './strip-model';
 
@@ -33,6 +34,14 @@
     return `${row} · ${summary?.label ?? ''}`;
   });
   const canAdd = $derived(api.canEdit && (summary?.enabled ?? false));
+  // Sequence / Random: the un-bypassed rows are the steps, numbered in stack order.
+  const playMode = $derived(zoneCell ? (api.cellPlay(zoneCell)?.mode ?? 'layer') : 'layer');
+  const stepOf = $derived.by(() => {
+    const steps = new Map<string, number>();
+    effects.filter((e) => !e.bypass).forEach((e, i) => steps.set(e.id, i));
+    return steps;
+  });
+  const lastStep = $derived(zoneCell && playMode !== 'layer' ? api.lastPlayedStep(zoneCell) : null);
 
   function addEffect(kind: effectChain.GeneratorKind): void {
     if (zoneCell) api.addEffect(zoneCell, kind);
@@ -80,6 +89,12 @@
     dropGap = null;
   }
 
+  /** The Effect itself is highlighted (its name bar was clicked) — not just a card inside it. */
+  const boxed = (effectId: string): boolean => {
+    const held = api.selectedDevice;
+    return held?.kind === 'effect' && held.effectId === effectId;
+  };
+
   function nudge(index: number, delta: -1 | 1): void {
     const id = effects[index]!.id;
     move(index, nudgeIndex(index, delta, effects.length));
@@ -124,6 +139,10 @@
       </DropdownMenu.Root>
     </header>
 
+    {#if zoneCell && zoneCell.column.kind !== 'always' && effects.length > 0}
+      <CellPlayBar {api} cell={zoneCell} steps={stepOf.size} />
+    {/if}
+
     {#if effects.length === 0}
       <p class="empty">No Effects in this cell yet. Add one to start from a Generator.</p>
     {:else}
@@ -133,6 +152,7 @@
             class="effect-row"
             role="listitem"
             data-effect={effect.id}
+            class:boxed={boxed(effect.id)}
             class:dragging={dragFrom === i}
             class:gap-before={dragFrom !== null && dropGap === i}
             class:gap-after={dragFrom !== null && dropGap === i + 1 && i === effects.length - 1}
@@ -145,11 +165,14 @@
               index={i}
               count={effects.length}
               selected={api.selectedEffectId === effect.id}
+              step={playMode !== 'layer' && stepOf.has(effect.id) ? stepOf.get(effect.id)! + 1 : null}
+              lastPlayed={playMode !== 'layer' && lastStep !== null && stepOf.get(effect.id) === lastStep}
               onGripDragStart={(e) => onGripDragStart(e, i)}
               onGripDragEnd={reset}
               onNudge={(d) => nudge(i, d)}
             />
             <EffectChain {api} {effect} />
+            {#if boxed(effect.id)}<span class="box" aria-hidden="true"></span>{/if}
           </div>
         {/each}
       </div>
@@ -238,6 +261,19 @@
   .effect-row {
     position: relative;
     border-bottom: 1px solid var(--border);
+  }
+  /* A highlighted Effect: one box round the whole of it — name bar and every card — drawn over
+     the cards (they paint their own backgrounds) and never catching a click (Tim, 2026-10-01). */
+  .effect-row.boxed {
+    background: color-mix(in oklch, var(--accent) 6%, transparent);
+  }
+  .box {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    border: 2px solid var(--accent);
+    border-radius: var(--radius-2);
+    pointer-events: none;
   }
   .effect-row.dragging {
     opacity: 0.45;
