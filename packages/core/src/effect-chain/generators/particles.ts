@@ -1,4 +1,5 @@
 import type { GeneratorDef } from './types';
+import { DEAD_DECAY } from './types';
 
 /**
  * Particles Generator — discrete moving points: bursts, sparks, stars, rain, orbiting bodies.
@@ -11,8 +12,8 @@ export const particlesGenerator: GeneratorDef = {
   description: 'Bursts, sparks, stars, rain and orbiting bodies.',
   icon: 'sparkles',
   styles: [
-    { id: 'confetti', label: 'Confetti', effectId: 'confetti-burst' },
-    { id: 'sparkler', label: 'Sparkler', effectId: 'sparkler' },
+    { id: 'confetti', label: 'Confetti', effectId: 'confetti-burst', hiddenParams: ['life'] },
+    { id: 'sparkler', label: 'Sparkler', effectId: 'sparkler', hiddenParams: DEAD_DECAY },
     { id: 'starfield', label: 'Starfield', effectId: 'starfield' },
     { id: 'rain', label: 'Rain', effectId: 'rain-3d' },
     { id: 'drops', label: 'Gravity Drops', effectId: 'gravity-drops' },

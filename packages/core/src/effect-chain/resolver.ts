@@ -183,15 +183,19 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   }
 
   const amp = effect.amp;
+  const msPerBeat = MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120);
+  // A stage in beats resolves at this fire's tempo; otherwise its milliseconds stand.
+  const attackMs = amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs;
+  const releaseMs = amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs;
   const mode: PlayMode = effect.trigger.kind === 'always' || amp.length === 'loop'
     ? 'loop'
     : amp.length === 'hold' ? 'hold' : 'oneshot';
   const gateMs = typeof amp.length === 'object'
-    ? 'ms' in amp.length ? amp.length.ms : amp.length.beats * (MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120))
+    ? 'ms' in amp.length ? amp.length.ms : amp.length.beats * msPerBeat
     : 0;
-  const shape = ampShape(amp.attackMs, amp.decayMs, amp.sustainLevel);
+  const shape = ampShape(attackMs, amp.decayMs, amp.sustainLevel);
   const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
-  const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - amp.attackMs) : 0;
+  const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - attackMs) : 0;
 
   const action: PlayAction = {
     kind: 'play',
@@ -203,7 +207,7 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
       ? {
           splice: {
             ...gen.splice,
-            envelope: { attackMs: amp.attackMs, sustainMs: mode === 'oneshot' ? sustainMs : gen.splice.envelope.sustainMs, releaseMs: amp.releaseMs },
+            envelope: { attackMs, sustainMs: mode === 'oneshot' ? sustainMs : gen.splice.envelope.sustainMs, releaseMs },
             attackEase,
           },
           spliceInputs: gen.spliceInputs ?? [],
@@ -215,10 +219,10 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     params,
     modifiers: modifiers.length ? modifiers : undefined,
     modulations: generatorMappings.length ? generatorMappings : undefined,
-    attackMs: amp.attackMs,
+    attackMs,
     ...(attackEase ? { attackEase } : {}),
     sustainMs,
-    releaseMs: amp.releaseMs,
+    releaseMs,
     chainEffectId: effect.id,
     blend: effect.blend,
     opacity: effect.opacity,

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import FaceParamControl from './FaceParamControl.svelte';
 import { DRAG_TRAVEL_PX } from './drag-number';
 
@@ -245,5 +246,147 @@ describe('number — wheel', () => {
     const { getByRole } = render(FaceParamControl, { props: { ...numberProps, disabled: true, onChange } });
     fireEvent.wheel(getByRole('slider'), { altKey: true, deltaY: -100 });
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+/* Exact values and fine control on the card slider (Tim, 2026-10-02: "i can't type in a number
+   into any of the boxes"). */
+function setupTyped(props: Record<string, unknown> = {}) {
+  const onChange = vi.fn();
+  const view = render(FaceParamControl, { props: { kind: 'number', value: 8, display: '8.00', min: 0, max: 40, step: 0.1, ariaLabel: 'Rate', onChange, ...props } });
+  // jsdom has no pointer capture; the drag handlers call it.
+  HTMLElement.prototype.setPointerCapture = () => {};
+  return { view, onChange };
+}
+const click = async (el: Element) => {
+  await fireEvent.pointerDown(el, { button: 0, clientX: 100, pointerId: 1 });
+  await fireEvent.pointerUp(el, { button: 0, clientX: 100, pointerId: 1 });
+  await tick();
+};
+
+describe('typing a value', () => {
+  it('a click on the value opens it for typing; Enter commits the exact value', async () => {
+    const { view, onChange } = setupTyped();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    const box = view.getByRole('textbox', { name: 'Rate value' }) as HTMLInputElement;
+    expect(box.value).toBe('8');
+    await fireEvent.input(box, { target: { value: '12.25' } });
+    await fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(12.25);
+  });
+
+  it('Esc cancels; a non-number changes nothing; out of range clamps', async () => {
+    const { view, onChange } = setupTyped();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '30' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Escape' });
+    expect(onChange).not.toHaveBeenCalled();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: 'fast' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).not.toHaveBeenCalled();
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '500' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(40);
+  });
+
+  it('a drag still adjusts, and does not open the box', async () => {
+    const { view, onChange } = setupTyped();
+    const field = view.getByRole('slider', { name: 'Rate' });
+    await fireEvent.pointerDown(field, { button: 0, clientX: 100, pointerId: 1 });
+    await fireEvent.pointerMove(field, { clientX: 160, pointerId: 1 });
+    await fireEvent.pointerUp(field, { clientX: 160, pointerId: 1 });
+    expect(onChange).toHaveBeenCalled();
+    expect(view.queryByRole('textbox')).toBeNull();
+  });
+
+  it('Enter on the focused value opens it; Shift + arrow steps ten', async () => {
+    const { view, onChange } = setupTyped();
+    const field = view.getByRole('slider', { name: 'Rate' });
+    await fireEvent.keyDown(field, { key: 'ArrowUp', shiftKey: true });
+    expect(onChange).toHaveBeenLastCalledWith(9);
+    await fireEvent.keyDown(field, { key: 'Enter' });
+    await tick();
+    expect(view.getByRole('textbox', { name: 'Rate value' })).toBeTruthy();
+  });
+
+  it('a percent param is typed as shown', async () => {
+    const { view, onChange } = setupTyped({ value: 0.5, display: '50', min: 0, max: 1, step: 0.01, entry: { factor: 100, unit: '%' } });
+    await click(view.getByRole('slider', { name: 'Rate' }));
+    expect((view.getByRole('textbox') as HTMLInputElement).value).toBe('50');
+    await fireEvent.input(view.getByRole('textbox'), { target: { value: '33' } });
+    await fireEvent.keyDown(view.getByRole('textbox'), { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(0.33);
+  });
+});
+
+describe('Shift and the arrows (Tim, 2026-10-02: "the shift key doesn\u2019t work")', () => {
+  function rail(view: { container: HTMLElement }): HTMLElement {
+    const el = view.container.querySelector<HTMLElement>('.rail')!;
+    el.setPointerCapture = () => {};
+    el.getBoundingClientRect = () => ({ left: 0, width: 100, top: 0, height: 16, right: 100, bottom: 16, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    return el;
+  }
+
+  it('Shift on the rail creeps from the current value at a quarter speed — it never jumps to the pointer', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 0.1, ariaLabel: 'Depth', onChange } });
+    const r = rail(view);
+    await fireEvent.pointerDown(r, { button: 0, clientX: 90, pointerId: 1, shiftKey: true });
+    expect(onChange).not.toHaveBeenCalled(); // no jump to 90
+    await fireEvent.pointerMove(r, { clientX: 98, pointerId: 1, shiftKey: true }); // 8% of the rail
+    expect(onChange).toHaveBeenLastCalledWith(52); // 50 + 8 × ¼
+  });
+
+  it('without Shift the rail still jumps to where it is pressed', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    await fireEvent.pointerDown(rail(view), { button: 0, clientX: 20, pointerId: 1 });
+    expect(onChange).toHaveBeenLastCalledWith(20);
+  });
+
+  it('a fine creep smaller than one step is not rounded away', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    const r = rail(view);
+    await fireEvent.pointerDown(r, { button: 0, clientX: 10, pointerId: 1, shiftKey: true });
+    for (let x = 11; x <= 18; x++) await fireEvent.pointerMove(r, { clientX: x, pointerId: 1, shiftKey: true }); // 8 × ¼ = 2
+    expect(onChange).toHaveBeenLastCalledWith(52);
+  });
+
+  it('pressing the rail focuses the value, so the arrows work straight after', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    await fireEvent.pointerDown(rail(view), { button: 0, clientX: 50, pointerId: 1 });
+    expect(document.activeElement).toBe(view.getByRole('slider', { name: 'Depth' }));
+  });
+
+  it('Up / Down step the typed box (Shift: ten); Enter commits it', async () => {
+    const onChange = vi.fn();
+    const view = render(FaceParamControl, { props: { kind: 'number', value: 50, display: '50', min: 0, max: 100, step: 1, ariaLabel: 'Depth', onChange } });
+    const field = view.getByRole('slider', { name: 'Depth' });
+    field.setPointerCapture = () => {};
+    await fireEvent.pointerDown(field, { button: 0, clientX: 5, pointerId: 1 });
+    await fireEvent.pointerUp(field, { button: 0, clientX: 5, pointerId: 1 });
+    await tick();
+    const box = view.getByRole('textbox', { name: 'Depth value' }) as HTMLInputElement;
+    await fireEvent.keyDown(box, { key: 'ArrowUp', shiftKey: true });
+    await fireEvent.keyDown(box, { key: 'ArrowDown' });
+    expect(box.value).toBe('59');
+    await fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onChange).toHaveBeenLastCalledWith(59);
+  });
+
+  it('a param with no declared step steps by 1 on a wide range and a hundredth on a narrow one', async () => {
+    const onChange = vi.fn();
+    const wide = render(FaceParamControl, { props: { kind: 'number', value: 120, display: '120', min: 0, max: 360, ariaLabel: 'Hue', onChange } });
+    await fireEvent.keyDown(wide.getByRole('slider', { name: 'Hue' }), { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(121);
+    await fireEvent.keyDown(wide.getByRole('slider', { name: 'Hue' }), { key: 'ArrowRight', shiftKey: true });
+    expect(onChange).toHaveBeenLastCalledWith(130);
+    const narrow = render(FaceParamControl, { props: { kind: 'number', value: 0.5, display: '0.50', min: 0, max: 1, ariaLabel: 'Amount', onChange } });
+    await fireEvent.keyDown(narrow.getByRole('slider', { name: 'Amount' }), { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(0.51);
   });
 });

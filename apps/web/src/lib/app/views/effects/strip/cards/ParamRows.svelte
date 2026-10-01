@@ -44,6 +44,9 @@
   // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
   const layout = $derived(paramColumns(params.length));
 
+  /** What a typed value means: a percent is typed as shown (25 → 0.25); ms / beats read units. */
+  const entryOf = (p: CardParam) => (p.percent ? { factor: 100, unit: '%' } : { unit: p.unit });
+
   const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
 </script>
 
@@ -87,6 +90,7 @@
               modulated={modulated?.has(p.key) ?? false}
               {disabled}
               ariaLabel={aria(p)}
+              entry={entryOf(p)}
               onChange={(next) => onChange(p.key, next)}
               {onGestureStart}
               {onGestureEnd}
@@ -147,10 +151,12 @@
   .row.modulated .label {
     color: var(--role-modulation);
   }
+  /* The control takes the row's spare width, so a slider's rail is as long as the row allows. */
   .ctl {
     display: inline-flex;
     justify-content: flex-end;
-    flex: none;
+    flex: 1 1 auto;
+    min-width: 0;
     max-width: 62%;
   }
   .ctl :global(.cardsel) {

@@ -175,13 +175,47 @@ export function formatMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 2)}s` : `${Math.round(ms)}ms`;
 }
 
+const MS_PER_BEAT_AT_120 = 500;
+/** A stage's length in ms: its beats at 120 bpm when it is in beats. */
+export const stageMs = (ms: number, beats: number | undefined): number => (beats !== undefined ? beats * MS_PER_BEAT_AT_120 : ms);
+
+/** A beat count as it reads on a face: a common division under a beat (`0.25` → `1/16`), else `N bt`. */
+export function beatsLabel(beats: number): string {
+  const divisions: Array<[number, string]> = [
+    [0.125, '1/32'], [1 / 6, '1/16t'], [0.1875, '1/32.'], [0.25, '1/16'], [1 / 3, '1/8t'], [0.375, '1/16.'],
+    [0.5, '1/8'], [2 / 3, '1/4t'], [0.75, '1/8.'],
+  ];
+  for (const [value, label] of divisions) if (Math.abs(beats - value) < 1e-6) return label;
+  return `${Number(beats.toFixed(3))} bt`;
+}
+
+/** The amp patch that switches a stage between ms and beats, keeping its length (at 120 bpm). */
+export function stageUnitPatch(
+  stage: 'attack' | 'release',
+  unit: 'ms' | 'beats',
+  amp: effectChain.AmpEnvelope,
+): Partial<effectChain.AmpEnvelope> {
+  const msKey = stage === 'attack' ? 'attackMs' : 'releaseMs';
+  const beatsKey = stage === 'attack' ? 'attackBeats' : 'releaseBeats';
+  const beats = amp[beatsKey];
+  if (unit === 'beats') {
+    if (beats !== undefined) return {};
+    // The nearest sixteenth of a beat, so a converted value reads as a clean division.
+    return { [beatsKey]: Math.max(0, Math.round((amp[msKey] / MS_PER_BEAT_AT_120) * 16) / 16) };
+  }
+  if (beats === undefined) return {};
+  return { [msKey]: Math.round(beats * MS_PER_BEAT_AT_120), [beatsKey]: undefined };
+}
+
 /**
  * The brightness envelope's outline for a `width`×`height` preview, as an SVG path: the attack
  * on its curve, the old ADSR drop (only when an Effect still uses one), the sustain, the decay.
  * Timed stages are scaled so the whole envelope fits; the sustain gets a fixed share so a 0 ms
  * envelope still reads.
  */
-export function ampPath(amp: effectChain.AmpEnvelope, width: number, height: number, pad = 2): string {
+export function ampPath(input: effectChain.AmpEnvelope, width: number, height: number, pad = 2): string {
+  // A stage in beats is drawn at 120 bpm — the outline shows the shape, not the tempo.
+  const amp = { ...input, attackMs: stageMs(input.attackMs, input.attackBeats), releaseMs: stageMs(input.releaseMs, input.releaseBeats) };
   const w = width - pad * 2;
   const h = height - pad * 2;
   const hold = typeof amp.length === 'object' && 'ms' in amp.length ? Math.max(0, amp.length.ms - amp.attackMs - amp.decayMs) : 0;

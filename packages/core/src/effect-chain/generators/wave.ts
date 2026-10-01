@@ -1,4 +1,5 @@
 import type { GeneratorDef } from './types';
+import { DEAD_DECAY } from './types';
 
 /**
  * Wave Generator: motion that travels across the kit (bands, sweeps, rings, spirals, orbits,
@@ -16,7 +17,7 @@ export const waveGenerator: GeneratorDef = {
     { id: 'chase', label: 'Chase', effectId: 'chase-bands' },
     { id: 'scan', label: 'Scan Plane', effectId: 'scan-plane' },
     { id: 'wipe', label: 'Wipe', effectId: 'wipe-3d' },
-    { id: 'radial', label: 'Radial', effectId: 'radial-wash' },
+    { id: 'radial', label: 'Radial', effectId: 'radial-wash', hiddenParams: DEAD_DECAY },
     // ripple-3d labels its travel speed "Wave Speed"; the card uses the common "Speed" label.
     { id: 'ripple', label: 'Ripple', effectId: 'ripple-3d', paramLabels: { speed: 'Speed' } },
     { id: 'pond', label: 'Ripple Pond', effectId: 'ripple-pond' },

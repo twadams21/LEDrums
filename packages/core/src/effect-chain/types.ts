@@ -111,11 +111,16 @@ export const attackEaseSchema = z.object({
  */
 export const ampEnvelopeSchema = z.object({
   attackMs: nonNegMs.default(10),
+  /** The attack in beats instead (Tim, 2026-10-02: attack and decay "in beats as well as ms");
+      when set it wins, resolved at the fire's tempo like a `{ beats }` length. */
+  attackBeats: z.number().min(0).optional(),
   attackEase: attackEaseSchema.optional(),
   decayMs: nonNegMs.default(0),
   sustainLevel: unit.default(1),
   length: ampLengthSchema.default({ ms: 500 }),
   releaseMs: nonNegMs.default(300),
+  /** The decay in beats instead; when set it wins, resolved at the fire's tempo. */
+  releaseBeats: z.number().min(0).optional(),
 });
 
 // ---- Devices -------------------------------------------------------------------
