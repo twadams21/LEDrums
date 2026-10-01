@@ -25,6 +25,7 @@ import { clamp01 } from '../math';
 import { applyModulations, type ModSampleCtx } from '../voice/modulation';
 import { tryGetModifier } from './registry';
 import type { ModifierContext, ModifierEnvelope, PixelRange, ResolvedModifier } from './types';
+import { hasTempoParams, resolveTempoParams } from '../effect-chain/tempo';
 
 /**
  * Apply `chain` to `fb` over `range`, in order. `state` is the voice's per-modifier state
@@ -80,6 +81,11 @@ function runChain(
     if (modCtx && link.modulations && link.modulations.length) {
       params = { ...link.params };
       applyModulations(link.params, params, link.modulations, def.paramSpec, modCtx);
+    }
+    // A ms / Hz param put in beats follows the live tempo (copied only when one is).
+    if (hasTempoParams(params)) {
+      if (params === link.params) params = { ...link.params };
+      resolveTempoParams(params as Record<string, unknown>, def.paramSpec, ctx.bpm ?? 120);
     }
     // Dry/wet: only a link with mix < 1 or an envelope leaves today's exact path (-1 = none).
     const mixEff = linkMix(link, timeMs);

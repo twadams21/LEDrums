@@ -217,3 +217,11 @@ describe('attack and decay in beats (Tim, 2026-10-02)', () => {
     expect([a.attackMs, a.sustainMs, a.releaseMs]).toEqual([40, 360, 120]);
   });
 });
+
+describe('a modifier envelope in beats (Tim, 2026-10-02)', () => {
+  it('resolves its beats stages at the fire’s tempo; ms stages stand', () => {
+    const e = zone('m', 'kick', 0, { modifiers: [{ uid: 'm1', modifierId: 'strobe', envelope: { attackMs: 10, attackBeats: 0.5, decayMs: 20, releaseMs: 30, releaseBeats: 1 } }] });
+    const env = effectPlayAction(e, { ...ctx, bpm: 120 })!.modifiers![0]!.envelope!;
+    expect([env.attackMs, env.decayMs, env.releaseMs]).toEqual([250, 20, 500]);
+  });
+});

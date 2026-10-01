@@ -28,6 +28,8 @@ export interface CardParam {
   percent?: boolean;
   /** An explanation, shown behind an ⓘ beside the label (never as a paragraph under it). */
   info?: string;
+  /** `false`: this ms / Hz param has its own tempo control, so no ms ⇄ beats switch. */
+  tempo?: false;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -235,8 +237,9 @@ export function modifierFaceParams(modifierId: string, values: Readonly<Record<s
   const beats = (values?.rateMode ?? all.find((p) => p.key === 'rateMode')?.default) === 'beats';
   return all
     .filter((p) => p.key !== 'rateMode' && p.key !== 'division' && !(beats && p.key === 'rate'))
-    // The dropdown is "Rate"; the Hz value under Free is its frequency.
-    .map((p) => (p.key === 'rate' ? { ...p, label: 'Frequency' } : p));
+    // The dropdown is "Rate"; the Hz value under Free is its frequency — already tempo-able
+    // through that dropdown, so it gets no ms / Hz ⇄ beats switch of its own.
+    .map((p) => (p.key === 'rate' ? { ...p, label: 'Frequency', tempo: false as const } : p));
 }
 
 export function modifierCategory(modifierId: string): string | undefined {
@@ -368,12 +371,12 @@ export const LFO_WAVEFORM_OPTIONS = voice.LFO_WAVEFORMS.map((w) => ({
   label: w === 'sample-hold' ? 'S&H' : enumLabel(w),
 }));
 
-export const LFO_RATE_MODE_OPTIONS = [
-  { value: 'hz', label: 'Hz' },
-  { value: 'beats', label: 'Sync' },
-];
+/** The LFO's Rate dropdown value standing for free Hz (its Frequency row). */
+export const LFO_FREE_HZ = '@hz';
 
 export const DIVISION_OPTIONS = voice.DELAY_DIVISIONS.map((d) => ({ value: d, label: divisionLabel(d) }));
+/** The LFO's one Rate dropdown: the divisions, then Free (Hz). */
+export const LFO_RATE_OPTIONS = [...DIVISION_OPTIONS, { value: LFO_FREE_HZ, label: 'Free (Hz)' }];
 
 function divisionLabel(d: string): string {
   if (d.endsWith('-bars')) return d.replace('-bars', ' bars');
@@ -438,3 +441,34 @@ export function envelopePolyline(points: readonly EnvPoint[] | undefined, w: num
   return pts.map((p) => `${Math.round(p.t * w * 10) / 10},${Math.round((1 - p.v) * h * 10) / 10}`).join(' ');
 }
 
+// ---- ms / Hz ⇄ beats (Tim, 2026-10-02: beats "everywhere there is a measurement of time") ------
+
+/** A ms / Hz number that can be switched to beats (a `<key>:beats` companion — core `tempo.ts`). */
+export function isTempoParam(p: CardParam): boolean {
+  return p.kind === 'number' && p.tempo !== false && effectChain.isTempoUnit(p.unit);
+}
+
+/** The param's beats companion value, or undefined while it is in ms / Hz. */
+export function tempoBeats(p: CardParam, values: Readonly<Record<string, ParamValue>> | undefined): number | undefined {
+  const v = values?.[effectChain.tempoKey(p.key)];
+  return typeof v === 'number' ? v : undefined;
+}
+
+const sixteenth = (beats: number): number => Math.max(1 / 16, Math.round(beats * 16) / 16);
+
+/**
+ * The patch that switches a param between its unit and beats, keeping what it does at 120 bpm:
+ * a duration keeps its length (500 ms = 1 beat), a rate keeps its speed (2 Hz = one cycle a
+ * beat), rounded to the nearest sixteenth of a beat. Back to the unit, the companion is removed.
+ */
+export function tempoTogglePatch(p: CardParam, values: Readonly<Record<string, ParamValue>> | undefined): Record<string, ParamValue | undefined> {
+  const key = effectChain.tempoKey(p.key);
+  const beats = tempoBeats(p, values);
+  if (beats === undefined) {
+    const v = Number(paramValue(p, values));
+    return { [key]: sixteenth(p.unit === 'Hz' ? (v > 0 ? 2 / v : 1) : v / 500) };
+  }
+  const at120 = effectChain.tempoValue(p.unit, beats, 120) ?? Number(p.default);
+  const clamped = Math.min(p.max ?? Infinity, Math.max(p.min ?? -Infinity, at120));
+  return { [key]: undefined, [p.key]: Number(clamped.toFixed(p.step !== undefined && p.step < 1 ? 2 : 0)) };
+}

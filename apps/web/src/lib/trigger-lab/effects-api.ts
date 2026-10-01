@@ -121,6 +121,8 @@ export interface EffectsAuthoringApi {
   removeModifier(effectId: string | typeof MASTER_CELL, uid: string): void;
   moveModifier(effectId: string | typeof MASTER_CELL, uid: string, index: number): void;
   setModifierParam(effectId: string | typeof MASTER_CELL, uid: string, key: string, value: ParamValue): void;
+  /** Several params of one modifier as one undo step; `undefined` removes a param. */
+  setModifierParams(effectId: string | typeof MASTER_CELL, uid: string, patch: Readonly<Record<string, ParamValue | undefined>>): void;
   setModifierMix(effectId: string | typeof MASTER_CELL, uid: string, mix: number): void;
   setModifierEnvelope(effectId: string | typeof MASTER_CELL, uid: string, envelope: ModifierEnvelopeSpec | null): void;
   setModifierBypass(effectId: string | typeof MASTER_CELL, uid: string, bypass: boolean): void;

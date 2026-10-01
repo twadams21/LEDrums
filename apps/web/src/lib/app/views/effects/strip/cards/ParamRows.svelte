@@ -11,7 +11,9 @@
   import Info from '@lucide/svelte/icons/info';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import { mappable } from '../../../../map-mode/mappable.svelte';
-  import { enumLabel, formatParam, paramColumns, paramValue, type CardParam, type ParamValue } from './card-model';
+  import { effectChain } from '@ledrums/core';
+  import { enumLabel, formatParam, isTempoParam, paramColumns, paramValue, tempoBeats, tempoTogglePatch, type CardParam, type ParamValue } from './card-model';
+  import { beatsLabel } from '../strip-model';
 
   interface Props {
     params: readonly CardParam[];
@@ -27,6 +29,9 @@
     /** MIDI-map registration for a param's control, or null when it can't be mapped. Only
         number params are offered: a mapped CC / OSC value scales into the param's range. */
     mapParam?: (param: CardParam) => MappableSpec | null;
+    /** Several keys at once (`undefined` removes one). Given, a ms / Hz param gets a switch to
+        beats; without it (a host that can't remove a key) the param stays in its unit. */
+    onPatch?: (patch: Record<string, ParamValue | undefined>) => void;
   }
 
   let {
@@ -39,6 +44,7 @@
     onGestureStart,
     onGestureEnd,
     mapParam,
+    onPatch,
   }: Props = $props();
 
   // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
@@ -55,8 +61,10 @@
     {#each params as p (p.key)}
       {@const v = paramValue(p, values)}
       {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
+      {@const tempo = !!onPatch && isTempoParam(p)}
+      {@const beats = tempo ? tempoBeats(p, values) : undefined}
       <li class="row" class:modulated={modulated?.has(p.key)}>
-        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number'}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
+        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && !tempo}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
         <span class="ctl" {@attach map && mappable(map)}>
           {#if p.kind === 'enum'}
             <Select
@@ -79,6 +87,22 @@
                 onChange={(next) => onChange(p.key, next ?? p.default)}
               />
             </GestureScope>
+          {:else if beats !== undefined}
+            <!-- In beats: a duration lasts this many, a rate runs one cycle per this many. -->
+            <FaceParamControl
+              kind="number"
+              value={beats}
+              display={beatsLabel(beats)}
+              min={0}
+              max={64}
+              step={0.0625}
+              {disabled}
+              ariaLabel={`${aria(p)} beats`}
+              entry={{ unit: 'beats' }}
+              onChange={(next) => onChange(effectChain.tempoKey(p.key), next)}
+              {onGestureStart}
+              {onGestureEnd}
+            />
           {:else}
             <FaceParamControl
               kind={p.kind}
@@ -95,6 +119,22 @@
               {onGestureStart}
               {onGestureEnd}
             />
+          {/if}
+          {#if tempo}
+            <button
+              type="button"
+              class="utog"
+              class:beats={beats !== undefined}
+              {disabled}
+              aria-label={`${aria(p)}: in ${beats !== undefined ? 'beats' : p.unit}. Switch to ${beats !== undefined ? p.unit : 'beats'}`}
+              title={beats !== undefined
+                ? `In beats — ${p.unit === 'Hz' ? 'one cycle per' : 'lasts'} this many, at the tempo. Click for ${p.unit}.`
+                : `In ${p.unit}. Click to set it in beats, so it follows the tempo.`}
+              onclick={(ev) => {
+                ev.stopPropagation();
+                onPatch?.(tempoTogglePatch(p, values));
+              }}
+            >{beats !== undefined ? 'beats' : p.unit}</button>
           {/if}
         </span>
       </li>
@@ -158,6 +198,34 @@
     flex: 1 1 auto;
     min-width: 0;
     max-width: 62%;
+  }
+  /* The unit switch: a quiet chip after the value — `ms` / `Hz`, or `beats` (accented). */
+  .utog {
+    flex: none;
+    height: 16px;
+    margin-left: 4px;
+    padding: 0 5px;
+    border: 0;
+    border-radius: var(--radius-1);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--border-faint);
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-size: 0.625rem;
+    line-height: 16px;
+    cursor: pointer;
+  }
+  .utog:hover {
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+  .utog.beats {
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 50%, transparent);
+  }
+  .utog:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px var(--accent-soft);
   }
   .ctl :global(.cardsel) {
     width: 128px;

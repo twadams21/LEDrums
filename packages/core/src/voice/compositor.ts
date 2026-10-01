@@ -55,6 +55,7 @@ import {
 } from './splice';
 import { buildSliceLayout, forEachSliceContribution, sliceLayoutKey, type SliceLayout } from './slice';
 import type { MixInput, ParamValues, SpliceConfig, SpliceMaterialCoverage, Voice } from './types';
+import { hasTempoParams, resolveTempoParams } from '../effect-chain/tempo';
 
 const num = (v: number | boolean | string | undefined, d: number): number => (typeof v === 'number' ? v : d);
 
@@ -100,6 +101,8 @@ export function applyEffectiveParams(v: Voice, timeMs: number, bpm: number, cc?:
     applyModulations(v.params, out, mods, v.specs, { phase: voicePhase(v, timeMs), timeMs, bpm, cc, osc, notes, audio, velocity: v.velocity });
   }
   if (out.tempoSync === true) out.speed = num(out.speed, 1) * (bpm / 120);
+  // A ms / Hz param put in beats (`<key>:beats`) follows the live tempo.
+  if (hasTempoParams(out)) resolveTempoParams(out, v.specs, bpm);
   return out;
 }
 

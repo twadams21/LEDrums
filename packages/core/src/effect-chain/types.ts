@@ -162,6 +162,11 @@ export const modifierEnvelopeSchema = z.object({
   decayMs: nonNegMs.default(0),
   sustainLevel: unit.default(1),
   releaseMs: nonNegMs.default(0),
+  /** A stage in beats instead (Tim, 2026-10-02: beats "everywhere there is a measurement of
+      time"); when set it wins, resolved at the fire's tempo. */
+  attackBeats: z.number().min(0).optional(),
+  decayBeats: z.number().min(0).optional(),
+  releaseBeats: z.number().min(0).optional(),
 });
 
 export const modifierDeviceSchema = z.object({

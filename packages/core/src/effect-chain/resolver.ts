@@ -161,7 +161,17 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   const modifiers: ResolvedModifier[] = effect.modifiers.map((m) => {
     const link: ResolvedModifier = { modifierId: m.modifierId, params: { ...m.params }, mix: m.mix };
     if (m.bypass) link.bypass = true;
-    if (m.envelope) link.envelope = { ...m.envelope };
+    if (m.envelope) {
+      // A stage in beats resolves at this fire's tempo; otherwise its ms stand.
+      const beat = MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120);
+      const { attackBeats, decayBeats, releaseBeats, ...env } = m.envelope;
+      link.envelope = {
+        ...env,
+        attackMs: attackBeats !== undefined ? attackBeats * beat : env.attackMs,
+        decayMs: decayBeats !== undefined ? decayBeats * beat : env.decayMs,
+        releaseMs: releaseBeats !== undefined ? releaseBeats * beat : env.releaseMs,
+      };
+    }
     return link;
   });
 

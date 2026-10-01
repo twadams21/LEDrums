@@ -403,6 +403,31 @@ export function setModifierParam<S extends EffectsSection>(section: S, owner: Ch
   return updateModifier(section, owner, uid, (m) => (m.params[key] === value ? null : { ...m, params: { ...m.params, [key]: value } }));
 }
 
+/** Several params of one modifier in one edit; `undefined` removes a param (a beats companion). */
+export function setModifierParams<S extends EffectsSection>(
+  section: S,
+  owner: ChainOwner,
+  uid: string,
+  patch: Readonly<Record<string, ParamValue | undefined>>,
+): S {
+  return updateModifier(section, owner, uid, (m) => {
+    const params: Record<string, ParamValue> = { ...m.params };
+    let changed = false;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) {
+        if (key in params) {
+          delete params[key];
+          changed = true;
+        }
+      } else if (params[key] !== value) {
+        params[key] = value;
+        changed = true;
+      }
+    }
+    return changed ? { ...m, params } : null;
+  });
+}
+
 /** Mix is clamped to 0..1. */
 export function setModifierMix<S extends EffectsSection>(section: S, owner: ChainOwner, uid: string, mix: number): S {
   if (!Number.isFinite(mix)) return section;
