@@ -109,6 +109,31 @@
     { label: 'Remove', icon: Trash2, danger: true, disabled, onSelect: () => api.removeModifier(effectId, modifier.uid) },
   ]);
 
+  // The envelope's beats stages (attackBeats …) as the rows' `<key>:beats` companions, so the
+  // rows' ms ⇄ beats switch works on it as on any param. A Master modifier's envelope is not
+  // resolved per hit, so it keeps ms only (no onPatch → no switch).
+  const ENV_BEATS: Record<string, 'attackBeats' | 'decayBeats' | 'releaseBeats'> = {
+    'attackMs:beats': 'attackBeats',
+    'decayMs:beats': 'decayBeats',
+    'releaseMs:beats': 'releaseBeats',
+  };
+  const envelopeView = $derived.by(() => {
+    if (!envelope) return undefined;
+    const view: Record<string, number> = { attackMs: envelope.attackMs, decayMs: envelope.decayMs, sustainLevel: envelope.sustainLevel, releaseMs: envelope.releaseMs };
+    for (const [row, field] of Object.entries(ENV_BEATS)) if (envelope[field] !== undefined) view[row] = envelope[field]!;
+    return view;
+  });
+  function setEnvelope(patch: Record<string, number | boolean | string | undefined>): void {
+    if (!envelope) return;
+    const next: Record<string, unknown> = { ...envelope };
+    for (const [key, value] of Object.entries(patch)) {
+      const field = ENV_BEATS[key] ?? key;
+      if (value === undefined) delete next[field];
+      else next[field] = Number(value);
+    }
+    api.setModifierEnvelope(effectId, modifier.uid, next as typeof envelope);
+  }
+
   function setEnvelopeOn(on: boolean): void {
     api.setModifierEnvelope(effectId, modifier.uid, on ? { ...DEFAULT_MODIFIER_ENVELOPE } : null);
     if (on) envOpen = true;
@@ -149,6 +174,7 @@
     labelPrefix={name}
     {mapParam}
     onChange={(key, v) => api.setModifierParam(effectId, modifier.uid, key, v)}
+    onPatch={(patch) => api.setModifierParams(effectId, modifier.uid, patch)}
     onGestureStart={begin}
     onGestureEnd={end}
   />
@@ -201,10 +227,11 @@
         </svg>
         <ParamRows
           params={MODIFIER_ENVELOPE_PARAMS}
-          values={envelope}
           {disabled}
           labelPrefix={`${name} envelope`}
-          onChange={(key, v) => api.setModifierEnvelope(effectId, modifier.uid, { ...envelope, [key]: Number(v) })}
+          values={envelopeView}
+          onChange={(key, v) => setEnvelope({ [key]: Number(v) })}
+          onPatch={isMaster ? undefined : setEnvelope}
           onGestureStart={begin}
           onGestureEnd={end}
         />

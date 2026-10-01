@@ -109,6 +109,26 @@ describe('GeneratorCard', () => {
 });
 
 describe('ModifierCard', () => {
+  it('a ms / Hz param switches to beats and back — the value it does at 120 bpm is kept — one undo step each', async () => {
+    const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'echo', params: { delayMs: 250 } }] });
+    const view = render(ModifierCard, { props: { api, effectId: 'e1', modifier: effect().modifiers[0]! } });
+    const toggle = view.getByRole('button', { name: /Echo Delay: in ms/ });
+    await fireEvent.click(toggle);
+    expect(effect().modifiers[0]!.params['delayMs:beats']).toBe(0.5); // 250 ms = 1/8 at 120 bpm
+    await view.rerender({ api, effectId: 'e1', modifier: effect().modifiers[0]! });
+    expect(view.getByRole('slider', { name: 'Echo Delay beats' }).textContent).toContain('1/8');
+    await fireEvent.click(view.getByRole('button', { name: /Echo Delay: in beats/ }));
+    expect(effect().modifiers[0]!.params['delayMs:beats']).toBeUndefined();
+    expect(effect().modifiers[0]!.params.delayMs).toBe(250);
+    expect(api.undoDepth).toBe(2);
+  });
+
+  it('Strobe’s Frequency has no switch of its own — its Rate dropdown already does beats', () => {
+    const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
+    const view = render(ModifierCard, { props: { api, effectId: 'e1', modifier: effect().modifiers[0]! } });
+    expect(view.queryByRole('button', { name: /Strobe Frequency: in/ })).toBeNull();
+  });
+
   const withStrobe = () => demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
 
   it('Strobe’s Rate is one dropdown — Free (Hz) shows the Hz row; a division hides it — one undo step', async () => {
@@ -195,13 +215,17 @@ describe('ControlCard', () => {
     expect(getByText('Missing · rate')).toBeTruthy();
   });
 
-  it('shows the Hz rate only in Hz mode', () => {
+  it('one Rate dropdown: Free (Hz) shows the Frequency row, a division hides it — one undo step', async () => {
     const { api, effect } = withLfo([]);
-    const { queryByRole } = render(ControlCard, { props: { api, effect: effect(), control: effect().controls[0]! } });
-    expect(queryByRole('slider', { name: 'LFO Rate' })).not.toBeNull();
-    api.setControlSettings('e1', 'c1', { rateMode: 'beats' });
+    const view = render(ControlCard, { props: { api, effect: effect(), control: effect().controls[0]! } });
+    expect(view.getByRole('button', { name: 'LFO rate' }).textContent).toContain('Free (Hz)');
+    expect(view.queryByRole('slider', { name: 'LFO Frequency' })).not.toBeNull();
+    await fireEvent.keyDown(view.getByRole('button', { name: 'LFO rate' }), { key: 'Enter' });
+    await fireEvent.pointerUp(view.getByRole('option', { name: '1/8' }), { pointerType: 'mouse' });
+    expect(effect().controls[0]!.settings).toMatchObject({ rateMode: 'beats', division: '1/8' });
+    expect(api.undoDepth).toBe(1);
     const again = render(ControlCard, { props: { api, effect: effect(), control: effect().controls[0]! } });
-    expect(again.container.querySelector('[aria-label="LFO Rate"][role="slider"]')).toBeNull();
+    expect(again.container.querySelector('[aria-label="LFO Frequency"][role="slider"]')).toBeNull();
   });
 });
 

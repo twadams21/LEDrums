@@ -1435,6 +1435,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   setModifierParam(owner: ChainOwner, uid: string, key: string, value: number | boolean | string): void {
     this.effectsCtl.setModifierParam(owner, uid, key, value);
   }
+  setModifierParams(owner: ChainOwner, uid: string, patch: Readonly<Record<string, number | boolean | string | undefined>>): void {
+    this.effectsCtl.setModifierParams(owner, uid, patch);
+  }
   setModifierMix(owner: ChainOwner, uid: string, mix: number): void {
     this.effectsCtl.setModifierMix(owner, uid, mix);
   }

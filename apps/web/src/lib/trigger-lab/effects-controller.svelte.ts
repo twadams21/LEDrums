@@ -420,6 +420,9 @@ export class EffectsController implements EffectsAuthoringApi {
   setModifierParam(owner: ChainOwner, uid: string, key: string, value: ParamValue): void {
     this.#edit((s) => doc.setModifierParam(s, owner, uid, key, value));
   }
+  setModifierParams(owner: ChainOwner, uid: string, patch: Readonly<Record<string, ParamValue | undefined>>): void {
+    this.#edit((s) => doc.setModifierParams(s, owner, uid, patch));
+  }
   setModifierMix(owner: ChainOwner, uid: string, mix: number): void {
     this.#edit((s) => doc.setModifierMix(s, owner, uid, mix));
   }

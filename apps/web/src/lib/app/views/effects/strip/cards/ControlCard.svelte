@@ -21,9 +21,9 @@
     AUDIO_BAND_OPTIONS,
     CHANNEL_OPTIONS,
     CONTROL_KIND_LABEL,
-    DIVISION_OPTIONS,
+    LFO_FREE_HZ,
+    LFO_RATE_OPTIONS,
     ENVELOPE_SHAPE_OPTIONS,
-    LFO_RATE_MODE_OPTIONS,
     LFO_WAVEFORM_OPTIONS,
     NOTE_MODE_OPTIONS,
     RANDOM_DISTRIBUTION_OPTIONS,
@@ -72,7 +72,7 @@
     switch (control.kind) {
       case 'lfo':
         return [
-          ...(control.settings.rateMode === 'hz' ? [n('rateHz', 'Rate', 1, 0, 20, 0.01, 'Hz')] : []),
+          ...(control.settings.rateMode === 'hz' ? [n('rateHz', 'Frequency', 1, 0, 20, 0.01, 'Hz')] : []),
           n('phase', 'Phase', 0, 0, 1, 0.01),
         ];
       case 'random':
@@ -141,16 +141,20 @@
         <span class="flabel">Wave</span>
         <Select value={control.settings.waveform} options={LFO_WAVEFORM_OPTIONS} segment={false} {disabled} ariaLabel="LFO waveform" onChange={(v) => set({ waveform: v as never })} class="fsel" />
       </div>
+      <!-- One Rate dropdown, as Strobe's and Splice's timings: the divisions, then Free (Hz) —
+           whose value is the Frequency row below. -->
       <div class="field">
-        <span class="flabel">Rate mode</span>
-        <Select value={control.settings.rateMode} options={LFO_RATE_MODE_OPTIONS} {disabled} ariaLabel="LFO rate mode" onChange={(v) => set({ rateMode: v as 'hz' | 'beats' })} class="fsel" />
+        <span class="flabel">Rate</span>
+        <Select
+          value={control.settings.rateMode === 'beats' ? control.settings.division : LFO_FREE_HZ}
+          options={LFO_RATE_OPTIONS}
+          segment={false}
+          {disabled}
+          ariaLabel="LFO rate"
+          onChange={(v) => set(v === LFO_FREE_HZ ? { rateMode: 'hz' } : { rateMode: 'beats', division: v })}
+          class="fsel"
+        />
       </div>
-      {#if control.settings.rateMode === 'beats'}
-        <div class="field">
-          <span class="flabel">Rate</span>
-          <Select value={control.settings.division} options={DIVISION_OPTIONS} segment={false} {disabled} ariaLabel="LFO division" onChange={(v) => set({ division: v })} class="fsel" />
-        </div>
-      {/if}
     {:else if control.kind === 'velocity'}
       <p class="hint">The hit's velocity, 0 to 1. Soft hits give low values and hard hits give high ones.</p>
     {:else if control.kind === 'random'}

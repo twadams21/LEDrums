@@ -192,6 +192,7 @@
       labelPrefix={label}
       {mapParam}
       onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
+      onPatch={(patch) => api.setGeneratorParams(effect.id, patch)}
       onGestureStart={() => api.beginGesture()}
       onGestureEnd={() => api.endGesture()}
     />
