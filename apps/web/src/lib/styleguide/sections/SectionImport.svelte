@@ -29,11 +29,9 @@
   const fx = (id: string, name: string, at: EffectCell, bypass = false) =>
     effectChain.parseEffect({ id, name, cell: at, bypass, generator: { kind: 'solid' } });
 
-  const busy = {
+  const busy: SetlistSection = {
     id: 'sg-chorus',
     name: 'Chorus',
-    graphs: [],
-    looks: {},
     effects: [
       fx('e1', 'Wash', cell('kit', { kind: 'always' })),
       fx('e2', 'Pulse', cell('kick', { kind: 'zone', slot: 0 })),
@@ -42,8 +40,8 @@
       fx('e5', 'Ghost', cell('tom1', { kind: 'clock' }), true),
     ],
     master: [{ uid: 'm1', modifierId: 'strobe', params: {}, mix: 1, bypass: false }],
-  } as unknown as SetlistSection;
-  const empty = { id: 'sg-intro', name: 'Intro', graphs: [], looks: {}, effects: [], master: [] } as unknown as SetlistSection;
+  };
+  const empty: SetlistSection = { id: 'sg-intro', name: 'Intro', effects: [], master: [] };
   const song = { id: 'sg-song', name: 'Demo song', sections: [empty, busy] } as Song;
 
   const api = createStandaloneEffectsApi({ effects: [], master: [] }, kit);

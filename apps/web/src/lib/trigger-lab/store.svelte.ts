@@ -283,9 +283,6 @@ interface UndoEntry {
 }
 
 const EMPTY_EFFECTS: readonly effectChain.Effect[] = [];
-/** The binding guard's graph scope. The Effect model has no graphs; core's scope still takes the
-    field until its graph types go (effect chains S08, wave 6b). */
-const NO_GRAPHS: voice.BindingScope['graphs'] = {};
 const EMPTY_MASTER: readonly effectChain.ModifierDevice[] = [];
 const READ_ONLY: ApplyResult = { ok: false, reason: 'This section is read-only.' };
 /** Offline stand-in for the server Project's kit / input map (the grid needs rows + zones). */
@@ -1443,11 +1440,11 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private setCueSource(effectId: string, source: effectChain.CueSource): boolean {
     const effect = this.effectsCtl.effectById(effectId);
     if (!effect || effect.trigger.kind !== 'cue' || !this.effectsCtl.canEdit) return false;
-    const scope: voice.BindingScope | null = this.project ? { inputMap: this.project.inputMap, graphs: NO_GRAPHS } : null;
+    const scope: voice.BindingScope | null = this.project ? { inputMap: this.project.inputMap } : null;
     if (scope) {
       const asSource: voice.TriggerSource =
         source.oscAddress !== undefined ? { kind: 'osc', address: source.oscAddress } : { kind: 'midi', note: source.midiNote, cc: source.midiCc };
-      const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'triggerNode', graphKey: `cue:${effectId}`, nodeId: effectId };
+      const self: voice.BindingClaim = { group: 'pad-trigger', kind: 'cue', effectId };
       if (this.refuseBindings(voice.sourceBindingRejections(scope, asSource, self))) return false;
     }
     this.effectsCtl.setTrigger(effectId, { kind: 'cue', source });
@@ -1575,7 +1572,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
     if (!this.project) return { ok: false, reason: 'Connect to the LEDrums server to bind a global control.' };
     const current = this.project.inputMap;
     const next: InputMap = { ...current, globalControls: withGlobalControlBinding(current.globalControls, action, patch) };
-    const [rejection] = voice.inputMapBindingRejections(current, next, NO_GRAPHS, { mappings: this.mappings });
+    const [rejection] = voice.inputMapBindingRejections(current, next, { mappings: this.mappings });
     if (rejection) return { ok: false, reason: this.bindingRefusalText(rejection) };
     const before = current.globalControls[action];
     const after = next.globalControls[action];
@@ -1589,20 +1586,13 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private get mappingBindingScope(): voice.BindingScope {
     return {
       inputMap: this.effectsInputMap,
-      graphs: NO_GRAPHS,
       mappings: this.mappings,
       effects: this.resolvedSongs.flatMap((song) => song.sections.flatMap((section) => section.effects ?? [])),
     };
   }
 
   private bindingRefusalText(rejection: voice.BindingRejection): string {
-    return bindingRejectionMessage(rejection, this.drums, (key) => this.claimLabel(key));
-  }
-
-  /** A binding claim's display name: a Cue claim (`cue:<effectId>`) names its Effect. */
-  private claimLabel(key: string): string {
-    const effectId = key.startsWith('cue:') ? key.slice('cue:'.length) : null;
-    return (effectId && this.effectsCtl.effectById(effectId)?.name) || key;
+    return bindingRejectionMessage(rejection, this.drums);
   }
 
   /**
@@ -3029,7 +3019,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
           }
         }
       }
-      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, NO_GRAPHS, { mappings: this.mappings }))) {
+      if (this.refuseBindings(voice.inputMapBindingRejections(this.project.inputMap, inputMap, { mappings: this.mappings }))) {
         return false;
       }
       this.pushUndoSnapshot();
@@ -3047,7 +3037,7 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   private refuseBindings(rejections: readonly voice.BindingRejection[]): boolean {
     const first = rejections[0];
     if (!first) return false;
-    pushToast(bindingRejectionMessage(first, this.drums, (key) => this.claimLabel(key)), { tone: 'error' });
+    pushToast(bindingRejectionMessage(first, this.drums), { tone: 'error' });
     return true;
   }
 

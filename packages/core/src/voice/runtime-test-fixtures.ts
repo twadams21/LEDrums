@@ -1,7 +1,7 @@
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel } from '../geometry/pixel-model';
 import type { CompositorFrame } from './compositor';
-import type { PlayAction } from './eval-graph';
+import type { PlayAction } from './play-action';
 import type { Bus, EffectDef, SpliceConfig, Voice } from './types';
 import { VoicePool } from './voice-pool';
 

@@ -1,9 +1,9 @@
 /**
- * Outer seam — the host ↔ brain interface for the trigger-graph / voice-bus lighting
- * model. {@link RenderEngine} is the small, host-facing surface; behind it sit graph
- * eval (`eval-graph.ts`), an object-pooled voice store (`voice-pool.ts`), transport-
+ * Outer seam — the host ↔ brain interface for the voice-bus lighting model.
+ * {@link RenderEngine} is the small, host-facing surface; behind it sit the Effect resolver
+ * (`effect-chain/resolver.ts`), an object-pooled voice store (`voice-pool.ts`), transport-
  * driven envelopes (`envelope-tick.ts`), and the inner {@link Compositor} seam
- * (voices → pixels). Ported from `trigger-lab/sim.ts`.
+ * (voices → pixels).
  *
  * Purity / determinism (non-negotiable): `tick` is a pure function of (state, time,
  * inputs). No `Math.random` / `Date.now` — all randomness is a seeded {@link Prng}
@@ -20,17 +20,6 @@ import {
   applyEffectiveParams,
   type Compositor,
 } from './compositor';
-import {
-  evalGraph,
-  evalChildren,
-  type Action,
-  type PlayAction,
-  type EvalState,
-  type TriggerCtx,
-  type PendingDescriptor,
-  type MixInputDraft,
-} from './eval-graph';
-import { applySequenceResets } from './reset-source';
 import { VoicePool, releaseVoice } from './voice-pool';
 import { registerCanvasScene, unregisterCanvasScene } from '../canvas/registry';
 import { BUILTIN_CANVAS_SCENES } from '../canvas/presets';
@@ -43,24 +32,16 @@ import { normalizeAudioFrame, type AudioFeatureFrame, type AudioTable } from './
 import {
   emptyShow,
   normalizeTriggerValue,
-  padKey,
   type Bus,
   type EffectDef,
-  type ParamValues,
   type PlayMode,
-  type Preset,
   type Show,
-  type TriggerGraph,
+  type SongSection,
   type Voice,
 } from './types';
-import { normalizeTriggerGraphToGen3 } from './graph-integrity';
 import { relativeNavTarget, type NavAxis } from './navigation';
 import type { GlobalControlAction } from '../model/global-controls';
 import { clamp01 } from '../math';
-import { createRenderPlanCache } from './render-plan';
-import { SPLICE_FILL_EFFECT_ID, spliceFillEffectDef } from './splice';
-import { graphAt } from './graph-lookup';
-import { triggerSourceOf } from './runtime-setlist';
 import {
   alwaysEffects,
   cellEffects,
@@ -82,11 +63,8 @@ import {
 import { applySectionMaster, createSectionMasterState, resetSectionMaster } from '../effect-chain/master';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
 import type { Effect } from '../effect-chain/types';
-import type { SongSection } from './types';
 import type {
   EffectSkipReason,
-  GraphMissReason,
-  GraphResolutionPath,
   VoiceDiagnosticSink,
   VoiceInputDescriptor,
 } from './diagnostics';
@@ -94,7 +72,7 @@ import type {
 // ---- Public seam ------------------------------------------------------------
 
 export interface InputEvent {
-  kind: 'noteOn' | 'noteOff' | 'osc' | 'oscValue' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireGraph' | 'fireEffect' | 'cc' | 'globalControl' | 'releaseBus' | 'audioFeatures';
+  kind: 'noteOn' | 'noteOff' | 'osc' | 'oscValue' | 'key' | 'recallSection' | 'recallSongIndex' | 'recallSectionIndex' | 'fireEffect' | 'cc' | 'globalControl' | 'releaseBus' | 'audioFeatures';
   drumId?: string;
   zone?: string;
   note?: number;
@@ -105,7 +83,7 @@ export interface InputEvent {
       the raw 0..127 CC value; the engine normalizes it to 0..1 in its CC table. */
   controller?: number; // S37
   channel?: number; // S37
-  /** recallSection: activate a song's section so hits fire its slot graphs. */
+  /** recallSection: activate a song's section so hits fire its Effects. */
   songId?: string | null;
   sectionId?: string | null;
   /** Transport recall intents. Indices resolve only when the queued event is processed. */
@@ -119,21 +97,13 @@ export interface InputEvent {
   /** globalControl (momentary only): the edge. `true` = pressed, `false` = released.
       Absent for trigger/continuous actions, which have no held state. */
   pressed?: boolean;
-  /** fireGraph: the exact graph key to play — an authoritative intent, not a source to
-      re-resolve. The keyboard performance path (keys 1–9) sends this so the engine plays
-      precisely the graph the client chose, with no zone-map / direct both-fire ambiguity. */
-  graphKey?: string;
-  /** Viewer fireGraph authorization. Unset keeps the legacy unrestricted server/editor path;
-      `active-section` checks the key against the engine's current performance list or runtime
-      slot grid before resolving the graph. */
-  fireGraphPolicy?: 'active-section';
-  /** fireEffect: the authored Effect id (of the ACTIVE section) to audition — a manual fire
-      for keyboard audition and MIDI-map. Only meaningful on an Effect-path section. */
+  /** fireEffect: the authored Effect id (of the ACTIVE section) to audition — an authoritative
+      intent for keyboard audition and MIDI-map, not a source to re-resolve. */
   effectId?: string;
   /** releaseBus: release every active voice on this bus (absent = all buses — panic). */
   busId?: string;
   /** audioFeatures (GH #214): the latest analysed frame. Replaces the engine's audio table and
-      NEVER fires a graph — audio is a continuous modulation source, not a trigger. */
+      NEVER fires an Effect — audio is a continuous modulation source, not a trigger. */
   audio?: AudioFeatureFrame;
   timeMs: number;
 }
@@ -155,10 +125,9 @@ export interface VoiceStat {
   /** True while the voice is in its release (fade-out) phase. */
   releasing: boolean;
   via: string;
-  /** The eval STATE PREFIX this voice was spawned under — the firing graph's key, with a
-   * `#<slotIndex>` suffix on section-slot fires (see {@link RenderEngine} resolve paths).
-   * Empty string when the spawn path supplied none (ad-hoc previews). Clients strip the
-   * suffix to attribute a live voice back to the graph that is playing it. */
+  /** The spawn key this voice was spawned under — `effect:<effectId>` on the Effect path, so a
+   * client can attribute a live voice back to the Effect playing it. Empty string when the spawn
+   * path supplied none. */
   pad: string;
 }
 
@@ -211,13 +180,6 @@ const NAV_MOVES: Partial<Record<GlobalControlAction, { axis: NavAxis; delta: num
   prevSection: { axis: 'section', delta: -1 },
 };
 
-interface ResolvedGraph {
-  graphKey: string;
-  graph: TriggerGraph;
-  statePrefix: string;
-  path: GraphResolutionPath;
-}
-
 interface ActiveSelection {
   activeSongId: string | null;
   activeSectionId: string | null;
@@ -225,7 +187,7 @@ interface ActiveSelection {
 
 /** The deterministic selection used when a show has no still-valid active pair. */
 function firstSelection(show: Show): ActiveSelection {
-  const song = show.songs?.[0];
+  const song = show.songs[0];
   return {
     activeSongId: song?.id ?? null,
     activeSectionId: song?.sections[0]?.id ?? null,
@@ -234,27 +196,22 @@ function firstSelection(show: Show): ActiveSelection {
 
 /** A selection is valid only as the exact song/section pair it names. In particular, null is
  * a section value only for a real zero-section song; it is not a wildcard that keeps a stale
- * section look alive. The legacy top-level section shape remains valid only without songs. */
+ * section's Always Effects alive. */
 function isValidSelection(show: Show, selection: ActiveSelection): boolean {
-  if (selection.activeSongId !== null) {
-    const song = show.songs?.find((candidate) => candidate.id === selection.activeSongId);
-    if (!song) return false;
-    return selection.activeSectionId === null
-      ? song.sections.length === 0
-      : song.sections.some((section) => section.id === selection.activeSectionId);
-  }
-
-  return selection.activeSectionId !== null
-    && !show.songs?.length
-    && show.sections.some((section) => section.id === selection.activeSectionId);
+  if (selection.activeSongId === null) return false;
+  const song = show.songs.find((candidate) => candidate.id === selection.activeSongId);
+  if (!song) return false;
+  return selection.activeSectionId === null
+    ? song.sections.length === 0
+    : song.sections.some((section) => section.id === selection.activeSectionId);
 }
 
 // ---- Production adapter ------------------------------------------------------
 
 /**
- * The production brain. Owns: a time-stamped input queue (drained at tick), graph
- * eval → actions, an object-pooled voice store, transport-driven voice envelopes, and
- * the inner compositor. `frame()` returns the final framebuffer's rgba (no copy).
+ * The production brain. Owns: a time-stamped input queue (drained at tick), Effect
+ * resolution → play actions, an object-pooled voice store, transport-driven voice envelopes,
+ * and the inner compositor. `frame()` returns the final framebuffer's rgba (no copy).
  */
 class VoiceBusEngine implements RenderEngine {
   constructor(private readonly onDiagnostic?: VoiceDiagnosticSink) {}
@@ -264,17 +221,12 @@ class VoiceBusEngine implements RenderEngine {
   private readonly compositor: Compositor = createDefaultCompositor();
 
   private show: Show = emptyShow();
-  private busById = new Map<string, Bus>();
-  private effectsById = new Map<string, EffectDef>();
-  private presetsById = new Map<string, Preset>();
 
   /**
-   * Effect path (effect chains): the internal spawn lookups. An Effect-path action names an
-   * engine-synthesised EffectDef (`@chain:<generatorId>`, built lazily from the generator
-   * registry) on the internal poly bus, so a show with empty `buses` / `effects` / `presets`
-   * plays. Kept apart from the show's own maps: the internal bus never appears in bus stats,
-   * and because the envelope tick cannot find it, a released loop/hold chain voice fades on its
-   * own `releaseMs` rather than a bus crossfade.
+   * The internal spawn lookups. An Effect's action names an engine-synthesised EffectDef
+   * (`@chain:<generatorId>`, built lazily from the generator registry) on the internal poly bus,
+   * so the Show carries no buses or effect definitions. The envelope tick is handed no buses, so
+   * a released loop/hold voice fades on its own `releaseMs` rather than a bus crossfade.
    */
   private chainEffects = new Map<string, EffectDef>();
   private readonly chainBuses = new Map<string, Bus>([[CHAIN_BUS_ID, CHAIN_BUS]]);
@@ -282,7 +234,7 @@ class VoiceBusEngine implements RenderEngine {
    * MIDI-map (effect chains wave 5): the show's valid InputMappings, re-validated at `setShow`
    * (the wire gate does not deep-check them). A note / CC / OSC that matches one is CONSUMED
    * — after global controls (resolved by the host before the event reaches the engine),
-   * before zones, Cues and graph sources.
+   * before zones and Cues.
    */
   private inputMappings: InputMapping[] = [];
   /**
@@ -318,18 +270,9 @@ class VoiceBusEngine implements RenderEngine {
   // Object-pooled voices (fixed-size slab; `acquire`/`release`/`spawn` in voice-pool.ts).
   private readonly voices = new VoicePool();
 
-  // Per-node graph eval state (keyed by `${statePrefix}#${nodeId}`, where the prefix
-  // is a per-slot or pad key, so layers/pads don't collide).
-  private seqIndex = new Map<string, number>();
-  private lastPick = new Map<string, number>();
+  /** Latch map the voice pool reads / reaps (`PlayAction.latchKey`). The Effect path spawns
+      unlatched voices, so it stays empty; kept because the unchanged pool takes it. */
   private latched = new Map<string, string | null>();
-  /** R13 — persistent per-(pad, mix-node) member snapshots for delay-overlap Mix
-      composition. Populated by the pure evaluator; read by a delayed drain to re-compose
-      with still-live members. Keyed like the maps above; cleared on `setShow`. */
-  private mixMemberSnapshots = new Map<string, MixInputDraft[]>();
-  /** R18 — compiled render-plan cache, keyed by graph identity + structure signature, so fast
-      rolls reuse the plan instead of recompiling per hit. Reset on `setShow` (graphs replaced). */
-  private renderPlanCache = createRenderPlanCache();
 
   private prng = new Prng(PRNG_SEED);
 
@@ -344,7 +287,7 @@ class VoiceBusEngine implements RenderEngine {
   /**
    * Live OSC value table: keyed by OSC address → 0..1. The OSC analogue of {@link ccTable},
    * updated ONLY inside the queue drain (a pure function of the event log), read by an `osc`
-   * modulation source each frame. An OSC event both fires trigger graphs AND feeds this table,
+   * modulation source each frame. An OSC event both fires Cue Effects AND feeds this table,
    * so the same address can drive a trigger and modulate params.
    */
   private oscTable = new Map<string, number>();
@@ -363,24 +306,10 @@ class VoiceBusEngine implements RenderEngine {
   private bpm = 120;
   /** Beats per bar from the transport — read only by the bar-length musical divisions. */
   private beatsPerBar = 4;
-  private sectionIndex = 0;
   private perf: EnginePerfStats = emptyPerfStats();
 
   /**
-   * Pending-fire queue for delay nodes. Each entry holds an absolute `fireAtMs`
-   * (computed at enqueue from `timeMs + relativeDelayMs`) and an `enqueueOrder`
-   * counter for stable secondary sorting. Drained in `tick()` after `drainQueue()`.
-   * Cleared on `setShow()` so a fresh show starts with no lingering deferred fires.
-   */
-  private pendingFires: Array<{
-    fireAtMs: number;
-    enqueueOrder: number;
-    descriptor: PendingDescriptor;
-  }> = [];
-  private pendingFireCounter = 0;
-
-  /**
-   * Active song/section for slot-aware hit resolution. Set via `recallSection`
+   * Active song/section for hit resolution. Set via `recallSection`
    * input events (queued + drained deterministically, never mutated outside the
    * queue drain). `setShow` preserves the pair when it remains valid and otherwise
    * seeds from the first valid song/section so stale ids don't resolve against a new
@@ -461,34 +390,12 @@ class VoiceBusEngine implements RenderEngine {
     this.queue = [];
     this.inputOrder = 0;
     this.syncCanvasScenes(show.canvasScenes);
-    this.show = {
-      ...show,
-      graphs: Object.fromEntries(Object.entries(show.graphs).map(([key, graph]) => [key, normalizeTriggerGraphToGen3(graph).graph])),
-    };
-    this.busById = new Map(this.show.buses.map((b) => [b.id, b] as const));
-    this.effectsById = new Map(this.show.effects.map((e) => [e.id, e] as const));
-    // Reserved fill effect for colour-only splices (see `splice.ts`). Registered here rather
-    // than authored, so a splice colour renders without the show having to carry a def for it.
-    // An authored def under the reserved id would be a graph the engine can't trust; ours wins.
-    // Prefer a POLY layer for the reserved fill: on a mono layer every new splice voice
-    // releases the last, so a sequencer cycling splice nodes would cut each hoop off as it
-    // moved on. Which layer a splice plays on is authorable (`GraphNode.busId`); this is only
-    // the fallback for a colour-only splice that names none.
-    const fillBus = this.show.buses.find((b) => b.polyphony === 'poly') ?? this.show.buses[0];
-    this.effectsById.set(SPLICE_FILL_EFFECT_ID, spliceFillEffectDef(fillBus?.id ?? ''));
-    this.presetsById = new Map(this.show.presets.map((p) => [p.id, p] as const));
-    // Authored content changed: clear live state so eval starts clean & deterministic.
+    this.show = show;
+    // Authored content changed: clear live state so resolution starts clean & deterministic.
     this.voices.reset();
-    this.seqIndex.clear();
-    this.lastPick.clear();
     this.latched.clear();
-    this.mixMemberSnapshots.clear();
     this.spliceMotionMs.clear(); // authored content replaced → latched motion starts fresh
-    this.renderPlanCache.reset(); // R18: authored graphs replaced → drop cached plans
-    this.sectionIndex = 0;
     this.prng.reseed(PRNG_SEED);
-    this.pendingFires = [];
-    this.pendingFireCounter = 0;
     this.ccTable.clear(); // S37: fresh show → no lingering CC values
     this.oscTable.clear(); // fresh show → no lingering OSC values
     this.noteTable.clear();
@@ -561,31 +468,25 @@ class VoiceBusEngine implements RenderEngine {
    * Activate a song's section — the ONE place `activeSongId` / `activeSectionId` change
    * during a queue drain. Both the absolute `recallSection` input and a relative
    * global-control navigation land here, so they are indistinguishable downstream
-   * (same diagnostic, same base-look spawn).
+   * (same diagnostic, same Always-Effect spawn).
    */
   private recallTo(songId: string | null, sectionId: string | null): boolean {
-    // A section-only recall is a valid legacy/client input: resolve it against the engine's
-    // currently active song, never against a host-side selection mirror.
+    // A section-only recall is a valid client input: resolve it against the engine's currently
+    // active song, never against a host-side selection mirror.
     const song = songId === null
-      ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
-      : this.show.songs?.find((candidate) => candidate.id === songId);
+      ? this.show.songs.find((candidate) => candidate.id === this.activeSongId)
+      : this.show.songs.find((candidate) => candidate.id === songId);
     const section = song && sectionId !== null ? song.sections.find((candidate) => candidate.id === sectionId) : undefined;
-    // Older/slot-only shows keep sections in the top-level registry without a setlist song.
-    // Preserve that valid shape, while rejecting arbitrary ids whenever the show has an ordered
-    // song list to validate against.
-    const legacySection = !this.show.songs?.length && songId === null && sectionId !== null
-      ? this.show.sections.find((candidate) => candidate.id === sectionId)
-      : undefined;
     // A null section identifies a real zero-section song. It must never silently turn a
-    // non-empty song into a song-only recall, because that would clear the active section look
-    // while leaving the engine on an arrangement that has a valid section to play.
+    // non-empty song into a song-only recall, because that would clear the active section's
+    // Always Effects while leaving the engine on an arrangement that has a valid section to play.
     const validSongRecall = song !== undefined && (
       sectionId !== null
         ? section !== undefined
         : song.sections.length === 0
     );
-    if (!validSongRecall && !legacySection) return false;
-    this.activeSongId = song?.id ?? null;
+    if (!validSongRecall) return false;
+    this.activeSongId = song.id;
     this.activeSectionId = sectionId;
     resetSectionMaster(this.masterState);
     this.resolveContinuousBindings();
@@ -594,22 +495,16 @@ class VoiceBusEngine implements RenderEngine {
       songId: this.activeSongId,
       sectionId: this.activeSectionId,
     });
-    // Leaving a section releases the Effect-path loop / hold voices it owned (Always Effects
-    // and held fires), whichever path the next section runs on.
-    this.releaseSustainedChainVoices();
+    // Leaving a section releases every sustained voice it owned (Always Effects and held
+    // fires) so a recall never stacks, then the new section's Always Effects spawn. One-shots
+    // decay on their own.
+    for (const v of this.voices.pool) {
+      if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
+    }
     const effectSection = this.activeEffectSection();
     if (effectSection) {
-      // Effect path: Always Effects REPLACE the section looks. Release every sustained voice
-      // (graph looks included) so a recall never stacks, then spawn the Always Effects.
-      for (const v of this.voices.pool) {
-        if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
-      }
       for (const effect of alwaysEffects(effectSection)) this.fireChainEffect(effectSection, effect, 1, null, null, 'always');
-      return true;
     }
-    // Spawn/release this section's base "looks" (the per-bus loop effects) so the
-    // engine's output finally matches the offline sim at the root. See spawnSectionLooks.
-    this.spawnSectionLooks(this.activeSectionId);
     return true;
   }
 
@@ -617,7 +512,7 @@ class VoiceBusEngine implements RenderEngine {
    * Resolve a global control action against live engine state. Navigation actions
    * become a relative move on the setlist (clamped at both ends — see
    * {@link relativeNavTarget}); a move with nowhere to go is a silent no-op rather
-   * than a re-recall of the current section, which would restart its base looks.
+   * than a re-recall of the current section, which would restart its Always Effects.
    */
   private processGlobalControl(e: InputEvent): void {
     const action = e.action;
@@ -654,23 +549,19 @@ class VoiceBusEngine implements RenderEngine {
         this.brightness = typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : 1;
         return;
       }
-      case 'sequenceResync':
-        // Snap every sequencer back to step 1 — state only. Voices, envelopes, and the
-        // active section are untouched; this is a re-sync, not a reset.
-        this.seqIndex.clear();
-        return;
       default:
         // Host-level actions (tap tempo, transmit toggle) never reach the engine — the
-        // host consumes them, because bpm and the output adapters live there.
+        // host consumes them, because bpm and the output adapters live there. `sequenceResync`
+        // has no engine state to re-sync on the Effect model (no sequencers): a no-op.
         return;
     }
   }
 
   /**
-   * Release every running TRIGGER voice, leaving base layers alone — the softer panic.
-   * Base looks are spawned in `loop` mode by {@link spawnSectionLooks}, so sparing
-   * `loop` is what keeps the section's look rendering while the hits let go. Uses the
-   * normal release phase, so effects fade on their own envelopes rather than cutting.
+   * Release every running TRIGGER voice, leaving the section's base layer alone — the softer
+   * panic. Always Effects spawn in `loop` mode, so sparing `loop` is what keeps the section's
+   * base rendering while the hits let go. Uses the normal release phase, so effects fade on
+   * their own envelopes rather than cutting.
    */
   private releaseTriggerVoices(): void {
     for (const v of this.voices.pool) {
@@ -681,7 +572,7 @@ class VoiceBusEngine implements RenderEngine {
   private processEvent(e: InputEvent): void {
     if (e.kind === 'releaseBus') {
       // The dock's explicit stop: release EVERY active voice on the bus — loops included
-      // (releasing the Base bus means "stop the base look"), unlike the softer
+      // (Always Effects stop too), unlike the softer
       // releaseTriggerVoices. Absent busId = all buses (panic). Voices fade on their own
       // release envelopes rather than cutting.
       for (const v of this.voices.pool) {
@@ -692,14 +583,14 @@ class VoiceBusEngine implements RenderEngine {
       return;
     }
     if (e.kind === 'recallSection') {
-      // Activate a section so subsequent hits fire its slot graphs (layered).
+      // Activate a section so subsequent hits fire its Effects.
       this.recallTo(e.songId ?? null, e.sectionId ?? null);
       return;
     }
     if (e.kind === 'recallSongIndex') {
       const songIndex = e.songIndex;
       if (typeof songIndex !== 'number' || !Number.isInteger(songIndex)) return;
-      const song = this.show.songs?.[songIndex];
+      const song = this.show.songs[songIndex];
       const section = song?.sections[0];
       if (song) this.recallTo(song.id, section?.id ?? null);
       return;
@@ -708,18 +599,14 @@ class VoiceBusEngine implements RenderEngine {
       const sectionIndex = e.sectionIndex;
       if (typeof sectionIndex !== 'number' || !Number.isInteger(sectionIndex)) return;
       const song = e.songIndex === undefined
-        ? this.show.songs?.find((candidate) => candidate.id === this.activeSongId)
-        : this.show.songs?.[e.songIndex];
+        ? this.show.songs.find((candidate) => candidate.id === this.activeSongId)
+        : this.show.songs[e.songIndex];
       const section = song?.sections[sectionIndex];
       if (song && section) this.recallTo(song.id, section.id);
       return;
     }
     if (e.kind === 'globalControl') {
       this.processGlobalControl(e);
-      return;
-    }
-    if (e.kind === 'fireGraph') {
-      this.processFireGraph(e);
       return;
     }
     if (e.kind === 'fireEffect') {
@@ -739,7 +626,7 @@ class VoiceBusEngine implements RenderEngine {
       this.ccTable.set(ccKey(controller, null), value01);
       // MIDI-map: a mapped controller is consumed here — it never also edges a CC Cue.
       if (this.performInputMapping(e, { midiCc: controller }, value01)) return;
-      // Effect path: a Cue on this controller fires on the RISING edge through the half-way
+      // A Cue on this controller fires on the RISING edge through the half-way
       // point (a button's press, a knob sweeping up), never on every value while it moves.
       if (ccSection && !wasHigh && value01 >= CC_CUE_THRESHOLD) {
         this.fireMatchedEffects(ccSection, e, { midiCc: controller }, value01, null);
@@ -750,7 +637,7 @@ class VoiceBusEngine implements RenderEngine {
       const velocity = noteValue01(e.velocity ?? 0);
       this.noteTable.set(noteKey(e.note, e.channel ?? null), { gate: 1, velocity, releasedAtMs: null });
       this.noteTable.set(noteKey(e.note, null), { gate: 1, velocity, releasedAtMs: null });
-      // MIDI-map: a mapped note is consumed before zones, Cues and graph sources.
+      // MIDI-map: a mapped note is consumed before zones and Cues.
       if (this.performInputMapping(e, { midiNote: e.note }, 1)) return;
     }
     if (e.kind === 'noteOff' && e.note !== undefined) {
@@ -762,7 +649,7 @@ class VoiceBusEngine implements RenderEngine {
       write(e.channel ?? null);
       write(null);
       if (this.performInputMapping(e, { midiNote: e.note }, 0)) return;
-      // Effect path: a note-off releases the `hold` Effects its note / zone fired.
+      // A note-off releases the `hold` Effects its note / zone fired.
       const heldSection = this.activeEffectSection();
       if (heldSection) {
         for (const effect of matchSectionEffects(heldSection, effectInputOf(e))) {
@@ -771,190 +658,59 @@ class VoiceBusEngine implements RenderEngine {
       }
     }
     // An audio feature frame ONLY replaces the audio table (GH #214). It is never a trigger: it
-    // returns here before any graph resolution, so a 30 Hz sender cannot fire or miss anything.
+    // returns here before any Effect resolution, so a 30 Hz sender cannot fire or miss anything.
     if (e.kind === 'audioFeatures') {
       this.audioTable = { frame: normalizeAudioFrame(e.audio), atMs: e.timeMs };
       return;
     }
     // An OSC event ALSO feeds the OSC value table (an `osc` modulation source reads its address
-    // here) in addition to firing trigger graphs below — deterministic: state only changes here.
+    // here) in addition to firing Cue Effects below — deterministic: state only changes here.
     if ((e.kind === 'osc' || e.kind === 'oscValue') && e.address !== undefined) {
       const value = oscValue01(e.value ?? 0);
-      // Track feature/gate updates are modulation only: no graph fires, global control or
-      // reset. Clearing a local signal removes its key, so expired device IDs do not leak.
+      // Track feature/gate updates are modulation only: no Effect fires, no global control.
+      // Clearing a local signal removes its key, so expired device IDs do not leak.
       if (e.kind === 'oscValue' && value === 0) this.oscTable.delete(e.address);
       else this.oscTable.set(e.address, value);
-      // MIDI-map: a mapped address is consumed before zones, Cues and graph sources.
+      // MIDI-map: a mapped address is consumed before zones and Cues.
       if (this.performInputMapping(e, { oscAddress: e.address }, value)) return;
     }
     if (e.kind === 'oscValue') return;
 
-    // noteOn / key / osc fire trigger graphs; noteOff currently has no engine effect
-    // (voices decay on their own envelope).
+    // noteOn / key / osc fire the active section's matching Effects.
     if (e.kind !== 'noteOn' && e.kind !== 'key' && e.kind !== 'osc') return;
 
-    // Effect path: the active section's Effects replace graph resolution (and graph-only
-    // sequence resets) entirely for this section.
-    const effectSection = this.activeEffectSection();
-    if (effectSection) {
-      const velocity = e.kind === 'osc'
-        ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 })
-        : normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
-      this.fireMatchedEffects(effectSection, e, effectInputOf(e), velocity, e.drumId ?? null);
-      return;
-    }
-
-    // The normalized 0..1 value that drives eval (ctx.velocity), via the ONE seam every
-    // source feeds so the switch `value` mode routes identically. At this boundary MIDI
-    // note-velocity is already 0..1 (the server divided by 127 through the same seam), so
-    // a key/noteOn hit passes through as a `drum` fire; OSC carries its raw arg.
-    const value =
-      e.kind === 'osc'
-        ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 })
-        : normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
-
-    // A zone-mapped hit fires its pad graph(s), and raw-addressable inputs (MIDI/OSC)
-    // also remain available to trigger-node `source` bindings. This lets a MIDI note
-    // drive a patch zone and an authored effect/trigger graph without needing to remove
-    // the note from the patch input map.
-    const toFire = this.resolveGraphsForEvent(e);
-    const input = describeInputEvent(e);
-    // Sequence reset bindings apply BEFORE the fires below, so a hit that both resets and
-    // triggers a sequence plays step 1 on this very hit rather than one hit later. Resets are
-    // state surgery, not fires — nothing plays from them, whatever else the input resolves to.
-    const resets = applySequenceResets(this.seqIndex, this.show.graphs, {
-      drumId: e.drumId,
-      zone: e.zone,
-      note: e.kind === 'noteOn' ? e.note : undefined,
-      address: e.kind === 'osc' ? e.address : undefined,
-    });
-    for (const r of resets) {
-      this.onDiagnostic?.({ kind: 'sequence-reset', input, graphKey: r.graphKey, nodeId: r.nodeId });
-    }
-    if (toFire.length === 0) {
-      // An input that matched a reset binding IS routed — it did its job even with no graph to
-      // fire, so neither miss diagnostic applies.
-      if (resets.length > 0) return;
-      // A raw MIDI/OSC message that claimed no zone (no drumId attached by the server's
-      // zone-map) AND matched no direct graph source is genuinely UNROUTED — flag it apart
-      // from a routed drum hit whose section just holds no graph (`graph-missed`).
-      if ((e.kind === 'noteOn' || e.kind === 'osc') && !e.drumId) {
-        this.onDiagnostic?.({ kind: 'input-unrouted', input });
-      } else {
-        this.onDiagnostic?.({ kind: 'graph-missed', input, reason: this.missReasonFor(e) });
-      }
-      return;
-    }
-
-    const ctx: TriggerCtx = {
-      velocity: value,
-      sectionIndex: this.sectionIndex,
-      sectionCount: this.show.sections.length,
-      beatPhase: this.beatPhase(),
-      sourceDrumId: e.drumId ?? '',
-      bpm: this.bpm,
-      beatsPerBar: this.beatsPerBar,
-    };
-    for (const resolved of toFire) {
-      this.onDiagnostic?.({
-        kind: 'input-resolved',
-        input,
-        path: resolved.path,
-        graphKey: resolved.graphKey,
-        statePrefix: resolved.statePrefix,
-      });
-      this.fireGraph(resolved, ctx, input);
-    }
+    const velocity = e.kind === 'osc'
+      ? normalizeTriggerValue({ kind: 'osc', arg: e.value ?? 0 })
+      : normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 });
+    this.fireMatchedEffects(this.activeEffectSection(), e, effectInputOf(e), velocity, e.drumId ?? null);
   }
 
-  /**
-   * Fire an EXPLICIT graph by key — the keyboard performance intent (`fireGraph` input).
-   * The graph key is authoritative: no source re-resolution, no zone-map, no direct/pad
-   * both-fire. The client already chose which graph (the n-th of its active section); the
-   * engine plays exactly that one, ONCE. Emits the same `input-resolved` / `graph-fired`
-   * diagnostics as any other fire, or `graph-missed` (`no-such-graph`) when the key is stale.
-   *
-   * `sourceDrumId` is derived from the graph's own authored `drum` trigger source so drum-
-   * scoped effects target the right drum (matching the offline sim); a midi/osc-sourced graph
-   * carries no drum here — identical to the server's existing direct-binding path.
-   */
-  private processFireGraph(e: InputEvent): void {
-    const input = describeInputEvent(e);
-    const key = e.graphKey;
-    const graph = graphAt(this.show.graphs, key);
-    if (!key || !graph) {
-      this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'no-such-graph' });
-      return;
-    }
-    if (e.fireGraphPolicy === 'active-section') {
-      const allowed = this.activePerformanceGraphKeys();
-      if (allowed !== null && !allowed.has(key)) {
-        this.onDiagnostic?.({ kind: 'graph-missed', input, reason: 'not-active-section' });
-        return;
-      }
-    }
-    const src = triggerSourceOf(graph);
-    const ctx: TriggerCtx = {
-      velocity: normalizeTriggerValue({ kind: 'drum', velocity: e.velocity ?? 1 }),
-      sectionIndex: this.sectionIndex,
-      sectionCount: this.show.sections.length,
-      beatPhase: this.beatPhase(),
-      sourceDrumId: src?.kind === 'drum' ? src.drumId : '',
-      bpm: this.bpm,
-      beatsPerBar: this.beatsPerBar,
-    };
-    const resolved: ResolvedGraph = { graphKey: key, graph, statePrefix: key, path: 'fire-graph' };
-    this.onDiagnostic?.({
-      kind: 'input-resolved',
-      input,
-      path: resolved.path,
-      graphKey: resolved.graphKey,
-      statePrefix: resolved.statePrefix,
-    });
-    this.fireGraph(resolved, ctx, input);
-  }
+  // --- Effect firing -------------------------------------------------------
 
-  /** Resolve the viewer's allowed performance graph keys from the engine's live arrangement.
-      A missing `songs` field is the pre-setlist runtime shape and keeps its legacy unrestricted
-      fireGraph behavior. Once runtime songs exist, no active or unknown section means an empty
-      authorization set. Newer bridges carry the exact flat performance list so direct MIDI/OSC
-      graphs remain keyboard-addressable; older slot-grid shows derive the set from every slot. */
-  private activePerformanceGraphKeys(): ReadonlySet<string> | null {
-    if (!this.show.songs) return null;
-    if (this.activeSongId === null || this.activeSectionId === null) return new Set();
-    const song = this.show.songs.find((candidate) => candidate.id === this.activeSongId);
-    const section = song?.sections.find((candidate) => candidate.id === this.activeSectionId);
-    if (!section) return new Set();
-    if (section.performanceGraphKeys) return new Set(section.performanceGraphKeys);
-    return new Set(Object.values(section.slots).flatMap((keys) => keys.filter((key): key is string => key !== null)));
-  }
-
-  // --- Effect path (effect chains) ----------------------------------------
-
-  /** The active song section, when it runs on the Effect path (`effects` defined). */
+  /** The active song section, or null when none is active. */
   private activeEffectSection(): SongSection | null {
-    if (this.activeSongId === null || this.activeSectionId === null || !this.show.songs) return null;
+    if (this.activeSongId === null || this.activeSectionId === null) return null;
     const song = this.show.songs.find((s) => s.id === this.activeSongId);
-    const section = song?.sections.find((s) => s.id === this.activeSectionId);
-    return section?.effects ? section : null;
+    return song?.sections.find((s) => s.id === this.activeSectionId) ?? null;
   }
 
-  /** Fire every Effect of `section` the input matches, in section order. */
+  /** Fire every Effect of `section` the input matches, in section order. With no active
+      section nothing matches, and the input is reported as missed / unrouted. */
   private fireMatchedEffects(
-    section: SongSection,
+    section: SongSection | null,
     e: InputEvent,
     event: EffectInputEvent,
     velocity: number,
     sourceDrumId: string | null,
   ): void {
     const input = describeInputEvent(e);
-    const matched = matchSectionEffects(section, event);
-    if (matched.length === 0) {
+    const matched = section ? matchSectionEffects(section, event) : [];
+    if (!section || matched.length === 0) {
       if (e.kind === 'cc') return; // a CC edge with no Cue is ordinary modulation, not a miss
       if ((e.kind === 'noteOn' || e.kind === 'osc') && !e.drumId) {
         this.onDiagnostic?.({ kind: 'input-unrouted', input });
       } else {
-        this.onDiagnostic?.({ kind: 'effect-missed', input, sectionId: section.id });
+        this.onDiagnostic?.({ kind: 'effect-missed', input, sectionId: section?.id ?? null });
       }
       return;
     }
@@ -964,8 +720,8 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   /**
-   * Audition one Effect of the ACTIVE section by id (`fireEffect`). Routed like `fireGraph`: an
-   * authoritative intent, no input re-resolution. A Kit-row Effect fires with no struck drum; a
+   * Audition one Effect of the ACTIVE section by id (`fireEffect`): an authoritative intent,
+   * no input re-resolution. A Kit-row Effect fires with no struck drum; a
    * drum-row Effect fires as if its row's drum was hit.
    */
   private processFireEffect(e: InputEvent): void {
@@ -975,7 +731,7 @@ class VoiceBusEngine implements RenderEngine {
   /** Fire one Effect of the active section by id, as an audition (`fireEffect`, MIDI-map). */
   private fireEffectById(effectId: string, velocity: number, input: VoiceInputDescriptor): void {
     const section = this.activeEffectSection();
-    const effect = section?.effects?.find((candidate) => candidate.id === effectId);
+    const effect = section?.effects.find((candidate) => candidate.id === effectId);
     if (!section || !effect) {
       this.onDiagnostic?.({ kind: 'effect-skipped', input, sectionId: section?.id ?? null, effectId, reason: 'no-such-effect' });
       return;
@@ -992,7 +748,7 @@ class VoiceBusEngine implements RenderEngine {
 
   /**
    * Perform the InputMapping `facet` matches, if any, and report whether the input was
-   * CONSUMED (the caller then stops: no zone, Cue or graph source sees it). Every mapped
+   * CONSUMED (the caller then stops: no zone or Cue sees it). Every mapped
    * input is consumed, whatever its target does. The modulation tables (CC / OSC / note) were
    * already written by the caller, so a Control device can still follow the same knob.
    *
@@ -1034,7 +790,7 @@ class VoiceBusEngine implements RenderEngine {
     switch (target.kind) {
       case 'recallSection': {
         const songId = target.songId
-          ?? this.show.songs?.find((song) => song.sections.some((s) => s.id === target.sectionId))?.id
+          ?? this.show.songs.find((song) => song.sections.some((s) => s.id === target.sectionId))?.id
           ?? null;
         this.recallTo(songId, target.sectionId);
         return true;
@@ -1044,8 +800,8 @@ class VoiceBusEngine implements RenderEngine {
         return true;
       case 'fireCell': {
         const section = this.activeEffectSection();
-        const effects = section ? cellEffects(section, target.cell) : [];
-        if (!section) return true; // a graph-path section has no cells to fire
+        if (!section) return true; // no active section: no cells to fire
+        const effects = cellEffects(section, target.cell);
         if (effects.length === 0) {
           this.onDiagnostic?.({ kind: 'effect-missed', input, sectionId: section.id });
           return true;
@@ -1064,7 +820,7 @@ class VoiceBusEngine implements RenderEngine {
     if (!section) return [];
     const target = mapping.target;
     if (target.kind === 'fireCell') return cellEffects(section, target.cell);
-    if (target.kind === 'fireEffect') return (section.effects ?? []).filter((effect) => effect.id === target.effectId);
+    if (target.kind === 'fireEffect') return section.effects.filter((effect) => effect.id === target.effectId);
     return [];
   }
 
@@ -1130,12 +886,15 @@ class VoiceBusEngine implements RenderEngine {
       skip('retrigger-ignore');
       return;
     }
-    const layerOrder = section.effects?.indexOf(effect) ?? 0;
+    const layerOrder = section.effects.indexOf(effect);
     const action = effectPlayAction(effect, { velocity, sourceDrumId, bpm: this.bpm, layerOrder, rng: this.prng });
     if (!action || !this.ensureChainEffectDef(action.effectId)) {
       skip('unknown-generator');
       return;
     }
+    // A Splice / Slice member names its own internal def; the pool drops a member whose def is
+    // missing, so build each one too (a nested Generator slot would otherwise render blank).
+    for (const member of action.spliceInputs ?? []) this.ensureChainEffectDef(member.effectId);
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {
@@ -1159,13 +918,6 @@ class VoiceBusEngine implements RenderEngine {
     return true;
   }
 
-  /** Release the Effect-path loop / hold voices (section change). One-shots decay alone. */
-  private releaseSustainedChainVoices(): void {
-    for (const v of this.voices.pool) {
-      if (v.active && v.chainEffectId !== undefined && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
-    }
-  }
-
   /** Fire the active Effect section's Clock Effects whose grid the transport just crossed.
       Runs inside `tick`, after the input queue drains, so it is ordered by the event log. */
   private fireClockEffects(beat: number): void {
@@ -1179,261 +931,6 @@ class VoiceBusEngine implements RenderEngine {
     }
   }
 
-  private resolveGraphsForEvent(e: InputEvent): ResolvedGraph[] {
-    const out: ResolvedGraph[] = [];
-    if (e.drumId) out.push(...this.resolveHitGraphs(e.drumId, e.zone ?? ''));
-    if (e.kind === 'noteOn' || e.kind === 'osc') out.push(...this.resolveDirectGraphs(e));
-    return out;
-  }
-
-  /**
-   * DIRECT trigger-source resolution. Matches each
-   * authored graph's trigger-node `source` against the raw input: a MIDI note event fires
-   * graphs whose source is `{ kind:'midi', note }`; an OSC event fires `{ kind:'osc',
-   * address }`. `drum` sources are pad-bound and never match here (they fire via the
-   * padKey path). The state prefix is the graph KEY, so each direct-bound graph keeps its
-   * own deterministic eval state. Pure + deterministic (iterates a stable key order).
-   *
-   * CC sources await a CC input event — there is no CC `InputEvent` kind yet, so only
-   * `note` sources are reachable from a raw MIDI note here.
-   */
-  private resolveDirectGraphs(e: InputEvent): ResolvedGraph[] {
-    const out: ResolvedGraph[] = [];
-    for (const [key, graph] of Object.entries(this.show.graphs)) {
-      const src = triggerSourceOf(graph);
-      if (!src) continue;
-      const match =
-        e.kind === 'osc'
-          ? src.kind === 'osc' && e.address !== undefined && src.address === e.address
-          : src.kind === 'midi' && src.note !== undefined && src.note === e.note;
-      if (match) out.push({ graphKey: key, graph, statePrefix: key, path: e.kind === 'osc' ? 'direct-osc' : 'direct-midi' });
-    }
-    return out;
-  }
-
-  /**
-   * Resolve which graphs to fire for a (drumId, zone) hit.
-   *
-   * Slots are keyed per pad by padKey `"drumId:zone"` (the same identity `graphs`
-   * uses), so resolution is a direct `section.slots[padKey(drumId, zone)]` lookup —
-   * each zone of a drum fires ITS OWN slot graphs. If the active section has non-null
-   * slot entries for this pad, returns one entry per filled slot, each with a per-slot-
-   * POSITION state prefix (`${key}#${slotIndex}`) so layered graphs from the same hit —
-   * even two slots holding the SAME graph key — get distinct PRNG/sequence/latch state
-   * and don't interfere with each other.
-   *
-   * Falls back to the flat `graphs[padKey(drumId, zone)]` graph when:
-   *  - no active section / song is set, OR
-   *  - the active section has no slots for this pad, OR
-   *  - all slots are null (unassigned).
-   * The fallback restores the pre-section per-zone behaviour exactly.
-   */
-  private resolveHitGraphs(drumId: string, zone: string): ResolvedGraph[] {
-    const pad = padKey(drumId, zone);
-    if (this.activeSongId !== null && this.activeSectionId !== null && this.show.songs) {
-      const song = this.show.songs.find((s) => s.id === this.activeSongId);
-      const section = song?.sections.find((s) => s.id === this.activeSectionId);
-      if (section) {
-        const slots = section.slots[pad];
-        if (slots) {
-          const resolved: ResolvedGraph[] = [];
-          for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
-            const key = slots[slotIndex];
-            if (!key) continue;
-            const g = graphAt(this.show.graphs, key);
-            // Prefix is per-slot POSITION, not the bare graph key: two slots holding
-            // the SAME key in one section must run as INDEPENDENT layers (own
-            // sequence/random/toggle/latch state), so fold in the slot index. Cross-
-            // section reuse stays stable — slot 0 of any section shares one state key.
-            if (g) resolved.push({ graphKey: key, graph: g, statePrefix: `${key}#${slotIndex}`, path: 'pad-section' });
-          }
-          if (resolved.length > 0) return resolved;
-        }
-      }
-    }
-    const g = graphAt(this.show.graphs, pad);
-    return g ? [{ graphKey: pad, graph: g, statePrefix: pad, path: 'pad-fallback' }] : [];
-  }
-
-  private missReasonFor(e: InputEvent): GraphMissReason {
-    if (!e.drumId) return 'no-direct-match';
-    const pad = padKey(e.drumId, e.zone ?? '');
-    if (this.activeSongId === null || this.activeSectionId === null || !this.show.songs) {
-      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-active-section';
-    }
-    const song = this.show.songs.find((s) => s.id === this.activeSongId);
-    const section = song?.sections.find((s) => s.id === this.activeSectionId);
-    const slots = section?.slots[pad];
-    if (!slots || slots.every((key) => !key || !graphAt(this.show.graphs, key))) {
-      return graphAt(this.show.graphs, pad) ? 'no-direct-match' : 'no-slot-graphs';
-    }
-    return 'no-pad-fallback';
-  }
-
-  private beatPhase(): number {
-    return this.beat - Math.floor(this.beat);
-  }
-
-  // --- section looks (spawn/release on recall) ---------------------------
-  //
-  // A section's `looks` name one loop effect per bus that plays while the section is
-  // active. Recalling a section mirrors the offline sim (`sim.recallSection`)
-  // STRUCTURALLY so connected (engine) and offline (sim) output agree: iterate buses in
-  // show order, release each bus's prior non-oneshot voices, then — where the section
-  // names a look for that bus — spawn that effect as a looped, kit-scoped voice.
-  // Deterministic (no RNG; the play action is fixed given section + effect + preset) and
-  // non-stacking (release precedes spawn, so a repeated recall replaces rather than
-  // accumulates). Oneshot voices are never section-managed — they decay on their own
-  // envelope. A null/absent look releases the bus but spawns nothing, so a section with
-  // empty looks is a pure release (a no-op when there is nothing to release).
-
-  private spawnSectionLooks(sectionId: string | null): void {
-    if (sectionId === null) {
-      // A valid zero-section song still replaces the prior section. Release its old base looks
-      // instead of leaving visible output attached to a section the engine no longer owns.
-      for (const v of this.voices.pool) {
-        if (v.active && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
-      }
-      return;
-    }
-    const section = this.show.sections.find((s) => s.id === sectionId);
-    if (!section) return;
-    for (const bus of this.show.buses) {
-      const effectId = section.looks[bus.id] ?? null;
-      for (const v of this.voices.pool) {
-        if (v.active && v.busId === bus.id && v.mode !== 'oneshot') releaseVoice(v, this.timeMs);
-      }
-      if (!effectId) continue;
-      const action = this.lookAction(effectId, `Section: ${section.name}`);
-      if (!action) continue;
-      this.shapeCascadeVoice(
-        this.voices.spawn(action, null, 1, {
-          effectsById: this.effectsById,
-          busById: this.busById,
-          latched: this.latched,
-          timeMs: this.timeMs,
-          bpm: this.bpm,
-        }),
-      );
-    }
-  }
-
-  /** The looped play action for one section look — the effect's default-preset params
-      (or its spec defaults), kit scope, on the effect's own bus (`''` resolves to
-      `effect.busId` in the pool spawn), no latch. Null for an unknown effect. Mirrors
-      the sim's `lookAction`. */
-  private lookAction(effectId: string, via: string): PlayAction | null {
-    const effect = this.effectsById.get(effectId);
-    if (!effect) return null;
-    const params = this.presetsById.get(`${effectId}:default`)?.params ?? this.lookDefaultParams(effect);
-    return { kind: 'play', effectId, mode: 'loop', scope: 'kit', busId: '', params, via, latchKey: null };
-  }
-
-  /** Default param record from an effect's spec — the fallback when no
-      `${effectId}:default` preset exists. Typed to the voice `ParamValues`
-      (number | bool), mirroring the sim's `defaultParams(effect)`. */
-  private lookDefaultParams(effect: EffectDef): ParamValues {
-    const out: ParamValues = {};
-    for (const s of effect.params) out[s.key] = s.default;
-    return out;
-  }
-
-  // --- graph eval (delegated to eval-graph.ts) ---------------------------
-
-  /** The engine-owned eval state bundle handed to the pure graph evaluator. Built per
-      fire so it always sees the current `presetsById` (reassigned on `setShow`). */
-  private evalState(): EvalState {
-    return {
-      seqIndex: this.seqIndex,
-      lastPick: this.lastPick,
-      latched: this.latched,
-      prng: this.prng,
-      presetsById: this.presetsById,
-      isVoiceAlive: (id) => this.voices.isVoiceAlive(id),
-      mixMemberSnapshots: this.mixMemberSnapshots,
-      isLayerLive: (pad, originNodeId) => this.voices.isLayerLive(pad, originNodeId),
-      renderPlanCache: this.renderPlanCache,
-    };
-  }
-
-  private fireGraph(resolved: ResolvedGraph, ctx: TriggerCtx, input: VoiceInputDescriptor): void {
-    const actions = evalGraph(this.evalState(), resolved.graph, resolved.statePrefix, ctx);
-    const playEffects = actions
-      .filter((a): a is PlayAction => a.kind === 'play')
-      .map((a) => a.effectId);
-    this.onDiagnostic?.({
-      kind: 'graph-fired',
-      input,
-      path: resolved.path,
-      graphKey: resolved.graphKey,
-      statePrefix: resolved.statePrefix,
-      actionCount: actions.length,
-      playEffects,
-    });
-    this.applyActions(actions, ctx, resolved.statePrefix);
-  }
-
-  /**
-   * Apply a flat action list produced by graph eval (or by draining a pending fire).
-   * `PlayAction`s spawn voices; `StopAction`s release them; `PendingAction`s enqueue a
-   * deferred fire at `timeMs + relativeDelayMs`. Shared between the immediate fire path
-   * (`fireGraph`) and the drain path (`drainPendingFires`) so nested delays work
-   * identically to immediate fires. `pad` is the eval state prefix — tagged onto each
-   * spawned voice so origin-keyed liveness (R13 delay-overlap Mix) can scope its scan.
-   */
-  private applyActions(actions: Action[], ctx: TriggerCtx, pad: string): void {
-    for (const a of actions) {
-      if (a.kind === 'stop') {
-        const v = this.voices.findActiveVoice(a.voiceId);
-        if (v) releaseVoice(v, this.timeMs);
-      } else if (a.kind === 'pending') {
-        this.enqueuePendingFire(a.descriptor);
-      } else {
-        this.shapeCascadeVoice(
-          this.voices.spawn(a, ctx.sourceDrumId, ctx.velocity, {
-            effectsById: this.effectsById,
-            busById: this.busById,
-            latched: this.latched,
-            timeMs: this.timeMs,
-            bpm: this.bpm,
-            pad,
-          }),
-        );
-      }
-    }
-  }
-
-  /** Enqueue a pending fire from a delay node. `fireAtMs` is absolute (engine timeMs +
-      relative delay) and is snapshot-stable — the bpm at enqueue is already baked into
-      `relativeDelayMs` inside the descriptor. */
-  private enqueuePendingFire(descriptor: PendingDescriptor): void {
-    this.pendingFires.push({
-      fireAtMs: this.timeMs + descriptor.relativeDelayMs,
-      enqueueOrder: this.pendingFireCounter++,
-      descriptor,
-    });
-  }
-
-  /**
-   * Drain pending fires whose `fireAtMs ≤ this.timeMs`. Called in `tick()` right after
-   * `drainQueue()`. Fires are processed in ascending (fireAtMs, enqueueOrder) order for
-   * stable determinism across ticks. Each drained fire re-enters the SAME eval path via
-   * `evalChildren` + `applyActions`, so nested delays re-enqueue correctly and the
-   * cycle/seen-set guard from the original eval is preserved.
-   */
-  private drainPendingFires(): void {
-    if (this.pendingFires.length === 0) return;
-    const due = this.pendingFires.filter((f) => f.fireAtMs <= this.timeMs);
-    if (due.length === 0) return;
-    this.pendingFires = this.pendingFires.filter((f) => f.fireAtMs > this.timeMs);
-    due.sort((a, b) => a.fireAtMs - b.fireAtMs || a.enqueueOrder - b.enqueueOrder);
-    for (const f of due) {
-      const { graph, pad, ctx, childIds, viaPrefix, seen, draft } = f.descriptor;
-      const actions = evalChildren(this.evalState(), graph, pad, childIds, ctx, viaPrefix, seen, draft ?? null);
-      this.applyActions(actions, ctx, pad);
-    }
-  }
-
   // --- tick --------------------------------------------------------------
 
   tick(now: number, dt: number, transport: TransportState): void {
@@ -1442,14 +939,13 @@ class VoiceBusEngine implements RenderEngine {
     this.beat = transport.beat;
     this.bpm = transport.bpm;
     this.beatsPerBar = transport.beatsPerBar;
-    this.sectionIndex = this.show.sections.length > 0 ? transport.bar % this.show.sections.length : 0;
 
     this.drainQueue();
-    this.drainPendingFires();
     this.fireClockEffects(transport.beat);
 
-    // Advance voice envelopes, then reap dead voices back into the pool.
-    advanceEnvelopes(this.voices.pool, this.timeMs, this.busById);
+    // Advance voice envelopes, then reap dead voices back into the pool. No bus map: every
+    // voice plays on the internal poly bus, so a release fades on the voice's own `releaseMs`.
+    advanceEnvelopes(this.voices.pool, this.timeMs, NO_BUSES);
     reapDeadVoices(this.voices.pool, this.latched);
 
     this.advanceLatchedSpliceMotion(dt);
@@ -1517,13 +1013,15 @@ class VoiceBusEngine implements RenderEngine {
   }
 
   stats(): EngineStats {
+    // Bus levels are derived from the live voices (effect chains): the summed voice levels per
+    // bus, capped at 1 — the same rule the offline Sim's dock meter uses.
     const busLevels: Record<string, number> = {};
-    for (const b of this.show.buses) busLevels[b.id] = this.busLevel(b);
     let voiceCount = 0;
     const voices: VoiceStat[] = [];
     for (const v of this.voices.pool) {
       if (!v.active) continue;
       voiceCount++;
+      busLevels[v.busId] = Math.min(1, (busLevels[v.busId] ?? 0) + v.level * v.deckGain);
       voices.push({
         id: v.id,
         busId: v.busId,
@@ -1539,26 +1037,7 @@ class VoiceBusEngine implements RenderEngine {
     return { timeMs: this.timeMs, beat: this.beat, voiceCount, busLevels, voices, perf: this.perf };
   }
 
-  private busLevel(bus: Bus): number {
-    let count = 0;
-    let sum = 0;
-    let mx = 0;
-    for (const v of this.voices.pool) {
-      if (!v.active || v.busId !== bus.id) continue;
-      const lvl = v.level * v.deckGain;
-      count++;
-      sum += lvl;
-      if (lvl > mx) mx = lvl;
-    }
-    if (count === 0) return 0;
-    return bus.polyphony === 'mono' ? mx : Math.min(1, sum);
-  }
 }
-
-// ---- Section recall ----------------------------------------------------------
-// A recallSection input now drives the section morph directly (spawnSectionLooks above),
-// structurally mirroring sim.recallSection so connected + offline output match; the
-// sectionIndex tracking in tick() still feeds switch:section for count-based routing.
 
 // ---- Null adapter (test fake) ----------------------------------------------
 
@@ -1604,6 +1083,7 @@ class NullEngine implements RenderEngine {
 }
 
 const EMPTY_FRAME = new Float32Array(0);
+const NO_BUSES = new Map<string, Bus>();
 
 function emptyPerfStats(): EnginePerfStats {
   return { tickMs: 0, queueMs: 0, pendingMs: 0, envelopeMs: 0, paramsMs: 0, compositeMs: 0, voiceCount: 0 };
@@ -1634,7 +1114,6 @@ function describeInputEvent(e: InputEvent): VoiceInputDescriptor {
     ...(e.velocity !== undefined ? { velocity: e.velocity } : {}),
     ...(e.songId !== undefined ? { songId: e.songId } : {}),
     ...(e.sectionId !== undefined ? { sectionId: e.sectionId } : {}),
-    ...(e.graphKey !== undefined ? { graphKey: e.graphKey } : {}),
     ...(e.effectId !== undefined ? { effectId: e.effectId } : {}),
   };
 }
@@ -1658,7 +1137,3 @@ function effectInputOf(e: InputEvent): EffectInputEvent {
   if (e.kind === 'osc' && e.address !== undefined) out.oscAddress = e.address;
   return out;
 }
-
-// `bandIndex` lives in eval-graph.ts (graph eval owns band resolution). Re-exported here
-// so the public `./engine` import surface — which the engine tests consume — is unchanged.
-export { bandIndex } from './eval-graph';

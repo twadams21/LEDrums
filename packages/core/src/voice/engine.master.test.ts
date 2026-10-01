@@ -23,7 +23,7 @@ function showOf(...sections: SongSection[]): Show {
 }
 
 const section = (id: string, master?: unknown[]): SongSection => ({
-  id, name: id, slots: {}, effects: [wash], ...(master ? { master: masterChainSchema.parse(master) } : {}),
+  id, name: id, effects: [wash], ...(master ? { master: masterChainSchema.parse(master) } : {}),
 });
 
 const HALF = [{ uid: 'l', modifierId: 'levels', params: { brightness: 0.5 } }];

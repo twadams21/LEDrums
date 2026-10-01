@@ -27,16 +27,15 @@ function project(name: string, pixels: number, host = '127.0.0.1'): Project {
   p.inputMap.midiNotes = [{ note: name === 'old' ? 60 : 61, drumId: name === 'old' ? 'kick' : 'snare', slot: 0 }];
   return p;
 }
-function library(note = 38) {
-  return { version: 2, data: { activeShowId: 'show', shows: { show: { id: 'show', name: 'Show', authored: {
-    buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 0 }],
-    graphs: { 'graph:hit': { version: 3, nodes: [
-      { id: 'trigger', kind: 'trigger', source: { kind: 'midi', note } },
-      { id: 'effect', kind: 'effect', effectId: 'flash', mode: 'loop', params: { brightness: 1 }, scope: 'kit', busId: 'main' },
-      { id: 'output', kind: 'output' },
-    ], edges: [{ id: 'a', from: 'trigger', to: 'effect' }, { id: 'b', from: 'effect', to: 'output' }] } },
-    effects: [{ id: 'flash', name: 'Flash', generatorId: 'whole-drum', busId: 'main', scope: 'kit', params: [], attackMs: 0, sustainMs: 100, releaseMs: 100 }],
-    presets: [], songs: [{ id: 'song', name: 'Song', sections: [{ id: 'section', name: 'Section', graphs: ['graph:hit'], looks: {} }] }],
+/** A v3 show library whose one section holds a looping Effect: a Cue on MIDI `note`, or (with
+    `zone`) a zone Effect on that drum's first zone. */
+function library(note = 38, zone?: string) {
+  const flash = zone
+    ? { id: 'flash', cell: { row: zone, column: { kind: 'zone', slot: 0 } } }
+    : { id: 'flash', cell: { row: 'kit', column: { kind: 'cue' } }, trigger: { kind: 'cue', source: { midiNote: note } } };
+  const effect = { ...flash, generator: { kind: 'solid', params: { brightness: 1 } }, amp: { attackMs: 0, length: 'loop', releaseMs: 100 } };
+  return { version: 3, data: { activeShowId: 'show', shows: { show: { id: 'show', name: 'Show', authored: {
+    songs: [{ id: 'song', name: 'Song', sections: [{ id: 'section', name: 'Section', effects: [effect], master: [] }] }],
     activeSongId: 'song', activeSectionId: 'section',
   } } } } };
 }
@@ -134,8 +133,7 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
 
   it('uses the replacement MIDI-to-drum mapping on the next actual runtime input', async () => {
     const h = await harness(mode);
-    const lib = library();
-    Object.assign(lib.data.shows.show.authored.graphs['graph:hit'].nodes[0]!, { source: { kind: 'drum', drumId: 'snare', zone: '0' } });
+    const lib = library(38, 'snare');
     await h.replacement.restore({ project: project('mapped', 3), showLibrary: lib, songLibrary: null });
     h.host.engine.setActiveClip('trigger', null);
     const activeClip = () => h.host.engine.getProject().composition.layers.find((l) => l.id === 'trigger')!.activeClipId;
@@ -154,7 +152,7 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
     const frame = h.voiceHost ? h.voiceHost.engine.frame() : h.host.engine.getFrame();
     await expect(h.replacement.load({})).rejects.toThrow();
     await expect(h.replacement.restore({ project: project('bad-library', 2),
-      showLibrary: { version: 2, data: 'malformed' }, songLibrary: null })).rejects.toThrow('Invalid authored');
+      showLibrary: { version: 3, data: 'malformed' }, songLibrary: null })).rejects.toThrow('Invalid show library v3');
     expect(h.safety).not.toHaveBeenCalled();
     h.safety.mockResolvedValueOnce(false);
     await expect(h.replacement.load(project('bad', 2))).rejects.toThrow('Backup failed');
@@ -253,7 +251,7 @@ for (const mode of ['voice', 'legacy'] as const) describe(`${mode} replacement t
 it('canvas preflight cannot publish a replacement scene before the safety snapshot succeeds', async () => {
   const h = await harness('voice');
   const oldScene = { id: 'transaction-scene', name: 'Old', sampler: { kind: 'cylinder' as const }, lenses: [], elements: [] };
-  h.voiceHost!.setShow({ graphs: {}, buses: [], effects: [], presets: [], sections: [], canvasScenes: [oldScene] });
+  h.voiceHost!.setShow({ songs: [], canvasScenes: [oldScene] });
   const lib = library();
   const nextScene = { ...oldScene, name: 'New' };
   Object.assign(lib.data.shows.show.authored, { canvasScenes: [nextScene] });

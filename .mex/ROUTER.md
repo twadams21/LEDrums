@@ -16,7 +16,7 @@ edges:
     condition: when starting a task — check the pattern index for a matching pattern file
   - target: ../PRODUCT.md
     condition: when designing, restyling, or building UI — brand, register, users, and design principles (visual system in ../DESIGN.md once generated)
-last_updated: 2026-09-27
+last_updated: 2026-09-30
 ---
 
 # Session Bootstrap
@@ -35,6 +35,50 @@ UI / visual work is governed by Impeccable design context, not the `context/` fi
 Read these before any redesign, restyle, or new-UI task, and drive the work with the `/impeccable` skill.
 
 ## Current Project State
+
+**Effect chains replace the trigger graph (2026-09-30, draft PR stack #246 → #253, NOT merged):**
+Session on Trent's MacBook Pro (machine identity checked). The stack is based on `main` at
+`07ecb048` (v0.3.5).
+
+Sources:
+- Trent's requests and Q&A answers in this session.
+- Tim's voice note, relayed by Trent: strobe and sparkler should modify existing light (a splice → strobe chain), and strobe needs ADSR, fade and two colours.
+- The spec in `docs/plans/2026-09-30-effect-chains/spec.md` (GH #237). The slice docs sit beside it.
+
+Trent decided the following:
+- Linear Ableton-style Effect chains (Trigger → Generator → Modifiers → Target) replace the canvas graph.
+- A section master chain.
+- The 54 effects collapse into about 10 Generator kinds with Styles. wave-collapse merges into radial-wash. follow-hoop merges into whole-drum, renamed "Simple".
+- Triggers are always / zone / clock / cue. Retrigger is set per Effect. Modulation comes from Control devices. The Target is a drum + hoop picker.
+- The UI keeps the bottom strip for device cards with every setting on the face, and puts a grid above it: drums as rows, zones plus Always / Clock / Cue as columns, and a Kit row.
+- A cell holds a stack of Effects.
+- An Ableton-style MIDI-map mode for buttons, knobs, OSC and keys.
+- Presets are user-saved only, via save-to-file.
+- Legacy import brings everything except graphs and effects.
+- "Non-hit Effects are analogous to a new zone (trigger)".
+- GPU rendering was dropped from this block. The particle prototype is parked on `spike/particle-world`.
+
+Everything this model replaced has been deleted: the graph model, the graph editor, the xyflow dependency, `fireGraph`, the web v1/v2 read paths, and the server's v2 restore. No `TriggerGraph` / `@xyflow` / `fireGraph` reference remains outside `legacy-import.ts` and the docs.
+
+Storage and import:
+- Persistence uses new keys only: `ledrums:shows:v3` and `ledrums:songs:v2`.
+- The old keys are left untouched and offered for import.
+- The server stores old libraries as archives and never runs them.
+
+Agent-chosen (Trent hasn't reviewed these):
+- `InputMapping` is the name for MIDI-map bindings, to keep them apart from the Control device's `ControlMapping`.
+- Input precedence is global control > mapping > zone / cue.
+- The map-mode shortcut is `mod+m`, matching Ableton. Chrome on macOS probably takes Cmd+M for minimise; the recommendation is `mod+shift+m`, and it is awaiting Trent.
+- The New show dialog's "From my trigger zones" and "Blank" now produce the same show. The copy is reworded; whether to keep both is open for Trent and Tim.
+
+Bugs found and fixed along the way:
+- A show or song id of `__proto__` was lost.
+- Canvas-scene `x` / `y` edits never reached the engine.
+- A Splice slot holding a nested Generator rendered blank.
+
+Process: built in waves with dynamic Workflows (opus/medium implementers and reviewers, isolated worktrees, pool of 5) against two orchestrator-written contracts: `trigger-lab/effects-api.ts` and `map-api.ts`.
+
+Verification: each wave's integration branch passed typecheck, the full serial sweep and `ui-shot --all --strict` offline. Merge through gh-stack only, after Trent's review.
 
 **Section and graph authoring fixes (2026-09-25, branch `fix/section-authoring`):**
 Requested by Trent in this session on Trent's MacBook Pro (machine identity checked), based on

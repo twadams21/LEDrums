@@ -1,6 +1,6 @@
 /**
- * Palette grouping — the registry projected into category buckets for the graph palette's
- * "add a modifier" section (S32). Purely derived from {@link listModifiers}, so every modifier
+ * Palette grouping — the registry projected into category buckets for the "add a modifier"
+ * picker (S32). Purely derived from {@link listModifiers}, so every modifier
  * a slice registers appears automatically, in a stable category order, with no hardcoded id
  * list. Empty categories are dropped. UI-facing labels live here (core owns the category
  * vocabulary); the web palette renders these groups + a category filter over them.

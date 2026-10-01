@@ -131,10 +131,10 @@ describe('velocity sensitivity at the input seam', () => {
     expect(engine.events[0]!.value).toBe(0.8);
   });
 
-  it('does NOT shape an explicit graph fire — it carries a key, not an input identity', () => {
+  it('does NOT shape an explicit Effect fire — it carries an Effect id, not an input identity', () => {
     const { host, engine } = makeHost();
 
-    host.applyInput({ kind: 'fireGraph', graphKey: 'kick:0', velocity: 0.8 });
+    host.applyInput({ kind: 'fireEffect', effectId: 'fx', velocity: 0.8 });
 
     expect(engine.events[0]!.velocity).toBe(0.8);
   });

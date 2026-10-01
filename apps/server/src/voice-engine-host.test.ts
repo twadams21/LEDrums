@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defaultProject, voice } from '@ledrums/core';
+import { defaultProject, effectChain, voice } from '@ledrums/core';
 import type { PixelOutput } from '@ledrums/io';
-import { graphFireKeyOf } from '@ledrums/protocol';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
 
@@ -17,63 +16,32 @@ class FakeOutput implements PixelOutput {
   }
 }
 
+/** A kit-target struck-drum flash (the Solid Generator's Simple Style) on `row`, 200ms long. */
+function flash(id: string, over: Record<string, unknown>): effectChain.Effect {
+  return effectChain.parseEffect({
+    id,
+    generator: { kind: 'solid', style: 'simple', params: { hue: 60, brightness: 1 } },
+    amp: { attackMs: 0, length: { ms: 200 }, releaseMs: 200 },
+    target: { kind: 'kit' },
+    ...over,
+  });
+}
+
+/** A Cue flash on a raw MIDI note or OSC address. */
+function cueFlash(id: string, source: Record<string, unknown>): effectChain.Effect {
+  return flash(id, { cell: { row: 'kit', column: { kind: 'cue' } }, trigger: { kind: 'cue', source } });
+}
+
+function showOf(...effects: effectChain.Effect[]): voice.Show {
+  return { songs: [{ id: 'song', name: 'Song', sections: [{ id: 'section', name: 'Section', effects }] }] };
+}
+
 /**
- * A minimal Show: one `flash` effect on a poly bus, scoped to the whole kit, fired by
- * the trigger graph registered for the `padKey(drumId, zone)` pad. attackMs=0 so the voice
- * reaches full level on the first tick; brightness=1 so the compositor emits light.
+ * A minimal Show: one flash Effect on the `(drumId, zone)` cell. attackMs=0 so the voice reaches
+ * full level on the first tick; brightness=1 so the compositor emits light.
  */
 function makeShow(drumId: string, zone: string): voice.Show {
-  const effect: voice.EffectDef = {
-    id: 'fx-flash',
-    name: 'Flash',
-    generatorId: 'whole-drum',
-    busId: 'main',
-    scope: 'kit',
-    params: [
-      { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: 60 },
-      { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
-    ],
-    attackMs: 0,
-    sustainMs: 200,
-    releaseMs: 200,
-  };
-  const node = (id: string, kind: voice.NodeKind, extra: Partial<voice.GraphNode> = {}): voice.GraphNode => ({
-    id,
-    kind,
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: false,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 1,
-    ...extra,
-    // `extra` is a Partial, so spreading it widens required keys (e.g. valueMode) to
-    // `| undefined`; the literal is structurally complete, so re-assert the full type.
-  } as voice.GraphNode);
-  const graph: voice.TriggerGraph = {
-    nodes: [
-      node('trig', 'trigger'),
-      node('play', 'play', { effectId: 'fx-flash', params: { hue: 60, brightness: 1 } }),
-    ],
-    edges: [{ id: 'e1', from: 'trig', to: 'play' }],
-  };
-  return {
-    buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }],
-    graphs: { [voice.padKey(drumId, zone)]: graph },
-    sections: [],
-    effects: [effect],
-    presets: [],
-  };
+  return showOf(flash('fx-flash', { cell: { row: drumId, column: { kind: 'zone', slot: Number(zone) } } }));
 }
 
 function makeHost(engine?: voice.RenderEngine) {
@@ -95,7 +63,7 @@ function frameMax(rgb: Uint8Array): number {
 }
 
 describe('VoiceEngineHost', () => {
-  it('starts black, then lights up after a key hit fires its graph', () => {
+  it('starts black, then lights up after a key hit fires its Effect', () => {
     const { host } = makeHost();
     host.setShow(makeShow('kick', '0'));
 
@@ -122,7 +90,7 @@ describe('VoiceEngineHost', () => {
   it('resolves a mapped MIDI note to its drum via the project inputMap', () => {
     const { host, project } = makeHost();
     // defaultProject maps note 36 → kick/slot 0. The pad zone is the slot index as a string,
-    // so the show must be keyed the same way the inputMap resolves it.
+    // so the Effect's cell must name the slot the inputMap resolves.
     const map = project.inputMap.midiNotes.find((m) => m.note === 36)!;
     expect(map.drumId).toBe('kick');
     host.setShow(makeShow('kick', String(map.slot)));
@@ -134,11 +102,11 @@ describe('VoiceEngineHost', () => {
 
   // Regression (the drummer's silent rig, 2026-07-26). A Sensory Percussion zone lands on a
   // NON-ZERO slot, so this cannot pass by accident via a '0' default. The inputMap resolved
-  // the note to zone 'rim-tip' (a SLOT_LABELS label) while the authored graph was keyed
-  // 'snare:2' (slot index), so the pad lookup missed and every hit reported `no-slot-graphs`
-  // — even though the identical hit from the web UI worked, because only the MIDI/OSC path
-  // converted the slot to a label.
-  it('fires the authored pad graph for a mapped note on a non-zero zone slot', () => {
+  // the note to zone 'rim-tip' (a SLOT_LABELS label) while the authored content was keyed
+  // by slot index, so the pad lookup missed and every hit reported a miss — even though the
+  // identical hit from the web UI worked, because only the MIDI/OSC path converted the slot
+  // to a label.
+  it('fires the zone Effect for a mapped note on a non-zero zone slot', () => {
     const { host, project } = makeHost();
     project.inputMap.midiNotes = [{ note: 66, drumId: 'snare', slot: 2 }];
     host.setShow(makeShow('snare', '2'));
@@ -178,8 +146,8 @@ describe('VoiceEngineHost', () => {
     for (let i = 0; i < 4; i++) host.step(STEP);
     const stats = host.getStats();
     expect(stats.engine.voiceCount).toBeGreaterThan(0);
-    expect(stats.engine.busLevels).toHaveProperty('main');
-    expect(stats.engine.busLevels.main).toBeGreaterThan(0);
+    expect(stats.engine.busLevels).toHaveProperty(effectChain.CHAIN_BUS_ID);
+    expect(stats.engine.busLevels[effectChain.CHAIN_BUS_ID]).toBeGreaterThan(0);
   });
 
   it('streams per-voice detail so a connected dock can render server-truth voices (S17)', () => {
@@ -315,102 +283,51 @@ describe('VoiceEngineHost', () => {
     expect(events.filter((e) => (e as { destination?: string }).destination === 'routing')).toHaveLength(1);
   });
 
-  // --- U3: trigger-source routing (zone-map precedence + direct bindings) ---
-  // A play-on-`busId` graph whose trigger carries `source`; the bus that lights tells us
-  // which graph fired. defaultProject maps note 36 → kick/center and OSC /sp/* → pads, so
-  // anything else is "unmapped" and falls through to a direct trigger-source binding.
-  const trigNode = (source?: voice.TriggerSource): voice.GraphNode =>
-    ({
-      id: 'trig', kind: 'trigger', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '',
-      presetId: '', busId: '', params: {}, env: {}, noRepeat: false, on: 'value',
-      valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
-      delayMode: 'time', ms: 0, division: '1/8', source,
-    }) as voice.GraphNode;
+  // --- U3: trigger-source routing (zone-map + direct Cue bindings) ---
+  // defaultProject maps note 36 → kick/center and OSC /sp/* → pads, so anything else is
+  // "unmapped" and reaches only a Cue bound to it. The voices' `pad` tells us which Effect fired.
+  const firedEffects = (host: VoiceEngineHost): string[] =>
+    host.getStats().engine.voices.map((v) => v.pad).sort();
 
-  const playNode = (busId: string): voice.GraphNode =>
-    ({
-      id: 'play', kind: 'play', x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: 'fx-flash',
-      presetId: '', busId, params: { hue: 60, brightness: 1 }, env: {},
-      noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 1,
-      delayMode: 'time', ms: 0, division: '1/8',
-    }) as voice.GraphNode;
-
-  const trigGraph = (source: voice.TriggerSource | undefined, busId: string): voice.TriggerGraph => ({
-    nodes: [trigNode(source), playNode(busId)],
-    edges: [{ id: 'e1', from: 'trig', to: 'play' }],
-  });
-
-  /** A show from explicit graphs, with a poly bus per id the plays land on. */
-  const routingShow = (graphs: Record<string, voice.TriggerGraph>, busIds: string[]): voice.Show => ({
-    buses: busIds.map((id) => ({ id, name: id, polyphony: 'poly' as const, crossfadeMs: 200 })),
-    graphs,
-    sections: [],
-    effects: [
-      {
-        id: 'fx-flash', name: 'Flash', generatorId: 'whole-drum', busId: busIds[0] ?? 'main', scope: 'kit',
-        params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-        attackMs: 0, sustainMs: 200, releaseMs: 200,
-      },
-    ],
-    presets: [],
-  });
-
-  const litBuses = (host: VoiceEngineHost): string[] => {
-    const { busLevels } = host.getStats().engine;
-    return Object.keys(busLevels)
-      .filter((b) => (busLevels[b] ?? 0) > 0)
-      .sort();
-  };
-
-  it('a raw unmapped MIDI note fires the authored graph bound to its midi source', () => {
+  it('a raw unmapped MIDI note fires the Cue bound to it', () => {
     const { host } = makeHost();
-    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'midi', note: 60 }, 'direct') }, ['direct']));
-    host.applyInput({ kind: 'noteOn', note: 60, velocity: 1 }); // 60 is unmapped → direct binding
+    host.setShow(showOf(cueFlash('direct', { midiNote: 60 })));
+    host.applyInput({ kind: 'noteOn', note: 60, velocity: 1 }); // 60 is unmapped → the Cue only
     for (let i = 0; i < 8; i++) host.step(STEP);
-    expect(litBuses(host)).toEqual(['direct']);
+    expect(firedEffects(host)).toEqual(['effect:direct']);
   });
 
-  it('a zone-mapped MIDI note can still fire an authored graph bound directly to that note', () => {
+  it('a zone-mapped MIDI note can still fire a Cue bound directly to that note', () => {
     const { host } = makeHost();
-    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'midi', note: 36 }, 'direct') }, ['direct']));
-    host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 }); // 36 is mapped to kick/center, but direct binding still receives it.
+    host.setShow(showOf(cueFlash('direct', { midiNote: 36 })));
+    host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 }); // 36 is mapped to kick/center, but the Cue still receives it.
     for (let i = 0; i < 8; i++) host.step(STEP);
-    expect(litBuses(host)).toEqual(['direct']);
+    expect(firedEffects(host)).toEqual(['effect:direct']);
   });
 
-  it('a zone-mapped note fires both its pad graph and a same-note direct binding', () => {
+  it('a zone-mapped note fires both its zone Effect and a same-note Cue', () => {
     const { host } = makeHost();
-    host.setShow(
-      routingShow(
-        {
-          [voice.padKey('kick', '0')]: trigGraph({ kind: 'drum', drumId: 'kick', zone: '0' }, 'pad'),
-          'graph:1': trigGraph({ kind: 'midi', note: 36 }, 'direct'),
-        },
-        ['pad', 'direct'],
-      ),
-    );
-    // note 36 → kick/center via the zone-map, while a graph can also opt into the raw
-    // note as its own trigger source.
+    host.setShow(showOf(flash('pad', { cell: { row: 'kick', column: { kind: 'zone', slot: 0 } } }), cueFlash('direct', { midiNote: 36 })));
+    // note 36 → kick/center via the zone-map, while a Cue can also opt into the raw note.
     host.applyInput({ kind: 'noteOn', note: 36, velocity: 1 });
     for (let i = 0; i < 8; i++) host.step(STEP);
-    expect(litBuses(host)).toEqual(['direct', 'pad']);
+    expect(firedEffects(host)).toEqual(['effect:direct', 'effect:pad']);
   });
 
-  it('a raw unmapped OSC address fires the authored graph bound to its osc source', () => {
+  it('a raw unmapped OSC address fires the Cue bound to it', () => {
     const { host } = makeHost();
-    host.setShow(routingShow({ 'graph:1': trigGraph({ kind: 'osc', address: '/fx/strobe' }, 'direct') }, ['direct']));
-    host.applyInput({ kind: 'osc', address: '/fx/strobe', value: 1 }); // unmapped address → direct
+    host.setShow(showOf(cueFlash('direct', { oscAddress: '/fx/strobe' })));
+    host.applyInput({ kind: 'osc', address: '/fx/strobe', value: 1 }); // unmapped address → the Cue
     for (let i = 0; i < 8; i++) host.step(STEP);
-    expect(litBuses(host)).toEqual(['direct']);
+    expect(firedEffects(host)).toEqual(['effect:direct']);
   });
 
   it('retains the show + tracks the active song for global transport recall', () => {
     const { host } = makeHost(voice.createNullEngine());
     const show: voice.Show = {
-      ...routingShow({}, ['main']),
       songs: [
-        { id: 'songA', name: 'A', sections: [{ id: 'a0', name: 'A0', slots: {} }] },
-        { id: 'songB', name: 'B', sections: [{ id: 'b0', name: 'B0', slots: {} }] },
+        { id: 'songA', name: 'A', sections: [{ id: 'a0', name: 'A0', effects: [] }] },
+        { id: 'songB', name: 'B', sections: [{ id: 'b0', name: 'B0', effects: [] }] },
       ],
     };
     host.setShow(show);
@@ -487,50 +404,13 @@ describe('VoiceEngineHost', () => {
     expect(host.getModel().pixelCount).toBe(before + 7); // only hoop 2 grew
   });
 
-  it('emits server-authoritative graph monitor events for fired graphs', () => {
+  it('emits an unrouted-input monitor event for a note bound to no zone or Cue', () => {
     const { host } = makeHost();
     const events: unknown[] = [];
     host.setMonitor((event) => events.push(event));
     host.setShow(makeShow('kick', '0'));
 
-    host.applyInput({ kind: 'key', drumId: 'kick', zone: '0', velocity: 1 });
-    for (let i = 0; i < 4; i++) host.step(STEP);
-
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        destination: `graph:${voice.padKey('kick', '0')}`,
-        label: `Graph fired ${voice.padKey('kick', '0')}`,
-      }),
-    );
-    // The web client reads that same event back through the shared contract to light the
-    // fired graph's card (#177) — assert the round trip, not just the literal shape.
-    expect(
-      (events as Array<{ type: string; label: string; destination?: string }>)
-        .map(graphFireKeyOf)
-        .filter(Boolean),
-    ).toEqual([voice.padKey('kick', '0')]);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        detail: expect.stringContaining('path=pad-fallback'),
-      }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        detail: expect.stringContaining('effects=Flash (fx-flash)'),
-      }),
-    );
-  });
-
-  it('emits an unrouted-input monitor event for a note bound to no zone or graph', () => {
-    const { host } = makeHost();
-    const events: unknown[] = [];
-    host.setMonitor((event) => events.push(event));
-    host.setShow(makeShow('kick', '0'));
-
-    // note 7 is in no zone-map entry and no graph source → genuinely unrouted
+    // note 7 is in no zone-map entry and no Cue source → genuinely unrouted
     host.applyInput({ kind: 'noteOn', note: 7, velocity: 1 });
     for (let i = 0; i < 4; i++) host.step(STEP);
 
@@ -540,43 +420,20 @@ describe('VoiceEngineHost', () => {
         direction: 'local',
         source: 'server/voice',
         label: 'Unrouted input',
-        detail: expect.stringContaining('matched no zone or graph'),
+        detail: expect.stringContaining('matched no zone or Cue'),
       }),
     );
   });
 
-  it('emits a graph-miss monitor event for a routed pad hit with no resolved graph', () => {
+  it.each(['__proto__', 'constructor', 'toString'])('fires nothing for an inherited-property Effect id %s', (effectId) => {
     const { host } = makeHost();
-    const events: unknown[] = [];
-    host.setMonitor((event) => events.push(event));
-    // A show whose only graph is for a DIFFERENT drum, so a snare pad hit routes but resolves nothing.
-    host.setShow(makeShow('kick', '0'));
-
-    host.applyInput({ kind: 'key', drumId: 'snare', zone: '0', velocity: 1 });
-    for (let i = 0; i < 4; i++) host.step(STEP);
-
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        label: 'No graph resolved',
-        detail: expect.stringContaining('reason='),
-      }),
-    );
-  });
-
-  it.each(['__proto__', 'constructor', 'toString'])('does not render an inherited graph value for %s', (graphKey) => {
-    const { host } = makeHost();
-    const events: unknown[] = [];
-    host.setMonitor((event) => events.push(event));
     host.setShow(makeShow('kick', '0'));
 
     expect(() => {
-      host.applyInput({ kind: 'fireGraph', graphKey, velocity: 1 });
+      host.applyInput({ kind: 'fireEffect', effectId, velocity: 1 });
       for (let i = 0; i < 4; i++) host.step(STEP);
     }).not.toThrow();
-    expect(events).toContainEqual(expect.objectContaining({ label: 'No graph resolved' }));
+    expect(host.getStats().engine.voiceCount).toBe(0);
   });
 });
 

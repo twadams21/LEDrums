@@ -46,7 +46,7 @@ import {
   type TransportSource,
   type TransportState,
 } from '@ledrums/core';
-import { graphFiredMonitorLabel, graphMonitorDestination, type MidiClockStatus } from '@ledrums/protocol';
+import type { MidiClockStatus } from '@ledrums/protocol';
 import { OutputManager, type OutputMonitorSink } from './output-manager';
 import { TickRate } from './tick-rate';
 import { FrameTiming, type FrameTimingSnapshot } from './frame-timing';
@@ -67,7 +67,6 @@ export type VoicePartialInput =
   | { kind: 'oscValue'; address: string; value: number }
   | { kind: 'oscRelease'; address: string }
   | { kind: 'key'; drumId: string; zone?: string; velocity?: number }
-  | { kind: 'fireGraph'; graphKey: string; velocity?: number; viewerOnly?: boolean }
   /** Effect-chains audition: fire one Effect of the ACTIVE section by id (keyboard audition /
       MIDI-map). The engine only ever resolves the active section, so a viewer and an editor
       are held to the same active-section rule. */
@@ -103,7 +102,7 @@ const TAP_MIN_BPM = 30;
 const TAP_MAX_BPM = 300;
 
 /**
- * Voice-mode host: owns a {@link voice.RenderEngine} (the trigger-graph / voice-bus
+ * Voice-mode host: owns a {@link voice.RenderEngine} (the Effect / voice-bus
  * brain) and an {@link OutputManager}, running the SAME fixed-timestep discipline as
  * the legacy {@link EngineHost} (recursive `setTimeout` + accumulator + catch-up
  * clamp) but at 120fps. Transmit + preview streams are throttled independently of the
@@ -464,11 +463,10 @@ export class VoiceEngineHost {
   /**
    * Resolve a partial input to a {@link voice.InputEvent} and apply it. `key` is native
    * (drum + zone). `noteOn`/`osc` route through the PINNED precedence: the patch inputMap
-   * zone-map first ({@link zoneForNote}/{@link zoneForOsc} → a `(drumId, zone)` pad, the
-   * pad-bound graph path). On a zone-map MISS the raw note/address is forwarded WITHOUT a
-   * pad, so the engine fires any graph bound DIRECTLY to it by its trigger source (and an
-   * event never fires both — exactly one of the two paths runs). `noteOff` passes through
-   * (the engine decays voices on their own envelopes).
+   * zone-map first ({@link zoneForNote}/{@link zoneForOsc} → a `(drumId, zone)` pad, whose
+   * zone Effects fire). On a zone-map MISS the raw note/address is forwarded WITHOUT a pad, so
+   * only a Cue bound DIRECTLY to it fires. `noteOff` passes through (it releases `hold`
+   * Effects; other voices decay on their own envelopes).
    */
   applyInput(partial: VoicePartialInput): void {
     // Audio frames arrive continuously (≤30 Hz) and are not a hit: they must not restart the
@@ -596,7 +594,7 @@ export class VoiceEngineHost {
           kind: 'key',
           drumId: partial.drumId,
           // Zone identity is the slot index as a string (the padKey form the web sends and
-          // authored graphs are keyed by) — NOT a SLOT_LABELS label.
+          // a zone Effect's cell slot matches) — NOT a SLOT_LABELS label.
           zone: partial.zone ?? '0',
           // A pad hit names its drum outright, so the drum's sensitivity curve applies
           // here exactly as it does to a MIDI hit: the test fire and the real stick
@@ -604,19 +602,9 @@ export class VoiceEngineHost {
           velocity: applyDrumVelocity(this.project.inputMap, partial.drumId, partial.velocity ?? 1),
           timeMs,
         };
-      case 'fireGraph':
-        // Authoritative graph intent (keyboard performance): the engine plays this exact
-        // graph key — no zone-map, no source re-resolution. Velocity defaults to full.
-        return {
-          kind: 'fireGraph',
-          graphKey: partial.graphKey,
-          velocity: partial.velocity ?? 1,
-          ...(partial.viewerOnly ? { fireGraphPolicy: 'active-section' as const } : {}),
-          timeMs,
-        };
       case 'fireEffect':
-        // Authoritative Effect intent, routed like fireGraph: no input re-resolution, full
-        // velocity by default (no drum sensitivity curve — nothing was struck).
+        // Authoritative Effect intent (keyboard audition / MIDI-map): no input re-resolution,
+        // full velocity by default (no drum sensitivity curve — nothing was struck).
         return { kind: 'fireEffect', effectId: partial.effectId, velocity: partial.velocity ?? 1, timeMs };
       case 'releaseBus':
         // The dock's stop button: release the bus's voices (absent busId = all buses).
@@ -630,7 +618,7 @@ export class VoiceEngineHost {
         };
       case 'noteOn': {
         // STEP 0 — a note bound to a global control is CONSUMED here: it becomes the
-        // action and never reaches the zone-map or a trigger-source graph (the same
+        // action and never reaches the zone-map or a Cue (the same
         // reservation CC #0 has for section recall). Doing this at the ONE seam every
         // input path funnels through (WS, native MIDI, raw OSC) is what keeps the
         // precedence from drifting between them.
@@ -644,7 +632,7 @@ export class VoiceEngineHost {
           note: partial.note,
           // Per-DRUM velocity sensitivity, applied at the ONE seam where the raw
           // velocity and the zone-map's drum first coexist. A note the map does not
-          // claim (direct-bound graph, modulation-only) has no drum and passes
+          // claim (a Cue, modulation-only) has no drum and passes
           // through untouched — see `applyDrumVelocity`'s header for the rule.
           velocity: applyDrumVelocity(this.project.inputMap, pad?.drumId, partial.velocity),
           channel: partial.channel,
@@ -967,66 +955,18 @@ export class VoiceEngineHost {
   }
 
   private monitorVoiceDiagnostic(d: voice.VoiceDiagnostic): void {
-    if (d.kind === 'input-resolved') {
-      this.monitorSink?.({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        destination: graphMonitorDestination(d.graphKey),
-        label: `Graph resolved ${d.graphKey}`,
-        detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}`,
-      });
-      return;
-    }
-
-    if (d.kind === 'graph-fired') {
-      const effectLabels = this.effectLabels(d.playEffects);
-      this.monitorSink?.({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        destination: graphMonitorDestination(d.graphKey),
-        label: graphFiredMonitorLabel(d.graphKey),
-        detail: `input=${describeVoiceInput(d.input)}; path=${d.path}; state=${d.statePrefix}; actions=${d.actionCount}; effects=${effectLabels.join(', ') || 'none'}`,
-      });
-      return;
-    }
-
-    if (d.kind === 'graph-missed') {
-      this.monitorSink?.({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        label: 'No graph resolved',
-        detail: `input=${describeVoiceInput(d.input)}; reason=${d.reason}`,
-      });
-      return;
-    }
-
     if (d.kind === 'input-unrouted') {
       this.monitorSink?.({
         type: 'graph',
         direction: 'local',
         source: 'server/voice',
         label: 'Unrouted input',
-        detail: `input=${describeVoiceInput(d.input)}; matched no zone or graph`,
+        detail: `input=${describeVoiceInput(d.input)}; matched no zone or Cue`,
       });
       return;
     }
 
-    if (d.kind === 'sequence-reset') {
-      this.monitorSink?.({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        destination: graphMonitorDestination(d.graphKey),
-        label: `Sequence reset ${d.graphKey}`,
-        detail: `input=${describeVoiceInput(d.input)}; node=${d.nodeId}; back to step 1`,
-      });
-      return;
-    }
-
-    // Effect-path diagnostics (effect chains S01) get Monitor lines in a later slice; they
+    // Effect diagnostics (fired / skipped / missed) get Monitor lines in a later slice; they
     // must never fall through to the section-recall mirror below.
     if (d.kind !== 'section-recalled') return;
 
@@ -1041,14 +981,6 @@ export class VoiceEngineHost {
       destination: d.sectionId ? `section:${d.sectionId}` : undefined,
       label: 'Section recalled',
       detail: `song=${d.songId ?? 'none'}; section=${d.sectionId ?? 'none'}`,
-    });
-  }
-
-  private effectLabels(ids: string[]): string[] {
-    const effectsById = new Map(this.currentShow?.effects.map((e) => [e.id, e.name]) ?? []);
-    return ids.map((id) => {
-      const name = effectsById.get(id);
-      return name && name !== id ? `${name} (${id})` : id;
     });
   }
 }
@@ -1071,7 +1003,7 @@ function describeVoiceInput(input: voice.VoiceInputDescriptor): string {
   if (input.value !== undefined) parts.push(`value=${input.value}`);
   if (input.songId !== undefined) parts.push(`song=${input.songId}`);
   if (input.sectionId !== undefined) parts.push(`section=${input.sectionId}`);
-  if (input.graphKey !== undefined) parts.push(`graph=${input.graphKey}`);
+  if (input.effectId !== undefined) parts.push(`effect=${input.effectId}`);
   return parts.join('; ');
 }
 

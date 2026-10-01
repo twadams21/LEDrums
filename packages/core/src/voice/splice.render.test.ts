@@ -4,13 +4,21 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
-import { padKey, type Bus, type EffectDef, type GraphNode, type Show, type SpliceDef, type TriggerGraph } from './types';
+import type { EffectDef, PlayMode, Show, SpliceDef, SpliceNode } from './types';
+import type { GeneratorDevice, SpliceSlot } from '../effect-chain/types';
+import { listGenerators } from '../effect-chain/generators';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
-/* Splice end to end: a hit fires a splice node, the engine spawns ONE composite voice, and
+/* Splice end to end: a hit fires a Splice Effect, the engine spawns ONE composite voice, and
    the compositor reveals each splice through its own band of pixels. These drive the real
-   engine (eval → voice pool → compositor) rather than the pure band maths, because the parts
-   worth pinning here are the ones the pure tests structurally cannot see: that a colour with
-   no authored EffectDef still renders, that band N shows splice N, and that the chase moves. */
+   engine (resolver → voice pool → compositor) rather than the pure band maths, because the
+   parts worth pinning here are the ones the pure tests structurally cannot see: that a colour
+   slot renders with nothing else authored, that band N shows splice N, and that the chase moves.
+
+   The cases are written in the splice machinery's own field names (`SpliceNode`), which is what
+   they were authored against; `spliceEffect` translates each case into the Splice Effect a user
+   builds — device params, slots, amp envelope and target — the inverse of
+   `effect-chain/resolve-splice.ts`'s `spliceDeviceNode`. */
 
 /** 4 pixels per hoop, 2 hoops per drum, 2 drums → 16 pixels, hoops at 0-3, 4-7, 8-11, 12-15. */
 function testModel(): PixelModel {
@@ -37,52 +45,77 @@ function variableHoopModel(): PixelModel {
   );
 }
 
-const buses = (): Bus[] => [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
+/** A splice case: the machinery fields, plus the play mode and the scope target it plays on. */
+type SpliceCase = Partial<SpliceNode> & { mode?: PlayMode; scope?: 'kit' | 'drum' | 'hoop'; targetId?: string };
+interface SpliceSpec { splices: SpliceDef[]; over: SpliceCase }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id,
-    kind,
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: true,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 0.5,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
-    ...over,
-  };
+function spliceCase(splices: SpliceDef[], over: SpliceCase = {}): SpliceSpec {
+  return { splices, over: { spliceCount: splices.length, splicePartition: 'hoop', ...over } };
 }
 
-function spliceGraph(splices: SpliceDef[], over: Partial<GraphNode> = {}): TriggerGraph {
-  return {
-    version: 3,
-    nodes: [
-      node('trigger', 'trigger'),
-      node('splice', 's1', { splices, spliceCount: splices.length, splicePartition: 'hoop', ...over }),
-      node('output', 'output'),
-    ],
-    edges: [
-      { id: 'e0', from: 'trigger', to: 's1' },
-      { id: 'e1', from: 's1', to: 'output' },
-    ],
-  };
+/** The Splice device params for a case: each `splice*` field with the prefix dropped and the
+    first letter lowered, with the three encoded fields (`attackEase`, the sequences) encoded. */
+function deviceParams(c: SpliceCase): GeneratorDevice['params'] {
+  const params: GeneratorDevice['params'] = {};
+  for (const [key, value] of Object.entries(c)) {
+    if (value === undefined || !key.startsWith('splice') || key === 'splices') continue;
+    const name = key.slice('splice'.length);
+    const param = name[0]!.toLowerCase() + name.slice(1);
+    if (param === 'attackEase') {
+      const ease = value as NonNullable<SpliceNode['spliceAttackEase']>;
+      params.attackEaseFn = ease.fn;
+      params.attackEaseDir = ease.dir;
+    } else if (Array.isArray(value)) {
+      params[param] = value.join(',');
+    } else {
+      params[param] = value as string | number;
+    }
+  }
+  return params;
 }
 
-function show(graph: TriggerGraph, effects: EffectDef[] = []): Show {
-  return { buses: buses(), graphs: { [padKey('kick', '')]: graph }, sections: [], effects, presets: [] };
+/** The Generator (kind + Style) that hosts an effect implementation id. */
+function hostingGenerator(generatorId: string): Pick<GeneratorDevice, 'kind' | 'style'> {
+  for (const def of listGenerators()) {
+    const style = def.styles.find((candidate) => candidate.effectId === generatorId);
+    if (style) return { kind: def.id as GeneratorDevice['kind'], style: style.id };
+  }
+  throw new Error(`no Generator Style hosts ${generatorId}`);
+}
+
+/** A splice def as a Splice slot: an effect id names one of `effects`, hosted by its Style. */
+function slotOf(def: SpliceDef, effects: readonly EffectDef[]): SpliceSlot {
+  const slot: SpliceSlot = {};
+  if (def.color !== undefined) slot.color = def.color;
+  if (def.muted) slot.muted = true;
+  if (def.effectId) {
+    const effect = effects.find((candidate) => candidate.id === def.effectId);
+    if (!effect?.generatorId) throw new Error(`unknown effect ${def.effectId}`);
+    slot.generator = { ...hostingGenerator(effect.generatorId), params: { ...(def.params ?? {}) } };
+  }
+  return slot;
+}
+
+/** The Splice Effect for a case, on kick's first zone. Its amp envelope is the splice envelope
+    (defaults 10 / 400 / 300), so the voice lives exactly as the case's splice did. */
+function spliceEffect(spec: SpliceSpec, effects: readonly EffectDef[] = []) {
+  const { over } = spec;
+  const attackMs = over.spliceAttackMs ?? 10;
+  const holdMs = over.spliceHoldMs ?? 400;
+  const length = over.mode === 'loop' ? 'loop' : over.mode === 'hold' ? 'hold' : { ms: attackMs + holdMs };
+  const [drumId, hoop] = over.targetId?.split('#') ?? [];
+  const target = over.scope === 'drum' && drumId
+    ? { kind: 'select', drums: [{ drumId }] }
+    : over.scope === 'hoop' && drumId && hoop
+      ? { kind: 'select', drums: [{ drumId, hoops: [Number(hoop)] }] }
+      : { kind: 'kit' };
+  return zoneEffect('splice', {
+    kind: 'splice', style: '', params: deviceParams(over), slots: spec.splices.map((d) => slotOf(d, effects)),
+  }, { amp: { attackMs, length, releaseMs: over.spliceReleaseMs ?? 300 }, target });
+}
+
+function show(spec: SpliceSpec, effects: EffectDef[] = []): Show {
+  return effectShowOf(sectionOf('s', [spliceEffect(spec, effects)]));
 }
 
 const transport = (now: number, beat = 0, bpm = 120): TransportState => ({
@@ -104,15 +137,15 @@ function runTo(engine: ReturnType<typeof createVoiceBusEngine>, toMs: number, fr
   engine.tick(toMs, STEP, transport(toMs, (toMs / 60000) * 120));
 }
 
-/** Fire the graph and sample the frame at `atMs` (past the 10ms attack, so level is 1). */
-function render(graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
-  return renderOnModel(testModel(), graph, effects, atMs);
+/** Fire the case and sample the frame at `atMs` (past the 10ms attack, so level is 1). */
+function render(spec: SpliceSpec, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
+  return renderOnModel(testModel(), spec, effects, atMs);
 }
 
-function renderOnModel(model: PixelModel, graph: TriggerGraph, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
+function renderOnModel(model: PixelModel, spec: SpliceSpec, effects: EffectDef[] = [], atMs = 40): { rgb: (i: number) => [number, number, number]; model: PixelModel } {
   const engine = createVoiceBusEngine();
   engine.setModel(model);
-  engine.setShow(show(graph, effects));
+  engine.setShow(show(spec, effects));
   engine.applyInput(hit(0));
   // Tick in small steps rather than one giant dt: the envelope advance integrates against dt,
   // so a single 300ms jump overshoots the hold and reports a voice that is really still lit.
@@ -151,11 +184,11 @@ describe('splice — colour splices', () => {
     const original = makeModel([4, 4]);
     const replacement = makeModel([2, 6]);
     expect(replacement.pixelCount).toBe(original.pixelCount);
-    const graph = spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]);
+    const spec = spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]);
     const start = (model: PixelModel) => {
       const engine = createVoiceBusEngine();
       engine.setModel(model);
-      engine.setShow(show(graph));
+      engine.setShow(show(spec));
       engine.applyInput(hit());
       runTo(engine, 40);
       return engine;
@@ -180,7 +213,7 @@ describe('splice — colour splices', () => {
   });
 
   it('renders a colour splice with no authored effect at all (the engine hosts the fill)', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]));
     // 2 splices over each 4-pixel hoop → pixels 0-1 red, 2-3 blue, repeating on every hoop.
     expectRgb(rgb(0), RED, 'hoop1 band1 px0');
     expectRgb(rgb(1), RED, 'hoop1 band1 px1');
@@ -189,7 +222,7 @@ describe('splice — colour splices', () => {
   });
 
   it('cuts EVERY hoop of the kit, not just the struck drum’s first one', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]));
     for (const hoopStart of [0, 4, 8, 12]) {
       expectRgb(rgb(hoopStart), RED, `hoop@${hoopStart} band1`);
       expectRgb(rgb(hoopStart + 2), BLUE, `hoop@${hoopStart} band2`);
@@ -197,14 +230,14 @@ describe('splice — colour splices', () => {
   });
 
   it('leaves a blank splice dark — you see through it, not a black fill of the effect', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, {}]));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, {}]));
     expectRgb(rgb(0), RED, 'lit splice');
     expectRgb(rgb(2), DARK, 'blank splice');
     expectRgb(rgb(3), DARK, 'blank splice');
   });
 
   it('mutes a splice without losing what is authored on it', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff', muted: true }]));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff', muted: true }]));
     expectRgb(rgb(0), RED, 'unmuted');
     expectRgb(rgb(2), DARK, 'muted');
   });
@@ -213,19 +246,19 @@ describe('splice — colour splices', () => {
     const model = testModel();
     const engine = createVoiceBusEngine();
     engine.setModel(model);
-    engine.setShow(show(spliceGraph([{}, { muted: true }])));
+    engine.setShow(show(spliceCase([{}, { muted: true }])));
     engine.applyInput(hit(0));
     runTo(engine, 40);
     expect(engine.stats().voices).toHaveLength(0);
   });
 
   it('cuts each drum whole under the drum partition, and the scope once under scope', () => {
-    const perDrum = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { splicePartition: 'drum' }));
+    const perDrum = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { splicePartition: 'drum' }));
     // kick = pixels 0-7 → red 0-3, blue 4-7.
     expectRgb(perDrum.rgb(3), RED, 'kick first half');
     expectRgb(perDrum.rgb(4), BLUE, 'kick second half');
 
-    const perScope = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { splicePartition: 'scope' }));
+    const perScope = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { splicePartition: 'scope' }));
     // whole kit = pixels 0-15 → red 0-7, blue 8-15.
     expectRgb(perScope.rgb(7), RED, 'kit first half');
     expectRgb(perScope.rgb(8), BLUE, 'kit second half');
@@ -233,8 +266,8 @@ describe('splice — colour splices', () => {
 });
 
 describe('splice — chase', () => {
-  const chasing = (over: Partial<GraphNode>, atMs: number) =>
-    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], over), [], atMs);
+  const chasing = (over: SpliceCase, atMs: number) =>
+    render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], over), [], atMs);
 
   it('holds still with the chase off, however long the voice runs', () => {
     const held = chasing({ spliceChase: 'off' }, 400);
@@ -294,7 +327,7 @@ describe('splice — chase', () => {
     const backward = chasing({ spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100, spliceDirection: -1 }, 150);
     // With two splices a single step looks the same either way, so compare at THREE splices:
     const three = (dir: 1 | -1) =>
-      render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], {
+      render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], {
         spliceChase: 'step',
         spliceRateMode: 'time',
         spliceRateMs: 100,
@@ -310,8 +343,8 @@ describe('splice — chase', () => {
 });
 
 describe('splice — cascade offset across units', () => {
-  const cascading = (over: Partial<GraphNode>, atMs: number) =>
-    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+  const cascading = (over: SpliceCase, atMs: number) =>
+    render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceChase: 'step',
       spliceRateMode: 'time',
       spliceRateMs: 100,
@@ -419,12 +452,12 @@ describe('splice — cascade offset across units', () => {
 
 describe('splice — scope', () => {
   it('cuts the whole kit by default', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]));
     for (const hoopStart of [0, 4, 8, 12]) expectRgb(rgb(hoopStart), RED, `hoop@${hoopStart}`);
   });
 
   it('cuts only the drum it is scoped to, leaving the rest of the kit dark', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'drum', targetId: 'snare' }));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'drum', targetId: 'snare' }));
     expectRgb(rgb(0), DARK, 'kick untouched');
     expectRgb(rgb(4), DARK, 'kick untouched');
     expectRgb(rgb(8), RED, 'snare hoop 1 cut');
@@ -432,90 +465,10 @@ describe('splice — scope', () => {
   });
 
   it('cuts a single hoop when scoped to one', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'hoop', targetId: 'snare#2' }));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { scope: 'hoop', targetId: 'snare#2' }));
     expectRgb(rgb(8), DARK, 'snare hoop 1 untouched');
     expectRgb(rgb(12), RED, 'snare hoop 2 cut');
     expectRgb(rgb(14), BLUE, 'and cut into its splices');
-  });
-});
-
-describe('splice — layer polyphony (sustain vs cut)', () => {
-  /** Trigger → sequence → two splice nodes on `busId`, the shape a sequencer-of-splices takes. */
-  function sequencedGraph(busId: string): TriggerGraph {
-    const splice = (id: string, colour: string, y: number) =>
-      node('splice', id, {
-        y,
-        busId,
-        splices: [{ color: colour }],
-        spliceCount: 1,
-        splicePartition: 'hoop',
-        spliceHoldMs: 4000,
-        spliceReleaseMs: 200,
-      });
-    return {
-      version: 3,
-      nodes: [node('trigger', 'trigger'), node('sequence', 'seq'), splice('a', '#ff0000', 0), splice('b', '#0000ff', 100), node('output', 'output')],
-      edges: [
-        { id: 'e0', from: 'trigger', to: 'seq' },
-        { id: 'e1', from: 'seq', to: 'a' },
-        { id: 'e2', from: 'seq', to: 'b' },
-        { id: 'e3', from: 'a', to: 'output' },
-        { id: 'e4', from: 'b', to: 'output' },
-      ],
-    };
-  }
-
-  /** Two hits 500ms apart — the sequence fires splice A then splice B. */
-  function twoSteps(busId: string, polyphony: 'mono' | 'poly'): number {
-    const model = testModel();
-    const engine = createVoiceBusEngine();
-    engine.setModel(model);
-    engine.setShow({
-      buses: [{ id: busId, name: busId, polyphony, crossfadeMs: 200 }],
-      graphs: { [padKey('kick', '')]: sequencedGraph(busId) },
-      sections: [],
-      effects: [],
-      presets: [],
-    });
-    engine.applyInput(hit(0));
-    runTo(engine, 500);
-    engine.applyInput(hit(500));
-    runTo(engine, 560, 500);
-    return engine.stats().voices.filter((v) => !v.releasing).length;
-  }
-
-  it('sustains both splices on a poly layer — the earlier hoop keeps burning', () => {
-    expect(twoSteps('trigger', 'poly')).toBe(2);
-  });
-
-  it('cuts the previous splice on a mono layer, even though it came from a different node', () => {
-    // This is the case a per-node "cut" flag could never express: the two voices come from
-    // DIFFERENT splice nodes, so only a layer-level rule can end one when the other starts.
-    expect(twoSteps('base', 'mono')).toBe(1);
-  });
-
-  it('a colour-only splice lands on a poly layer, not blindly on the first one', () => {
-    // The reported bug: the reserved fill def took `buses[0]`, which is mono in the real kit,
-    // so a sequencer cycling splice nodes cut each hoop off as it moved on.
-    const model = testModel();
-    const engine = createVoiceBusEngine();
-    engine.setModel(model);
-    engine.setShow({
-      buses: [
-        { id: 'base', name: 'Base', polyphony: 'mono', crossfadeMs: 900 },
-        { id: 'trigger', name: 'Trigger', polyphony: 'poly', crossfadeMs: 240 },
-      ],
-      // No busId on the splice nodes at all → they fall back to the fill def's layer.
-      graphs: { [padKey('kick', '')]: sequencedGraph('') },
-      sections: [],
-      effects: [],
-      presets: [],
-    });
-    engine.applyInput(hit(0));
-    runTo(engine, 500);
-    engine.applyInput(hit(500));
-    runTo(engine, 560, 500);
-    expect(engine.stats().voices.filter((v) => !v.releasing)).toHaveLength(2);
   });
 });
 
@@ -523,11 +476,11 @@ describe('splice — smudge', () => {
   it('blends the boundary between two colours instead of cutting it', () => {
     // 4-pixel hoops, 2 splices: hard-cut gives pure red then pure blue. A smudge mixes them
     // across the seam, so the boundary pixels carry BOTH channels.
-    const hard = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const hard = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]));
     expectRgb(hard.rgb(1), RED, 'hard cut: pure red up to the edge');
     expectRgb(hard.rgb(2), BLUE, 'hard cut: pure blue after it');
 
-    const soft = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
+    const soft = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
     const [r, g, b] = soft.rgb(2);
     expect(r, 'smudged: red bleeds past the seam').toBeGreaterThan(0);
     expect(b, 'smudged: blue is still there').toBeGreaterThan(0);
@@ -535,7 +488,7 @@ describe('splice — smudge', () => {
   });
 
   it('keeps total brightness flat across the blend — no seam, no dip', () => {
-    const soft = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
+    const soft = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 1 }));
     for (let p = 0; p < 4; p++) {
       const [r, g, b] = soft.rgb(p);
       expect(r + g + b, `pixel ${p} total`).toBeCloseTo(1, 1);
@@ -543,15 +496,15 @@ describe('splice — smudge', () => {
   });
 
   it('renders identically to a hard cut at zero', () => {
-    const a = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }]));
-    const b = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 0 }));
+    const a = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }]));
+    const b = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceSmudge: 0 }));
     for (let i = 0; i < 16; i++) expectRgb(b.rgb(i), a.rgb(i), `pixel ${i}`);
   });
 });
 
 describe('splice — drum cascade', () => {
-  const kitWide = (over: Partial<GraphNode>, atMs: number) =>
-    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+  const kitWide = (over: SpliceCase, atMs: number) =>
+    render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceChase: 'step',
       spliceRateMode: 'time',
       spliceRateMs: 100,
@@ -604,7 +557,7 @@ describe('splice — rotation', () => {
   it('rotates where the cut sits around each hoop', () => {
     // 4-pixel hoops, 2 splices: at 0° red is 0-1 and blue 2-3. A quarter turn moves the cut
     // one pixel along; a half turn swaps the two colours outright.
-    const at = (deg: number) => render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
+    const at = (deg: number) => render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
     expectRgb(at(0).rgb(0), RED, '0°');
     expectRgb(at(90).rgb(0), BLUE, '90° — the wrapped tail of the blue band');
     expectRgb(at(90).rgb(1), RED, '90° — red has moved one pixel along');
@@ -613,20 +566,20 @@ describe('splice — rotation', () => {
   });
 
   it('wraps rather than clamping, so 360° is 0° and negatives read backwards', () => {
-    const at = (deg: number) => render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
+    const at = (deg: number) => render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: deg }));
     for (let i = 0; i < 4; i++) expectRgb(at(360).rgb(i), at(0).rgb(i), `pixel ${i}`);
     for (let i = 0; i < 4; i++) expectRgb(at(-180).rgb(i), at(180).rgb(i), `pixel ${i}`);
   });
 
   it('rotates every hoop of the kit, not just the first', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: 180 }));
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], { spliceRotationDeg: 180 }));
     for (const hoopStart of [0, 4, 8, 12]) expectRgb(rgb(hoopStart), BLUE, `hoop@${hoopStart}`);
   });
 });
 
 describe('splice — colour cascade', () => {
-  const colours = (over: Partial<GraphNode>, atMs: number) =>
-    render(spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+  const colours = (over: SpliceCase, atMs: number) =>
+    render(spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceWaitMode: 'dark',
       spliceHoldMs: 60000,
       ...over,
@@ -763,15 +716,15 @@ describe('splice — colour cascade', () => {
 
 describe('splice — envelope', () => {
   it('holds the lights up for the authored time, then fades', () => {
-    const graph = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 600, spliceReleaseMs: 200 });
-    expect(litSum(render(graph, [], 300).rgb), 'inside the hold').toBeGreaterThan(0);
-    expect(litSum(render(graph, [], 600).rgb), 'still inside the hold').toBeGreaterThan(0);
-    expect(litSum(render(graph, [], 1200).rgb), 'past hold + fade').toBe(0);
+    const spec = spliceCase([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 600, spliceReleaseMs: 200 });
+    expect(litSum(render(spec, [], 300).rgb), 'inside the hold').toBeGreaterThan(0);
+    expect(litSum(render(spec, [], 600).rgb), 'still inside the hold').toBeGreaterThan(0);
+    expect(litSum(render(spec, [], 1200).rgb), 'past hold + fade').toBe(0);
   });
 
   it('a longer hold keeps them up past the point a short one has gone dark', () => {
-    const short = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 });
-    const long = spliceGraph([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 4000, spliceReleaseMs: 20 });
+    const short = spliceCase([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 });
+    const long = spliceCase([{ color: '#ff0000' }], { spliceAttackMs: 10, spliceHoldMs: 4000, spliceReleaseMs: 20 });
     expect(litSum(render(short, [], 500).rgb), 'short one is done').toBe(0);
     expect(litSum(render(long, [], 500).rgb), 'long one is still up').toBeGreaterThan(0);
   });
@@ -779,7 +732,7 @@ describe('splice — envelope', () => {
 
 describe('splice — play mode', () => {
   const held = (mode: 'oneshot' | 'loop' | 'hold', atMs: number) =>
-    render(spliceGraph([{ color: '#ff0000' }], { mode, spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 }), [], atMs);
+    render(spliceCase([{ color: '#ff0000' }], { mode, spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 }), [], atMs);
 
   it('a one-shot ends on its own envelope', () => {
     expect(litSum(held('oneshot', 30).rgb), 'inside its hold').toBeGreaterThan(0);
@@ -792,7 +745,7 @@ describe('splice — play mode', () => {
     const pulsing = (atMs: number) =>
       litSum(
         render(
-          spliceGraph([{ color: '#ff0000' }], {
+          spliceCase([{ color: '#ff0000' }], {
             mode: 'loop',
             spliceWaitMode: 'pulse',
             spliceAttackMs: 10,
@@ -812,7 +765,7 @@ describe('splice — play mode', () => {
     const once = (atMs: number) =>
       litSum(
         render(
-          spliceGraph([{ color: '#ff0000' }], {
+          spliceCase([{ color: '#ff0000' }], {
             mode: 'oneshot',
             spliceWaitMode: 'pulse',
             spliceAttackMs: 10,
@@ -827,46 +780,6 @@ describe('splice — play mode', () => {
     expect(once(400), 'and then nothing').toBe(0);
   });
 
-  it('stops a running loop when it is hit again', () => {
-    const graph = spliceGraph([{ color: '#ff0000' }], { mode: 'loop', spliceAttackMs: 10, spliceHoldMs: 50, spliceReleaseMs: 20 });
-    const model = testModel();
-    const engine = createVoiceBusEngine();
-    engine.setModel(model);
-    engine.setShow(show(graph, []));
-    engine.applyInput(hit(0));
-    runTo(engine, 300);
-    const lit = engine.frame()[0]!;
-    expect(lit, 'looping').toBeGreaterThan(0);
-
-    engine.applyInput(hit(300));
-    runTo(engine, 700, 300);
-    expect(engine.frame()[0], 'the second hit stopped it').toBe(0);
-
-    // …and a third hit starts it again, so the node really is a toggle.
-    engine.applyInput(hit(700));
-    runTo(engine, 800, 700);
-    expect(engine.frame()[0], 'the third hit started it again').toBeGreaterThan(0);
-  });
-
-  it('never stacks loops — one voice per node, however many hits', () => {
-    const graph = spliceGraph([{ color: '#ff0000' }], {
-      mode: 'loop',
-      spliceLoopRetrigger: 'restart',
-      spliceAttackMs: 10,
-      spliceHoldMs: 50,
-      spliceReleaseMs: 20,
-    });
-    const model = testModel();
-    const engine = createVoiceBusEngine();
-    engine.setModel(model);
-    engine.setShow(show(graph, []));
-    for (const t of [0, 200, 400, 600]) {
-      engine.applyInput(hit(t));
-      runTo(engine, t + 200, t);
-    }
-    expect(engine.stats().voices.filter((v) => !v.releasing)).toHaveLength(1);
-  });
-
   it('loop and hold stay up past where a one-shot would have ended', () => {
     expect(litSum(held('loop', 400).rgb), 'loop is still lit').toBeGreaterThan(0);
     expect(litSum(held('hold', 400).rgb), 'hold is still lit').toBeGreaterThan(0);
@@ -875,8 +788,8 @@ describe('splice — play mode', () => {
 });
 
 describe('splice — restart vs continuous', () => {
-  const motion = (mode: 'restart' | 'continuous' | 'latched', over: Partial<GraphNode> = {}) =>
-    spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+  const motion = (mode: 'restart' | 'continuous' | 'latched', over: SpliceCase = {}) =>
+    spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceChase: 'step',
       spliceRateMode: 'time',
       spliceRateMs: 100,
@@ -886,11 +799,11 @@ describe('splice — restart vs continuous', () => {
     });
 
   /** Fire once at t=0, again at `secondHitMs`, and sample `atMs`. */
-  function reHit(graph: TriggerGraph, secondHitMs: number, atMs: number): (i: number) => [number, number, number] {
+  function reHit(spec: SpliceSpec, secondHitMs: number, atMs: number): (i: number) => [number, number, number] {
     const model = testModel();
     const engine = createVoiceBusEngine();
     engine.setModel(model);
-    engine.setShow(show(graph, []));
+    engine.setShow(show(spec, []));
     engine.applyInput(hit(0));
     runTo(engine, secondHitMs);
     engine.applyInput(hit(secondHitMs));
@@ -905,7 +818,7 @@ describe('splice — restart vs continuous', () => {
   });
 
   it('continuous picks up where the last hit left off instead of resetting', () => {
-    // Same instant, same graph — only the mode differs. The free clock is 1100ms in (11 steps,
+    // Same instant, same case — only the mode differs. The free clock is 1100ms in (11 steps,
     // odd → the other splice), while a restarted one is 50ms in (0 steps).
     expectRgb(reHit(motion('continuous'), 1050, 1100)(0), BLUE, 'eleven steps in, unbroken by the hit');
     expectRgb(reHit(motion('restart'), 1050, 1100)(0), RED, 'and the same moment restarted');
@@ -934,13 +847,13 @@ describe('splice — restart vs continuous', () => {
   });
 
   it('restart is the default, so an un-authored splice behaves as it always did', () => {
-    const graph = spliceGraph([{ color: '#ff0000' }, { color: '#0000ff' }], {
+    const spec = spliceCase([{ color: '#ff0000' }, { color: '#0000ff' }], {
       spliceChase: 'step',
       spliceRateMode: 'time',
       spliceRateMs: 100,
       spliceHoldMs: 60000,
     });
-    expectRgb(reHit(graph, 1050, 1100)(0), RED, 'no step taken since the hit');
+    expectRgb(reHit(spec, 1050, 1100)(0), RED, 'no step taken since the hit');
   });
 });
 
@@ -987,14 +900,14 @@ describe('splice — effects inside a splice', () => {
   };
 
   it('shows an effect only inside its own splice, leaving the others to their own content', () => {
-    const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}]), [litEffect('fx')]);
+    const { rgb } = render(spliceCase([{ effectId: 'fx' }, {}]), [litEffect('fx')]);
     const [r, g, b] = rgb(0);
     expect(r + g + b, 'effect splice is lit').toBeGreaterThan(0);
     expectRgb(rgb(2), DARK, 'blank splice stays dark even though the effect rendered kit-wide');
   });
 
   it('tints an effect splice toward its colour, and leaves a colourless one alone', () => {
-    const tinted = render(spliceGraph([{ effectId: 'fx', color: '#ff0000' }, { effectId: 'fx' }]), [litEffect('fx')]);
+    const tinted = render(spliceCase([{ effectId: 'fx', color: '#ff0000' }, { effectId: 'fx' }]), [litEffect('fx')]);
     const [tr, tg, tb] = tinted.rgb(0);
     const [ur, ug, ub] = tinted.rgb(2);
     expect(tg, 'tinted splice loses its green').toBeCloseTo(0, 2);
@@ -1004,7 +917,7 @@ describe('splice — effects inside a splice', () => {
   });
 
   it('mixes colour splices and effect splices in one node', () => {
-    const { rgb } = render(spliceGraph([{ color: '#ff0000' }, { effectId: 'fx' }]), [litEffect('fx')]);
+    const { rgb } = render(spliceCase([{ color: '#ff0000' }, { effectId: 'fx' }]), [litEffect('fx')]);
     expectRgb(rgb(0), RED, 'colour splice');
     const [r, g, b] = rgb(2);
     expect(r + g + b, 'effect splice').toBeGreaterThan(0);
@@ -1012,27 +925,27 @@ describe('splice — effects inside a splice', () => {
   });
 
   it('carries sparse material through rotation and step movement', () => {
-    const graph = (over: Partial<GraphNode>): TriggerGraph => spliceGraph([{ effectId: 'fx' }, {}], {
+    const spec = (over: SpliceCase): SpliceSpec => spliceCase([{ effectId: 'fx' }, {}], {
       spliceCount: 2,
       splicePartition: 'scope',
       spliceHoldMs: 60000,
       ...over,
     });
-    const still = render(graph({ spliceRotationDeg: 0 }), [sparseEffect('fx')]);
+    const still = render(spec({ spliceRotationDeg: 0 }), [sparseEffect('fx')]);
     expectLitRange(still.rgb, 0, 8, 'source band');
     expectDarkRange(still.rgb, 8, 16, 'blank band');
 
-    const rotated = render(graph({ spliceRotationDeg: 180 }), [sparseEffect('fx')]);
+    const rotated = render(spec({ spliceRotationDeg: 180 }), [sparseEffect('fx')]);
     expectDarkRange(rotated.rgb, 0, 8, 'vacated band');
     expectLitRange(rotated.rgb, 8, 16, 'rotated material');
 
-    const stepped = render(graph({ spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100 }), [sparseEffect('fx')], 145);
+    const stepped = render(spec({ spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100 }), [sparseEffect('fx')], 145);
     expectDarkRange(stepped.rgb, 0, 8, 'vacated step band');
     expectLitRange(stepped.rgb, 8, 16, 'stepped material');
   });
 
   it('uses the first material-bearing unit as a deterministic sparse fallback', () => {
-    const { rgb } = render(spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [sparseEffect('fx')]);
+    const { rgb } = render(spliceCase([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }), [sparseEffect('fx')]);
     // Whole Drum renders only kick (pixels 0-7). Every empty hoop copies the first kick hoop's
     // selected source band, while the blank splice remains empty.
     expectLitRange(rgb, 0, 2, 'kick hoop 1');
@@ -1046,7 +959,7 @@ describe('splice — effects inside a splice', () => {
   it('stretches a source band into a wider destination without reading the neighbour', () => {
     const { rgb } = renderOnModel(
       variableHoopModel(),
-      spliceGraph([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }),
+      spliceCase([{ effectId: 'fx' }, {}], { splicePartition: 'hoop', spliceHoldMs: 60000 }),
       [sparseEffect('fx')],
     );
     // The first kick hoop is 4px and the first snare hoop is 6px. The source band is 2px and
@@ -1056,7 +969,7 @@ describe('splice — effects inside a splice', () => {
   });
 
   it('recomputes moving sparse footprints across frames instead of retaining stale coverage', () => {
-    const graph = spliceGraph([{ effectId: 'segments', params: {
+    const spec = spliceCase([{ effectId: 'segments', params: {
       segments: 2,
       fire: 'all',
       stagger: 0.2,
@@ -1067,7 +980,7 @@ describe('splice — effects inside a splice', () => {
     const engine = createVoiceBusEngine();
     const model = testModel();
     engine.setModel(model);
-    engine.setShow(show(graph, [sparseEffect('segments', 'segments')]));
+    engine.setShow(show(spec, [sparseEffect('segments', 'segments')]));
     engine.applyInput(hit(0));
     runTo(engine, 40);
     const early = engine.frame().slice();
@@ -1080,7 +993,7 @@ describe('splice — effects inside a splice', () => {
   });
 
   it('regenerates a short-lived stateful member before a long cascade reaches the far drum', () => {
-    const graph = spliceGraph([{ effectId: 'fx', params: { lifeMs: 100, echoes: 1 } }], {
+    const spec = spliceCase([{ effectId: 'fx', params: { lifeMs: 100, echoes: 1 } }], {
       spliceCount: 1,
       splicePartition: 'hoop',
       spliceDrumOffsetMode: 'time',
@@ -1094,7 +1007,7 @@ describe('splice — effects inside a splice', () => {
     const engine = createVoiceBusEngine();
     const model = testModel();
     engine.setModel(model);
-    engine.setShow(show(graph, [sparseEffect('fx', 'drum-sonar')]));
+    engine.setShow(show(spec, [sparseEffect('fx', 'drum-sonar')]));
     engine.applyInput(hit(0));
     runTo(engine, 520);
     const frame = engine.frame();
@@ -1118,7 +1031,7 @@ describe('splice — effects inside a splice', () => {
           ? { segments: 2, fire: 'all', gap: 0, feather: 0, lifeBeats: 8 }
           : {};
         const { rgb } = render(
-          spliceGraph([{ effectId: 'fx', params: memberParams }], { spliceCount: 1, splicePartition: 'hoop', spliceHoldMs: 60000 }),
+          spliceCase([{ effectId: 'fx', params: memberParams }], { spliceCount: 1, splicePartition: 'hoop', spliceHoldMs: 60000 }),
           [sparseEffect('fx', generator.id)],
           time,
         );
@@ -1134,9 +1047,9 @@ describe('splice — effects inside a splice', () => {
   });
 
   it('is deterministic: the same show and the same hits render the same frame twice', () => {
-    const graph = spliceGraph([{ color: '#ff0000' }, { effectId: 'fx' }, {}], { spliceJitter: 0.7, spliceChase: 'smooth', spliceRateMs: 90, spliceRateMode: 'time' });
-    const a = render(graph, [litEffect('fx')], 123);
-    const b = render(graph, [litEffect('fx')], 123);
+    const spec = spliceCase([{ color: '#ff0000' }, { effectId: 'fx' }, {}], { spliceJitter: 0.7, spliceChase: 'smooth', spliceRateMs: 90, spliceRateMode: 'time' });
+    const a = render(spec, [litEffect('fx')], 123);
+    const b = render(spec, [litEffect('fx')], 123);
     for (let i = 0; i < 16; i++) expectRgb(a.rgb(i), b.rgb(i), `pixel ${i}`);
   });
 });

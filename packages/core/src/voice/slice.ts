@@ -19,7 +19,7 @@
 import type { PixelModel } from '../geometry/pixel-model';
 import type { Vec3 } from '../math';
 import type { PixelRange } from '../modifiers/types';
-import type { GraphNode, SliceAxis, SliceRegion, SliceSpace, SpliceConfig } from './types';
+import type { SpliceNode, SliceAxis, SliceRegion, SliceSpace, SpliceConfig } from './types';
 import type { ResolvedSplices } from './splice';
 import { clamp01 } from '../math';
 import {
@@ -94,7 +94,7 @@ const wrapDeg = (deg: number): number => ((deg % 360) + 360) % 360;
 const MIN_REGION_MM = 1;
 
 /** Build the {@link SliceSpace} a slice node's fields describe. */
-export function resolveSliceSpace(node: GraphNode): SliceSpace {
+export function resolveSliceSpace(node: SpliceNode): SliceSpace {
   const axis = node.sliceAxis ?? DEFAULT_SLICE_AXIS;
   const rotation = {
     x: wrapDeg(node.sliceRotX ?? 0),
@@ -135,7 +135,7 @@ export function resolveSliceSpace(node: GraphNode): SliceSpace {
  * own. A slice node never sets `splicePartition`, which leaves the splice default (`'hoop'`) in
  * place and the drum offset intact — asserted in the tests rather than assumed.
  */
-export function resolveSlice(node: GraphNode, bpm: number, beatsPerBar = 4): ResolvedSplices | null {
+export function resolveSlice(node: SpliceNode, bpm: number, beatsPerBar = 4): ResolvedSplices | null {
   const resolved = resolveSplices(node, bpm, beatsPerBar);
   if (!resolved) return null;
   return { ...resolved, config: { ...resolved.config, space: resolveSliceSpace(node) } };

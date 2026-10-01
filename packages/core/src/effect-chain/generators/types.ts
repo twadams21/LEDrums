@@ -2,7 +2,7 @@
  * Generator registry types. One `GeneratorDef` per Generator kind lives in its own file under
  * `generators/` (so kinds can be authored independently); `generators/index.ts` aggregates them.
  */
-import type { MixInputDraft } from '../../voice/eval-graph';
+import type { MixInputDraft } from '../../voice/play-action';
 import type { SpliceConfig } from '../../voice/types';
 import type { GeneratorDevice, GeneratorKind } from '../types';
 

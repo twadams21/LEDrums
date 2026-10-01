@@ -1,5 +1,9 @@
 <script lang="ts" module>
-  import type { EaseFn, EaseDir, EaseSpec } from '../trigger-lab/sim';
+  import type { voice } from '@ledrums/core';
+
+  type EaseFn = voice.EaseFn;
+  type EaseDir = voice.EaseDir;
+  type EaseSpec = voice.EaseSpec;
 
   /** The Resolume-familiar easing families, grouped for a compact selector.
       Single-sourced so every envelope editor labels eases identically. */

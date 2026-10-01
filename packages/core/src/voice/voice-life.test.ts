@@ -3,7 +3,7 @@ import { VoicePool, type SpawnDeps } from './voice-pool';
 import { advanceEnvelopes, reapDeadVoices } from './envelope-tick';
 import { resolveVoiceSustainMs } from '../effects/voice-life';
 import { EXP_TAIL_FACTOR, VISIBLE_CUTOFF } from '../effects/visibility';
-import type { PlayAction } from './eval-graph';
+import type { PlayAction } from './play-action';
 import type { Bus, EffectDef, Voice } from './types';
 
 /* The Life param used to do nothing. Every voice took its envelope from a fixed per-category

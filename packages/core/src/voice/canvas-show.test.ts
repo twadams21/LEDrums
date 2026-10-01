@@ -7,7 +7,8 @@ import { tryGetCanvasScene } from '../canvas/registry';
 import { tryGetEffect } from '../effects/registry';
 import type { CanvasScene } from '../canvas/types';
 import { createVoiceBusEngine, type InputEvent } from './engine';
-import { emptyShow, padKey, type EffectDef, type GraphNode, type Show, type TriggerGraph } from './types';
+import { emptyShow, type Show } from './types';
+import { sectionOf, songOf, zoneEffect } from './effect-test-fixtures';
 
 function testModel(): PixelModel {
   const kit = parseKit({
@@ -29,35 +30,8 @@ function scene(id: string, name = 'Scene'): CanvasScene {
   };
 }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id,
-    kind,
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: true,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 0.5,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
-    ...over,
-  };
-}
-
 function showWith(scenes: CanvasScene[], extra: Partial<Show> = {}): Show {
-  return { ...emptyShow(), buses: [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }], canvasScenes: scenes, ...extra };
+  return { ...emptyShow(), canvasScenes: scenes, ...extra };
 }
 
 function transport(now: number): TransportState {
@@ -88,32 +62,16 @@ describe('canvas scene show registration', () => {
     expect(tryGetCanvasScene('scene_b')).toBeDefined();
   });
 
-  it('renders a canvas play graph without any compositor change', () => {
+  it('renders a Scene Effect without any compositor change', () => {
     const eng = createVoiceBusEngine();
     const model = testModel();
     eng.setModel(model);
 
     const s = scene('scene_c');
-    const effId = canvasEffectId('scene_c');
-    const canvasEffect: EffectDef = {
-      id: effId,
-      name: s.name,
-      generatorId: effId,
-      busId: 'base',
-      scope: 'kit',
-      params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-      attackMs: 800,
-      sustainMs: 0,
-      releaseMs: 900,
-    };
-    const graph: TriggerGraph = {
-      nodes: [
-        node('trigger', 'trig'),
-        node('play', 'n1', { playType: 'canvas', canvasScene: 'scene_c', effectId: effId, presetId: `${effId}:default`, params: { brightness: 1 } }),
-      ],
-      edges: [{ id: 'e0', from: 'trig', to: 'n1' }],
-    };
-    eng.setShow(showWith([s], { effects: [canvasEffect], graphs: { [padKey('kick', '')]: graph } }));
+    const effect = zoneEffect('fx', { kind: 'scene', params: { sceneId: 'scene_c', brightness: 1 } }, {
+      amp: { attackMs: 800, length: { ms: 800 }, releaseMs: 900 }, target: { kind: 'kit' },
+    });
+    eng.setShow(showWith([s], { songs: [songOf('song', [sectionOf('sec', [effect])])] }));
 
     const hit: InputEvent = { kind: 'noteOn', drumId: 'kick', zone: '', velocity: 1, timeMs: 0 };
     eng.applyInput(hit);

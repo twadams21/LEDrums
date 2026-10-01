@@ -49,7 +49,7 @@ function showOf(...sections: SongSection[]): Show {
 }
 
 function section(id: string, effects: Effect[]): SongSection {
-  return { id, name: id, slots: {}, effects };
+  return { id, name: id, effects };
 }
 
 interface Harness {

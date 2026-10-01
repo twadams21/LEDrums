@@ -15,9 +15,8 @@
  *
  * Cross-hit advancement is deliberately NOT in here — the voice engine gives each hit a fresh
  * `genState`, so an in-effect hit counter would advance under the offline sim and never under
- * the real engine. Exact per-hit stepping is the graph's `sequence` node driving N
- * `fire: 'single'` play nodes; random-per-hit is a `random` modulation source on
- * `segmentOffset`. Both are existing routing, not duplicated here.
+ * the real engine. Random-per-hit is a `random` Control device on `segmentOffset` — existing
+ * modulation, not duplicated here.
  *
  * Pure + deterministic: no wall clock, no `Math.random`. All randomness derives from the
  * voice's per-trigger seed via `mulberry32`.

@@ -108,17 +108,17 @@ describe('global transport recall (STEP 0 — index → song/section ids)', () =
         id: 'songA',
         name: 'A',
         sections: [
-          { id: 'a0', name: 'A0', slots: {} },
-          { id: 'a1', name: 'A1', slots: {} },
-          { id: 'a2', name: 'A2', slots: {} },
+          { id: 'a0', name: 'A0', effects: [] },
+          { id: 'a1', name: 'A1', effects: [] },
+          { id: 'a2', name: 'A2', effects: [] },
         ],
       },
       {
         id: 'songB',
         name: 'B',
         sections: [
-          { id: 'b0', name: 'B0', slots: {} },
-          { id: 'b1', name: 'B1', slots: {} },
+          { id: 'b0', name: 'B0', effects: [] },
+          { id: 'b1', name: 'B1', effects: [] },
         ],
       },
     ],

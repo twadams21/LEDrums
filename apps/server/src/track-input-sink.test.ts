@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
-import { defaultProject, getEffect, voice, withGlobalControlBinding } from '@ledrums/core';
+import { defaultProject, effectChain, withGlobalControlBinding, type voice } from '@ledrums/core';
 import { trackPacketSchema, type ServerMessage } from '@ledrums/protocol';
 import { OutputManager } from './output-manager';
 import { VoiceEngineHost } from './voice-engine-host';
@@ -10,25 +10,30 @@ import { createTrackInputSink } from './track-input-sink';
 const MIDI_ID = 'render_midi';
 const AUDIO_ID = 'render_audio';
 const noteAddress = `/tracks/${MIDI_ID}/midi/1/note/60`;
-function node(id: string, kind: voice.NodeKind, extra: Partial<voice.GraphNode> = {}): voice.GraphNode {
-  return { id, kind, x: 0, y: 0, mode: 'loop', scope: 'kit', effectId: '', presetId: '', busId: 'b',
-    params: {}, env: {}, noRepeat: false, on: 'value', valueMode: 'gate', threshold: 0.5,
-    invert: false, bands: [0.5], p: 1, delayMode: 'time', ms: 0, division: '1/8', ...extra };
+/** A looping solid Cue on `source` (default MIDI note 61). With `modulation`, its brightness
+    (base 0) follows the audio level or the track's OSC level address. */
+function cue(id: string, modulation?: 'audio' | 'osc', source: Record<string, unknown> = { midiNote: 61 }): effectChain.Effect {
+  const control = modulation === 'audio'
+    ? { uid: 'm', kind: 'audio', settings: { band: 'level' } }
+    : { uid: 'm', kind: 'osc', settings: { address: `/tracks/${AUDIO_ID}/audio/level` } };
+  return effectChain.parseEffect({
+    id,
+    cell: { row: 'kit', column: { kind: 'cue' } },
+    trigger: { kind: 'cue', source },
+    generator: { kind: 'solid', style: 'solid', params: { brightness: modulation ? 0 : 1 } },
+    amp: { attackMs: 0, length: 'loop', releaseMs: 0 },
+    // A re-hit restarts the loop rather than stacking a second one.
+    retrigger: 'restart',
+    controls: modulation
+      ? [{ ...control, mappings: [{ device: 'generator', param: 'brightness', amount: 1, invert: false, rangeMin: 0, rangeMax: 1 }] }]
+      : [],
+  });
+}
+function showOf(effects: effectChain.Effect[], sectionIds = ['s']): voice.Show {
+  return { songs: [{ id: 'song', name: 'Song', sections: sectionIds.map((id) => ({ id, name: id, effects })) }] };
 }
 function show(modulation?: 'audio' | 'osc'): voice.Show {
-  const effect = getEffect('solid-colour');
-  return { buses: [{ id: 'b', name: 'Test', polyphony: 'mono', crossfadeMs: 0 }], effects: [{
-    id: 'fx', name: effect.name, generatorId: effect.id, busId: 'b', scope: 'kit',
-    params: effect.paramSpec.map(({ type, ...spec }) => ({ ...spec, kind: type })),
-    attackMs: 0, sustainMs: 10_000, releaseMs: 0,
-  }], presets: [], sections: [], graphs: { 'graph:track-test': { version: 3, nodes: [
-    node('t', 'trigger', { source: { kind: 'midi', note: 61 } }),
-    node('f', 'effect', { effectId: 'fx', params: { brightness: modulation ? 0 : 1 }, modInputs: [{ param: 'brightness' }] }),
-    node('o', 'output'),
-    node('m', modulation === 'audio' ? 'audio' : 'osc', { audioBand: 'level', oscAddress: `/tracks/${AUDIO_ID}/audio/level` }),
-  ], edges: [ { id: 'in', from: 't', to: 'f' }, { id: 'out', from: 'f', to: 'o' },
-    ...(modulation ? [{ id: 'mod', from: 'm', to: 'f', toPort: 'param:brightness' as const, amount: 1, invert: false, rangeMin: 0, rangeMax: 1 }] : []),
-  ] } } };
+  return showOf([cue('fx', modulation)]);
 }
 function rig(modulation?: 'audio' | 'osc') {
   const project = defaultProject();
@@ -86,14 +91,12 @@ describe('local track production sink → real host → preview (physical adapte
     expect(release).toMatchObject({ value: 0, modulationOnly: true, trackInputId: MIDI_ID });
   });
 
-  it('filters raw and scoped wrong-channel MIDI before graph/global/control resolution', () => {
+  it('filters raw and scoped wrong-channel MIDI before Cue/global/control resolution', () => {
     const r = rig();
     r.host.setInputMap({ ...r.host.getInputMap(), midiChannel: 1,
       globalControls: withGlobalControlBinding({}, 'panicBlackoutMomentary', { midiNote: 60 }) });
-    const custom = show();
-    custom.graphs['graph:scoped'] = { ...custom.graphs['graph:track-test']!, nodes: custom.graphs['graph:track-test']!.nodes.map((n) => n.id === 't'
-      ? { ...n, source: { kind: 'osc', address: `/tracks/${MIDI_ID}/midi/2/note/61` } } : n) };
-    r.host.setShow(custom);
+    // A second Cue on the channel-2 track address: it must never see a filtered message either.
+    r.host.setShow(showOf([cue('fx'), cue('scoped', undefined, { oscAddress: `/tracks/${MIDI_ID}/midi/2/note/61` })]));
     r.hello(); r.midi(61, true, 2);
     expect(r.render()).toBe(0); expect(r.host.getStats().engine.voiceCount).toBe(0);
     r.midi(61); expect(r.render()).toBeGreaterThan(0);
@@ -105,10 +108,8 @@ describe('local track production sink → real host → preview (physical adapte
     const r = rig();
     r.host.setInputMap({ ...r.host.getInputMap(), midiChannel: 1,
       globalControls: withGlobalControlBinding({}, 'masterBrightness', { midiCc: 7 }) });
-    r.host.setShow({ ...show(), songs: [{ id: 's', name: 'S', sections: [
-      { id: 'a', name: 'A', slots: {} }, { id: 'b', name: 'B', slots: {} },
-    ] }] });
-    r.host.applyInput({ kind: 'recallSection', songId: 's', sectionId: 'a' }); r.render();
+    r.host.setShow(showOf([cue('fx')], ['a', 'b']));
+    r.host.applyInput({ kind: 'recallSection', songId: 'song', sectionId: 'a' }); r.render();
     r.hello(); r.midi(61); expect(r.render()).toBeGreaterThan(0);
     r.send({ t: 'cc', controller: 0, value: 1, channel: 2 });
     r.send({ t: 'cc', controller: 7, value: 0, channel: 2 });

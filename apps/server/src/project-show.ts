@@ -1,19 +1,16 @@
-import { BUILTIN_CANVAS_SCENES, canvasVoiceEffectDef, canvasVoiceDefaultPreset, canvasEffectId, effectChain,
-  SHOWS_VERSION, SHOWS_VERSION_EFFECTS, SONGS_VERSION, SONGS_VERSION_EFFECTS, resolveEffectAlias, voice,
-  type CanvasScene } from '@ledrums/core';
+import { effectChain, SHOWS_VERSION, SHOWS_VERSION_EFFECTS, SONGS_VERSION, SONGS_VERSION_EFFECTS,
+  type voice } from '@ledrums/core';
 import { showSchema } from '@ledrums/protocol';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid authored library object');
   return value as Record<string, unknown>;
 }
-function array(value: unknown): unknown[] {
-  if (!Array.isArray(value)) throw new Error('Invalid authored library array');
-  return value;
-}
 
-/** The envelope versions the server can restore: the graph-model format and the effect-chains
- * format (expand → contract: both until the graph model is retired). */
+/** The envelope versions the server stores: the effect-chains format it runs, and the retired
+ * graph-model format it keeps as an archive. A graph-model library is never run — the server
+ * boots it as an empty show and hands the blob to the web client, whose legacy import reads it
+ * (effect chains S08). */
 const SUPPORTED_VERSIONS = {
   show: [SHOWS_VERSION, SHOWS_VERSION_EFFECTS],
   song: [SONGS_VERSION, SONGS_VERSION_EFFECTS],
@@ -50,89 +47,26 @@ const logDiagnostics: LibraryDiagnosticSink = (diagnostics) => {
 
 /** Restore boundary for the existing web-owned library envelope, not a second authoring model.
  * Keep unknown fields in the stored blob; project only the runtime Show through the SAME protocol
- * gate used by setShow. Older unsupported/corrupt shapes fail before any live mutation. */
+ * gate used by setShow. Unsupported/corrupt shapes fail before any live mutation; an archived
+ * graph-model show library projects no Show (the engine runs empty). */
 export function showFromLibraries(
   showLibrary: unknown,
   songLibrary: unknown,
   onDiagnostics: LibraryDiagnosticSink = logDiagnostics,
 ): voice.Show | null {
   validateLibraryVersions(showLibrary, songLibrary);
-  if (showLibrary === null) return null;
-  if (versionOf(showLibrary) === SHOWS_VERSION_EFFECTS) return effectShowFromLibraries(showLibrary, songLibrary, onDiagnostics);
-  // The graph path reads only a graph-format song library; an effect-format one holds no graph
-  // closures, so its references resolve to nothing here (as a dangling ref does).
-  return graphShowFromLibraries(showLibrary, versionOf(songLibrary) === SONGS_VERSION ? songLibrary : null);
+  if (showLibrary === null || versionOf(showLibrary) !== SHOWS_VERSION_EFFECTS) return null;
+  return effectShowFromLibraries(showLibrary, songLibrary, onDiagnostics);
 }
 
 /** v3 (effect chains): the ONE core builder, then the same protocol gate as setShow. */
 function effectShowFromLibraries(showLibrary: unknown, songLibrary: unknown, onDiagnostics: LibraryDiagnosticSink): voice.Show | null {
+  // An archived graph-model song library holds no effect songs: its references resolve to
+  // nothing here, as a dangling ref does.
   const songs = versionOf(songLibrary) === SONGS_VERSION_EFFECTS ? effectChain.parseSongLibraryV2(songLibrary) : null;
   const { show, diagnostics } = effectChain.buildRuntimeShow(effectChain.parseShowLibraryV3(showLibrary), songs);
   if (diagnostics.length) onDiagnostics(diagnostics);
   return show === null ? null : showSchema.parse(show);
-}
-
-/** v2 (graph model): unchanged restore path. */
-function graphShowFromLibraries(showLibrary: unknown, songLibrary: unknown): voice.Show | null {
-  const data = object(object(showLibrary).data);
-  const shows = object(data.shows);
-  if (Object.keys(shows).length === 0) return null;
-  const selected = shows[String(data.activeShowId)] ?? Object.values(shows)[0];
-  const authored = object(object(selected).authored);
-  const graphs = structuredClone(object(authored.graphs ?? {}));
-  const effects = [...array(authored.effects ?? [])];
-  const presets = [...array(authored.presets ?? [])];
-  const songs = [...array(authored.songs ?? [])];
-  const librarySongs = songLibrary === null ? {} : object(object(object(songLibrary).data).songs ?? {});
-  for (const id of new Set(array(authored.songRefs ?? []))) {
-    const entry = librarySongs[String(id)];
-    if (!entry) continue;
-    const lib = object(entry);
-    Object.assign(graphs, structuredClone(object(lib.graphs)));
-    for (const [target, source] of [[effects, lib.effects], [presets, lib.presets]] as const) {
-      for (const value of array(source)) {
-        if (!target.some((v) => object(v).id === object(value).id)) target.push(value);
-      }
-    }
-    songs.push({ id: lib.id, name: lib.name, sections: lib.sections });
-  }
-  const activeSong = songs.find((s) => object(s).id === authored.activeSongId) ?? songs[0];
-  const runtime = showSchema.parse({
-    buses: authored.buses ?? [], graphs, effects, presets,
-    sections: activeSong ? array(object(activeSong).sections).map((s) => ({ ...object(s), looks: object(s).looks ?? {} })) : [],
-  });
-  // Match buildShow's alias policy, preserving unknown graph fields through the protocol gate.
-  for (const graph of Object.values(runtime.graphs)) {
-    for (const node of graph.nodes) {
-      if ((node.kind === 'play' || node.kind === 'effect') && node.effectId) {
-        const id = resolveEffectAlias(node.effectId);
-        if (id !== node.effectId) { node.effectId = id; node.presetId = `${id}:default`; }
-      }
-    }
-  }
-  runtime.songs = songs.map((s) => {
-    const song = object(s);
-    if (typeof song.id !== 'string' || typeof song.name !== 'string') throw new Error('Invalid authored song');
-    return { id: song.id, name: song.name, sections: array(song.sections).map((v) => {
-      const section = object(v);
-      if (typeof section.id !== 'string' || typeof section.name !== 'string') throw new Error('Invalid authored section');
-      return voice.runtimeSectionFromGraphKeys({
-        id: section.id,
-        name: section.name,
-        graphKeys: array(section.graphs ?? []).map(String),
-        graphs: runtime.graphs,
-      });
-    }) };
-  });
-  const scenes = array(authored.canvasScenes ?? []) as CanvasScene[];
-  runtime.canvasScenes = scenes;
-  for (const scene of [...scenes, ...BUILTIN_CANVAS_SCENES]) {
-    const id = canvasEffectId(scene.id);
-    if (runtime.effects.some((e) => e.id === id)) continue;
-    runtime.effects.push(canvasVoiceEffectDef(scene));
-    runtime.presets.push(canvasVoiceDefaultPreset(scene));
-  }
-  return runtime;
 }
 
 export interface PersistedSelection {
@@ -142,7 +76,8 @@ export interface PersistedSelection {
 
 export function selectionFromLibrary(library: unknown): PersistedSelection | undefined {
   validateLibraryVersions(library, null);
-  if (library === null) return undefined;
+  // An archived graph-model library runs no show, so its pointer names nothing to recall.
+  if (library === null || versionOf(library) !== SHOWS_VERSION_EFFECTS) return undefined;
   const data = object(object(library).data);
   const selected = object(data.shows)[String(data.activeShowId)];
   if (!selected) return undefined;

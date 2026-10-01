@@ -337,7 +337,7 @@ function targetPixelRanges(target: string, model: PixelModel): PixelRange[] {
 }
 
 /** Does this voice need its own layer? Only a blend other than `add`, or an opacity other than
-    1, does — everything else (every graph voice, every default Effect) lands additively. */
+    1, does — everything else (every default Effect) lands additively. */
 function needsLayer(v: Voice): boolean {
   return (v.blend !== undefined && v.blend !== 'add') || (v.opacity !== undefined && v.opacity !== 1);
 }
@@ -415,8 +415,8 @@ export interface PresentationCompositor extends Compositor {
  * opacity 1 takes the additive path unchanged. Any other voice renders into its own layer at
  * level 1, which is then composited into `dst` with {@link compositeInto} at
  * `opacity × level` — splice and slice voices included, at their final landing. While any
- * such voice is live, graph voices land first in pool order and Effect-path voices stack on
- * top in ascending `layerOrder`, ties by spawn order; otherwise the frame is today's exact
+ * such voice is live, voices without a `layerOrder` land first in pool order and Effect-path
+ * voices stack on top in ascending `layerOrder`, ties by spawn order; otherwise the frame is today's exact
  * pool-order additive pass.
  *
  * Owns one generator bridge for its lifetime; it keeps its own reused scratch, so the only
@@ -831,7 +831,7 @@ export function createDefaultCompositor(): PresentationCompositor {
       if (!anyLayer) {
         for (const v of drawList) drawVoice(v, dst, v.level * v.deckGain);
       } else {
-        // Order matters once a voice blends. Graph voices (no `layerOrder`) keep pool order
+        // Order matters once a voice blends. Voices with no `layerOrder` keep pool order
         // underneath; Effect-path voices then stack in ascending `layerOrder` (section
         // composition order), ties broken by spawn order.
         const layered = layeredScratch;

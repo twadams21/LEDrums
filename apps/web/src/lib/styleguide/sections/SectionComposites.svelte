@@ -36,6 +36,7 @@
   import { GENERATOR_EFFECTS } from '../../trigger-lab/fixtures';
   import type { EffectDef, ParamValues } from '../../trigger-lab/sim';
   import type { TriggerLab } from '../../trigger-lab/store.svelte';
+  import { makeSection } from '../../app/setlist';
   import type { ControllerStatus, DiscoveredController, MonitorEvent, NetworkAdapter, OscListenInfo, OutputStatus } from '../../ws/protocol-types';
   import type { InputBadgeView } from '../../trigger-lab/input-activity';
   import { filterMonitorEvents, DEFAULT_MONITOR_FILTERS, type MonitorFilterType } from '../../app/monitor';
@@ -247,12 +248,12 @@
         id: 'song-1',
         name: 'Opener',
         sections: [
-          { id: 'sec-1', name: 'Intro', graphs: ['g1', 'g2'] },
-          { id: 'sec-2', name: 'Verse', graphs: ['g1'] },
-          { id: 'sec-3', name: 'Chorus', graphs: ['g1', 'g2', 'g3'] },
+          makeSection('sec-1', 'Intro'),
+          makeSection('sec-2', 'Verse'),
+          makeSection('sec-3', 'Chorus'),
         ],
       },
-      { id: 'song-2', name: 'Midnight Run', sections: [{ id: 'sec-4', name: 'Drop', graphs: ['g1'] }] },
+      { id: 'song-2', name: 'Midnight Run', sections: [makeSection('sec-4', 'Drop')] },
     ];
     resolvedSongs = [...this.songs, { id: 'song-3', name: 'Encore', sections: [] }];
     activeSongId = $state('song-1');

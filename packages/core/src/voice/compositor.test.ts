@@ -6,20 +6,16 @@ import { Framebuffer } from '../engine/framebuffer';
 import { compositeInto } from '../color/blend';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { createDefaultCompositor, type CompositorFrame } from './compositor';
-import {
-  padKey,
-  type Bus,
-  type EffectDef,
-  type GraphNode,
-  type ResolvedModifier,
-  type Show,
-  type TriggerGraph,
-  type Voice,
-} from './types';
+import type { EffectDef, ResolvedModifier, Show, Voice } from './types';
+import type { Effect, GeneratorDevice } from '../effect-chain/types';
+import { listGenerators } from '../effect-chain/generators';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 import { getEffect } from '../effects/registry';
 import { sparkler } from '../effects/impl/sparkler';
 
-// ---- fixtures (mirror engine.test.ts so the bridge is exercised end-to-end) ----
+// ---- fixtures: one Effect per case, so the bridge is exercised end-to-end ----
+// The cases name a hosted effect implementation (an `EffectDef`: generator id, timings) and a
+// scope / target; `show` builds the Effect that hosts it through its Generator Style.
 
 function testModel(): PixelModel {
   const kit = parseKit({
@@ -30,10 +26,6 @@ function testModel(): PixelModel {
     ],
   });
   return buildPixelModel(kit);
-}
-
-function buses(): Bus[] {
-  return [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }];
 }
 
 /** A generator-backed effect: hosts the legacy EffectGenerator `generatorId`. Long
@@ -53,39 +45,44 @@ function genEffect(id: string, generatorId: string, over: Partial<EffectDef> = {
   };
 }
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id,
-    kind,
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: true,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 0.5,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
-    ...over,
-  };
+/** A case: hit → one Effect hosting `effectId`, on `scope` with an optional target. */
+interface FlatSpec { effectId: string; scope: 'drum' | 'kit' | 'hoop'; targetId?: string }
+
+function flatGraph(effectId: string, scope: 'drum' | 'kit' | 'hoop' = 'kit', targetId?: string): FlatSpec {
+  return { effectId, scope, targetId };
 }
 
-/** trigger → play(effectId) with the given scope + optional targetId. */
-function flatGraph(effectId: string, scope: 'drum' | 'kit' | 'hoop' = 'kit', targetId?: string): TriggerGraph {
-  return {
-    nodes: [node('trigger', 'trigger'), node('play', 'p1', { effectId, scope, targetId, params: { brightness: 1 } })],
-    edges: [{ id: 'e0', from: 'trigger', to: 'p1' }],
-  };
+/** The Generator (kind + Style) hosting an effect implementation; an unknown id keeps an
+    unknown Style, which resolves to nothing. */
+function hostingGenerator(generatorId: string): Pick<GeneratorDevice, 'kind' | 'style'> {
+  for (const def of listGenerators()) {
+    const style = def.styles.find((candidate) => candidate.effectId === generatorId);
+    if (style) return { kind: def.id as GeneratorDevice['kind'], style: style.id };
+  }
+  return { kind: 'solid', style: generatorId };
+}
+
+/** The Effect target for a scope: kit; the struck (or named) drum; a hoop, `drum#hoop`
+    (default the struck drum's hoop 1). */
+function targetOf(spec: FlatSpec, drumId: string): Record<string, unknown> {
+  if (spec.scope === 'kit') return { kind: 'kit' };
+  if (spec.scope === 'drum') return spec.targetId ? { kind: 'select', drums: [{ drumId: spec.targetId }] } : { kind: 'hitDrum' };
+  const [drum, hoop] = spec.targetId?.split('#') ?? [drumId, '1'];
+  return { kind: 'select', drums: [{ drumId: drum, hoops: [Number(hoop)] }] };
+}
+
+/** The Effect for a case on `drumId`'s first zone: the def's params at their defaults (plus
+    `brightness: 1`), its attack / sustain / release as the amp envelope. `retrigger` stands in
+    for a mono layer's steal. */
+function effectOf(spec: FlatSpec, def: EffectDef, drumId: string, id = spec.effectId, retrigger = 'overlap'): Effect {
+  const params: Record<string, number | string | boolean> = {};
+  for (const p of def.params) params[p.key] = p.default;
+  params.brightness = 1;
+  return zoneEffect(id, { ...hostingGenerator(def.generatorId!), params }, {
+    amp: { attackMs: def.attackMs, length: { ms: def.attackMs + def.sustainMs }, releaseMs: def.releaseMs },
+    target: targetOf(spec, drumId),
+    retrigger,
+  }, drumId, 0);
 }
 
 /** render helper: hit drumId and tick to full level; return frame + model. Uses breathing-kit
@@ -131,14 +128,9 @@ function renderGenTargeted(generatorId: string, scope: 'drum' | 'kit' | 'hoop', 
   return { frame: e.frame(), model: m };
 }
 
-function show(graph: TriggerGraph, effects: EffectDef[], drumId = 'kick'): Show {
-  return {
-    buses: buses(),
-    graphs: { [padKey(drumId, '')]: graph },
-    sections: [],
-    effects,
-    presets: [],
-  };
+function show(spec: FlatSpec, effects: EffectDef[], drumId = 'kick', retrigger = 'overlap'): Show {
+  const def = effects.find((candidate) => candidate.id === spec.effectId)!;
+  return effectShowOf(sectionOf('s', [effectOf(spec, def, drumId, spec.effectId, retrigger)]));
 }
 
 function transport(now: number, beat = 0, bpm = 120): TransportState {
@@ -240,12 +232,12 @@ describe('Compositor — hosted legacy-generator bridge', () => {
     const run = (): number[] => {
       const e = createVoiceBusEngine();
       e.setModel(testModel());
-      e.setShow(
-        show(flatGraph('fx', 'kit'), [genEffect('fx', 'lightning')]),
-      );
-      // also register a snare pad so the snare hit resolves
-      const s = show(flatGraph('fx', 'kit'), [genEffect('fx', 'lightning')]);
-      e.setShow({ ...s, graphs: { ...s.graphs, [padKey('snare', '')]: flatGraph('fx', 'kit') } });
+      // a kick and a snare zone Effect, so both hits resolve
+      const def = genEffect('fx', 'lightning');
+      e.setShow(effectShowOf(sectionOf('s', [
+        effectOf(flatGraph('fx', 'kit'), def, 'kick', 'kick-fx'),
+        effectOf(flatGraph('fx', 'kit'), def, 'snare', 'snare-fx'),
+      ])));
       for (const ev of events) e.applyInput(ev);
       let now = 0;
       for (let i = 0; i < 30; i++) {
@@ -260,21 +252,11 @@ describe('Compositor — hosted legacy-generator bridge', () => {
   it('two generator voices coexist in one frame, output stays in [0,1]', () => {
     const m = testModel();
     const e = createVoiceBusEngine();
-    const g: TriggerGraph = {
-      nodes: [
-        node('trigger', 'trigger'),
-        node('all', 'all'),
-        node('play', 'pa', { y: 0, effectId: 'patt', params: { brightness: 1 } }),
-        node('play', 'pb', { y: 100, effectId: 'gen', params: { brightness: 1 } }),
-      ],
-      edges: [
-        { id: 'e0', from: 'trigger', to: 'all' },
-        { id: 'e1', from: 'all', to: 'pa' },
-        { id: 'e2', from: 'all', to: 'pb' },
-      ],
-    };
     e.setModel(m);
-    e.setShow(show(g, [genEffect('patt', 'whole-drum'), genEffect('gen', 'breathing-kit')]));
+    e.setShow(effectShowOf(sectionOf('s', [
+      effectOf(flatGraph('patt'), genEffect('patt', 'whole-drum'), 'kick'),
+      effectOf(flatGraph('gen'), genEffect('gen', 'breathing-kit'), 'kick'),
+    ])));
     e.applyInput(hit('kick', 0));
     e.tick(5, 5, transport(5));
     e.tick(40, 35, transport(40, 0.25));
@@ -401,13 +383,12 @@ describe('Compositor — scope + targetId masking', () => {
 });
 
 // ---- S25: voice timebase (restart-on-trigger) -------------------------------
-// chase is the tracer effect (timebase:'voice'): the generator bridge feeds it a
-// hit-relative clock, so it starts at hoop 0 on the hit and restarts on retrigger. These
-// are the engine-level goldens the S25 spec requires — chase at voice ages 0/200/800,
-// identical across separate runs AND across retriggers. A retrigger is a NEW voice whose
-// age is 0, so the retriggered animation matches a fresh one age-for-age.
+// S25's tracer was `chase`, which only the legacy Composition engine hosts now (no Generator
+// Style plays it — see `effect-chain/generators/coverage.test.ts`), so its hoop-position goldens
+// went with the graph path. The voice clock itself is pinned by the S26 batch below; the
+// absolute-timebase lock stays here.
 
-/** A single 8-hoop drum: chase's active hoop is distinct at each sampled age (avoids the
+/** A single 8-hoop drum: a voice-clock effect's position is distinct at each sampled age (avoids the
     2-hoop model's aliasing so the golden actually pins the position). */
 function chaseModel(): PixelModel {
   const kit = parseKit({
@@ -417,83 +398,7 @@ function chaseModel(): PixelModel {
   return buildPixelModel(kit);
 }
 
-/** chase on a base bus; attack 0 so voice age maps straight to animation (age 0 → level 1). */
-function chaseShow(polyphony: 'mono' | 'poly'): Show {
-  const bus: Bus = { id: 'base', name: 'Base', polyphony, crossfadeMs: 0 };
-  return {
-    buses: [bus],
-    graphs: { [padKey('kick', '')]: flatGraph('fx', 'kit') },
-    sections: [],
-    effects: [genEffect('fx', 'chase', { attackMs: 0 })],
-    presets: [],
-  };
-}
-
-/** Fire chase once, sample the frame at the given voice age (transport bpm 120 throughout). */
-function chaseAtAge(ageMs: number, polyphony: 'mono' | 'poly' = 'poly'): Readonly<Float32Array> {
-  const e = createVoiceBusEngine();
-  e.setModel(chaseModel());
-  e.setShow(chaseShow(polyphony));
-  e.applyInput(hit('kick', 0));
-  e.tick(0, 0, transport(0)); // spawn at t=0 → born 0; attack 0 → full level this same tick
-  if (ageMs > 0) e.tick(ageMs, ageMs, transport(ageMs));
-  return e.frame();
-}
-
-/** Fire chase, run to t=500, retrigger (mono steal), then sample the NEW voice at `ageMs`. */
-function chaseAfterRetrigger(ageMs: number): Readonly<Float32Array> {
-  const e = createVoiceBusEngine();
-  e.setModel(chaseModel());
-  e.setShow(chaseShow('mono'));
-  e.applyInput(hit('kick', 0));
-  e.tick(0, 0, transport(0)); // voice A born 0
-  e.tick(500, 500, transport(500)); // A ages to 500
-  e.applyInput(hit('kick', 500)); // retrigger on the mono bus
-  e.tick(500, 0, transport(500)); // mono steal: A → release, B born 500
-  // Sample B at age `ageMs`. For ageMs ≥ the 100ms release ramp, A has fully faded and been
-  // reaped, so only B contributes → directly comparable to a fresh voice at the same age.
-  e.tick(500 + ageMs, ageMs, transport(500 + ageMs));
-  return e.frame();
-}
-
-/** The sorted set of hoop indices lit in a frame (any channel > 0). */
-function litHoopSet(f: Readonly<Float32Array>, m: PixelModel): number[] {
-  const hoops = new Set<number>();
-  for (const p of m.pixels) {
-    const j = p.id * 4;
-    if (f[j]! > 0.004 || f[j + 1]! > 0.004 || f[j + 2]! > 0.004) hoops.add(p.hoopIndex);
-  }
-  return [...hoops].sort((a, b) => a - b);
-}
-
-describe('Compositor — voice timebase / restart-on-trigger (S25)', () => {
-  const m = chaseModel(); // deterministic layout — for interpreting hoop positions
-
-  it('chase starts at hoop 1 on the hit (age 0 → beat 0 → step 0)', () => {
-    expect(litHoopSet(chaseAtAge(0), m)).toEqual([1]); // hoop labels are 1-based (A1)
-  });
-
-  it('chase advances on the voice clock, not frozen (ages 0/200/800 → distinct hoops)', () => {
-    // voice-local beat = age×bpm/60000; subdivision 4 → step = floor(beat × 4).
-    // age 0 → beat 0 → step 0 (hoop 1); age 200 → beat 0.4 → step 1 (hoop 2);
-    // age 800 → beat 1.6 → step 6 (hoop 7). Hoop labels are 1-based (A1).
-    expect(litHoopSet(chaseAtAge(0), m)).toEqual([1]);
-    expect(litHoopSet(chaseAtAge(200), m)).toEqual([2]);
-    expect(litHoopSet(chaseAtAge(800), m)).toEqual([7]);
-  });
-
-  it('chase goldens are identical across separate runs (deterministic)', () => {
-    const run = (): number[][] => [0, 200, 800].map((a) => Array.from(chaseAtAge(a)));
-    expect(run()).toEqual(run());
-  });
-
-  it('chase restarts on retrigger: the retriggered voice matches a fresh voice age-for-age', () => {
-    // Mono steal resets the voice → the second hit animates from 0 exactly like the first.
-    for (const age of [200, 800]) {
-      expect(Array.from(chaseAfterRetrigger(age))).toEqual(Array.from(chaseAtAge(age, 'mono')));
-    }
-  });
-
+describe('Compositor — absolute timebase (S25)', () => {
   it('absolute-timebase effects are age-independent: plasma at a fixed engine time is unchanged by birth time (golden parity)', () => {
     // My change only routes 'voice' generators onto a hit-relative clock; 'absolute'
     // generators (default) still read the engine wall-clock, so plasma sampled at the SAME
@@ -533,17 +438,10 @@ const S26_VOICE_EFFECTS = [
     Its restart is proven by the restart + no-leak tests instead. */
 const S26_CLOCK_EFFECTS = S26_VOICE_EFFECTS.filter((id) => id !== 'comet-trails');
 
-/** Generic single-generator show on a mono/poly base bus; attack 0 so voice age maps
-    straight to animation (age 0 → full level this same tick). */
+/** Generic single-generator show, restart (mono) or overlap (poly) retrigger; attack 0 so
+    voice age maps straight to animation (age 0 → full level this same tick). */
 function fxShow(generatorId: string, polyphony: 'mono' | 'poly'): Show {
-  const bus: Bus = { id: 'base', name: 'Base', polyphony, crossfadeMs: 0 };
-  return {
-    buses: [bus],
-    graphs: { [padKey('kick', '')]: flatGraph('fx', 'kit') },
-    sections: [],
-    effects: [genEffect('fx', generatorId, { attackMs: 0 })],
-    presets: [],
-  };
+  return show(flatGraph('fx', 'kit'), [genEffect('fx', generatorId, { attackMs: 0 })], 'kick', polyphony === 'mono' ? 'restart' : 'overlap');
 }
 
 /** Fire once, sample the frame at voice age `ageMs`. `prime` spawns-and-steals one throwaway
@@ -680,9 +578,8 @@ describe('Compositor — voice timebase conversion batch (S26)', () => {
 });
 
 // ---- S28: modifier chain at the engine seam ---------------------------------
-// The graph layer (S29) resolves a play node's `mod` closure into voice.modifiers; here we
-// drive the compositor directly with hand-built voices carrying a resolved chain — the same
-// seam, minus the topology. These pin: the chain applies between render and blend on BOTH
+// The Effect resolver turns an Effect's Modifier devices into voice.modifiers; here we drive
+// the compositor directly with hand-built voices carrying a resolved chain — the same seam. These pin: the chain applies between render and blend on BOTH
 // paths (generator + pattern), temporal state is per-voice, bypass/unmodified is identity,
 // chain order is respected, and the whole thing is deterministic.
 
@@ -829,67 +726,8 @@ describe('Compositor — modifier chain (S28)', () => {
   });
 });
 
-// ---- Gen3 S08: Mix route buffer composition --------------------------------
-
-function mixEffect(id: string, hue: number): EffectDef {
-  return genEffect(id, 'whole-kit', {
-    attackMs: 0,
-    params: [
-      { key: 'hue', label: 'Hue', kind: 'number', min: 0, max: 360, default: hue },
-      { key: 'saturation', label: 'Saturation', kind: 'number', min: 0, max: 1, default: 1 },
-      { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 },
-      { key: 'decayMs', label: 'Decay', kind: 'number', min: 1, max: 5000, default: 5000 },
-    ],
-  });
-}
-
-function mixPlay(id: string, effectId: string, y: number): GraphNode {
-  return node('effect', id, {
-    y,
-    effectId,
-    params: { hue: effectId === 'red' ? 0 : effectId === 'green' ? 120 : 240, saturation: 1, brightness: 1, decayMs: 5000 },
-  });
-}
-
-function mixGraph(inputs: Array<{ id: string; effectId: string; y: number; opacity?: number }>, over: Partial<GraphNode> = {}, after: GraphNode[] = []): TriggerGraph {
-  const mix = node('mix', 'mix', { y: 50, mixBlendMode: 'add', ...over } as Partial<GraphNode>);
-  const output = node('output', 'output', { y: 50 });
-  return {
-    version: 3,
-    nodes: [
-      node('trigger', 'trigger', { y: 50 }),
-      node('all', 'all', { y: 50 }),
-      ...inputs.map((i) => mixPlay(i.id, i.effectId, i.y)),
-      mix,
-      ...after,
-      output,
-    ],
-    edges: [
-      { id: 'e-trigger', from: 'trigger', to: 'all' },
-      ...inputs.map((i) => ({ id: `e-all-${i.id}`, from: 'all', to: i.id })),
-      ...inputs.map((i) => ({ id: `e-${i.id}-mix`, from: i.id, to: 'mix', opacity: i.opacity })),
-      after.length ? { id: 'e-mix-after', from: 'mix', to: after[0]!.id } : { id: 'e-mix-output', from: 'mix', to: 'output' },
-      ...after.map((n, index) => ({ id: `e-after-${index}`, from: n.id, to: after[index + 1]?.id ?? 'output' })),
-    ],
-  };
-}
-
-function renderMix(graph: TriggerGraph, drumId = 'kick'): { frame: Readonly<Float32Array>; model: PixelModel; voices: number } {
-  const e = createVoiceBusEngine();
-  e.setModel(testModel());
-  e.setShow(show(graph, [mixEffect('red', 0), mixEffect('green', 120), mixEffect('blue', 240)], drumId));
-  e.applyInput(hit(drumId, 0));
-  e.tick(0, 0, transport(0));
-  return { frame: e.frame(), model: testModel(), voices: e.stats().voiceCount };
-}
-
-function rgbAt(f: Readonly<Float32Array>, pixel = 0): [number, number, number] {
-  const i = pixel * 4;
-  return [f[i]!, f[i + 1]!, f[i + 2]!];
-}
-
-describe('Gen3 Mix node — buffer composition', () => {
-  it('uses fire intensity as Mix coverage so dim pixels stay translucent over a background', () => {
+describe('compositeInto — fire intensity as coverage', () => {
+  it('uses fire intensity as coverage so dim pixels stay translucent over a background', () => {
     const model = testModel();
     const source = new Framebuffer(model.pixelCount);
     sparkler.render({
@@ -909,78 +747,5 @@ describe('Gen3 Mix node — buffer composition', () => {
     expect(source.rgba[3]).toBeLessThan(1);
     expect(destination[0]).toBeGreaterThan(0);
     expect(destination[2]).toBeGreaterThan(0.7);
-  });
-
-  it('composes multiple upstream effect routes into one output voice', () => {
-    const { frame, voices } = renderMix(mixGraph([
-      { id: 'a', effectId: 'red', y: 0 },
-      { id: 'b', effectId: 'green', y: 100 },
-    ]));
-    const [r, g, b] = rgbAt(frame);
-    expect(voices).toBe(1);
-    expect(r).toBeGreaterThan(0.9);
-    expect(g).toBeGreaterThan(0.9);
-    expect(b).toBeLessThan(0.01);
-  });
-
-  it('uses the Mix node blend mode and each incoming edge opacity', () => {
-    const normal = renderMix(mixGraph(
-      [
-        { id: 'a', effectId: 'red', y: 0, opacity: 1 },
-        { id: 'b', effectId: 'green', y: 100, opacity: 0.5 },
-      ],
-      { mixBlendMode: 'normal' },
-    )).frame;
-    const [r, g, b] = rgbAt(normal);
-    expect(r).toBeGreaterThan(0.45);
-    expect(r).toBeLessThan(0.55);
-    expect(g).toBeGreaterThan(0.45);
-    expect(g).toBeLessThan(0.55);
-    expect(b).toBeLessThan(0.01);
-  });
-
-  it('continues downstream through Scope after mixing', () => {
-    const scope = node('scope', 'scope', { scope: 'drum', targetId: 'snare', y: 50 });
-    const { frame, model } = renderMix(mixGraph(
-      [
-        { id: 'a', effectId: 'red', y: 0 },
-        { id: 'b', effectId: 'green', y: 100 },
-      ],
-      { mixBlendMode: 'add' },
-      [scope],
-    ));
-    const snare = model.drumById.get('snare')!;
-    expect(litPixels(frame, model.pixelCount).every((id) => id >= snare.pixelStart && id < snare.pixelStart + snare.pixelCount)).toBe(true);
-  });
-
-  it('continues downstream through a Modifier node after mixing', () => {
-    const modifier = node('modifier', 'mod', { y: 50, modifierId: 'slice', params: { widthPx: 8, jitter: 0, seed: 1 } });
-    const { frame, model, voices } = renderMix(mixGraph(
-      [
-        { id: 'a', effectId: 'red', y: 0 },
-        { id: 'b', effectId: 'green', y: 100 },
-      ],
-      { mixBlendMode: 'add' },
-      [modifier],
-    ));
-    expect(voices).toBe(1);
-    expect(litPixels(frame, model.pixelCount).length).toBeGreaterThan(0);
-  });
-
-  it('does not cap input count artificially', () => {
-    const inputs = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, effectId: i % 3 === 0 ? 'red' : i % 3 === 1 ? 'green' : 'blue', y: i * 20 }));
-    const { frame, voices } = renderMix(mixGraph(inputs, { mixBlendMode: 'add' }));
-    const [r, g, b] = rgbAt(frame);
-    expect(voices).toBe(1);
-    expect(r + g + b).toBeGreaterThan(2.5);
-  });
-
-  it('orders inputs deterministically by upstream node y, independent of edge array order', () => {
-    const g1 = mixGraph([
-      { id: 'a', effectId: 'red', y: 0, opacity: 1 },
-      { id: 'b', effectId: 'green', y: 100, opacity: 0.5 },
-    ], { mixBlendMode: 'normal' });
-    const g2: TriggerGraph = { ...g1, edges: [...g1.edges].reverse() };
-    expect(Array.from(renderMix(g1).frame)).toEqual(Array.from(renderMix(g2).frame));
   });
 });

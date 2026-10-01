@@ -4,19 +4,26 @@ import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent } from './engine';
 import { orderedByPattern, resolveSplices, sequenceRanks, spliceDrumRanks, spliceOrderIndex, spliceUnitOrder, type SplicePartitionUnit } from './splice';
-import { padKey, type GraphNode, type SpliceConfig, type TriggerGraph } from './types';
+import type { SpliceConfig, SpliceNode } from './types';
+import type { Effect } from '../effect-chain/types';
+import { effectShowOf, sectionOf, zoneEffect } from './effect-test-fixtures';
 
 /* MOVE THROUGH's dragged order: the author picks exactly which drum (THROUGH KIT) or hoop (THROUGH
    DRUM) lights first, second, third. The part worth pinning hardest is that a sequence is always a
    PERMUTATION — a stale or partial one can never lengthen the cascade or drop a drum — and that the
    engine really fires in the dragged order, on a Splice and on a Slice. */
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '', params: {}, env: {},
-    noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 0.5,
-    delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
+function node(over: Partial<SpliceNode> = {}): SpliceNode {
+  return { ...over };
+}
+
+/** A kick-zone, kit-target Splice / Slice Effect of one white slot. `params` are the device's
+    params; `gateMs` is the amp length (the unit hold is `params.holdMs`). */
+function spliceEffect(kind: 'splice' | 'slice', params: Record<string, unknown>, gateMs: number, releaseMs = 300): Effect {
+  return zoneEffect('fx', { kind, style: '', params: { count: 1, ...params }, slots: [{ color: '#ffffff' }] }, {
+    amp: { attackMs: 10, length: { ms: gateMs }, releaseMs },
+    target: { kind: 'kit' },
+  });
 }
 
 describe('sequenceRanks', () => {
@@ -61,7 +68,7 @@ describe('spliceUnitOrder', () => {
   const unit = (over: Partial<SplicePartitionUnit>): SplicePartitionUnit => ({
     start: 0, end: 4, index: 0, ordinal: 0, ordinalCount: 3, drumOrdinal: 0, drumCount: 2, ...over,
   });
-  const cfg = (over: Partial<SpliceConfig>): SpliceConfig => ({ ...resolveSplices(node('splice', 's', { splices: [{ color: '#fff' }] }), 120)!.config, ...over });
+  const cfg = (over: Partial<SpliceConfig>): SpliceConfig => ({ ...resolveSplices(node({ splices: [{ color: '#fff' }] }), 120)!.config, ...over });
 
   it('a drum sequence decides the drum axis of a hoop cut', () => {
     const c = cfg({ drumSequence: ['snare', 'kick'] });
@@ -95,10 +102,10 @@ describe('spliceUnitOrder', () => {
 
 describe('resolveSplices carries the sequences', () => {
   it('keeps a clean sequence, and treats empty or junk as "use the pattern"', () => {
-    const good = resolveSplices(node('splice', 's', { splices: [{ color: '#fff' }], spliceDrumSequence: ['snare', 'kick'], spliceHoopSequence: [2, 1] }), 120)!.config;
+    const good = resolveSplices(node({ splices: [{ color: '#fff' }], spliceDrumSequence: ['snare', 'kick'], spliceHoopSequence: [2, 1] }), 120)!.config;
     expect(good.drumSequence).toEqual(['snare', 'kick']);
     expect(good.hoopSequence).toEqual([2, 1]);
-    const junk = resolveSplices(node('splice', 's', { splices: [{ color: '#fff' }], spliceDrumSequence: [], spliceHoopSequence: [0, -1, 1.5] as number[] }), 120)!.config;
+    const junk = resolveSplices(node({ splices: [{ color: '#fff' }], spliceDrumSequence: [], spliceHoopSequence: [0, -1, 1.5] as number[] }), 120)!.config;
     expect(junk.drumSequence).toBeUndefined();
     expect(junk.hoopSequence).toBeUndefined();
   });
@@ -120,16 +127,11 @@ describe('the engine fires in the dragged order', () => {
   }
   const transport = (now: number): TransportState => ({ timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true });
 
-  function peaksAt(kind: 'splice' | 'slice', over: Partial<GraphNode>, atMs: number) {
+  function peaksAt(kind: 'splice' | 'slice', over: Record<string, unknown>, atMs: number) {
     const m = model();
-    const graph: TriggerGraph = {
-      version: 3,
-      nodes: [node('trigger', 't'), node(kind, 'n', { splices: [{ color: '#ffffff' }], spliceCount: 1, spliceHoldMs: 60000, ...over }), node('output', 'o')],
-      edges: [{ id: 'a', from: 't', to: 'n' }, { id: 'b', from: 'n', to: 'o' }],
-    };
     const engine = createVoiceBusEngine();
     engine.setModel(m);
-    engine.setShow({ buses: [{ id: 'base', name: 'B', polyphony: 'poly', crossfadeMs: 0 }], graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [], presets: [] });
+    engine.setShow(effectShowOf(sectionOf('s', [spliceEffect(kind, { holdMs: 60000, ...over }, 60010)])));
     engine.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '', velocity: 1, timeMs: 0 } as InputEvent);
     for (let t = 5; t <= atMs; t += 5) engine.tick(t, 5, transport(t));
     const f = engine.frame();
@@ -142,7 +144,7 @@ describe('the engine fires in the dragged order', () => {
     return { kick: peak('kick'), snare: peak('snare') };
   }
 
-  const throughKit = { spliceWaitMode: 'dark' as const, spliceDrumOffsetMode: 'time' as const, spliceDrumOffsetMs: 400, spliceDrumSequence: ['snare', 'kick'] };
+  const throughKit = { waitMode: 'dark', drumOffsetMode: 'time', drumOffsetMs: 400, drumSequence: 'snare,kick' };
 
   it('Splice: THROUGH KIT lights the snare first when the order says so', () => {
     const early = peaksAt('splice', throughKit, 150);
@@ -158,7 +160,7 @@ describe('the engine fires in the dragged order', () => {
   });
 
   it('without the sequence, the kick (first in the model) goes first as before', () => {
-    const { spliceDrumSequence: _drop, ...pattern } = throughKit;
+    const { drumSequence: _drop, ...pattern } = throughKit;
     const early = peaksAt('splice', pattern, 150);
     expect(early.kick).toBeGreaterThan(0.5);
     expect(early.snare).toBe(0);
@@ -188,13 +190,8 @@ describe('changing the order on a running engine', () => {
     let now = 0;
     const transport = (t: number): TransportState => ({ timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true });
     /** Load `over` into a fresh show on the SAME engine, hit the kick, and read both drums `afterMs` later. */
-    const hitWith = (kind: 'splice' | 'slice', over: Partial<GraphNode>, afterMs: number) => {
-      const graph: TriggerGraph = {
-        version: 3,
-        nodes: [node('trigger', 't'), node(kind, 'n', { splices: [{ color: '#ffffff' }], spliceCount: 1, spliceHoldMs: 200, spliceReleaseMs: 10, ...over }), node('output', 'o')],
-        edges: [{ id: 'a', from: 't', to: 'n' }, { id: 'b', from: 'n', to: 'o' }],
-      };
-      engine.setShow({ buses: [{ id: 'base', name: 'B', polyphony: 'poly', crossfadeMs: 0 }], graphs: { [padKey('kick', '')]: graph }, sections: [], effects: [], presets: [] });
+    const hitWith = (kind: 'splice' | 'slice', over: Record<string, unknown>, afterMs: number) => {
+      engine.setShow(effectShowOf(sectionOf('s', [spliceEffect(kind, { holdMs: 200, releaseMs: 10, ...over }, 210, 10)])));
       // Let anything from the previous hit die out first, so the frame below is this hit alone.
       for (let t = now + 5; t <= now + 3000; t += 5) engine.tick(t, 5, transport(t));
       now += 3000;
@@ -220,27 +217,27 @@ describe('changing the order on a running engine', () => {
     return hitWith;
   }
 
-  const kitChase = { spliceWaitMode: 'dark' as const, spliceDrumOffsetMode: 'time' as const, spliceDrumOffsetMs: 400 };
+  const kitChase = { waitMode: 'dark', drumOffsetMode: 'time', drumOffsetMs: 400 };
 
   it('a dragged drum order takes effect on the next hit, with smudge at 0', () => {
     const hitWith = engineFor();
     // First hit on the pattern order caches the layout...
     expect(hitWith('splice', kitChase, 150).kick, 'Up: kick first').toBeGreaterThan(0.5);
     // ...then the author drags the snare first. Nothing else changes — least of all the smudge.
-    const dragged = hitWith('splice', { ...kitChase, spliceDrumSequence: ['snare', 'kick'] }, 150);
+    const dragged = hitWith('splice', { ...kitChase, drumSequence: 'snare,kick' }, 150);
     expect(dragged.snare, 'snare first now').toBeGreaterThan(0.5);
     expect(dragged.kick, 'kick waits').toBe(0);
   });
 
   it('a dragged hoop order takes effect on the next hit, with smudge at 0', () => {
     const hitWith = engineFor();
-    const hoopChase = { spliceWaitMode: 'dark' as const, spliceOffsetMode: 'time' as const, spliceOffsetMs: 400 };
+    const hoopChase = { waitMode: 'dark', offsetMode: 'time', offsetMs: 400 };
     const up = hitWith('splice', hoopChase, 150); // caches the Up layout
     expect(up.kickHoop1, 'Up: hoop 1 first').toBeGreaterThan(0.5);
     expect(up.kickHoop2).toBe(0);
     // Drag hoop 2 in front. Per-HOOP brightness, not per drum: either hoop lit gives the drum the
     // same peak, which is how the first version of this test passed while the bug was live.
-    const dragged = hitWith('splice', { ...hoopChase, spliceHoopSequence: [2, 1] }, 150);
+    const dragged = hitWith('splice', { ...hoopChase, hoopSequence: '2,1' }, 150);
     expect(dragged.kickHoop2, 'hoop 2 first now').toBeGreaterThan(0.5);
     expect(dragged.kickHoop1, 'hoop 1 waits').toBe(0);
   });
@@ -250,14 +247,14 @@ describe('changing the order on a running engine', () => {
     // that caching them later cannot quietly bring the same bug to Slice.
     const hitWith = engineFor();
     expect(hitWith('slice', kitChase, 150).kick).toBeGreaterThan(0.5);
-    const dragged = hitWith('slice', { ...kitChase, spliceDrumSequence: ['snare', 'kick'] }, 150);
+    const dragged = hitWith('slice', { ...kitChase, drumSequence: 'snare,kick' }, 150);
     expect(dragged.snare).toBeGreaterThan(0.5);
     expect(dragged.kick).toBe(0);
   });
 
   it('going back to a pattern takes effect too', () => {
     const hitWith = engineFor();
-    hitWith('splice', { ...kitChase, spliceDrumSequence: ['snare', 'kick'] }, 150);
+    hitWith('splice', { ...kitChase, drumSequence: 'snare,kick' }, 150);
     const back = hitWith('splice', kitChase, 150);
     expect(back.kick, 'Up again: kick first').toBeGreaterThan(0.5);
     expect(back.snare).toBe(0);

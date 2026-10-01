@@ -33,34 +33,11 @@ import {
   unitMotionAge,
   wrapIndex,
 } from './splice';
-import type { GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
+import type { SpliceNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
 import { DELAY_DIVISIONS } from './delay';
 
-function spliceNode(over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id: 's1',
-    kind: 'splice',
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: true,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 0.5,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
-    ...over,
-  };
+function spliceNode(over: Partial<SpliceNode> = {}): SpliceNode {
+  return { ...over };
 }
 
 const widths = (len: number, count: number, jitter = 0, seed = 1): number[] =>
@@ -668,14 +645,14 @@ describe('resolveSplices', () => {
   });
 
   it('takes a free-time rate verbatim, and reports 0 when the chase is off', () => {
-    const cfg = (over: Partial<GraphNode>) =>
+    const cfg = (over: Partial<SpliceNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], ...over }), 120)!.config;
     expect(cfg({ spliceChase: 'smooth', spliceRateMode: 'time', spliceRateMs: 900 }).chaseMs).toBe(900);
     expect(cfg({ spliceChase: 'off', spliceRateMode: 'time', spliceRateMs: 900 }).chaseMs).toBe(0);
   });
 
   it('resolves the drum cascade independently of the hoop one', () => {
-    const cfg = (over: Partial<GraphNode>) =>
+    const cfg = (over: Partial<SpliceNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', ...over }), 120)!.config;
     const both = cfg({
       spliceOffsetMode: 'time',
@@ -705,7 +682,7 @@ describe('resolveSplices', () => {
   });
 
   it('resolves the stagger increment, defaulted and clamped', () => {
-    const cfg = (over: Partial<GraphNode>) =>
+    const cfg = (over: Partial<SpliceNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'stagger', ...over }), 120)!.config;
     expect(cfg({}).incrementPx).toBe(DEFAULT_SPLICE_INCREMENT_PX);
     expect(cfg({ spliceIncrementPx: 12 }).incrementPx).toBe(12);
@@ -714,7 +691,7 @@ describe('resolveSplices', () => {
   });
 
   it('resolves the per-unit cascade offset from a division or free time', () => {
-    const cfg = (over: Partial<GraphNode>) =>
+    const cfg = (over: Partial<SpliceNode>) =>
       resolveSplices(spliceNode({ spliceCount: 1, splices: [{ color: '#fff' }], spliceChase: 'step', ...over }), 120)!.config;
     expect(cfg({ spliceOffsetMode: 'beats', spliceOffsetDivision: '1/8' }).offsetMs).toBe(250);
     expect(cfg({ spliceOffsetMode: 'time', spliceOffsetMs: 90 }).offsetMs).toBe(90);

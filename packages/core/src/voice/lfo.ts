@@ -10,8 +10,8 @@
  * Rate is either a free frequency in Hz or a musical division synced to bpm — the SAME division
  * vocabulary the delay node uses (`DELAY_DIVISIONS` / `computeDelayMs`), shared not forked, so a
  * `1/8` LFO period tracks tempo exactly like a `1/8` delay. Plugs into the modulation model as a
- * `ModSource` arm + one `sampleSource` case (see `modulation.ts`); the graph layer builds the
- * source via `nodeModSource` (see `modulation-graph.ts`).
+ * `ModSource` arm + one `sampleSource` case (see `modulation.ts`); an LFO Control device builds
+ * the source in the Effect resolver (see `effect-chain/resolver.ts`).
  */
 import { computeDelayMs } from './delay';
 
@@ -25,10 +25,10 @@ export type LfoWaveform = (typeof LFO_WAVEFORMS)[number];
 export type LfoRateMode = 'hz' | 'beats';
 
 /**
- * An LFO source node's settings (stored on `GraphNode.lfo`). `waveform` picks the shape;
+ * An LFO's settings (an LFO Control device's `settings`). `waveform` picks the shape;
  * `rateMode` chooses free `rateHz` vs bpm-synced `division` (a `DELAY_DIVISIONS` string);
  * `phase` is a 0..1 offset applied before sampling (0.25 = quarter-cycle ahead). A source has
- * no per-mapping depth/range of its own — that is edited target-side on each wire.
+ * no per-mapping depth/range of its own — that lives on each of the device's mappings.
  */
 export interface LfoSettings {
   waveform: LfoWaveform;

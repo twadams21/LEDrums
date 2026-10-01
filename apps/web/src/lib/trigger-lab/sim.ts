@@ -30,11 +30,6 @@ export interface ParamSpec {
   envable?: boolean;
 }
 
-/** Core's easing vocabulary (the ease picker reads it). */
-export type EaseFn = voice.EaseFn;
-export type EaseDir = voice.EaseDir;
-export type EaseSpec = voice.EaseSpec;
-
 export type Scope = 'drum' | 'kit' | 'hoop';
 
 /** A generator surfaced as a selectable effect definition (the thumbnail fixtures). */

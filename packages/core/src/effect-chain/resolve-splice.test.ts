@@ -1,7 +1,9 @@
 /* Effect chains S03 §4 — Splice and Slice as Generators.
-   The oracle throughout is the EXISTING graph splice / slice node: a device must resolve to
-   the same layout the graph node resolves to, and an Effect must render the same frames the
-   equivalent graph splice renders through the real engine. */
+   The oracle throughout is the EXISTING splice / slice machinery: a device must resolve to the
+   same layout `resolveSplices` / `resolveSlice` give the equivalent node fields, and an Effect
+   must render the same frames the retired graph splice node rendered through the real engine.
+   Those frames were recorded from the graph engine on base e8b8229f (effect chains w6b), before
+   the graph path was deleted — `resolve-splice.golden.json`. */
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
@@ -9,23 +11,20 @@ import type { TransportState } from '../engine/render-context';
 import { createVoiceBusEngine, type InputEvent, type RenderEngine } from '../voice/engine';
 import { resolveSplices } from '../voice/splice';
 import { resolveSlice } from '../voice/slice';
-import { emptyShow, padKey, type EffectDef, type GraphNode, type Show, type SpliceDef, type TriggerGraph } from '../voice/types';
+import { emptyShow, type EffectDef, type Show, type SpliceDef, type SpliceNode } from '../voice/types';
 import { getGeneratorDef, listGenerators, resolveGenerator } from './generators';
 import { resolveSpliceGenerator, spliceDeviceNode, spliceGeneratorParamSpec } from './resolve-splice';
 import { effectPlayAction } from './resolver';
 import { chainEffectDef, chainEffectDefId } from './runtime';
 import { parseEffect, type Effect, type GeneratorDevice, type SpliceSlot } from './types';
+import golden from './resolve-splice.golden.json';
 
 const device = (kind: 'splice' | 'slice', params: GeneratorDevice['params'], slots: SpliceSlot[]): GeneratorDevice => ({
   kind, style: '', params, slots,
 });
 
-function node(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '', params: {}, env: {},
-    noRepeat: true, on: 'value', valueMode: 'gate', threshold: 0.5, invert: false, bands: [0.5], p: 0.5,
-    delayMode: 'time', ms: 0, division: '1/8', ...over,
-  };
+function node(over: Partial<SpliceNode> = {}): SpliceNode {
+  return { ...over };
 }
 
 /** Every scalar splice setting at a non-default value, as device params and as node fields. */
@@ -37,7 +36,7 @@ const RICH_PARAMS: GeneratorDevice['params'] = {
   colorOrder: 'random', rotationDeg: 400, waitMode: 'pulse', attackMs: 25, holdMs: 700, releaseMs: 150,
   attackEaseFn: 'cubic', attackEaseDir: 'out', tint: 0.6, drumSequence: 'snare, kick', hoopSequence: '2,1',
 };
-const RICH_NODE: Partial<GraphNode> = {
+const RICH_NODE: Partial<SpliceNode> = {
   spliceCount: 6, splicePartition: 'drum', spliceJitter: 0.3, spliceSeed: 7, spliceChase: 'stagger',
   spliceRateMode: 'beats', spliceRateMs: 90, spliceDivision: '1/16', spliceDirection: -1, spliceIncrementPx: 3,
   spliceOffsetMode: 'time', spliceOffsetMs: 120, spliceOffsetDivision: '1/4', spliceOrder: 'outside-in',
@@ -51,21 +50,21 @@ const COLOUR_SLOTS: SpliceSlot[] = [{ color: '#ff0000' }, { color: '#0000ff' }];
 const COLOUR_DEFS: SpliceDef[] = [{ color: '#ff0000' }, { color: '#0000ff' }];
 
 describe('Splice / Slice device → the existing splice layout', () => {
-  it('resolves every splice setting to the same config the graph splice node resolves to', () => {
+  it('resolves every splice setting to the same config the equivalent splice node resolves to', () => {
     const got = resolveSpliceGenerator(device('splice', RICH_PARAMS, COLOUR_SLOTS), { bpm: 96, beatsPerBar: 3 })!;
-    const oracle = resolveSplices(node('splice', 's', { ...RICH_NODE, splices: COLOUR_DEFS }), 96, 3)!;
+    const oracle = resolveSplices(node({ ...RICH_NODE, splices: COLOUR_DEFS }), 96, 3)!;
     expect(got.splice).toEqual(oracle.config);
     expect(got.envelope).toEqual(oracle.envelope);
   });
 
-  it('resolves a slice with its geometry, drum offset kept live, like the graph slice node', () => {
+  it('resolves a slice with its geometry, drum offset kept live, like the equivalent slice node', () => {
     const params = {
       ...RICH_PARAMS, axis: 'z', rotX: 30, rotY: -20, rotZ: 370, velocity: 0.5, incrementPct: 25,
       regionCx: 10, regionCy: 20, regionCz: 30, regionSx: 100, regionSy: 200, regionSz: 300,
     };
     const got = resolveSpliceGenerator(device('slice', params, COLOUR_SLOTS), { bpm: 140 })!;
     const { splicePartition: _p, spliceIncrementPx: _i, ...sliceNode } = RICH_NODE;
-    const oracle = resolveSlice(node('slice', 's', {
+    const oracle = resolveSlice(node({
       ...sliceNode, splices: COLOUR_DEFS, sliceAxis: 'z', sliceRotX: 30, sliceRotY: -20, sliceRotZ: 370,
       sliceVelocity: 0.5, sliceIncrementPct: 25, sliceRegion: { cx: 10, cy: 20, cz: 30, sx: 100, sy: 200, sz: 300 },
     }), 140)!;
@@ -78,7 +77,7 @@ describe('Splice / Slice device → the existing splice layout', () => {
     const got = resolveSpliceGenerator(device('splice', {
       count: 'six', partition: 'spiral', chase: 3, order: 'sideways', offsetDivision: 'none', attackEaseFn: 'linear',
     }, COLOUR_SLOTS))!;
-    const oracle = resolveSplices(node('splice', 's', { splices: COLOUR_DEFS }), 120)!;
+    const oracle = resolveSplices(node({ splices: COLOUR_DEFS }), 120)!;
     expect(got.splice).toEqual(oracle.config);
   });
 
@@ -131,7 +130,7 @@ describe('Splice slots', () => {
     expect(got.spliceInputs).toHaveLength(1);
   });
 
-  it('cycles fewer slots than the count, as a graph splice does', () => {
+  it('cycles fewer slots than the count, as the splice machinery does', () => {
     const got = resolveSpliceGenerator(device('splice', { count: 4 }, COLOUR_SLOTS))!;
     expect(got.splice!.colors).toEqual(['#ff0000', '#0000ff', '#ff0000', '#0000ff']);
   });
@@ -169,11 +168,11 @@ describe('Splice / Slice in the Generator registry', () => {
 
   it('maps every device param key onto a node field the splice machinery reads', () => {
     const n = spliceDeviceNode(device('splice', RICH_PARAMS, COLOUR_SLOTS));
-    for (const [k, v] of Object.entries(RICH_NODE)) expect(n[k as keyof GraphNode], k).toEqual(v);
+    for (const [k, v] of Object.entries(RICH_NODE)) expect(n[k as keyof SpliceNode], k).toEqual(v);
   });
 });
 
-// ---- Render oracle: Effect path vs graph splice node through the real engine -------------
+// ---- Render oracle: Effect path vs the recorded graph splice frames -----------------------
 
 /** 4 pixels per hoop, 2 hoops per drum, 2 drums → 16 pixels. */
 function testModel(): PixelModel {
@@ -215,21 +214,19 @@ function framesOf(show: Show, hit: InputEvent, sampleMs: readonly number[], prep
 
 const SAMPLES = [20, 60, 150, 260, 400, 520, 700] as const;
 
-/** A graph splice node on kick's '' pad, with the splice envelope defaults (10 / 400 / 300). */
-function graphFrames(splices: SpliceDef[], over: Partial<GraphNode>, effects: EffectDef[] = []): number[][] {
-  const graph: TriggerGraph = {
-    version: 3,
-    nodes: [node('trigger', 'trigger'), node('splice', 's1', { splices, ...over }), node('output', 'output')],
-    edges: [{ id: 'e0', from: 'trigger', to: 's1' }, { id: 'e1', from: 's1', to: 'output' }],
-  };
-  const show: Show = {
-    ...emptyShow(),
-    buses: [{ id: 'base', name: 'Base', polyphony: 'poly', crossfadeMs: 200 }],
-    graphs: { [padKey('kick', '')]: graph },
-    effects,
-  };
-  return framesOf(show, { kind: 'noteOn', drumId: 'kick', zone: '', velocity: 1, timeMs: 0 }, SAMPLES);
-}
+/**
+ * Frames the retired graph splice / slice node rendered through the real engine (kick's pad,
+ * splice envelope defaults 10 / 400 / 300), recorded on base e8b8229f by the graph oracle this
+ * suite used before the graph path was deleted (effect chains w6b). Keys name the case.
+ */
+const GOLDEN = golden as {
+  samples: number[];
+  heldStill: { graph: number[][]; waveBandLit: number[][] };
+  steppingChase: { graph: number[][]; waveBandLit: number[][] };
+  smoothRotated: number[][];
+  cascadeDark: number[][];
+  slice: number[][];
+};
 
 /** The equivalent Splice Effect: kit target, amp matching the splice envelope defaults. */
 function effectFrames(gen: GeneratorDevice): number[][] {
@@ -238,23 +235,16 @@ function effectFrames(gen: GeneratorDevice): number[][] {
     amp: { attackMs: 10, decayMs: 0, sustainLevel: 1, length: { ms: 410 }, releaseMs: 300 },
     target: { kind: 'kit' },
   });
-  const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', slots: {}, effects: [effect] }] }] };
-  // Stand-in for the engine hook reported for merge: the engine lazily builds only the HOST's
-  // chain EffectDef; the hook also ensures one per splice member (see the commit report).
-  const ensureMemberDefs = (engine: RenderEngine): void => {
-    const action = effectPlayAction(effect, { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!;
-    const defs = (engine as unknown as { chainEffects: Map<string, EffectDef> }).chainEffects;
-    for (const m of action.spliceInputs ?? []) defs.set(m.effectId, chainEffectDef(m.effectId.slice(m.effectId.indexOf(':') + 1))!);
-  };
-  return framesOf(show, { kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: 0 }, SAMPLES, ensureMemberDefs);
+  const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] };
+  // The engine builds the internal def of every splice member itself (not only the host's), so
+  // a nested Generator slot renders through the real engine with no test-side setup.
+  return framesOf(show, { kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: 0 }, SAMPLES);
 }
 
 const lit = (frames: number[][]): number => frames.reduce((s, f) => s + f.reduce((a, b) => a + b, 0), 0);
 
-const WAVE_DEF: EffectDef = { ...chainEffectDef('chase-bands')!, id: 'wave-fx', busId: 'base' };
-
 /**
- * Compare an Effect render against its graph oracle when one slot hosts a nested Wave.
+ * Compare an Effect render against its recorded graph oracle when one slot hosts a nested Wave.
  *
  * `waveBandLit` is the graph oracle with the Wave slot swapped for solid green. No other slot
  * carries green, so a pixel is in the Wave's band at a sample exactly when its G channel is
@@ -299,11 +289,13 @@ function expectSameExceptNestedDecay(effect: number[][], graph: number[][], wave
   expect(waveLit).toBeGreaterThan(0);
 }
 
-describe('Splice Effect renders like the graph splice node', () => {
+describe('Splice Effect renders like the recorded graph splice node', () => {
+  it('records the frames at the sample times this suite renders', () => {
+    expect(GOLDEN.samples).toEqual([...SAMPLES]);
+  });
+
   it('two colour slots and a nested Wave, held still', () => {
-    const over: Partial<GraphNode> = { spliceCount: 3, splicePartition: 'hoop' };
-    const graph = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { effectId: 'wave-fx', params: { speed: 2 } }], over, [WAVE_DEF]);
-    const waveBandLit = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], over);
+    const { graph, waveBandLit } = GOLDEN.heldStill;
     const effect = effectFrames(device('splice', { count: 3, partition: 'hoop' }, [
       { color: '#ff0000' }, { color: '#0000ff' }, { generator: { kind: 'wave', style: 'chase', params: { speed: 2 } } },
     ]));
@@ -313,9 +305,7 @@ describe('Splice Effect renders like the graph splice node', () => {
   });
 
   it('MOVE AROUND — a stepping chase, with a nested Wave', () => {
-    const over: Partial<GraphNode> = { spliceCount: 3, spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 100 };
-    const graph = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { effectId: 'wave-fx', params: { speed: 2 } }], over, [WAVE_DEF]);
-    const waveBandLit = graphFrames([{ color: '#ff0000' }, { color: '#0000ff' }, { color: '#00ff00' }], over);
+    const { graph, waveBandLit } = GOLDEN.steppingChase;
     const effect = effectFrames(device('splice', { count: 3, chase: 'step', rateMode: 'time', rateMs: 100 }, [
       { color: '#ff0000' }, { color: '#0000ff' }, { generator: { kind: 'wave', style: 'chase', params: { speed: 2 } } },
     ]));
@@ -325,20 +315,14 @@ describe('Splice Effect renders like the graph splice node', () => {
   });
 
   it('MOVE AROUND — a smooth, rotated chase of colour slots is bit-identical', () => {
-    const over: Partial<GraphNode> = { spliceCount: 2, spliceChase: 'smooth', spliceRateMode: 'time', spliceRateMs: 150, spliceRotationDeg: 45 };
-    const graph = graphFrames(COLOUR_DEFS, over);
+    const graph = GOLDEN.smoothRotated;
     const effect = effectFrames(device('splice', { count: 2, chase: 'smooth', rateMode: 'time', rateMs: 150, rotationDeg: 45 }, COLOUR_SLOTS));
     expect(lit(graph)).toBeGreaterThan(0);
     expect(effect).toEqual(graph);
   });
 
   it('MOVE THROUGH — a hoop and drum cascade with dark waiting units is bit-identical', () => {
-    const over: Partial<GraphNode> = {
-      spliceCount: 2, spliceChase: 'smooth', spliceRateMode: 'time', spliceRateMs: 200,
-      spliceOffsetMode: 'time', spliceOffsetMs: 80, spliceDrumOffsetMode: 'time', spliceDrumOffsetMs: 150,
-      spliceWaitMode: 'dark',
-    };
-    const graph = graphFrames(COLOUR_DEFS, over);
+    const graph = GOLDEN.cascadeDark;
     const effect = effectFrames(device('splice', {
       count: 2, chase: 'smooth', rateMode: 'time', rateMs: 200, offsetMode: 'time', offsetMs: 80,
       drumOffsetMode: 'time', drumOffsetMs: 150, waitMode: 'dark',
@@ -347,8 +331,8 @@ describe('Splice Effect renders like the graph splice node', () => {
     expect(effect).toEqual(graph);
   });
 
-  it('a Slice Effect renders like the graph slice node', () => {
-    const graph = graphFrames(COLOUR_DEFS, { kind: 'slice', spliceCount: 2, sliceAxis: 'x', spliceChase: 'step', spliceRateMode: 'time', spliceRateMs: 120 });
+  it('a Slice Effect renders like the recorded graph slice node', () => {
+    const graph = GOLDEN.slice;
     const effect = effectFrames(device('slice', { count: 2, axis: 'x', chase: 'step', rateMode: 'time', rateMs: 120 }, COLOUR_SLOTS));
     expect(lit(graph)).toBeGreaterThan(0);
     expect(effect).toEqual(graph);

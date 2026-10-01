@@ -10,11 +10,10 @@ import {
   type BindingClaim,
   type BindingScope,
 } from './binding-claims';
-import type { GraphNode, TriggerGraph } from './types';
 
 /* MIDI-map InputMappings (effect chains S07) in the binding-claims guard: a mapping is
    consumed at global-control precedence, so it must be unique on its address — against
-   zones, Cue Effects, globals, graph sources, the reserved CC and other mappings. */
+   zones, Cue Effects, globals, the reserved CC and other mappings. */
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -24,7 +23,6 @@ type ScopeOverrides = Partial<Omit<BindingScope, 'inputMap'>> & { inputMap?: Par
 function scope(over: ScopeOverrides = {}): BindingScope {
   const { inputMap, ...rest } = over;
   return {
-    graphs: {},
     ...rest,
     inputMap: {
       midiNotes: [],
@@ -159,17 +157,6 @@ describe('inputMappingConflicts', () => {
     ]);
   });
 
-  it('refuses a graph trigger-node source and a sequence reset', () => {
-    const node = (over: Partial<GraphNode> & Pick<GraphNode, 'id' | 'kind'>): GraphNode =>
-      ({ x: 0, y: 0, params: {}, ...over }) as GraphNode;
-    const graphs: Record<string, TriggerGraph> = {
-      g: { nodes: [node({ id: 't1', kind: 'trigger', source: { kind: 'midi', note: 50 } }), node({ id: 'n1', kind: 'sequence', resetSource: { kind: 'midi', note: 51 } })], edges: [] } as unknown as TriggerGraph,
-    };
-    const s = scope({ graphs });
-    expect(inputMappingConflicts(s, { midiNote: 50 }, CELL_ID)[0]?.conflicts[0]?.kind).toBe('triggerNode');
-    expect(inputMappingConflicts(s, { midiNote: 51 }, CELL_ID)[0]?.conflicts[0]?.kind).toBe('reset');
-  });
-
   it('refuses another mapping on the same source — mappings are unique', () => {
     const s = scope({ mappings: [mapping('m1', { midiCc: 21 }, OPACITY_TARGET)] });
     expect(inputMappingConflicts(s, { midiCc: 21 }, CELL_ID)[0]?.conflicts).toEqual([mappingClaim(OPACITY_ID)]);
@@ -204,29 +191,29 @@ describe('mappings block the other editors', () => {
 
   it('a zone write onto a mapped note is refused when the show claims are passed', () => {
     const next = { ...empty, midiNotes: [{ note: 60, drumId: 'snare', slot: 0 }] };
-    const rejections = inputMapBindingRejections(empty, next, {}, { mappings });
+    const rejections = inputMapBindingRejections(empty, next, { mappings });
     expect(rejections).toHaveLength(1);
     expect(rejections[0]?.conflicts).toEqual([mappingClaim(CELL_ID)]);
   });
 
   it('a global-control write onto a mapped note is refused', () => {
     const next = { ...empty, globalControls: { nextSong: { midiNote: 60 } } };
-    expect(inputMapBindingRejections(empty, next, {}, { mappings })[0]?.conflicts).toEqual([mappingClaim(CELL_ID)]);
+    expect(inputMapBindingRejections(empty, next, { mappings })[0]?.conflicts).toEqual([mappingClaim(CELL_ID)]);
   });
 
-  it('without show claims the check is unchanged (graph-era callers)', () => {
+  it('without show claims nothing is claimed there', () => {
     const next = { ...empty, midiNotes: [{ note: 60, drumId: 'snare', slot: 0 }] };
-    expect(inputMapBindingRejections(empty, next, {})).toEqual([]);
+    expect(inputMapBindingRejections(empty, next)).toEqual([]);
   });
 
   it('a zone still shares with a Cue — same group, by design', () => {
     const next = { ...empty, midiNotes: [{ note: 40, drumId: 'snare', slot: 0 }] };
-    expect(inputMapBindingRejections(empty, next, {}, { effects: [cueEffect('c1', { midiNote: 40 })] })).toEqual([]);
+    expect(inputMapBindingRejections(empty, next, { effects: [cueEffect('c1', { midiNote: 40 })] })).toEqual([]);
   });
 
   it('a global control on a Cue note is refused', () => {
     const next = { ...empty, globalControls: { nextSong: { midiNote: 40 } } };
-    expect(inputMapBindingRejections(empty, next, {}, { effects: [cueEffect('c1', { midiNote: 40 })] })[0]?.conflicts).toEqual([
+    expect(inputMapBindingRejections(empty, next, { effects: [cueEffect('c1', { midiNote: 40 })] })[0]?.conflicts).toEqual([
       { group: 'pad-trigger', kind: 'cue', effectId: 'c1' },
     ]);
   });

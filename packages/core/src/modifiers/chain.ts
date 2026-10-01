@@ -5,8 +5,8 @@
  * per-modifier state array (mutated in place, lazily initialised) and never touch modifier
  * internals.
  *
- * Chain order IS the applied order — links run front-to-back exactly as resolved (graph
- * topology → y-order, S29), never sorted or commuted. Bypassed links are skipped (identity)
+ * Chain order IS the applied order — links run front-to-back exactly as resolved (the
+ * Effect's modifier device order), never sorted or commuted. Bypassed links are skipped (identity)
  * but keep their state slot so toggling bypass doesn't reset neighbours. An unknown modifier
  * id is skipped, never thrown — the hot path must not fault on stale authored data.
  *

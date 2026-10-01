@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VoicePool, type SpawnDeps } from './voice-pool';
 import { reapDeadVoices } from './envelope-tick';
-import type { PlayAction } from './eval-graph';
+import type { PlayAction } from './play-action';
 import type { Bus, EffectDef, ResolvedModifier } from './types';
 
 // S25 — mono steal resets voice age. With voice timebase, a voice's animation clock is

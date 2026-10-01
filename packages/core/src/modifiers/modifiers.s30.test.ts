@@ -4,8 +4,9 @@ import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
 import type { TransportState } from '../engine/render-context';
 import { createDefaultCompositor, type CompositorFrame } from '../voice/compositor';
-import { resolveModifierChain } from '../voice/modifier-graph';
-import type { GraphEdge, GraphNode, TriggerGraph, Voice } from '../voice/types';
+import type { Voice } from '../voice/types';
+import { zoneEffect } from '../voice/effect-test-fixtures';
+import { effectPlayAction } from '../effect-chain/resolver';
 import { applyModifierChain } from './chain';
 import { bloom } from './impl/bloom';
 import { sparkle } from './impl/sparkle';
@@ -16,9 +17,9 @@ import type { PixelRange, ResolvedModifier } from './types';
 /* S30 — modifier batch 2 (Bloom / Sparkle / Grain / Strobe). Two tiers, per DoD:
    (1) PURE apply goldens driving the chain runner directly on a hand-built framebuffer —
        deterministic across runs (seeded RNG for Sparkle/Grain), bypass = identity.
-   (2) One END-TO-END wiring test each: a modifier NODE wired to a play node's `mod` input
-       resolves (shared core resolver) onto a spawned voice's chain and the compositor
-       renders the smear/chop — the same seam the graph/sim use. */
+   (2) One END-TO-END wiring test each: a Modifier device on an Effect resolves (the one core
+       Effect resolver) onto a spawned voice's chain and the compositor renders the
+       smear/chop — the same seam the engine and the Sim use. */
 
 // ---- pure-apply harness -----------------------------------------------------
 
@@ -194,9 +195,9 @@ describe('Strobe modifier — rate/duty chop', () => {
   });
 });
 
-// ---- end-to-end wiring (graph → play node → rendered) -----------------------
-// A modifier node wired to a play node's `mod` input resolves through the shared core
-// resolver onto the spawned voice, and the compositor renders it — the real engine seam.
+// ---- end-to-end wiring (Effect → modifier device → rendered) ----------------
+// A Modifier device on an Effect resolves through the core Effect resolver onto the spawned
+// voice, and the compositor renders it — the real engine seam.
 
 function testModel(): PixelModel {
   const kit = parseKit({
@@ -204,16 +205,6 @@ function testModel(): PixelModel {
     drums: [{ id: 'kick', diameterIn: 12, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
   });
   return buildPixelModel(kit);
-}
-
-/** Minimal GraphNode (only the fields each `kind` reads matter). */
-function gnode(kind: GraphNode['kind'], id: string, over: Partial<GraphNode> = {}): GraphNode {
-  return {
-    id, kind, x: 0, y: 0, mode: 'oneshot', scope: 'kit', effectId: '', presetId: '', busId: '',
-    params: {}, env: {}, noRepeat: true, on: 'value', valueMode: 'gate',
-    threshold: 0.5, invert: false, bands: [0.5], p: 0.5, delayMode: 'time', ms: 0, division: '1/8',
-    ...over,
-  } as GraphNode;
 }
 
 /** A continuous kit-wide source voice (solid-base) carrying `mods`, mirroring makeVoiceSlot
@@ -229,24 +220,20 @@ function mkVoice(mods: ResolvedModifier[] | undefined): Voice {
   } as Voice;
 }
 
-describe('S30 modifiers — end-to-end from the graph', () => {
+describe('S30 modifiers — end-to-end from an Effect', () => {
   const model = testModel();
   const transport = (now: number): TransportState => ({
     timeMs: now, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true,
   });
   const frame = (timeMs: number, dt: number): CompositorFrame => ({ timeMs, dt, transport: transport(timeMs) });
 
-  /** Wire one modifier node → play node, resolve the chain, render `frames` frames, total the output. */
+  /** Put one Modifier device on an Effect, resolve the chain, render `frames` frames, total the output. */
   function wireRender(modifierId: string, params: Record<string, number | string>, frames: number[][]): {
     chain: ResolvedModifier[];
     total: number;
   } {
-    const play = gnode('play', 'p', { y: 100 });
-    const graph: TriggerGraph = {
-      nodes: [gnode('trigger', 'trigger'), play, gnode('modifier', 'm', { modifierId, params, y: 10 })],
-      edges: [{ id: 'flow', from: 'trigger', to: 'p' } as GraphEdge, { id: 'mod', from: 'm', to: 'p', toPort: 'mod' } as GraphEdge],
-    };
-    const chain = resolveModifierChain(graph, play);
+    const effect = zoneEffect('fx', { kind: 'solid', style: 'swirl' }, { modifiers: [{ uid: 'm', modifierId, params }] });
+    const chain = effectPlayAction(effect, { velocity: 1, sourceDrumId: 'kick', bpm: 120, layerOrder: 0 })!.modifiers ?? [];
     const v = mkVoice(chain.length ? chain : undefined);
     const c = createDefaultCompositor();
     const dst = new Framebuffer(model.pixelCount);
@@ -266,26 +253,26 @@ describe('S30 modifiers — end-to-end from the graph', () => {
     return total;
   }
 
-  it('Bloom wired to a play node resolves and glows the rendered frame', () => {
+  it('Bloom on an Effect resolves and glows the rendered frame', () => {
     const { chain, total } = wireRender('bloom', { radius: 4, intensity: 1 }, [[0, 16]]);
-    expect(chain).toEqual([{ modifierId: 'bloom', params: { radius: 4, intensity: 1 } }]);
+    expect(chain).toEqual([{ modifierId: 'bloom', params: { radius: 4, intensity: 1 }, mix: 1 }]);
     expect(total).toBeGreaterThan(baseline([[0, 16]])); // additive halo → more light
   });
 
-  it('Sparkle wired to a play node resolves and adds glints over the render', () => {
+  it('Sparkle on an Effect resolves and adds glints over the render', () => {
     const { chain, total } = wireRender('sparkle', { density: 40, decayMs: 300 }, [[0, 33], [33, 33]]);
     expect(chain[0]!.modifierId).toBe('sparkle');
     expect(total).toBeGreaterThan(baseline([[0, 33], [33, 33]])); // white glints add light
   });
 
-  it('Grain wired to a play node resolves and textures (darkens) the render', () => {
+  it('Grain on an Effect resolves and textures (darkens) the render', () => {
     const { chain, total } = wireRender('grain', { amount: 0.6 }, [[0, 16]]);
     expect(chain[0]!.modifierId).toBe('grain');
     expect(total).toBeLessThan(baseline([[0, 16]])); // multiplicative grain → less light
     expect(total).toBeGreaterThan(0);
   });
 
-  it('Strobe wired to a play node resolves and chops the render off in its off-window', () => {
+  it('Strobe on an Effect resolves and chops the render off in its off-window', () => {
     const { chain, total } = wireRender('strobe', { rate: 10, duty: 0.5 }, [[60, 16]]); // phase 0.6 → off
     expect(chain[0]!.modifierId).toBe('strobe');
     expect(total).toBe(0); // blanked

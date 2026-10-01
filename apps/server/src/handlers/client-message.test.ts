@@ -197,63 +197,16 @@ function voiceHarness() {
   return { ...base, voiceHost, handle, broadcastState };
 }
 
-function voiceEffect(id: string): voice.EffectDef {
-  return {
-    id,
-    name: id,
-    generatorId: 'whole-drum',
-    busId: 'main',
-    scope: 'kit',
-    params: [{ key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, default: 1 }],
-    attackMs: 0,
-    sustainMs: 200,
-    releaseMs: 200,
-  };
-}
-
-function voiceNode(kind: voice.GraphNode['kind'], id: string, over: Partial<voice.GraphNode> = {}): voice.GraphNode {
-  return {
-    id,
-    kind,
-    x: 0,
-    y: 0,
-    mode: 'oneshot',
-    scope: 'kit',
-    effectId: '',
-    presetId: '',
-    busId: '',
-    params: {},
-    env: {},
-    noRepeat: false,
-    on: 'value',
-    valueMode: 'gate',
-    threshold: 0.5,
-    invert: false,
-    bands: [0.5],
-    p: 1,
-    delayMode: 'time',
-    ms: 0,
-    division: '1/8',
-    ...over,
-  };
-}
-
+/** A Cue Effect on raw MIDI `note`: a kit-wide solid flash in the one section. */
 function midiVoiceShow(note: number): voice.Show {
-  const graph: voice.TriggerGraph = {
-    nodes: [
-      voiceNode('trigger', 'trigger', { source: { kind: 'midi', note } }),
-      voiceNode('play', 'play', { effectId: 'fx-flash', params: { brightness: 1 } }),
-    ],
-    edges: [{ id: 'e1', from: 'trigger', to: 'play' }],
-  };
-  return {
-    buses: [{ id: 'main', name: 'Main', polyphony: 'poly', crossfadeMs: 200 }],
-    graphs: { 'graph:midi': graph },
-    sections: [],
-    effects: [voiceEffect('fx-flash')],
-    presets: [],
-    songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', slots: { [voice.padKey('kick', '0')]: [] }, performanceGraphKeys: ['graph:midi'] }] }],
-  };
+  const flash = effectChain.parseEffect({
+    id: 'fx-flash',
+    cell: { row: 'kit', column: { kind: 'cue' } },
+    trigger: { kind: 'cue', source: { midiNote: note } },
+    generator: { kind: 'solid', style: 'swirl', params: { brightness: 1 } },
+    amp: { attackMs: 0, length: { ms: 200 }, releaseMs: 200 },
+  });
+  return { songs: [{ id: 'song1', name: 'Song', sections: [{ id: 'section1', name: 'Section', effects: [flash] }] }] };
 }
 
 const LIB: ShowLibraryBlob = { version: 1, data: { hello: 'world' } };
@@ -262,7 +215,7 @@ const SONG_LIB: SongLibraryBlob = { version: 1, data: { songs: { 'lib-1': { id: 
 describe('requiresEditor — read-only gating policy (S2)', () => {
   it('exempts engine inputs and pure reads, gates everything authoring (deny-by-default)', () => {
     // Engine inputs (the drummer's hardware) + the role/read messages are never gated.
-    for (const t of ['midi', 'osc', 'cc', 'programChange', 'key', 'recallSection', 'fireGraph', 'listProjects', 'takeover'] as const) {
+    for (const t of ['midi', 'osc', 'cc', 'programChange', 'key', 'recallSection', 'listProjects', 'takeover'] as const) {
       expect(requiresEditor(t)).toBe(false);
     }
     // fireEffect (effect chains) joins the engine inputs; cast until the protocol union carries it.
@@ -423,7 +376,7 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     expect(editor.sent.find((m) => m.t === 'input')).toMatchObject({ t: 'input', kind: 'midi', note: 38, channel: 10 });
   });
 
-  it('voice mode accepts viewer MIDI and emits inbound plus graph monitor events', () => {
+  it('voice mode accepts viewer MIDI: an inbound monitor event, and the Cue fires', () => {
     const { handle, join, voiceHost, monitor } = voiceHarness();
     join();
     const viewer = join();
@@ -440,14 +393,7 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
         destination: 'voice-engine',
       }),
     );
-    expect(monitor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'graph',
-        direction: 'local',
-        source: 'server/voice',
-        destination: 'graph:graph:midi',
-      }),
-    );
+    expect(voiceHost.getStats().engine.voiceCount).toBe(1);
   });
 
   it('voice mode broadcasts one accepted recall to every client, including the viewer', () => {
@@ -455,8 +401,7 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     const editor = join();
     const viewer = join();
     voiceHost.setShow({
-      ...midiVoiceShow(38),
-      songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'section-a', name: 'A', slots: {} }] }],
+      songs: [{ id: 'song-a', name: 'A', sections: [{ id: 'section-a', name: 'A', effects: [] }] }],
     });
 
     handle({ t: 'recallSection', songId: 'wrong-song', sectionId: 'section-a' }, viewer);
@@ -475,10 +420,9 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     const editor = join();
     const viewer = join();
     const show = {
-      ...midiVoiceShow(38),
       songs: [
-        { id: 'song-a', name: 'A', sections: [{ id: 'section-a1', name: 'A1', slots: {} }, { id: 'section-a2', name: 'A2', slots: {} }] },
-        { id: 'song-b', name: 'B', sections: [{ id: 'section-b1', name: 'B1', slots: {} }, { id: 'section-b2', name: 'B2', slots: {} }] },
+        { id: 'song-a', name: 'A', sections: [{ id: 'section-a1', name: 'A1', effects: [] }, { id: 'section-a2', name: 'A2', effects: [] }] },
+        { id: 'song-b', name: 'B', sections: [{ id: 'section-b1', name: 'B1', effects: [] }, { id: 'section-b2', name: 'B2', effects: [] }] },
       ],
     } satisfies voice.Show;
 
@@ -512,22 +456,7 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     }
   });
 
-  it('voice mode accepts a viewer fireGraph from the Perform keyboard', () => {
-    const { handle, join, voiceHost, monitor } = voiceHarness();
-    join(); // editor
-    const viewer = join();
-    voiceHost.setShow(midiVoiceShow(38));
-
-    handle({ t: 'fireGraph', graphKey: 'graph:midi', velocity: 1 }, viewer);
-    for (let i = 0; i < 4; i++) voiceHost.step(1000 / 120);
-
-    expect(monitor).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'graph',
-      label: 'Graph fired graph:midi',
-    }));
-  });
-
-  it('voice mode drops out-of-channel MIDI before graph diagnostics', () => {
+  it('voice mode drops out-of-channel MIDI before it reaches the engine', () => {
     const { handle, join, host, voiceHost, monitor } = voiceHarness();
     const editor = join();
     host.engine.setInputMap({ ...host.engine.getProject().inputMap, midiChannel: 10 });
@@ -538,7 +467,7 @@ describe('read-only gating: authoring is editor-only, engine inputs are not (S2)
     for (let i = 0; i < 4; i++) voiceHost.step(1000 / 120);
 
     expect(monitor).toHaveBeenCalledWith(expect.objectContaining({ type: 'input', source: 'ws' }));
-    expect(monitor).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'graph', source: 'server/voice' }));
+    expect(voiceHost.getStats().engine.voiceCount).toBe(0);
   });
 
   it('rejects a viewer mutation but applies it once the viewer takes over', () => {
@@ -1147,10 +1076,9 @@ describe('fireEffect (effect chains) — an engine input held to the active-sect
       id, cell: { row: 'kit', column: { kind: 'cue' } }, generator: { kind: 'solid' }, amp: { attackMs: 0, length: { ms: 1000 } },
     });
     return {
-      buses: [], graphs: {}, sections: [], effects: [], presets: [],
       songs: [{ id: 'song', name: 'Song', sections: [
-        { id: 'a', name: 'A', slots: {}, effects: [cue('a-fx')], master: [] },
-        { id: 'b', name: 'B', slots: {}, effects: [cue('b-fx')], master: [] },
+        { id: 'a', name: 'A', effects: [cue('a-fx')], master: [] },
+        { id: 'b', name: 'B', effects: [cue('b-fx')], master: [] },
       ] }],
     };
   }

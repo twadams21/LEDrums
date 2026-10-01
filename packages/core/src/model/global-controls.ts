@@ -12,8 +12,7 @@
    the schema, the UI, and the precedence rule all pick it up for free.
 
    Precedence (PINNED): a note or address bound to a global control is CONSUMED — it
-   resolves here, at input step 0, and never also fires a pad/zone or a trigger-source
-   graph. This mirrors the CC #0 section-recall reservation. The binding editor
+   resolves here, at input step 0, and never also fires a pad/zone or a Cue Effect. This mirrors the CC #0 section-recall reservation. The binding editor
    surfaces a hint when a bound note collides with an existing zone mapping so the
    consumption is visible rather than mysterious.
 

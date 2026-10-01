@@ -23,7 +23,7 @@ import { drumHoopPixelRange, type PixelModel } from '../geometry/pixel-model';
 import type { PixelRange } from '../modifiers/types';
 import { computeDelayMs } from './delay';
 import { ease } from './easing';
-import type { EaseSpec, EffectDef, GraphNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
+import type { EaseSpec, SpliceNode, SpliceConfig, SpliceDef, SpliceOrder } from './types';
 
 /** Splice count defaults + the authoring ceiling. The cap is a legibility bound, not a
     perf one: past a few dozen splices per hoop each band is a pixel or two wide. */
@@ -47,39 +47,13 @@ export const DEFAULT_SPLICE_HOLD_MS = 400;
 export const DEFAULT_SPLICE_RELEASE_MS = 300;
 export const MAX_SPLICE_ENVELOPE_MS = 120000;
 /**
- * The reserved effect a colour-only splice hosts. It is an ENGINE-REGISTERED def, not an
- * authored one: `effectId`s in a graph are `EffectDef` ids (the web mints them as
- * `gen:<generatorId>`), and core cannot know that convention — so rather than guess an id
- * out of the show's effect list, the engine registers this one itself at `setShow` (see
- * {@link spliceFillEffectDef}). The `@` prefix keeps it out of any authored id space.
+ * The member effect id a colour-only splice slot resolves to. Not a real EffectDef: the Effect
+ * path re-addresses every fill member onto the `solid-colour` generator
+ * (`effect-chain/resolve-splice.ts`). The `@` prefix keeps it out of any authored id space.
  */
 export const SPLICE_FILL_EFFECT_ID = '@splice-fill';
 /** The generator behind {@link SPLICE_FILL_EFFECT_ID} — see `effects/impl/solid-colour.ts`. */
 export const SPLICE_FILL_GENERATOR_ID = 'solid-colour';
-
-/**
- * The reserved {@link SPLICE_FILL_EFFECT_ID} definition, registered by the engine so a
- * colour-only splice always has a real effect to host. It also supplies the composite
- * voice's envelope when the FIRST splice is a colour (a splice voice takes its bus and
- * envelope from its first non-blank splice, the same rule the Mix collector uses for its
- * first input) — hence a hit-shaped attack/decay rather than an infinite hold.
- */
-export function spliceFillEffectDef(busId: string): EffectDef {
-  return {
-    id: SPLICE_FILL_EFFECT_ID,
-    name: 'Splice Colour',
-    generatorId: SPLICE_FILL_GENERATOR_ID,
-    busId,
-    scope: 'kit',
-    params: [
-      { key: 'color', label: 'Colour', kind: 'color', default: '#ffffff' },
-      { key: 'brightness', label: 'Brightness', kind: 'number', min: 0, max: 1, step: 0.01, default: 1 },
-    ],
-    attackMs: 10,
-    sustainMs: 400,
-    releaseMs: 300,
-  };
-}
 
 /** One band of a partitioned run, in offsets local to that run. */
 export interface SpliceBand {
@@ -702,7 +676,7 @@ function sanitiseHoopSequence(seq: readonly unknown[] | undefined): number[] | u
  * snapshot-stable for the voice's life exactly like a delay node's offset: a tempo change
  * mid-decay must not re-time a chase already in flight.
  */
-export function resolveSplices(node: GraphNode, bpm: number, beatsPerBar = 4): ResolvedSplices | null {
+export function resolveSplices(node: SpliceNode, bpm: number, beatsPerBar = 4): ResolvedSplices | null {
   const count = clampInt(node.spliceCount ?? DEFAULT_SPLICE_COUNT, MIN_SPLICE_COUNT, MAX_SPLICE_COUNT);
   const chase = node.spliceChase ?? 'off';
   const chaseMs =

@@ -1,13 +1,12 @@
 /* =============================================================================
    BINDING CLAIMS — who already owns this MIDI note / CC / OSC address?
 
-   One input address can be typed into FOUR different editors: the patch zone map, a
-   trigger node's `source`, a `sequence` node's `resetSource`, and a global control.
-   At showtime they do NOT share equally — the host's pinned precedence consumes a
-   globally-bound address at input step 0 (see `voice-engine-host`'s STEP 0), so
-   everything else bound to it silently stops firing. A binding that looks configured
-   and does nothing is the worst failure mode this app has: nothing is red, nothing
-   logs, and the rig is just wrong on stage.
+   One input address can be typed into several different editors: the patch zone map, a
+   Cue Effect's source, a global control and a MIDI-map mapping. At showtime they do NOT
+   share equally — the host's pinned precedence consumes a globally-bound address at input
+   step 0 (see `voice-engine-host`'s STEP 0), so everything else bound to it silently stops
+   firing. A binding that looks configured and does nothing is the worst failure mode this
+   app has: nothing is red, nothing logs, and the rig is just wrong on stage.
 
    The fix is to refuse the collision at AUTHORING time rather than resolve it at
    showtime. This module is the single source of truth for "who owns this address",
@@ -15,24 +14,17 @@
 
    THREE GROUPS, and what may share:
 
-     A `pad-trigger`    zone map + trigger-node sources — share freely WITH EACH OTHER.
-                        This is long-standing intended behaviour: a zone-mapped hit
-                        fires its pad graph and the raw note stays available to a
-                        trigger `source` (see `engine.handleTriggerEvent`).
-     B `sequence-reset`  a sequence node's `resetSource` — shares freely with OTHER
-                        resets, so one note can snap several chosen sequencers back to
-                        step 1 (`sequenceResync` is the all-or-nothing global).
-     C `global-control`  unique. Two actions on one address is never intent; today it
+     A `pad-trigger`    zone map + Cue Effect sources — share freely WITH EACH OTHER.
+                        This is intended behaviour: a zone-mapped hit fires its zone's
+                        Effects and the raw note stays available to a Cue.
+     C `global-control` unique. Two actions on one address is never intent; today it
                         silently resolves by catalogue order.
-
      D `mapping`        a MIDI-map InputMapping (effect chains S07) — unique, like a
                         global control. A matched mapping is CONSUMED at global-control
                         precedence (after globals, before zones and cues), so anything
-                        else on its address would silently starve.
-
-   Cue Effects (effect chains) join group A: a Cue shares addresses with zones by
-   design, exactly as a graph trigger-node source did. A mapping on a Cue's address IS
-   refused — the mapping would consume the input before the Cue ever saw it.
+                        else on its address would silently starve. A mapping on a Cue's
+                        address IS refused — the mapping would consume the input before
+                        the Cue ever saw it.
 
    ACROSS groups, all of them block each other.
 
@@ -41,12 +33,10 @@
    another key mapping.
 
    The DRUM namespace is deliberately untouched. A `drum` source names a pad
-   (`drumId`/`zone`), not an input address, so it claims nothing here — which is what
-   preserves issue #159's "one pad hit both fires the graph AND resets its sequencer".
-   That feature lives entirely in the drum namespace and never collides with a note.
+   (`drumId`/`zone`), not an input address, so it claims nothing here.
 
-   Purity: pure resolution over (inputMap, graphs, mappings, effects). No engine state,
-   no IO, no DOM.
+   Purity: pure resolution over (inputMap, mappings, effects). No engine state, no IO,
+   no DOM.
    ============================================================================= */
 import { GLOBAL_CONTROL_CATALOG, RESERVED_SECTION_RECALL_CC, type GlobalControlAction } from '../model/global-controls';
 import {
@@ -56,14 +46,14 @@ import {
 } from '../effect-chain/input-mappings';
 import type { Effect } from '../effect-chain/types';
 import type { InputMap } from '../model/project-schema';
-import type { TriggerGraph, TriggerSource } from './types';
+import type { TriggerSource } from './types';
 
 /**
  * Which sharing rule a binding plays by. `reserved` is not an editable group — it is
  * the app's own claim (today: CC 0 for global section recall), and it blocks everyone
  * including itself, because nothing a user types can win against it.
  */
-export type BindingGroup = 'pad-trigger' | 'sequence-reset' | 'global-control' | 'mapping' | 'reserved';
+export type BindingGroup = 'pad-trigger' | 'global-control' | 'mapping' | 'reserved';
 
 /**
  * An input address, in the namespace it actually collides in. Four separate spaces:
@@ -89,8 +79,6 @@ export type BindingAddress =
  */
 export type BindingClaim =
   | { group: 'pad-trigger'; kind: 'zone'; drumId: string; slot: number }
-  | { group: 'pad-trigger'; kind: 'triggerNode'; graphKey: string; nodeId: string }
-  | { group: 'sequence-reset'; kind: 'reset'; graphKey: string; nodeId: string }
   | { group: 'pad-trigger'; kind: 'cue'; effectId: string }
   | { group: 'global-control'; kind: 'global'; action: GlobalControlAction }
   /** An InputMapping, identified by its target (`inputMappingTargetId`) — one mapping per target. */
@@ -98,20 +86,18 @@ export type BindingClaim =
   | { group: 'reserved'; kind: 'reservedCc'; controller: number };
 
 /**
- * Everything a claim search reads: the patch input map, every authored graph and, for the
- * effect-chain show, its InputMappings and its Effects (every section's — a Cue in any
- * section would be starved when that section plays). `mappings` / `effects` are optional so
- * graph-era callers keep compiling unchanged; absent means "nothing claimed there".
+ * Everything a claim search reads: the patch input map and, for the show, its InputMappings
+ * and its Effects (every section's — a Cue in any section would be starved when that section
+ * plays). Absent `mappings` / `effects` mean "nothing claimed there".
  */
 export interface BindingScope {
   inputMap: InputMap;
-  graphs: Record<string, TriggerGraph>;
   mappings?: readonly InputMapping[];
   effects?: readonly Pick<Effect, 'id' | 'trigger'>[];
 }
 
 /**
- * Does a trigger/reset source bind THIS address?
+ * Does a trigger source bind THIS address?
  *
  * `drum` sources always return false — see the header: they name a pad, not an input
  * address, and share by design.
@@ -170,13 +156,13 @@ function sameAddress(a: BindingAddress, b: BindingAddress): boolean {
  * Every existing owner of `address`, across every editable surface.
  *
  * Order is stable and meaningful: reserved first (it outranks everything), then zone
- * map, then graph nodes in graph-key order, then Cue Effects in scope order, then globals
+ * map, then Cue Effects in scope order, then globals
  * in catalogue order, then mappings in show order — so a refusal message names the most
  * authoritative blocker first.
  */
 export function claimsForAddress(scope: BindingScope, address: BindingAddress): BindingClaim[] {
   const out: BindingClaim[] = [];
-  const { inputMap, graphs } = scope;
+  const { inputMap } = scope;
 
   // The app's own reservation. Predates global controls (`SECTION_RECALL_CC`) and is
   // enforced at the host, so a stored CC 0 binding could never have fired anyway.
@@ -197,21 +183,7 @@ export function claimsForAddress(scope: BindingScope, address: BindingAddress): 
     }
   }
 
-  // Authored graphs — a trigger node's `source` (group A) and a sequence node's
-  // `resetSource` (group B) are different groups on the SAME node shape, so both are
-  // read in one pass rather than two walks that could drift.
-  for (const graphKey of Object.keys(graphs).sort()) {
-    for (const node of graphs[graphKey]?.nodes ?? []) {
-      if (node.kind === 'trigger' && node.source && sourceClaimsAddress(node.source, address)) {
-        out.push({ group: 'pad-trigger', kind: 'triggerNode', graphKey, nodeId: node.id });
-      }
-      if (node.kind === 'sequence' && node.resetSource && sourceClaimsAddress(node.resetSource, address)) {
-        out.push({ group: 'sequence-reset', kind: 'reset', graphKey, nodeId: node.id });
-      }
-    }
-  }
-
-  // Cue Effects (group A, like a trigger-node source).
+  // Cue Effects (group A).
   for (const effect of scope.effects ?? []) {
     if (effect.trigger.kind === 'cue' && cueClaimsAddress(effect.trigger.source, address)) {
       out.push({ group: 'pad-trigger', kind: 'cue', effectId: effect.id });
@@ -255,10 +227,6 @@ export function isSameClaim(a: BindingClaim, b: BindingClaim): boolean {
   switch (a.kind) {
     case 'zone':
       return b.kind === 'zone' && a.drumId === b.drumId && a.slot === b.slot;
-    case 'triggerNode':
-      return b.kind === 'triggerNode' && a.graphKey === b.graphKey && a.nodeId === b.nodeId;
-    case 'reset':
-      return b.kind === 'reset' && a.graphKey === b.graphKey && a.nodeId === b.nodeId;
     case 'cue':
       return b.kind === 'cue' && a.effectId === b.effectId;
     case 'global':
@@ -320,10 +288,9 @@ export interface BindingRejection {
 export function inputMapBindingRejections(
   current: InputMap,
   next: InputMap,
-  graphs: Record<string, TriggerGraph>,
   showClaims: Pick<BindingScope, 'mappings' | 'effects'> = {},
 ): BindingRejection[] {
-  const scope: BindingScope = { inputMap: next, graphs, ...showClaims };
+  const scope: BindingScope = { inputMap: next, ...showClaims };
   const out: BindingRejection[] = [];
   const check = (address: BindingAddress, self: BindingClaim): void => {
     const conflicts = bindingConflicts(scope, address, self);
@@ -367,9 +334,8 @@ export function inputMapBindingRejections(
 }
 
 /**
- * Check a trigger node's or a sequence node's source write. `graphs` must be the CURRENT
- * graphs — the node's existing binding is excluded as `self`, so a node re-saving its own
- * address never refuses itself.
+ * Check a trigger source write (a Cue Effect's source). The binding's existing claim is
+ * excluded as `self`, so re-saving its own address never refuses itself.
  */
 export function sourceBindingRejections(
   scope: BindingScope,
@@ -406,7 +372,7 @@ export function inputMappingConflicts(
 }
 
 /**
- * The addresses a trigger/reset source occupies — `drum` sources occupy none (they are
+ * The addresses a trigger source occupies — `drum` sources occupy none (they are
  * in the pad namespace). A `midi` source may carry BOTH a note and a CC, so this returns
  * a list rather than a single address.
  */

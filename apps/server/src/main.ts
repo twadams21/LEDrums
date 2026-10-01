@@ -453,9 +453,6 @@ async function main(): Promise<void> {
       case 'key':
         monitor({ type: 'input', direction: 'in', source: origin, destination, label: `Key ${msg.drumId}:${msg.zone ?? ''}`, detail: `velocity=${msg.velocity ?? 1}` });
         return;
-      case 'fireGraph':
-        monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Fire graph ${msg.graphKey}`, detail: `velocity=${msg.velocity}` });
-        return;
       case 'recallSection':
         monitor({ type: 'graph', direction: 'in', source: origin, destination, label: `Recall section ${msg.sectionId ?? 'none'}`, detail: msg.songId ?? undefined });
         return;
@@ -720,7 +717,7 @@ async function main(): Promise<void> {
    * Re-check editor authority inside the handler when queued work actually executes. */
   async function dispatchClientMessage(msg: ClientMessage, ws: WebSocket): Promise<void> {
     if (shuttingDown) return;
-    const immediatePerformanceInput = msg.t === 'fireGraph' || msg.t === 'releaseBus';
+    const immediatePerformanceInput = msg.t === 'releaseBus';
     if ((!immediatePerformanceInput && requiresEditor(msg.t)) || msg.t === 'listBackups' || msg.t === 'listProjects') {
       await authoring.run(() => handleClientMessage(msg, ws));
     } else {

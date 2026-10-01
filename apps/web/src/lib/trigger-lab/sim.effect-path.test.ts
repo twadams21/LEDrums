@@ -20,7 +20,7 @@ function solid(over: Record<string, unknown> & { id: string; cell: Effect['cell'
 }
 
 function section(id: string, effects: Effect[], master: unknown[] = []): voice.SongSection {
-  return { id, name: id, slots: {}, effects, master: effectChain.masterChainSchema.parse(master) };
+  return { id, name: id, effects, master: effectChain.masterChainSchema.parse(master) };
 }
 
 function showOf(...sections: voice.SongSection[]): voice.Show {

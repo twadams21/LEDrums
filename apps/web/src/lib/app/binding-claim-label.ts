@@ -1,16 +1,13 @@
 /* Pure display copy for a REFUSED input binding — core reports structure (which group,
-   which node/zone/action), this turns it into the one sentence the user reads.
+   which zone/Cue/action), this turns it into the one sentence the user reads.
 
    Deliberately separate from `global-control-labels`, which warns about a collision that
    IS allowed. These messages describe a write that did NOT happen, so they must name the
-   blocker precisely: "already the trigger for Kick" is actionable, "already in use" sends
-   the user hunting through four editors. No Svelte / DOM — unit-tested in isolation. */
+   blocker precisely: "already the “Next song” global control" is actionable, "already in use"
+   sends the user hunting through four editors. No Svelte / DOM — unit-tested in isolation. */
 import { globalControlDef, type voice } from '@ledrums/core';
 import { formatMidiNote } from '../midi/midi-note';
 import { describeTriggerSource, type DrumRef } from './trigger-source-label';
-
-/** How a graph key becomes a display name — `store.graphLabel`, injected to stay pure. */
-export type GraphLabeller = (graphKey: string) => string;
 
 /** The address itself, in the same phrasing the source labels use ("MIDI D2", "OSC /go"). */
 export function describeBindingAddress(address: voice.BindingAddress): string {
@@ -38,14 +35,10 @@ const MAPPING_TARGET_NOUNS: Record<string, string> = {
 };
 
 /** Who holds the address — a noun phrase that slots into "… is already {this}". */
-export function describeBindingClaim(claim: voice.BindingClaim, drums: readonly DrumRef[], graphLabel: GraphLabeller): string {
+export function describeBindingClaim(claim: voice.BindingClaim, drums: readonly DrumRef[]): string {
   switch (claim.kind) {
     case 'zone':
       return `the drum trigger ${describeTriggerSource({ kind: 'drum', drumId: claim.drumId, zone: String(claim.slot) }, drums).sub}`;
-    case 'triggerNode':
-      return `the trigger for ${graphLabel(claim.graphKey)}`;
-    case 'reset':
-      return `a sequence reset in ${graphLabel(claim.graphKey)}`;
     case 'cue':
       return 'the trigger for a Cue Effect';
     case 'global':
@@ -67,10 +60,9 @@ export function describeBindingClaim(claim: voice.BindingClaim, drums: readonly 
 export function bindingRejectionMessage(
   rejection: voice.BindingRejection,
   drums: readonly DrumRef[],
-  graphLabel: GraphLabeller,
 ): string {
   const blocker = rejection.conflicts[0]!;
   const what = describeBindingAddress(rejection.address);
-  const who = describeBindingClaim(blocker, drums, graphLabel);
+  const who = describeBindingClaim(blocker, drums);
   return `${what} is already ${who} — clear that binding first, or pick another input.`;
 }

@@ -3,7 +3,7 @@ import { relativeNavTarget } from './navigation';
 import { emptyShow, type Show, type ShowSong } from './types';
 
 function song(id: string, sectionIds: string[]): ShowSong {
-  return { id, name: id, sections: sectionIds.map((sid) => ({ id: sid, name: sid, slots: {} })) };
+  return { id, name: id, sections: sectionIds.map((sid) => ({ id: sid, name: sid, effects: [] })) };
 }
 
 /** Two songs: A with three sections, B with two. */

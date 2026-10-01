@@ -26,7 +26,7 @@ function transport(now: number): TransportState {
 }
 
 function song(id: string, sectionIds: string[]): ShowSong {
-  return { id, name: id, sections: sectionIds.map((sid) => ({ id: sid, name: sid, slots: {} })) };
+  return { id, name: id, sections: sectionIds.map((sid) => ({ id: sid, name: sid, effects: [] })) };
 }
 
 function showFixture(): Show {
@@ -67,7 +67,7 @@ describe('globalControl input — navigation', () => {
   it('drops queued recalls when a newer show replaces the old one', () => {
     const { engine, recalls } = setup();
     engine.applyInput(nav('nextSong', 0));
-    engine.setShow({ ...showFixture(), songs: [{ id: 'new', name: 'New', sections: [{ id: 'new-1', name: 'New 1', slots: {} }] }] });
+    engine.setShow({ ...showFixture(), songs: [{ id: 'new', name: 'New', sections: [{ id: 'new-1', name: 'New 1', effects: [] }] }] });
     engine.tick(10, 10, transport(10));
     expect(recalls).toEqual([]);
   });
@@ -219,7 +219,6 @@ describe('setShow — preserve the authoritative selection', () => {
 
     const updated: Show = {
       ...current,
-      buses: current.buses.map((bus) => ({ ...bus, name: `${bus.name} updated` })),
       songs: current.songs!.map((s) => ({ ...s, name: `${s.name} updated` })),
     };
     engine.setShow(updated);
