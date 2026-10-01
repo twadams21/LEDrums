@@ -116,6 +116,18 @@ export class VoicePool {
     }
   }
 
+  /** Stop every voice of this authored Effect NOW — releasing ones too — with no release ramp
+      (a Sequence / Random cell's `cut`). The level drops to 0, so the next frame reaps it. */
+  cutChainVoices(chainEffectId: string, timeMs: number): void {
+    for (const v of this.pool) {
+      if (!v.active || v.chainEffectId !== chainEffectId) continue;
+      v.phase = 'release';
+      v.releaseAtMs = timeMs;
+      v.releaseFromLevel = 0;
+      v.level = 0;
+    }
+  }
+
   /**
    * Find a free pool slot; if the pool is saturated, steal the oldest releasing
    * voice, else the oldest voice overall (voice-capped, no GC churn).

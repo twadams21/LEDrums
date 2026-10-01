@@ -522,7 +522,7 @@ export function clearCell<S extends EffectsSection>(section: S, cell: EffectCell
 
 /**
  * Set how a cell's stack plays a hit. `layer` removes the entry (the default needs none). Switching
- * between Sequence and Random keeps the reset. An Always cell has no hits to answer: refused.
+ * between Sequence and Random keeps the reset and Cut previous. An Always cell has no hits to answer: refused.
  */
 export function setCellPlayMode<S extends EffectsSection>(section: S, cell: EffectCell, mode: effectChain.CellPlayMode): S {
   if (cell.column.kind === 'always') return section;
@@ -530,8 +530,21 @@ export function setCellPlayMode<S extends EffectsSection>(section: S, cell: Effe
   const current = entries.find((p) => sameCell(p.cell, cell));
   if ((current?.mode ?? 'layer') === mode) return section;
   const rest = entries.filter((p) => !sameCell(p.cell, cell));
-  const next = mode === 'layer' ? rest : [...rest, { cell: cloneJson(cell), mode, ...(current?.reset ? { reset: cloneJson(current.reset) } : {}) }];
+  const next = mode === 'layer'
+    ? rest
+    : [...rest, { cell: cloneJson(cell), mode, ...(current?.reset ? { reset: cloneJson(current.reset) } : {}), ...(current?.cut ? { cut: true } : {}) }];
   return { ...section, cellPlay: next };
+}
+
+/** Cut previous on a Sequence / Random cell: the step that plays stops the others at once. No-op
+    on a layering cell. Off removes the flag, so an untouched cell's saved shape doesn't change. */
+export function setCellCut<S extends EffectsSection>(section: S, cell: EffectCell, cut: boolean): S {
+  const entries = section.cellPlay ?? [];
+  const index = entries.findIndex((p) => sameCell(p.cell, cell));
+  if (index < 0 || !!entries[index]!.cut === cut) return section;
+  const { cut: _old, ...base } = entries[index]!;
+  const updated: effectChain.CellPlay = cut ? { ...base, cut: true } : base;
+  return { ...section, cellPlay: entries.map((p, i) => (i === index ? updated : p)) };
 }
 
 /** Set (or, with null, clear) the input that rewinds a Sequence / Random cell. No-op on a layering cell. */

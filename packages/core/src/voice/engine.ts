@@ -52,7 +52,7 @@ import {
   type ContinuousInputBinding,
   type EffectInputEvent,
 } from '../effect-chain/resolver';
-import { pickCellPlay, resetCellSteps, type CellSteps } from '../effect-chain/cell-play';
+import { cellCutTargets, pickCellPlay, resetCellSteps, type CellSteps } from '../effect-chain/cell-play';
 import {
   isContinuousTarget,
   matchInputMapping,
@@ -913,6 +913,8 @@ class VoiceBusEngine implements RenderEngine {
     // missing, so build each one too (a nested Generator slot would otherwise render blank).
     for (const member of action.spliceInputs ?? []) this.ensureChainEffectDef(member.effectId);
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
+    // A Sequence / Random cell with `cut`: the step that plays silences the cell's other steps.
+    for (const id of cellCutTargets(section, effect)) this.voices.cutChainVoices(id, this.timeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {
         effectsById: this.chainEffects,

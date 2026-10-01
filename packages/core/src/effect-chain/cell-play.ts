@@ -89,6 +89,17 @@ export function pickCellPlay(
   return { fire, steps: next };
 }
 
+/**
+ * The Effects to cut when `effect` plays: with its cell on Sequence / Random and `cut` set, every
+ * OTHER Effect in that cell (bypassed ones included — a step bypassed mid-tail is still cut).
+ * Empty for a layering cell or without `cut`.
+ */
+export function cellCutTargets(section: CellPlaySection, effect: Effect): string[] {
+  const play = cellPlayOf(section, effect.cell);
+  if (!play?.cut || play.mode === 'layer') return [];
+  return (section.effects ?? []).filter((other) => other.id !== effect.id && sameEffectCell(other.cell, effect.cell)).map((other) => other.id);
+}
+
 /** Does this input carry the cell's reset? (A zone-mapped note carries its zone AND its note.) */
 function resetMatches(play: CellPlay, event: EffectInputEvent): boolean {
   const reset = play.reset;

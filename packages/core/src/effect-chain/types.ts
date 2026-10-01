@@ -324,6 +324,9 @@ export const cellPlaySchema = z.object({
   cell: effectCellSchema,
   mode: cellPlayModeSchema,
   reset: cellResetSchema.optional(),
+  /** Sequence / Random only: when a step plays, the cell's other steps stop at once — no release
+      fade — so one step is lit at a time (Tim, 2026-10-01). Absent = they play out. */
+  cut: z.boolean().optional(),
 });
 
 export type EffectCell = z.output<typeof effectCellSchema>;

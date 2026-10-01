@@ -26,12 +26,12 @@ const flash = (id: string, color: string): Effect =>
   parseEffect({ id, cell: KICK, generator: { kind: 'solid', style: 'solid', params: { color } }, amp: { attackMs: 0, length: { ms: 30 }, releaseMs: 0 } });
 const STACK = [flash('r', '#ff0000'), flash('g', '#00ff00'), flash('b', '#0000ff')];
 
-function harness(cellPlay: CellPlay[], extraSection?: SongSection) {
+function harness(cellPlay: CellPlay[], extraSection?: SongSection, stack: Effect[] = STACK) {
   const diags: VoiceDiagnostic[] = [];
   const engine = createVoiceBusEngine({ onDiagnostic: (d) => diags.push(d) });
   const m = model();
   engine.setModel(m);
-  const sections: SongSection[] = [{ id: 's', name: 's', effects: STACK, cellPlay }, ...(extraSection ? [extraSection] : [])];
+  const sections: SongSection[] = [{ id: 's', name: 's', effects: stack, cellPlay }, ...(extraSection ? [extraSection] : [])];
   const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections }] };
   engine.setShow(show);
   let now = 0;
@@ -42,17 +42,26 @@ function harness(cellPlay: CellPlay[], extraSection?: SongSection) {
   };
   step(10);
   const send = (ev: Omit<InputEvent, 'timeMs'>) => { engine.applyInput({ ...ev, timeMs: now } as InputEvent); step(20); };
-  /** Hit the kick, read which colour lit it, then let it fade. */
-  const hit = (): string => {
-    send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 });
+  /** Which colours light the kick right now. */
+  const lit = (): string => {
     const d = m.drumById.get('kick')!;
     const f = engine.frame();
     const sum = [0, 1, 2].map((c) => { let s = 0; for (let i = d.pixelStart; i < d.pixelStart + d.pixelCount; i++) s += f[i * 4 + c]!; return s; });
-    step(100);
-    const lit = ['r', 'g', 'b'].filter((_, c) => sum[c]! > 0);
-    return lit.join('');
+    return ['r', 'g', 'b'].filter((_, c) => sum[c]! > 0).join('');
   };
-  return { hit, send, diags };
+  /** Hit the kick, read which colour lit it, then let it fade. */
+  const hit = (): string => {
+    send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 });
+    const now = lit();
+    step(100);
+    return now;
+  };
+  /** Hit the kick and read what is lit, WITHOUT waiting for it to fade. */
+  const strike = (): string => {
+    send({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1 });
+    return lit();
+  };
+  return { hit, strike, send, diags };
 }
 
 describe('Sequence cell', () => {
@@ -99,5 +108,29 @@ describe('Random cell', () => {
     for (let i = 1; i < a.length; i++) expect(a[i], `hit ${i}`).not.toBe(a[i - 1]);
     expect(new Set(a).size).toBe(3); // all three get played
     expect(run()).toEqual(a); // seeded: a replay of the same hits is exact
+  });
+});
+
+describe('Cut previous', () => {
+  /** Long Effects with a long release, so a step is still lit when the next one plays. */
+  const long = (id: string, color: string): Effect =>
+    parseEffect({ id, cell: KICK, generator: { kind: 'solid', style: 'solid', params: { color } }, amp: { attackMs: 0, length: { ms: 2000 }, releaseMs: 1000 } });
+  const LONG = [long('r', '#ff0000'), long('g', '#00ff00'), long('b', '#0000ff')];
+
+  it('without it, a step is still lit when the next one plays', () => {
+    const h = harness([{ cell: KICK, mode: 'sequence' }], undefined, LONG);
+    expect([h.strike(), h.strike()]).toEqual(['r', 'rg']);
+  });
+
+  it('with it, the step that plays stops the others at once — no release fade', () => {
+    const h = harness([{ cell: KICK, mode: 'sequence', cut: true }], undefined, LONG);
+    expect([h.strike(), h.strike(), h.strike(), h.strike()]).toEqual(['r', 'g', 'b', 'r']);
+  });
+
+  it('works on a Random cell too, and never on a Layer cell', () => {
+    const random = harness([{ cell: KICK, mode: 'random', cut: true }], undefined, LONG);
+    for (let i = 0; i < 6; i++) expect(random.strike()).toHaveLength(1);
+    const layer = harness([{ cell: KICK, mode: 'layer', cut: true }], undefined, LONG);
+    expect(layer.strike()).toBe('rgb');
   });
 });

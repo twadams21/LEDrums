@@ -73,4 +73,17 @@ describe('CellPlayBar', () => {
     const view = render(CellPlayBar, { props: { api, cell: KICK, steps: 1 } });
     expect(view.getByText(/Add another Effect/)).toBeTruthy();
   });
+
+  it('Cut previous shows on a stepping cell and sets the flag; switching mode keeps it', async () => {
+    const { api, view, rerender } = setup();
+    expect(view.queryByLabelText('Cut previous step')).toBeNull(); // Layer: nothing to cut
+    api.setCellPlayMode(KICK, 'sequence');
+    await rerender();
+    await fireEvent.click(view.getByLabelText('Cut previous step'));
+    expect(api.cellPlay(KICK)?.cut).toBe(true);
+    api.setCellPlayMode(KICK, 'random');
+    expect(api.cellPlay(KICK)?.cut).toBe(true);
+    api.setCellCut(KICK, false);
+    expect(api.cellPlay(KICK)).toEqual({ cell: KICK, mode: 'random' }); // off leaves no flag behind
+  });
 });

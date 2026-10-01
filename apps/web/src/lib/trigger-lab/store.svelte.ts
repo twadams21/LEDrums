@@ -1459,6 +1459,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   setCellPlayMode(cell: effectChain.EffectCell, mode: effectChain.CellPlayMode): void {
     this.effectsCtl.setCellPlayMode(cell, mode);
   }
+  setCellCut(cell: effectChain.EffectCell, cut: boolean): void {
+    this.effectsCtl.setCellCut(cell, cut);
+  }
   setCellReset(cell: effectChain.EffectCell, reset: effectChain.CellReset | null): void {
     this.effectsCtl.setCellReset(cell, reset);
   }
