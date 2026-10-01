@@ -150,10 +150,19 @@
   }
   /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
      keeping the role rule on top. */
+  /* The highlight is a box drawn OVER the card — an inset shadow sits under the title bar's own
+     background, which hid its top edge (Tim, 2026-10-01: "not just the sides and bottom"). */
   .card.selected {
-    box-shadow:
-      inset 0 2px 0 0 var(--role),
-      inset 0 0 0 2px var(--accent);
+    position: relative;
+  }
+  .card.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    pointer-events: none;
   }
   .role-generator { --role: var(--role-content); }
   .role-modifier { --role: var(--role-effect); }

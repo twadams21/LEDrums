@@ -129,10 +129,19 @@
   }
   /* Highlighted: an accent ring inside the edge (the scrolling chain would clip one outside),
      keeping the role rule on top — the same ring as the device cards. */
+  /* The highlight is a box drawn OVER the card — an inset shadow sits under the title bar's own
+     background, which hid its top edge (Tim, 2026-10-01: "not just the sides and bottom"). */
   .device.selected {
-    box-shadow:
-      inset 0 2px 0 0 color-mix(in oklch, var(--tint) 70%, transparent),
-      inset 0 0 0 2px var(--accent);
+    position: relative;
+  }
+  .device.selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 2px solid var(--accent);
+    border-radius: inherit;
+    pointer-events: none;
   }
   .bar {
     display: flex;

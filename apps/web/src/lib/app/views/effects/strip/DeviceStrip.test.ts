@@ -44,6 +44,19 @@ const stackIds = (api: ReturnType<typeof setup>['api']) => api.cellEffects(kickH
 const row = (container: HTMLElement, id: string) => container.querySelector<HTMLElement>(`[data-effect="${id}"]`)!;
 
 describe('DeviceStrip', () => {
+  it('clicking an Effect’s name bar boxes the whole Effect; highlighting a card inside it does not', async () => {
+    const { api, container } = setup();
+    await fireEvent.click(row(container, 'Pulse').querySelector('.head')!);
+    await tick();
+    expect(row(container, 'Pulse').classList.contains('boxed')).toBe(true);
+    expect(row(container, 'Pulse').querySelector('.box')).not.toBeNull();
+    expect(row(container, 'Wash').classList.contains('boxed')).toBe(false);
+    api.selectDevice({ kind: 'modifier', owner: 'Pulse', uid: 'm1' });
+    await tick();
+    expect(row(container, 'Pulse').classList.contains('boxed')).toBe(false);
+    expect(row(container, 'Pulse').querySelector('.card.selected')).not.toBeNull();
+  });
+
   it('renders one chain row per Effect, in stack order', () => {
     const { container } = setup();
     const rows = [...container.querySelectorAll<HTMLElement>('.effect-row')];
