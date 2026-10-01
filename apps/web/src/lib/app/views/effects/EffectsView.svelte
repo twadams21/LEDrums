@@ -22,7 +22,8 @@
 
   let { api, panes }: { api: EffectsAuthoringApi; panes: PaneSizeHost } = $props();
 
-  const STRIP = { key: 'effectsStripH', min: 160, max: 640, def: 300 };
+  // def fits one side-by-side column whole: bar + Play bar + header (two lines when it wraps) + a 240px device row.
+  const STRIP = { key: 'effectsStripH', min: 160, max: 640, def: 440 };
   const stripH = $derived(panes.paneSizes[STRIP.key] ?? STRIP.def);
   const setStripH = (v: number): void => {
     panes.paneSizes = { ...panes.paneSizes, [STRIP.key]: v };

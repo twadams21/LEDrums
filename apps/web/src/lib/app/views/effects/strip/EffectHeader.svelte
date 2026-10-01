@@ -67,9 +67,11 @@
   ]);
 
   function onGripKey(event: KeyboardEvent): void {
-    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    // The stack runs left to right; ↑ / ↓ still move too, for anyone used to the old layout.
+    const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0;
+    if (delta === 0) return;
     event.preventDefault();
-    onNudge?.(event.key === 'ArrowUp' ? -1 : 1);
+    onNudge?.(delta);
   }
 </script>
 
@@ -78,13 +80,13 @@
        name button (inside the header) selects. -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div class="head" class:selected class:bypassed={effect.bypass} onclick={() => api.selectEffect(effect.id)}>
-    <Tooltip text="Drag to reorder · ↑ ↓ to move">
+    <Tooltip text="Drag to reorder · ← → to move">
       <button
         type="button"
         class="grip"
         draggable={!disabled && count > 1}
         data-keyboard-owner="roving"
-        aria-label={`${name}, ${index + 1} of ${count}. Arrow up or down to move.`}
+        aria-label={`${name}, ${index + 1} of ${count}. Arrow left or right to move.`}
         disabled={disabled || count < 2}
         ondragstart={onGripDragStart}
         ondragend={onGripDragEnd}
@@ -189,28 +191,34 @@
       </span>
     </span>
 
-    <Tooltip text="Effect actions">
-      <ContextMenu mode="dropdown" label={`Actions for ${name}`} {actions}>
-        <Ellipsis size={16} aria-hidden="true" />
-      </ContextMenu>
-    </Tooltip>
+    <span class="menu">
+      <Tooltip text="Effect actions">
+        <ContextMenu mode="dropdown" label={`Actions for ${name}`} {actions}>
+          <Ellipsis size={16} aria-hidden="true" />
+        </ContextMenu>
+      </Tooltip>
+    </span>
   </div>
 </ContextMenu>
 
 <style>
+  /* The header sits over its own chain, as wide as the chain, in two lines: identity + menu on
+     top, the mix controls (Blend · Opacity · Retrigger) below — so a narrow column never pushes
+     the menu onto a line of its own. */
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-1);
-    height: 40px;
+    min-height: 40px;
     min-width: 0;
-    padding: 0 var(--space-2) 0 var(--space-1);
+    padding: 6px var(--space-2) 6px var(--space-1);
     background: var(--surface);
     border-bottom: 1px solid var(--border-faint);
   }
   .head.selected {
     background: color-mix(in oklch, var(--accent) 7%, var(--surface));
-    box-shadow: inset 2px 0 0 var(--accent);
+    box-shadow: inset 0 2px 0 var(--accent);
   }
   .grip,
   .power,
@@ -306,12 +314,19 @@
     width: 14rem;
     flex: none;
   }
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
+  .menu {
+    display: inline-flex;
     margin-left: auto;
+  }
+  .controls {
+    order: 1;
+    display: flex;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    align-items: center;
+    gap: var(--space-1_5) var(--space-3);
     min-width: 0;
+    padding-left: var(--space-1_5);
   }
   .ctl {
     display: inline-flex;

@@ -102,6 +102,8 @@ Agent-chosen (assumed, not reviewed by Tim or Trent):
 
 Bug found in browser verification: `store.hit` / `fireRawMidiLocal` dropped any input that fired no Effect before it reached the engine, so a reset-only zone never reset. They now pass an input that is some cell's reset (`isCellReset`). Verified on a real server: sequence 1,2,3,1; Tom 1 zone reset; MIDI note 100 reset; Random with no repeats over 10 hits.
 
+**Effects panel runs sideways (2026-10-01, branch `feat/cell-sequencer`, PR #258):** Tim (this machine): "instead of effects that take up a lot of real estate going downwards, they actually go sideways across the panel". `DeviceStrip`: a cell's Effects are side-by-side columns (header over its device chain); the stack, not each chain, scrolls sideways. Each column fills the panel's height (never under one 240px device row); every card in a row is that height, and a card with more controls scrolls its face. The header is two lines (identity + menu, then Blend · Opacity · Retrigger) and takes the chain's width (`width: 0; min-width: 100%`). Reorder is drag left/right or ← / → on the grip (↑ / ↓ still work). A selected Effect scrolls into view sideways only. The strip's default height went 300 → 440 so one column fits whole; a saved `effectsStripH` wins. Agent choices: all of the above beyond "sideways".
+
 **Section and graph authoring fixes (2026-09-25, branch `fix/section-authoring`):**
 Requested by Trent in this session on Trent's MacBook Pro (machine identity checked), based on
 remote `main` at `e4de6835`. Trent relayed Tim's macOS desktop drag failure and requested configured

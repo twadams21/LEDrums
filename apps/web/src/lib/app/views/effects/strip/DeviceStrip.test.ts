@@ -67,18 +67,20 @@ describe('DeviceStrip', () => {
     expect(within(container).getByRole('list', { name: 'Modifiers' }).querySelectorAll('.mod-slot')).toHaveLength(1);
   });
 
-  it('↓ / ↑ on an Effect grip reorders the stack, one undo step each', async () => {
+  it('→ / ← on an Effect grip reorders the side-by-side stack, one undo step each', async () => {
     const { api, container } = setup();
-    await fireEvent.keyDown(row(container, 'Pulse').querySelector('.grip')!, { key: 'ArrowDown' });
+    await fireEvent.keyDown(row(container, 'Pulse').querySelector('.grip')!, { key: 'ArrowRight' });
     expect(stackIds(api)).toEqual(['Wash', 'Pulse']);
     expect(api.undoDepth).toBe(1);
     await tick();
-    await fireEvent.keyDown(row(container, 'Wash').querySelector('.grip')!, { key: 'ArrowUp' });
+    await fireEvent.keyDown(row(container, 'Wash').querySelector('.grip')!, { key: 'ArrowLeft' });
     expect(stackIds(api)).toEqual(['Wash', 'Pulse']); // already first: no-op
     expect(api.undoDepth).toBe(1);
+    await fireEvent.keyDown(row(container, 'Wash').querySelector('.grip')!, { key: 'ArrowDown' }); // ↓ still moves later
+    expect(stackIds(api)).toEqual(['Pulse', 'Wash']);
   });
 
-  it('dragging an Effect grip onto the top half of the first row moves it to the top', async () => {
+  it('dragging an Effect grip onto the left half of the first column moves it to the front', async () => {
     const { api, container } = setup();
     await fireEvent.dragStart(row(container, 'Wash').querySelector('.grip')!);
     const target = row(container, 'Pulse');
