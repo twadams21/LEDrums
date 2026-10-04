@@ -345,3 +345,19 @@ describe('effects-doc: cells', () => {
     expect(doc.clearCell(start, kickEdge)).toBe(start);
   });
 });
+
+describe('effects-doc: a new Dot lasts until its dots end (Tim, 2026-10-05)', () => {
+  it('a new Dot starts on Sustain "Until dots end"; other Generators keep the default time', () => {
+    const dot = doc.addEffect(section(), kickHead, 'dot');
+    expect(doc.effectById(dot.section, dot.id!)!.amp.length).toBe('auto');
+    const wave = doc.addEffect(section(), kickHead, 'wave');
+    expect(doc.effectById(wave.section, wave.id!)!.amp.length).toEqual({ ms: 500 });
+  });
+
+  it('switching to Dot turns it on; switching away goes back to a time', () => {
+    const to = doc.setGenerator(section(fx('a', kickHead)), 'a', 'dot');
+    expect(doc.effectById(to, 'a')!.amp.length).toBe('auto');
+    const back = doc.setGenerator(to, 'a', 'wave');
+    expect(doc.effectById(back, 'a')!.amp.length).toEqual({ ms: 500 });
+  });
+});

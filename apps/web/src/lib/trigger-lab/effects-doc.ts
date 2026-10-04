@@ -160,6 +160,9 @@ export function addEffect<S extends EffectsSection>(
     // A Slice cuts through the whole kit by default (the graph Slice node's "On: Kit"), so its
     // slabs read across drums instead of only across the drum whose cell it sits in.
     ...(generator === 'slice' ? { target: { kind: 'kit' as const } } : {}),
+    // A Dot's hit lasts until its last dot ends (Sustain "Until dots end"), so Lifespan alone
+    // decides how long dots live.
+    ...(effectChain.supportsAutoLength({ kind: generator, style: style ?? '', params: {} }) ? { amp: { length: 'auto' as const } } : {}),
   });
   if (!effect) return { section, id: null };
   return { section: withEffects(section, [...section.effects, effect]), id };
@@ -289,7 +292,12 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
     if (keepSlots) generator.slots = cloneJson(e.generator.slots);
     // Switching TO Slice from a drum's default Target widens it to the kit, as a new Slice starts.
     const widen = kind === 'slice' && e.generator.kind !== 'slice' && JSON.stringify(e.target) === JSON.stringify(effectChain.defaultTargetForRow(e.cell.row));
-    return widen ? { ...e, generator, target: { kind: 'kit' } } : { ...e, generator };
+    const next = widen ? { ...e, generator, target: { kind: 'kit' as const } } : { ...e, generator };
+    // Sustain "until it ends": a new Dot starts on it; a Generator that can't say goes back to a time.
+    const auto = effectChain.supportsAutoLength(generator);
+    if (auto && !effectChain.supportsAutoLength(e.generator)) return { ...next, amp: { ...e.amp, length: 'auto' } };
+    if (!auto && e.amp.length === 'auto') return { ...next, amp: { ...e.amp, length: { ms: 500 } } };
+    return next;
   });
 }
 

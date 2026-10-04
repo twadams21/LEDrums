@@ -22,7 +22,9 @@ import { quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type Mod
 import type { ParamValues, PlayMode, Scope } from '../voice/types';
 import { resolveGenerator } from './generators';
 import { CHAIN_BUS_ID, chainEffectDefId } from './runtime';
-import { KIT_ROW, type ControlDevice, type Effect, type EffectCell, type EffectTarget } from './types';
+import { KIT_ROW, type AmpEnvelope, type ControlDevice, type Effect, type EffectCell, type EffectTarget, type GeneratorDevice } from './types';
+import { resolveTempoParams } from './tempo';
+import type { EffectGenerator } from '../effects/types';
 import { isContinuousTarget, type InputMapping } from './input-mappings';
 
 /** The authored slice of a section the resolver reads. */
@@ -194,14 +196,15 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
 
   const amp = effect.amp;
   const msPerBeat = MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120);
+  const length = resolveAmpLength(amp.length, hosted, params, ctx.bpm);
   // A stage in beats resolves at this fire's tempo; otherwise its milliseconds stand.
   const attackMs = amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs;
   const releaseMs = amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs;
-  const mode: PlayMode = effect.trigger.kind === 'always' || amp.length === 'loop'
+  const mode: PlayMode = effect.trigger.kind === 'always' || length === 'loop'
     ? 'loop'
-    : amp.length === 'hold' ? 'hold' : 'oneshot';
-  const gateMs = typeof amp.length === 'object'
-    ? 'ms' in amp.length ? amp.length.ms : amp.length.beats * msPerBeat
+    : length === 'hold' ? 'hold' : 'oneshot';
+  const gateMs = typeof length === 'object'
+    ? 'ms' in length ? length.ms : length.beats * msPerBeat
     : 0;
   const shape = ampShape(attackMs, amp.decayMs, amp.sustainLevel);
   const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
@@ -243,6 +246,32 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     lifeSpanMs: shape.spanMs,
   };
   return action;
+}
+
+/**
+ * Sustain "until it ends" (`auto`) as a concrete length: the hosted effect's content span at this
+ * fire's tempo, `loop` when its content never ends on its own, or the default time when the effect
+ * can't say. Every other length passes through.
+ */
+function resolveAmpLength(
+  length: AmpEnvelope['length'],
+  hosted: EffectGenerator,
+  params: ParamValues,
+  bpm: number,
+): Exclude<AmpEnvelope['length'], 'auto'> {
+  if (length !== 'auto') return length;
+  if (!hosted.contentSpanMs) return { ms: 500 };
+  const resolved: Record<string, number | string | boolean> = { ...params };
+  resolveTempoParams(resolved, hosted.paramSpec, bpm > 0 ? bpm : 120);
+  const span = hosted.contentSpanMs(resolved);
+  return span === null ? 'loop' : { ms: Math.max(0, span) };
+}
+
+/** Whether an Effect's Generator can play Sustain "until it ends" — its hosted effect says how
+    long its content lasts (Dot). */
+export function supportsAutoLength(device: GeneratorDevice): boolean {
+  const gen = resolveGenerator(device);
+  return !!gen && !gen.canvasScene && !!tryGetEffect(gen.effectId)?.contentSpanMs;
 }
 
 /** An Effect's Generator resolved to the hosted effect implementation it plays, or `null`. */

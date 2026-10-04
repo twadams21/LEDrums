@@ -191,6 +191,21 @@ export function dotCap(params: ResolvedParams): { keep: number; fadeMs?: number 
   return pstr(params, 'oldest', 'cut') === 'fade' ? { keep, fadeMs: Math.max(1, pnum(params, 'oldestFade', 400)) } : { keep };
 }
 
+/**
+ * When the last dot of a hit ends (ms from the hit), for Sustain "Until dots end" — or `null`
+ * when they never do on their own (Lifespan 0, or a Stream that runs while the Effect plays).
+ */
+export function dotSpanMs(params: ResolvedParams): number | null {
+  const life = pnum(params, 'life', 2000);
+  const spawn = pstr(params, 'spawn', 'together');
+  if (life <= 0 || spawn === 'stream') return null;
+  if (spawn !== 'stagger') return life;
+  const count = Math.max(1, Math.round(pnum(params, 'count', 1)));
+  const cap = Math.round(pnum(params, 'maxLive', 0));
+  const dots = cap > 0 ? Math.min(count, cap) : count;
+  return (dots - 1) * Math.max(10, pnum(params, 'interval', 250)) + life;
+}
+
 /** The golden angle: successive hits' hues land as far apart as they can. */
 const GOLDEN_DEG = 137.508;
 
@@ -530,6 +545,7 @@ export const dot: EffectGenerator<DotState> = {
   category: 'particle',
   timebase: 'voice',
   liveVoices: dotCap,
+  contentSpanMs: dotSpanMs,
   paramSpec: [
     { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1, section: 'Dots' },
     { key: 'spawn', label: 'Spawn', type: 'enum', default: 'together', options: ['together', 'stagger', 'stream'], section: 'Dots',
@@ -541,8 +557,8 @@ export const dot: EffectGenerator<DotState> = {
       info: 'Which drum, counting through the kit from 1. 0 = the drum you hit.' },
     { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Dots' },
     { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Dots' },
-    { key: 'life', label: 'Lifespan', type: 'number', default: 0, min: 0, max: 20000, step: 10, unit: 'ms', section: 'Life',
-      info: 'How long each dot lives. 0 = until the brightness envelope ends — a dot ends at whichever comes first.' },
+    { key: 'life', label: 'Lifespan', type: 'number', default: 2000, min: 0, max: 20000, step: 10, unit: 'ms', section: 'Life',
+      info: 'How long each dot lives. With the Trigger card\'s Sustain on "Until dots end" (a new Dot\'s default) the hit lasts until the last dot finishes; on a time instead, a dot also ends when the envelope does. 0 = forever — until Max alive, a Cut, or the section changes.' },
     { key: 'fade', label: 'Fade in/out', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01, unit: '%', section: 'Life',
       info: 'Each dot fades in and out over this share of its Lifespan.' },
     { key: 'maxLive', label: 'Max alive', type: 'number', default: 0, min: 0, max: 256, step: 1, section: 'Life',
@@ -636,7 +652,7 @@ export const dot: EffectGenerator<DotState> = {
     }
     const dots = spawn === 'stream' ? state.dots : state.dots.slice(0, count);
 
-    const life = Math.max(0, pnum(params, 'life', 0));
+    const life = Math.max(0, pnum(params, 'life', 2000));
     const fade = clamp01(pnum(params, 'fade', 0.15));
     const through = pstr(params, 'through', 'hoop') as Through;
     const bounce = pstr(params, 'bounce', 'wrap') as Bounce;

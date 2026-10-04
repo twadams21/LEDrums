@@ -18,7 +18,7 @@
   import Info from '@lucide/svelte/icons/info';
   import ParamLine from './ParamLine.svelte';
   import {
-    AMP_LENGTH_OPTIONS,
+    ampLengthOptions,
     ampLengthFor,
     ampLengthMode,
     ampPath,
@@ -61,8 +61,10 @@
     api.setAmp(effect.id, { attackEase: spec.fn === 'linear' ? undefined : (spec as effectChain.AmpEnvelope['attackEase']) });
   }
 
+  // "Until dots end" joins the choices where the Generator can say when its content ends (Dot).
+  const lengthOptions = $derived(ampLengthOptions(effect.generator));
   const SUSTAIN_INFO =
-    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or looping. Then it decays.';
+    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or looping — or, on a Dot, until its last dot ends (each dot\'s Lifespan decides). Then it decays.';
   const CURVE_INFO = 'A linear attack reads as brightening too fast — an ease-in curve swells more evenly.';
   const DROP_INFO =
     'From the old ADSR envelope: after the attack the light drops to this level over the Drop time. Set Drop to 100% to remove it.';
@@ -130,7 +132,7 @@
     <!-- The sustain value rides the same line as its mode: the field alone (no rail), so both fit
          the card width and the face never needs to scroll for it. -->
     <ParamLine label="Sustain">
-      <Select value={mode} options={AMP_LENGTH_OPTIONS} onChange={setMode} ariaLabel="Sustain" {disabled} segment={false} />
+      <Select value={mode} options={lengthOptions} onChange={setMode} ariaLabel="Sustain" {disabled} segment={false} />
       {#if typeof amp.length === 'object' && 'ms' in amp.length}
         {@const ms = amp.length.ms}
         <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10}

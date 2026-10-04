@@ -13,7 +13,7 @@ const KICK: EffectCell = { row: 'kick', column: { kind: 'zone', slot: 0 } };
 const transport: TransportState = { timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true };
 
 /** Hit the kick `hits` times, 50ms apart, with a long Dot Effect; how many voices are alive. */
-function voicesAfter(hits: number, params: Record<string, number | string>, settleMs = 0): number {
+function voicesAfter(hits: number, params: Record<string, number | string>, settleMs = 0, amp: Record<string, unknown> = { attackMs: 0, length: { ms: 5000 }, releaseMs: 0 }): number {
   const engine = createVoiceBusEngine();
   engine.setModel(buildPixelModel(parseKit({
     global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
@@ -22,7 +22,7 @@ function voicesAfter(hits: number, params: Record<string, number | string>, sett
   const effect = parseEffect({
     id: 'dots', cell: KICK, retrigger: 'overlap',
     generator: { kind: 'dot', style: 'dot', params },
-    amp: { attackMs: 0, length: { ms: 5000 }, releaseMs: 0 },
+    amp,
   });
   const show: Show = { ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] };
   engine.setShow(show);
@@ -60,5 +60,13 @@ describe('Dot Max alive across hits', () => {
     expect(voicesAfter(4, fade)).toBe(4);
     // …and gone once Fade time has passed.
     expect(voicesAfter(4, fade, 500)).toBe(2);
+  });
+});
+
+describe('Dot with Sustain "Until dots end"', () => {
+  const auto = { attackMs: 0, length: 'auto', releaseMs: 0 };
+  it('the hit lasts as long as its dots — past the old 0.8 s default, gone after Lifespan', () => {
+    expect(voicesAfter(1, { life: 1500 }, 1200, auto)).toBe(1);
+    expect(voicesAfter(1, { life: 1500 }, 1600, auto)).toBe(0);
   });
 });

@@ -93,6 +93,12 @@ export interface EffectGenerator<State = unknown> {
    * applies from the next hit.
    */
   liveVoices?(params: ResolvedParams): { keep: number; fadeMs?: number } | undefined;
+  /**
+   * How long this effect's content lasts from the hit (ms), or `null` when it never ends on its
+   * own — read when an Effect's Sustain is "until it ends" (amp length `auto`; Dot: until the
+   * last dot finishes). `params` arrive tempo-resolved.
+   */
+  contentSpanMs?(params: ResolvedParams): number | null;
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

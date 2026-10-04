@@ -8,7 +8,7 @@ import type { RenderContext } from '../engine/render-context';
 import { resolveGenerator } from '../effect-chain/generators';
 import { defaultParams, type ResolvedParams } from './types';
 import { tryGetEffect } from './registry';
-import { dot, dotCap } from './impl/dot';
+import { dot, dotCap, dotSpanMs } from './impl/dot';
 
 /** Two drums of three 40-pixel hoops, 600mm apart. */
 function model(): PixelModel {
@@ -24,7 +24,8 @@ const M = model();
 
 /** Play one voice for `ms`, frame by frame, returning the last frame and the dots' state. */
 function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number } = {}) {
-  const p = { ...defaultParams(dot.paramSpec), ...params };
+  // No fade-in unless a test asks: most checks read the very first frames.
+  const p = { ...defaultParams(dot.paramSpec), fade: 0, ...params };
   const state = dot.createState!(M, opts.seed ?? 7);
   let fb = new Framebuffer(M.pixelCount);
   for (let t = 0; t <= ms; t += 10) {
@@ -237,7 +238,7 @@ describe('Dot — dots, life and colour', () => {
   });
 
   it('replays exactly from the same seed', () => {
-    const params = { start: 'random', count: 6, through: 'space', direction: 'random', bounce: 'random', speed: 120 };
+    const params = { start: 'random', count: 6, through: 'space', direction: 'random', bounce: 'random', speed: 120, life: 0 };
     expect(Array.from(play(params, 2000).fb.rgba)).toEqual(Array.from(play(params, 2000).fb.rgba));
   });
 });
@@ -260,5 +261,15 @@ describe('Dot — card sections', () => {
     const order = [...new Set(dot.paramSpec.map((p) => p.section))];
     expect(order).toEqual(['Dots', 'Life', 'Shape', 'Move around', 'Move through', 'Colour', 'Background', 'Velocity']);
     expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max alive');
+  });
+});
+
+describe('dotSpanMs — when a hit\'s last dot ends', () => {
+  it('Lifespan, plus the stagger before the last dot; never, for a Stream or Lifespan 0', () => {
+    expect(dotSpanMs({ life: 2000 })).toBe(2000);
+    expect(dotSpanMs({ life: 500, spawn: 'stagger', count: 4, interval: 250 })).toBe(1250);
+    expect(dotSpanMs({ life: 500, spawn: 'stagger', count: 4, interval: 250, maxLive: 2 })).toBe(750);
+    expect(dotSpanMs({ life: 2000, spawn: 'stream' })).toBeNull();
+    expect(dotSpanMs({ life: 0 })).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { effectChain } from '@ledrums/core';
 import type { EffectsAuthoringApi, GridRow } from '../../../../trigger-lab/effects-api';
 import {
+  ampLengthOptions,
   ampLengthFor,
   ampLengthMode,
   ampPath,
@@ -132,5 +133,12 @@ describe('strip helpers', () => {
     const api = { drumHoopCount: (id: string) => (id === 'kick' ? 4 : -1) } as unknown as EffectsAuthoringApi;
     expect(drumHoopCount(api, 'kick')).toBe(4);
     expect(drumHoopCount(api, 'snare')).toBe(0);
+  });
+});
+
+describe('Sustain "Until dots end"', () => {
+  it('is offered first on a Dot, and not on a Generator that cannot say when it ends', () => {
+    expect(ampLengthOptions({ kind: 'dot', style: 'dot', params: {} })[0]).toEqual({ value: 'auto', label: 'Until dots end' });
+    expect(ampLengthOptions({ kind: 'wave', style: '', params: {} }).some((o) => o.value === 'auto')).toBe(false);
   });
 });

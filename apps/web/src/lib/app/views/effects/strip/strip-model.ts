@@ -150,7 +150,7 @@ export function parseMidi(raw: string): number | undefined | null {
 
 // ---- Amp envelope -------------------------------------------------------------------------
 
-export type AmpLengthMode = 'ms' | 'beats' | 'hold' | 'loop';
+export type AmpLengthMode = 'ms' | 'beats' | 'hold' | 'loop' | 'auto';
 
 export const AMP_LENGTH_OPTIONS: Option<AmpLengthMode>[] = [
   { value: 'ms', label: 'Time' },
@@ -159,14 +159,21 @@ export const AMP_LENGTH_OPTIONS: Option<AmpLengthMode>[] = [
   { value: 'loop', label: 'Loop' },
 ];
 
+/** The Sustain choices for this Generator: the four, plus "until it ends" first where the
+    Generator can say when its content ends (Dot: "Until dots end" — Tim, 2026-10-05). */
+export function ampLengthOptions(device: effectChain.GeneratorDevice): Option<AmpLengthMode>[] {
+  if (!effectChain.supportsAutoLength(device)) return AMP_LENGTH_OPTIONS;
+  return [{ value: 'auto', label: device.kind === 'dot' ? 'Until dots end' : 'Until it ends' }, ...AMP_LENGTH_OPTIONS];
+}
+
 export function ampLengthMode(length: AmpLength): AmpLengthMode {
-  if (length === 'hold' || length === 'loop') return length;
+  if (length === 'hold' || length === 'loop' || length === 'auto') return length;
   return 'ms' in length ? 'ms' : 'beats';
 }
 
 /** Switch the length mode, carrying a sensible value into a timed mode. */
 export function ampLengthFor(mode: AmpLengthMode, current: AmpLength): AmpLength {
-  if (mode === 'hold' || mode === 'loop') return mode;
+  if (mode === 'hold' || mode === 'loop' || mode === 'auto') return mode;
   if (mode === ampLengthMode(current)) return current;
   return mode === 'ms' ? { ms: 500 } : { beats: 1 };
 }

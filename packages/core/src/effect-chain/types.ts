@@ -92,6 +92,10 @@ export const ampLengthSchema = z.union([
   z.object({ beats: z.number().min(0) }),
   z.literal('hold'),
   z.literal('loop'),
+  /** Until the Generator's own content ends (Tim, 2026-10-05: Dot's "Until dots end" — the hit
+      stays up until its last dot finishes, so Lifespan is the one length control). A Generator
+      that can't say plays as the default time; one whose content never ends plays as `loop`. */
+  z.literal('auto'),
 ]);
 
 /** The curve an attack rises on (an `ease()` family + direction). Absent / linear = a straight ramp. */

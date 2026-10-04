@@ -114,7 +114,7 @@
           generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
         }),
         fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
-        fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit' } } }),
+        fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit' } }, amp: { length: 'auto' } }),
       ],
       master: [],
     },
@@ -190,6 +190,11 @@
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}
       note="Kind switch moves the Effect's column. Zone is read-only (the cell's). Below, the Effect's brightness envelope: Attack · Curve · Sustain (time, beats, While held, Loop) · Decay — the one envelope the Effect has; the old ADSR drop (Drop / Drop to) shows only on an Effect that still uses one.">
       <div class="cards"><TriggerCard {api} effect={pulse} /></div>
+    </DemoCard>
+
+    <DemoCard title="Trigger card — Dot" src={['lib/app/views/effects/strip/AmpEnvelopeField', 'lib/app/views/effects/strip/strip-model']}
+      note="Sustain gains Until dots end (amp length auto) where the Generator can say when its content ends — offered first, and a new Dot starts on it: the hit stays up until its last dot finishes, so the Dot's Lifespan is the one length control. Dots that never end on their own (a Stream, Lifespan 0) loop. Switching to a Generator that can't say puts Sustain back on a time.">
+      <div class="cards"><TriggerCard api={spliceApi} effect={dotFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — clock" src="lib/app/views/effects/strip/TriggerCard" note="Period (beat / bar divisions) and an offset in beats.">
