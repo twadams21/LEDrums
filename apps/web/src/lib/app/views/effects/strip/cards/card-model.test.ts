@@ -213,7 +213,7 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     const params = generatorParams(dotDevice());
     const cols = sectionColumns(paramSections(params)!);
     expect(cols.map((c) => c.map((x) => x.label))).toEqual([
-      ['Dots', 'Life', 'Shape'], ['Movement', 'Colour', 'Background'], ['Velocity'],
+      ['Dots', 'Life'], ['Shape', 'Movement'], ['Colour', 'Background', 'Velocity'],
     ]);
     expect(paramsLandscape(params)).toBe(true);
     expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max alive', info: expect.stringContaining('most dots alive') });
@@ -231,6 +231,12 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     expect(on({})).not.toContain('span');
     expect(on({ bounce: 'pingpong' })).toContain('span');
     expect(on({ through: 'kit' })).toEqual(expect.arrayContaining(['kitOrder', 'hopEvery']));
+    // Every condition must hold: through space, the set point is X / Y / Z, not a drum and hoop.
+    const space = on({ start: 'set-point', through: 'space' });
+    expect(space).toEqual(expect.arrayContaining(['spaceX', 'spaceY', 'spaceZ', 'heading', 'climb', 'radius']));
+    expect(space).not.toContain('startDrum');
+    expect(space).not.toContain('length');
+    expect(on({ start: 'set-point' })).not.toContain('spaceX');
   });
 
   it('the set point\'s Drum lists the drum you hit, then the kit\'s drums', () => {

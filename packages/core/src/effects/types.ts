@@ -5,6 +5,13 @@ import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';
 
+/** A condition on another param's value, for {@link ParamSpec.showIf}. */
+export interface ShowIf {
+  key: string;
+  is?: readonly (string | number | boolean)[];
+  not?: readonly (string | number | boolean)[];
+}
+
 /** Declares a single effect parameter so the UI can render a control generically. */
 export interface ParamSpec {
   key: string;
@@ -22,9 +29,10 @@ export interface ParamSpec {
   section?: string;
   /** An explanation, shown behind an ⓘ beside the label. Display only. */
   info?: string;
-  /** Show the param only while another param holds one of these values (Dot's Angle only for
-      Through a drum). Display only — a hidden param keeps its value and still renders. */
-  showIf?: { key: string; is: readonly (string | number | boolean)[] };
+  /** Show the param only while another param holds one of `is` (or none of `not`) — every
+      condition, when a list (Dot's Travel angle only for Through a drum / kit / space). Display
+      only — a hidden param keeps its value and still renders. */
+  showIf?: ShowIf | readonly ShowIf[];
   /** An `enum` whose choices are the kit's drums (value = drum id), filled in by the card after
       its fixed `options` (Dot: `['@hit']`, the drum you hit). Display only. */
   optionsFrom?: 'drums';

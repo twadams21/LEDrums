@@ -55,13 +55,18 @@ export function toCardParam(spec: ParamSpec): CardParam {
   };
 }
 
-/** Is this param shown for these values — its `showIf` param holding one of the listed values?
-    (Tim, 2026-10-05: a setting that does nothing in the current mode reads as broken.) */
+/** Is this param shown for these values — every `showIf` condition met (its param holding one of
+    `is`, none of `not`)? (Tim, 2026-10-05: a setting that does nothing in the current mode reads
+    as broken.) */
 function shown(spec: ParamSpec, specs: readonly ParamSpec[], values: Readonly<Record<string, ParamValue>>): boolean {
   if (!spec.showIf) return true;
-  const { key, is } = spec.showIf;
-  const v = values[key] ?? specs.find((s) => s.key === key)?.default;
-  return v !== undefined && is.includes(v);
+  const conditions = Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf];
+  return conditions.every(({ key, is, not }) => {
+    const v = values[key] ?? specs.find((s) => s.key === key)?.default;
+    if (v === undefined) return false;
+    if (is && !is.includes(v)) return false;
+    return !(not && not.includes(v));
+  });
 }
 
 /** The "Drum" choices for an `optionsFrom: 'drums'` param: the drum you hit, then the kit's drums. */

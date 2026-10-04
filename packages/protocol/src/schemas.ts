@@ -347,6 +347,9 @@ const serializedModelSchema = z.object({
   }),
 });
 
+const showIfValues = z.array(z.union([z.string(), z.number(), z.boolean()])).readonly();
+const showIfSchema = z.object({ key: z.string(), is: showIfValues.optional(), not: showIfValues.optional() });
+
 const paramSpecSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -359,7 +362,7 @@ const paramSpecSchema = z.object({
   unit: z.string().optional(),
   section: z.string().optional(),
   info: z.string().optional(),
-  showIf: z.object({ key: z.string(), is: z.array(z.union([z.string(), z.number(), z.boolean()])).readonly() }).optional(),
+  showIf: z.union([showIfSchema, z.array(showIfSchema).readonly()]).optional(),
   optionsFrom: z.literal('drums').optional(),
 });
 
