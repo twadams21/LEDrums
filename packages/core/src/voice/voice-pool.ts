@@ -126,16 +126,28 @@ export class VoicePool {
     }
   }
 
-  /** Keep the newest `keep` still-lit voices of this authored Effect born before `timeMs` and cut
-      the rest NOW, as Retrigger `cut` does — an Effect's cap on what stays alive across hits
-      (Dot's Max live: the oldest hit's dots go first). */
-  cutOldestChainVoices(chainEffectId: string, keep: number, timeMs: number): void {
+  /** An Effect's cap on what stays alive across hits (Dot's Max life: the oldest hit's dots go
+      first). Keep the newest `keep` voices of this authored Effect born before `timeMs`; the rest
+      are cut NOW, as Retrigger `cut` does — or, given `fadeMs`, fade out over it. A voice already
+      on its way out (cut or fading) no longer counts. */
+  capChainVoices(chainEffectId: string, keep: number, timeMs: number, fadeMs?: number): void {
     const lit = this.pool.filter(
-      (v) => v.active && v.chainEffectId === chainEffectId && v.bornAtMs < timeMs && !isCut(v),
+      (v) => v.active && v.chainEffectId === chainEffectId && v.bornAtMs < timeMs && !isCut(v)
+        && !(fadeMs !== undefined && v.capReleaseMs !== undefined),
     );
     if (lit.length <= keep) return;
     lit.sort((a, b) => b.bornAtMs - a.bornAtMs);
-    for (const v of lit.slice(Math.max(0, keep))) cutVoice(v, timeMs);
+    for (const v of lit.slice(Math.max(0, keep))) {
+      if (fadeMs === undefined) {
+        cutVoice(v, timeMs);
+        continue;
+      }
+      // Fade from where it is now: a voice already releasing restarts its ramp from its level.
+      v.capReleaseMs = Math.max(1, fadeMs);
+      v.phase = 'release';
+      v.releaseAtMs = timeMs;
+      v.releaseFromLevel = v.level;
+    }
   }
 
   /**
@@ -310,6 +322,7 @@ export class VoicePool {
     slot.bornAtMs = deps.timeMs;
     slot.releaseAtMs = null;
     slot.releaseFromLevel = 1;
+    slot.capReleaseMs = undefined;
     slot.via = a.via;
     slot.deckGain = 1;
     slot.pad = deps.pad ?? '';

@@ -30,6 +30,8 @@ export interface CardParam {
   info?: string;
   /** `false`: this ms / Hz param has its own tempo control, so no ms ⇄ beats switch. */
   tempo?: false;
+  /** The section it sits under, shown as a capitalised header (core `ParamSpec.section`). */
+  section?: string;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -43,6 +45,10 @@ export function toCardParam(spec: ParamSpec): CardParam {
     unit: spec.unit,
     options: spec.options,
     default: spec.default,
+    // A 0..1 amount whose core unit is `%` reads as a whole percent (0.15 → 15).
+    ...(spec.unit === '%' && spec.max !== undefined && spec.max <= 1 ? { percent: true } : {}),
+    ...(spec.info ? { info: spec.info } : {}),
+    ...(spec.section ? { section: spec.section } : {}),
   };
 }
 
@@ -92,6 +98,55 @@ export function paramColumns(count: number): { columns: number; rows: number } {
 
 /** Does a card with this many param rows go landscape (more than one column)? */
 export const isLandscape = (count: number): boolean => paramColumns(count).columns > 1;
+
+/** A run of params under one capitalised header (Tim, 2026-10-04: "the sections are not very
+    clearly visible. Can you make some headers in capitals?"). */
+export interface ParamSection {
+  label: string;
+  params: CardParam[];
+}
+
+/** The params in their sections, in order — or null when none of them names a section. A param
+    without one joins the section before it (or an unnamed first one). */
+export function paramSections(params: readonly CardParam[]): ParamSection[] | null {
+  if (!params.some((p) => p.section)) return null;
+  const out: ParamSection[] = [];
+  for (const p of params) {
+    const last = out[out.length - 1];
+    if (last && (!p.section || p.section === last.label)) last.params.push(p);
+    else out.push({ label: p.section ?? '', params: [p] });
+  }
+  return out;
+}
+
+/**
+ * Sections packed into columns, left to right: a section joins the column above it while the
+ * column stays within {@link PARAM_ROWS_MAX} + 2 lines (a header counts as one — it is shorter
+ * than a row), else starts the next. Short sections share a column, so the card stays compact; a
+ * section longer than that has a column to itself.
+ */
+export function sectionColumns(sections: readonly ParamSection[]): ParamSection[][] {
+  const max = PARAM_ROWS_MAX + 2;
+  const columns: ParamSection[][] = [];
+  let lines = Infinity;
+  for (const s of sections) {
+    const size = s.params.length + 1;
+    if (lines + size > max) {
+      columns.push([s]);
+      lines = size;
+    } else {
+      columns[columns.length - 1]!.push(s);
+      lines += size;
+    }
+  }
+  return columns;
+}
+
+/** Does this param list go landscape — by its sections' columns when it has sections? */
+export function paramsLandscape(params: readonly CardParam[]): boolean {
+  const sections = paramSections(params);
+  return sections ? sectionColumns(sections).length > 1 : isLandscape(params.length);
+}
 
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;
 

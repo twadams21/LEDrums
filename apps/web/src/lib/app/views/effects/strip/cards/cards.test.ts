@@ -43,6 +43,15 @@ describe('GeneratorCard', () => {
     expect(portrait.container.querySelector('.card')!.classList.contains('landscape')).toBe(false);
   });
 
+  it('sectioned params get capitalised headers, short sections sharing a column', () => {
+    const p = (key: string, section: string) => ({ key, label: key, kind: 'number' as const, min: 0, max: 1, default: 0, section });
+    const params = [p('a', 'Dots'), p('b', 'Dots'), p('c', 'Shape')];
+    const { container } = render(ParamRows, { props: { params, values: {}, onChange: () => {} } });
+    expect([...container.querySelectorAll('.sectitle')].map((h) => h.textContent)).toEqual(['Dots', 'Shape']);
+    expect(container.querySelectorAll('.scol')).toHaveLength(1);
+    expect(container.querySelector('section[aria-label="Shape"] .rows')!.children).toHaveLength(1);
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });

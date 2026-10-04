@@ -8,7 +8,7 @@ import type { RenderContext } from '../engine/render-context';
 import { resolveGenerator } from '../effect-chain/generators';
 import { defaultParams, type ResolvedParams } from './types';
 import { tryGetEffect } from './registry';
-import { dot, dotLiveVoices } from './impl/dot';
+import { dot, dotCap } from './impl/dot';
 
 /** Two drums of three 40-pixel hoops, 600mm apart. */
 function model(): PixelModel {
@@ -23,7 +23,7 @@ function model(): PixelModel {
 const M = model();
 
 /** Play one voice for `ms`, frame by frame, returning the last frame and the dots' state. */
-function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number } = {}) {
+function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number } = {}) {
   const p = { ...defaultParams(dot.paramSpec), ...params };
   const state = dot.createState!(M, opts.seed ?? 7);
   let fb = new Framebuffer(M.pixelCount);
@@ -32,7 +32,7 @@ function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocit
     const ctx: RenderContext = {
       model: M, timeMs: t, dt: t === 0 ? 0 : 10,
       transport: { timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true },
-      triggers: [{ seq: 1, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
+      triggers: [{ seq: opts.seq ?? 1, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
     };
     dot.render(ctx, p, fb, state);
   }
@@ -161,10 +161,29 @@ describe('Dot — dots, life and colour', () => {
     expect(state.spawned).toBe(11);
   });
 
-  it('Lifespan ends a dot; Max live caps the dots in a hit', () => {
+  it('Lifespan ends a dot; Max life caps the dots in a hit', () => {
     expect(lit(play({ speed: 0, life: 200 }, 100).fb)).toHaveLength(1);
     expect(lit(play({ speed: 0, life: 200 }, 300).fb)).toHaveLength(0);
     expect(play({ speed: 0, start: 'random', count: 10, maxLive: 4 }, 0).state.dots).toHaveLength(4);
+  });
+
+  it('a Stream with Oldest = Fade fades the recycled dot out over Fade time', () => {
+    const p = { speed: 0, start: 'random', count: 1, spawn: 'stream', interval: 1000, oldest: 'fade', oldestFade: 400 };
+    // At 1000ms the second dot arrives; the first is fading, so both still show.
+    expect(play(p, 1200).state.dots).toHaveLength(2);
+    expect(play(p, 1500).state.dots).toHaveLength(1);
+    expect(play({ ...p, oldest: 'cut' }, 1200).state.dots).toHaveLength(1);
+  });
+
+  it('Per hit: each hit a different colour, every dot of one hit the same', () => {
+    const p = { speed: 0, start: 'random', count: 3, colorMode: 'per-hit', color: '#ff0000' };
+    const colours = (seq: number) => {
+      const { fb } = play(p, 0, { seq });
+      return lit(fb).map((i) => [0, 1, 2].map((c) => fb.rgba[i * 4 + c]!.toFixed(3)).join(','));
+    };
+    const one = colours(1);
+    expect(new Set(one).size).toBe(1);
+    expect(colours(2)[0]).not.toBe(one[0]);
   });
 
   it('Vel → dots: a soft hit plays fewer', () => {
@@ -193,10 +212,23 @@ describe('Dot — dots, life and colour', () => {
   });
 });
 
-describe('dotLiveVoices — Max live across hits', () => {
+describe('dotCap — Max life across hits', () => {
   it('keeps as many earlier hits as fit beside the new one', () => {
-    expect(dotLiveVoices({ maxLive: 6, count: 2 })).toBe(2);
-    expect(dotLiveVoices({ maxLive: 1, count: 4 })).toBe(0);
-    expect(dotLiveVoices({ maxLive: 0, count: 2 })).toBeUndefined();
+    expect(dotCap({ maxLive: 6, count: 2 })).toEqual({ keep: 2 });
+    expect(dotCap({ maxLive: 1, count: 4 })).toEqual({ keep: 0 });
+    expect(dotCap({ maxLive: 0, count: 2 })).toBeUndefined();
+  });
+
+  it('Oldest = Fade hands the engine a fade time', () => {
+    expect(dotCap({ maxLive: 2, count: 1, oldest: 'fade', oldestFade: 300 })).toEqual({ keep: 1, fadeMs: 300 });
+  });
+});
+
+describe('Dot — card sections', () => {
+  it('every param sits under a section, in card order', () => {
+    expect(dot.paramSpec.every((p) => p.section)).toBe(true);
+    const order = [...new Set(dot.paramSpec.map((p) => p.section))];
+    expect(order).toEqual(['Dots', 'Life', 'Shape', 'Move around', 'Move through', 'Colour', 'Background', 'Velocity']);
+    expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max life');
   });
 });

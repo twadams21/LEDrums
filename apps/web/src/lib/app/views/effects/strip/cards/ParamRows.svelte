@@ -2,7 +2,9 @@
   /* A device's params on its card face: label left, control right, one row each. Numbers and
      booleans ride the compact face control (the node-face precedent — rail + drag field,
      gesture-bracketed, modulated badge); an enum is a Select, because a card has the width a
-     node face lacked and a cycle chip hides the choices; a colour is a ColorField. */
+     node face lacked and a cycle chip hides the choices; a colour is a ColorField. Params that name
+     a section (core `ParamSpec.section`) sit under capitalised headers, short sections sharing a
+     column (`sectionColumns`). */
   import FaceParamControl from '../../../../../ui/FaceParamControl.svelte';
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
@@ -12,7 +14,7 @@
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import { mappable } from '../../../../map-mode/mappable.svelte';
   import { effectChain } from '@ledrums/core';
-  import { enumLabel, formatParam, isTempoParam, paramColumns, paramValue, tempoBeats, tempoTogglePatch, type CardParam, type ParamValue } from './card-model';
+  import { enumLabel, formatParam, isTempoParam, paramColumns, paramSections, paramValue, sectionColumns, tempoBeats, tempoTogglePatch, type CardParam, type ParamValue } from './card-model';
   import { beatsLabel } from '../strip-model';
 
   interface Props {
@@ -49,6 +51,9 @@
 
   // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
   const layout = $derived(paramColumns(params.length));
+  // Sectioned params: headers, the sections packed into columns left to right.
+  const sections = $derived(paramSections(params));
+  const columns = $derived(sections ? sectionColumns(sections) : []);
 
   /** What a typed value means: a percent is typed as shown (25 → 0.25); ms / beats read units. */
   const entryOf = (p: CardParam) => (p.percent ? { factor: 100, unit: '%' } : { unit: p.unit });
@@ -56,89 +61,106 @@
   const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
 </script>
 
-{#if params.length}
-  <ul class="rows" class:cols={layout.columns > 1} style:--param-rows={layout.rows}>
-    {#each params as p (p.key)}
-      {@const v = paramValue(p, values)}
-      {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
-      {@const tempo = !!onPatch && isTempoParam(p)}
-      {@const beats = tempo ? tempoBeats(p, values) : undefined}
-      <li class="row" class:modulated={modulated?.has(p.key)}>
-        <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && !tempo}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
-        <span class="ctl" {@attach map && mappable(map)}>
-          {#if p.kind === 'enum'}
-            <Select
-              value={String(v)}
-              options={(p.options ?? []).map((o) => ({ value: o, label: enumLabel(o) }))}
-              segment={false}
-              {disabled}
-              ariaLabel={aria(p)}
-              onChange={(next) => onChange(p.key, next)}
-              class="cardsel"
-            />
-          {:else if p.kind === 'color'}
-            <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-              <ColorField
-                value={typeof v === 'string' ? v : null}
-                fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
-                clearable={false}
-                {disabled}
-                ariaLabel={aria(p)}
-                onChange={(next) => onChange(p.key, next ?? p.default)}
-              />
-            </GestureScope>
-          {:else if beats !== undefined}
-            <!-- In beats: a duration lasts this many, a rate runs one cycle per this many. -->
-            <FaceParamControl
-              kind="number"
-              value={beats}
-              display={beatsLabel(beats)}
-              min={0}
-              max={64}
-              step={0.0625}
-              {disabled}
-              ariaLabel={`${aria(p)} beats`}
-              entry={{ unit: 'beats' }}
-              onChange={(next) => onChange(effectChain.tempoKey(p.key), next)}
-              {onGestureStart}
-              {onGestureEnd}
-            />
-          {:else}
-            <FaceParamControl
-              kind={p.kind}
-              value={v}
-              display={formatParam(p, v, { unit: false })}
-              min={p.min}
-              max={p.max}
-              step={p.step}
-              modulated={modulated?.has(p.key) ?? false}
-              {disabled}
-              ariaLabel={aria(p)}
-              entry={entryOf(p)}
-              onChange={(next) => onChange(p.key, next)}
-              {onGestureStart}
-              {onGestureEnd}
-            />
-          {/if}
-          {#if tempo}
-            <button
-              type="button"
-              class="utog"
-              class:beats={beats !== undefined}
-              {disabled}
-              aria-label={`${aria(p)}: in ${beats !== undefined ? 'beats' : p.unit}. Switch to ${beats !== undefined ? p.unit : 'beats'}`}
-              title={beats !== undefined
-                ? `In beats — ${p.unit === 'Hz' ? 'one cycle per' : 'lasts'} this many, at the tempo. Click for ${p.unit}.`
-                : `In ${p.unit}. Click to set it in beats, so it follows the tempo.`}
-              onclick={(ev) => {
-                ev.stopPropagation();
-                onPatch?.(tempoTogglePatch(p, values));
-              }}
-            >{beats !== undefined ? 'beats' : p.unit}</button>
-          {/if}
-        </span>
-      </li>
+{#snippet row(p: CardParam)}
+  {@const v = paramValue(p, values)}
+  {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
+  {@const tempo = !!onPatch && isTempoParam(p)}
+  {@const beats = tempo ? tempoBeats(p, values) : undefined}
+  <li class="row" class:modulated={modulated?.has(p.key)}>
+    <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && !tempo}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
+    <span class="ctl" {@attach map && mappable(map)}>
+      {#if p.kind === 'enum'}
+        <Select
+          value={String(v)}
+          options={(p.options ?? []).map((o) => ({ value: o, label: enumLabel(o) }))}
+          segment={false}
+          {disabled}
+          ariaLabel={aria(p)}
+          onChange={(next) => onChange(p.key, next)}
+          class="cardsel"
+        />
+      {:else if p.kind === 'color'}
+        <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
+          <ColorField
+            value={typeof v === 'string' ? v : null}
+            fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
+            clearable={false}
+            {disabled}
+            ariaLabel={aria(p)}
+            onChange={(next) => onChange(p.key, next ?? p.default)}
+          />
+        </GestureScope>
+      {:else if beats !== undefined}
+        <!-- In beats: a duration lasts this many, a rate runs one cycle per this many. -->
+        <FaceParamControl
+          kind="number"
+          value={beats}
+          display={beatsLabel(beats)}
+          min={0}
+          max={64}
+          step={0.0625}
+          {disabled}
+          ariaLabel={`${aria(p)} beats`}
+          entry={{ unit: 'beats' }}
+          onChange={(next) => onChange(effectChain.tempoKey(p.key), next)}
+          {onGestureStart}
+          {onGestureEnd}
+        />
+      {:else}
+        <FaceParamControl
+          kind={p.kind}
+          value={v}
+          display={formatParam(p, v, { unit: false })}
+          min={p.min}
+          max={p.max}
+          step={p.step}
+          modulated={modulated?.has(p.key) ?? false}
+          {disabled}
+          ariaLabel={aria(p)}
+          entry={entryOf(p)}
+          onChange={(next) => onChange(p.key, next)}
+          {onGestureStart}
+          {onGestureEnd}
+        />
+      {/if}
+      {#if tempo}
+        <button
+          type="button"
+          class="utog"
+          class:beats={beats !== undefined}
+          {disabled}
+          aria-label={`${aria(p)}: in ${beats !== undefined ? 'beats' : p.unit}. Switch to ${beats !== undefined ? p.unit : 'beats'}`}
+          title={beats !== undefined
+            ? `In beats — ${p.unit === 'Hz' ? 'one cycle per' : 'lasts'} this many, at the tempo. Click for ${p.unit}.`
+            : `In ${p.unit}. Click to set it in beats, so it follows the tempo.`}
+          onclick={(ev) => {
+            ev.stopPropagation();
+            onPatch?.(tempoTogglePatch(p, values));
+          }}
+        >{beats !== undefined ? 'beats' : p.unit}</button>
+      {/if}
+    </span>
+  </li>
+{/snippet}
+
+{#if sections}
+  <div class="sections">
+    {#each columns as column, c (c)}
+      <div class="scol">
+        {#each column as section, i (i)}
+          <section class="sec" aria-label={section.label || undefined}>
+            {#if section.label}<h4 class="sectitle">{section.label}</h4>{/if}
+            <ul class="rows">
+              {#each section.params as p (p.key)}{@render row(p)}{/each}
+            </ul>
+          </section>
+        {/each}
+      </div>
     {/each}
+  </div>
+{:else if params.length}
+  <ul class="rows" class:cols={layout.columns > 1} style:--param-rows={layout.rows}>
+    {#each params as p (p.key)}{@render row(p)}{/each}
   </ul>
 {/if}
 
@@ -159,6 +181,42 @@
     grid-auto-columns: var(--param-col-w, 240px);
     align-content: start;
     column-gap: var(--space-4);
+  }
+  /* Sections: columns left to right, a hairline between them (as on the Splice face); short
+     sections stack in one column. */
+  .sections {
+    display: flex;
+    align-items: flex-start;
+  }
+  .scol {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: var(--param-col-w, 240px);
+    min-width: 0;
+  }
+  .scol + .scol {
+    margin-left: var(--space-2);
+    padding-left: var(--space-4);
+    box-shadow: inset 1px 0 0 var(--border-faint);
+  }
+  .sec {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .sectitle {
+    display: flex;
+    align-items: center;
+    min-height: 20px;
+    margin: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+    color: var(--text-faint);
   }
   .row {
     display: flex;

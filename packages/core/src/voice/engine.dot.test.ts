@@ -1,6 +1,6 @@
-/* Dot's Max live across hits (Tim, 2026-10-03: "a set maximum amount of pulses before cycling back
-   to the first pulse"): when a new hit would take the dots alive past Max live, the engine cuts the
-   oldest hits' voices — the first dots go first. */
+/* Dot's Max life across hits (Tim, 2026-10-03: "a set maximum amount of pulses before cycling back
+   to the first pulse"; renamed from Max live, 2026-10-04): when a new hit would take the dots alive
+   past Max life, the engine cuts the oldest hits' voices — or fades them (Oldest = Fade). */
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel } from '../geometry/pixel-model';
@@ -13,7 +13,7 @@ const KICK: EffectCell = { row: 'kick', column: { kind: 'zone', slot: 0 } };
 const transport: TransportState = { timeMs: 0, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true };
 
 /** Hit the kick `hits` times, 50ms apart, with a long Dot Effect; how many voices are alive. */
-function voicesAfter(hits: number, params: Record<string, number | string>): number {
+function voicesAfter(hits: number, params: Record<string, number | string>, settleMs = 0): number {
   const engine = createVoiceBusEngine();
   engine.setModel(buildPixelModel(parseKit({
     global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
@@ -36,20 +36,29 @@ function voicesAfter(hits: number, params: Record<string, number | string>): num
     engine.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: now });
     step(50);
   }
+  step(settleMs);
   return engine.stats().voices.length;
 }
 
-describe('Dot Max live across hits', () => {
+describe('Dot Max life across hits', () => {
   it('with no cap, every hit stays alive', () => {
     expect(voicesAfter(5, { count: 2 })).toBe(5);
   });
 
-  it('cuts the oldest hits so the dots alive stay within Max live', () => {
+  it('cuts the oldest hits so the dots alive stay within Max life', () => {
     expect(voicesAfter(5, { count: 2, maxLive: 6 })).toBe(3);
     expect(voicesAfter(5, { count: 1, maxLive: 2 })).toBe(2);
   });
 
   it('a cap below the dots in one hit still keeps the newest hit', () => {
     expect(voicesAfter(4, { count: 4, maxLive: 2 })).toBe(1);
+  });
+
+  it('Oldest = Fade lets the oldest fade out over Fade time instead of cutting', () => {
+    const fade = { count: 1, maxLive: 2, oldest: 'fade', oldestFade: 400 };
+    // 4 hits 50ms apart: the two oldest are still fading out when the last lands…
+    expect(voicesAfter(4, fade)).toBe(4);
+    // …and gone once Fade time has passed.
+    expect(voicesAfter(4, fade, 500)).toBe(2);
   });
 });

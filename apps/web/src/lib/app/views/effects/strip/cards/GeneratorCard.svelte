@@ -26,7 +26,7 @@
     generatorKinds,
     generatorLabel,
     generatorParams,
-    isLandscape,
+    paramsLandscape,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -49,7 +49,7 @@
   const params = $derived(generatorParams(device));
   // Splice and Slice have their own sectioned face, always laid out left to right; others go landscape when long.
   const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
-  const landscape = $derived(spliceFace || isLandscape(params.length));
+  const landscape = $derived(spliceFace || paramsLandscape(params));
   const thumb = $derived(thumbSource(device));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);

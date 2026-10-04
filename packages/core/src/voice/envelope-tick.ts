@@ -38,7 +38,7 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
       }
     } else {
       const bus = busById.get(v.busId);
-      const ramp = Math.max(60, v.mode === 'oneshot' ? v.releaseMs : bus?.crossfadeMs ?? v.releaseMs);
+      const ramp = v.capReleaseMs ?? Math.max(60, v.mode === 'oneshot' ? v.releaseMs : bus?.crossfadeMs ?? v.releaseMs);
       const since = timeMs - (v.releaseAtMs ?? timeMs);
       v.level = Math.max(0, v.releaseFromLevel * (1 - since / ramp));
     }

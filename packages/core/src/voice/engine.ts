@@ -916,10 +916,10 @@ class VoiceBusEngine implements RenderEngine {
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
     // Retrigger `cut`: this fire silences the earlier light in its cell (its own and its cell-mates').
     for (const id of retriggerCutTargets(section, effect)) this.voices.cutChainVoices(id, this.timeMs);
-    // A cap across hits (Dot's Max live): the oldest hits' voices go first.
+    // A cap across hits (Dot's Max life): the oldest hits' voices go first, cut or faded.
     const hostedId = this.chainEffects.get(action.effectId)?.generatorId;
-    const keep = hostedId ? tryGetEffect(hostedId)?.liveVoices?.(action.params) : undefined;
-    if (keep !== undefined) this.voices.cutOldestChainVoices(effect.id, keep, this.timeMs);
+    const cap = hostedId ? tryGetEffect(hostedId)?.liveVoices?.(action.params) : undefined;
+    if (cap) this.voices.capChainVoices(effect.id, cap.keep, this.timeMs, cap.fadeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {
         effectsById: this.chainEffects,

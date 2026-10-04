@@ -7,9 +7,9 @@ import { pnum, pstr, type EffectGenerator, type ResolvedParams } from '../types'
  * Dot (Tim, 2026-10-03): small pulses — as little as one pixel — that travel in set directions
  * and speeds around a hoop, up a drum, across the kit or straight through 3D space, or sit still
  * and twinkle. Each dot has its own Lifespan; the Effect's brightness envelope is the master
- * over them all, so a dot ends at whichever comes first. "Max live" (dots alive across hits) is
- * enforced in two places: within a voice here, and across hits by the engine, which cuts the
- * oldest hits' voices (see {@link dotLiveVoices}).
+ * over them all, so a dot ends at whichever comes first. "Max life" (the most dots alive at once;
+ * Tim renamed it from "Max live", 2026-10-04) is enforced in two places: within a voice here, and
+ * across hits by the engine, which cuts or fades the oldest hits' voices (see {@link dotCap}).
  *
  * Voice timebase: motion integrates `ctx.dt` into per-voice state seeded from the voice's seed,
  * like Comet Trails, so every hit replays its own dots and nothing leaks between voices.
@@ -44,8 +44,10 @@ interface Dot {
   v0: Vec3;
   /** Voice age of the next random turn (Random bounce on a hoop). */
   turnAtMs: number;
-  /** Hue offset in degrees (Rainbow / Random colour). */
+  /** Hue offset in degrees (Per hit / Rainbow / Random colour). */
   hue: number;
+  /** Voice age when a stream recycled this dot with Oldest = Fade; it fades out from here. */
+  dyingAtMs?: number;
   /** Through space: world position (mm) and unit heading. */
   p: Vec3;
   v: Vec3;
@@ -131,7 +133,7 @@ function ringPixel(model: PixelModel, drum: number, hoop: number, u: number): nu
   return range.start + (Math.floor(wrap(u, 1) * n) % n);
 }
 
-/** Dots alive in one voice, after the velocity amount and the Max live cap. */
+/** Dots alive in one voice, after the velocity amount and the Max life cap. */
 function voiceCount(params: ResolvedParams, velocity: number): number {
   const count = Math.max(1, Math.round(pnum(params, 'count', 1)));
   const vel = clamp01(pnum(params, 'velCount', 0));
@@ -141,16 +143,21 @@ function voiceCount(params: ResolvedParams, velocity: number): number {
 }
 
 /**
- * How many EARLIER voices of the same Effect may stay alive when a new hit fires, so the dots
- * alive across hits stay within Max live — or `undefined` when there is no cap. Counted at the
- * dots-per-hit before velocity, so the cap never lets a loud hit overshoot it.
+ * How many EARLIER voices of the same Effect may keep living when a new hit fires, so the dots
+ * alive across hits stay within Max life — or `undefined` when there is no cap. Counted at the
+ * dots-per-hit before velocity, so the cap never lets a loud hit overshoot it. With Oldest =
+ * Fade the rest fade out over Fade time instead of cutting.
  */
-export function dotLiveVoices(params: ResolvedParams): number | undefined {
+export function dotCap(params: ResolvedParams): { keep: number; fadeMs?: number } | undefined {
   const cap = Math.round(pnum(params, 'maxLive', 0));
   if (cap <= 0) return undefined;
   const perHit = Math.max(1, Math.round(pnum(params, 'count', 1)));
-  return Math.max(0, Math.floor(cap / perHit) - 1);
+  const keep = Math.max(0, Math.floor(cap / perHit) - 1);
+  return pstr(params, 'oldest', 'cut') === 'fade' ? { keep, fadeMs: Math.max(1, pnum(params, 'oldestFade', 400)) } : { keep };
 }
+
+/** The golden angle: successive hits' hues land as far apart as they can. */
+const GOLDEN_DEG = 137.508;
 
 function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: ResolvedParams, state: DotState, slot: number, bornMs: number, count: number): Dot | null {
   const model = ctx.model;
@@ -186,7 +193,11 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
     : 1;
 
   const colorMode = pstr(params, 'colorMode', 'single');
-  const hue = colorMode === 'rainbow' ? (slot * 360) / Math.max(1, count) : colorMode === 'random' ? rng() * 360 : 0;
+  const hue = colorMode === 'rainbow' ? (slot * 360) / Math.max(1, count)
+    : colorMode === 'random' ? rng() * 360
+    // Per hit: every dot of one hit shares a hue; the next hit steps on by the golden angle.
+    : colorMode === 'per-hit' ? wrap((ctx.triggers[0]?.seq ?? 0) * GOLDEN_DEG, 360)
+    : 0;
 
   const at = ringPixel(model, drum, hoop, u);
   const pixel = at === null ? null : model.pixels[at]!;
@@ -433,47 +444,58 @@ export const dot: EffectGenerator<DotState> = {
   name: 'Dot',
   category: 'particle',
   timebase: 'voice',
-  liveVoices: dotLiveVoices,
+  liveVoices: dotCap,
   paramSpec: [
-    // Dots
-    { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1 },
-    { key: 'spawn', label: 'Spawn', type: 'enum', default: 'together', options: ['together', 'stagger', 'stream'] },
-    { key: 'interval', label: 'Interval', type: 'number', default: 250, min: 10, max: 4000, step: 1, unit: 'ms' },
-    { key: 'start', label: 'Start', type: 'enum', default: 'hit', options: ['hit', 'random', 'fixed', 'even'] },
-    { key: 'startDrum', label: 'Start drum', type: 'number', default: 0, min: 0, max: 16, step: 1 },
-    { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1 },
-    { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°' },
-    { key: 'maxLive', label: 'Max live', type: 'number', default: 0, min: 0, max: 256, step: 1 },
-    { key: 'life', label: 'Lifespan', type: 'number', default: 0, min: 0, max: 20000, step: 10, unit: 'ms' },
-    { key: 'fade', label: 'Fade', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01 },
-    // Shape
-    { key: 'length', label: 'Length', type: 'number', default: 1, min: 1, max: 32, step: 1, unit: 'px' },
-    { key: 'height', label: 'Height', type: 'number', default: 1, min: 1, max: 5, step: 1, unit: 'hoops' },
-    { key: 'form', label: 'Shape', type: 'enum', default: 'dot', options: ['dot', 'bar', 'diamond'] },
-    { key: 'trail', label: 'Trail', type: 'number', default: 0, min: 0, max: 64, step: 1, unit: 'px' },
-    // Move around
-    { key: 'speed', label: 'Speed', type: 'number', default: 40, min: 0, max: 400, step: 1, unit: 'px/s' },
-    { key: 'speedPer', label: 'Speed per', type: 'enum', default: 'second', options: ['second', 'beat'] },
-    { key: 'direction', label: 'Direction', type: 'enum', default: 'forward', options: ['forward', 'reverse', 'random', 'alternate'] },
-    { key: 'bounce', label: 'Bounce', type: 'enum', default: 'wrap', options: ['wrap', 'bounce', 'random', 'pingpong'] },
-    { key: 'span', label: 'Span', type: 'number', default: 12, min: 1, max: 200, step: 1, unit: 'px' },
-    { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
-    // Move through
-    { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'] },
-    { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random'] },
-    // Colour
-    { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'rainbow', 'random'] },
-    { key: 'color', label: 'Colour', type: 'color', default: '#00e5ff' },
-    { key: 'shift', label: 'Change', type: 'enum', default: 'off', options: ['off', 'to-colour', 'hue-cycle'] },
-    { key: 'colorTo', label: 'To colour', type: 'color', default: '#ff2bd6' },
-    { key: 'hueRate', label: 'Hue rate', type: 'number', default: 60, min: 0, max: 720, step: 1, unit: '°/s' },
-    { key: 'background', label: 'Background', type: 'enum', default: 'none', options: ['none', 'same', 'other'] },
-    { key: 'bgLevel', label: 'Bg level', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01 },
-    { key: 'bgColor', label: 'Bg colour', type: 'color', default: '#1a1440' },
-    // Velocity
-    { key: 'velSize', label: 'Vel → size', type: 'number', default: 0, min: 0, max: 1, step: 0.01 },
-    { key: 'velSpeed', label: 'Vel → speed', type: 'number', default: 0, min: 0, max: 1, step: 0.01 },
-    { key: 'velCount', label: 'Vel → dots', type: 'number', default: 0, min: 0, max: 1, step: 0.01 },
+    { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1, section: 'Dots' },
+    { key: 'spawn', label: 'Spawn', type: 'enum', default: 'together', options: ['together', 'stagger', 'stream'], section: 'Dots',
+      info: 'Together: every dot at the hit. Stagger: one per Interval up to the count. Stream: one per Interval for as long as the Effect plays, the oldest making way.' },
+    { key: 'interval', label: 'Interval', type: 'number', default: 250, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Dots' },
+    { key: 'start', label: 'Start', type: 'enum', default: 'hit', options: ['hit', 'random', 'fixed', 'even'], section: 'Dots',
+      info: 'Hit: anywhere on the drum you hit. Random: anywhere on the kit. Fixed: the start drum, hoop and angle below. Even: spaced evenly round that hoop.' },
+    { key: 'startDrum', label: 'Start drum', type: 'number', default: 0, min: 0, max: 16, step: 1, section: 'Dots',
+      info: 'Which drum, counting through the kit from 1. 0 = the drum you hit.' },
+    { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Dots' },
+    { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Dots' },
+    { key: 'life', label: 'Lifespan', type: 'number', default: 0, min: 0, max: 20000, step: 10, unit: 'ms', section: 'Life',
+      info: 'How long each dot lives. 0 = until the brightness envelope ends — a dot ends at whichever comes first.' },
+    { key: 'fade', label: 'Fade in/out', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01, unit: '%', section: 'Life',
+      info: 'Each dot fades in and out over this share of its Lifespan.' },
+    { key: 'maxLive', label: 'Max life', type: 'number', default: 0, min: 0, max: 256, step: 1, section: 'Life',
+      info: 'The most dots alive at once, across hits. When a new hit would go over, the oldest dots go first. 0 = no limit.' },
+    { key: 'oldest', label: 'Oldest', type: 'enum', default: 'cut', options: ['cut', 'fade'], section: 'Life',
+      info: 'Past Max life (or a Stream past its count): the oldest dots cut out at once, or fade out over Fade time.' },
+    { key: 'oldestFade', label: 'Fade time', type: 'number', default: 400, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Life' },
+    { key: 'length', label: 'Length', type: 'number', default: 1, min: 1, max: 32, step: 1, unit: 'px', section: 'Shape' },
+    { key: 'height', label: 'Height', type: 'number', default: 1, min: 1, max: 5, step: 1, unit: 'hoops', section: 'Shape' },
+    { key: 'form', label: 'Shape', type: 'enum', default: 'dot', options: ['dot', 'bar', 'diamond'], section: 'Shape',
+      info: 'Dot: rounded ends, glides smoothly between pixels. Bar: crisp, square. Diamond: tapers over the hoops either side (Height 3 or more).' },
+    { key: 'trail', label: 'Trail', type: 'number', default: 0, min: 0, max: 64, step: 1, unit: 'px', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 40, min: 0, max: 400, step: 1, unit: 'px/s', section: 'Move around',
+      info: 'Pixels a second (or a beat, below). 0 = the dots stay where they appear.' },
+    { key: 'speedPer', label: 'Speed per', type: 'enum', default: 'second', options: ['second', 'beat'], section: 'Move around' },
+    { key: 'direction', label: 'Direction', type: 'enum', default: 'forward', options: ['forward', 'reverse', 'random', 'alternate'], section: 'Move around' },
+    { key: 'bounce', label: 'Bounce', type: 'enum', default: 'wrap', options: ['wrap', 'bounce', 'random', 'pingpong'], section: 'Move around',
+      info: 'At an edge (the top or bottom hoop, the last drum, the side of the kit): Wrap carries on from the other end, Bounce turns back — and dots meeting head-on turn too — Random picks a new way, Ping-pong swings back and forth over Span.' },
+    { key: 'span', label: 'Span', type: 'number', default: 12, min: 1, max: 200, step: 1, unit: 'px', section: 'Move around' },
+    { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01, unit: '%', section: 'Move around',
+      info: 'Over each dot\'s life: below 0 it slows to a stop, above 0 it speeds up (to 3×).' },
+    { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'], section: 'Move through',
+      info: 'Hoop: round its own hoop. Drum: each lap steps to the next hoop — a spiral. Kit: each lap hops to the next drum. Space: straight through the air of the kit, lighting the pixels it passes.' },
+    { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random'], section: 'Move through' },
+    { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'per-hit', 'rainbow', 'random'], section: 'Colour',
+      info: 'Single: the colour below. Per hit: each new hit a different colour. Rainbow: the dots of a hit spread round the colour wheel. Random: every dot its own.' },
+    { key: 'color', label: 'Colour', type: 'color', default: '#00e5ff', section: 'Colour' },
+    { key: 'shift', label: 'Change', type: 'enum', default: 'off', options: ['off', 'to-colour', 'hue-cycle'], section: 'Colour' },
+    { key: 'colorTo', label: 'To colour', type: 'color', default: '#ff2bd6', section: 'Colour' },
+    { key: 'hueRate', label: 'Hue rate', type: 'number', default: 60, min: 0, max: 720, step: 1, unit: '°/s', section: 'Colour' },
+    { key: 'background', label: 'Background', type: 'enum', default: 'none', options: ['none', 'same', 'other'], section: 'Background',
+      info: 'Light behind the dots across the Effect\'s Target: none, the dot colour dimmed, or a colour of its own.' },
+    { key: 'bgLevel', label: 'Level', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01, unit: '%', section: 'Background' },
+    { key: 'bgColor', label: 'Colour', type: 'color', default: '#1a1440', section: 'Background' },
+    { key: 'velSize', label: 'Size', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity',
+      info: 'How much a softer hit shrinks the dots. 0 = every hit the same.' },
+    { key: 'velSpeed', label: 'Speed', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity' },
+    { key: 'velCount', label: 'Dots', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity' },
   ],
   createState(model: PixelModel, seed?: number): DotState {
     return {
@@ -508,7 +530,19 @@ export const dot: EffectGenerator<DotState> = {
       state.spawned++;
       if (d) state.dots.push(d);
     }
-    if (spawn === 'stream') while (state.dots.length > count) state.dots.shift();
+    // A stream past its count: the oldest cut out, or (Oldest = Fade) fade out over Fade time.
+    const fadeOld = pstr(params, 'oldest', 'cut') === 'fade';
+    const oldestFade = Math.max(1, pnum(params, 'oldestFade', 400));
+    if (spawn === 'stream') {
+      let over = state.dots.filter((d) => d.dyingAtMs === undefined).length - count;
+      for (const d of state.dots) {
+        if (over <= 0) break;
+        if (d.dyingAtMs !== undefined) continue;
+        d.dyingAtMs = fadeOld ? ageMs : -Infinity;
+        over--;
+      }
+      state.dots = state.dots.filter((d) => d.dyingAtMs === undefined || ageMs - d.dyingAtMs < oldestFade);
+    }
     const dots = spawn === 'stream' ? state.dots : state.dots.slice(0, count);
 
     const life = Math.max(0, pnum(params, 'life', 0));
@@ -569,6 +603,7 @@ export const dot: EffectGenerator<DotState> = {
         const edge = fade * life;
         level = Math.min(clamp01(a / edge), clamp01((life - a) / edge));
       }
+      if (d.dyingAtMs !== undefined) level *= clamp01(1 - (ageMs - d.dyingAtMs) / oldestFade);
       if (level <= 0) continue;
       const rgb = colourOf(d);
       if (through === 'space') drawInSpace(model, state, d, level, rgb, length, trail);

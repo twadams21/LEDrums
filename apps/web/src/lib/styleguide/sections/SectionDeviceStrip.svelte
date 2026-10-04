@@ -114,6 +114,7 @@
           generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
         }),
         fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
+        fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit' } } }),
       ],
       master: [],
     },
@@ -121,6 +122,7 @@
   );
   const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
   const sliceFx = $derived(spliceApi.effectById('fx-slice')!);
+  const dotFx = $derived(spliceApi.effectById('fx-dot')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -174,6 +176,15 @@
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — sectioned params (Dot)"
+      src={['lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
+      note="Params that name a section (core ParamSpec.section) sit under capitalised headers — DOTS · LIFE · SHAPE · MOVE AROUND · MOVE THROUGH · COLOUR · BACKGROUND · VELOCITY — packed into columns left to right: a section joins the column above while it stays within 14 lines (a header counts as one), so short sections share a column and the card stays compact. A hairline separates the columns, as on the Splice face. Explanations sit behind ⓘ (ParamSpec.info)."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={dotFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}

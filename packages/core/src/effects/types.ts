@@ -16,8 +16,12 @@ export interface ParamSpec {
   step?: number;
   /** Allowed values for `enum` params. */
   options?: string[];
-  /** Suffix shown in the UI (e.g. "ms", "Hz"). */
+  /** Suffix shown in the UI (e.g. "ms", "Hz"). `%` on a 0..1 param: shown as a whole percent. */
   unit?: string;
+  /** The card section this param sits under (shown as a capitalised header). Display only. */
+  section?: string;
+  /** An explanation, shown behind an ⓘ beside the label. Display only. */
+  info?: string;
 }
 
 export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';
@@ -83,11 +87,12 @@ export interface EffectGenerator<State = unknown> {
    */
   voiceLife?: { key: string; unit: 'ms' | 'beats'; factor?: number };
   /**
-   * A cap across hits: how many EARLIER voices of the same Effect may stay alive when a new one
-   * fires, or `undefined` for no cap. The engine cuts the oldest beyond it at fire (Dot's
-   * Max live). Read from the fire's params, so a modulated value applies from the next hit.
+   * A cap across hits: how many EARLIER voices of the same Effect may `keep` living when a new
+   * one fires, or `undefined` for no cap. The engine cuts the oldest beyond it at fire — or
+   * fades them over `fadeMs` (Dot's Max life). Read from the fire's params, so a modulated value
+   * applies from the next hit.
    */
-  liveVoices?(params: ResolvedParams): number | undefined;
+  liveVoices?(params: ResolvedParams): { keep: number; fadeMs?: number } | undefined;
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

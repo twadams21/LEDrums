@@ -357,6 +357,8 @@ const paramSpecSchema = z.object({
   step: z.number().optional(),
   options: z.array(z.string()).optional(),
   unit: z.string().optional(),
+  section: z.string().optional(),
+  info: z.string().optional(),
 });
 
 const effectSpecSchema = z.object({

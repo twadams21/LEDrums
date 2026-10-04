@@ -12,7 +12,10 @@ import {
   mappingTargets,
   modulatedKeys,
   paramColumns,
+  paramSections,
+  paramsLandscape,
   paramValue,
+  sectionColumns,
   parseMapTargetKey,
   mapTargetKey,
   slotGeneratorOptions,
@@ -184,5 +187,34 @@ describe('paramColumns — landscape cards (Tim, 2026-10-01: at most 12 rows dow
     expect(paramColumns(22)).toEqual({ columns: 2, rows: 11 }); // Splice: two columns, not three
     expect(paramColumns(30)).toEqual({ columns: 3, rows: 10 });
     expect(isLandscape(13)).toBe(true);
+  });
+});
+
+describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
+  const p = (key: string, section?: string): CardParam => ({ key, label: key, kind: 'number', default: 0, ...(section ? { section } : {}) });
+
+  it('groups params by their section, in order; no sections → null', () => {
+    expect(paramSections([p('a'), p('b')])).toBeNull();
+    const s = paramSections([p('a', 'Dots'), p('b', 'Dots'), p('c', 'Shape'), p('d')])!;
+    expect(s.map((x) => [x.label, keys(x.params)])).toEqual([['Dots', ['a', 'b']], ['Shape', ['c', 'd']]]);
+  });
+
+  it('short sections share a column (a header counts as a line); a full one starts the next', () => {
+    const sec = (label: string, n: number) => ({ label, params: Array.from({ length: n }, (_, k) => p(`${label}${k}`, label)) });
+    const cols = sectionColumns([sec('A', 7), sec('B', 5), sec('C', 4), sec('D', 6), sec('E', 3)]);
+    expect(cols.map((c) => c.map((x) => x.label))).toEqual([['A', 'B'], ['C', 'D'], ['E']]);
+  });
+
+  it('the Dot card: eight sections in four columns, landscape', () => {
+    const params = generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot' } }).generator);
+    const cols = sectionColumns(paramSections(params)!);
+    expect(cols.map((c) => c.map((x) => x.label))).toEqual([
+      ['Dots', 'Life'], ['Shape', 'Move around'], ['Move through', 'Colour', 'Background'], ['Velocity'],
+    ]);
+    expect(paramsLandscape(params)).toBe(true);
+    expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max life', info: expect.stringContaining('most dots alive') });
+    // A 0..1 amount with a `%` unit reads as a whole percent.
+    expect(params.find((x) => x.key === 'fade')).toMatchObject({ percent: true });
+    expect(params.find((x) => x.key === 'count')?.percent).toBeUndefined();
   });
 });
