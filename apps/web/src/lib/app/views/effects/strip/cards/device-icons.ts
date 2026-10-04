@@ -15,6 +15,7 @@ import Zap from '@lucide/svelte/icons/zap';
 import Image from '@lucide/svelte/icons/image';
 import Scissors from '@lucide/svelte/icons/scissors';
 import Layers from '@lucide/svelte/icons/layers';
+import CircleDot from '@lucide/svelte/icons/circle-dot';
 import Timer from '@lucide/svelte/icons/timer';
 import Move from '@lucide/svelte/icons/move';
 import Sparkle from '@lucide/svelte/icons/sparkle';
@@ -39,6 +40,7 @@ export const GENERATOR_ICON: Record<effectChain.GeneratorKind, Component> = {
   scene: Image,
   splice: Scissors,
   slice: Layers,
+  dot: CircleDot,
 };
 
 const MODIFIER_CATEGORY_ICON: Record<string, Component> = {

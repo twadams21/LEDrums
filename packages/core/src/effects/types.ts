@@ -82,6 +82,12 @@ export interface EffectGenerator<State = unknown> {
    * never has to cross the wire.
    */
   voiceLife?: { key: string; unit: 'ms' | 'beats'; factor?: number };
+  /**
+   * A cap across hits: how many EARLIER voices of the same Effect may stay alive when a new one
+   * fires, or `undefined` for no cap. The engine cuts the oldest beyond it at fire (Dot's
+   * Max live). Read from the fire's params, so a modulated value applies from the next hit.
+   */
+  liveVoices?(params: ResolvedParams): number | undefined;
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

@@ -128,7 +128,7 @@ export const ampEnvelopeSchema = z.object({
 /** The Generator ids (S03 completes their Style tables). */
 export const GENERATOR_KINDS = [
   'solid', 'gradient', 'wave', 'noise', 'particles', 'pattern', 'meter', 'lightning', 'scene',
-  'splice', 'slice',
+  'splice', 'slice', 'dot',
 ] as const;
 export const generatorKindSchema = z.enum(GENERATOR_KINDS);
 

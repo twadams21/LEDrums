@@ -122,11 +122,20 @@ export class VoicePool {
   cutChainVoices(chainEffectId: string, timeMs: number): void {
     for (const v of this.pool) {
       if (!v.active || v.chainEffectId !== chainEffectId || v.bornAtMs >= timeMs) continue;
-      v.phase = 'release';
-      v.releaseAtMs = timeMs;
-      v.releaseFromLevel = 0;
-      v.level = 0;
+      cutVoice(v, timeMs);
     }
+  }
+
+  /** Keep the newest `keep` still-lit voices of this authored Effect born before `timeMs` and cut
+      the rest NOW, as Retrigger `cut` does — an Effect's cap on what stays alive across hits
+      (Dot's Max live: the oldest hit's dots go first). */
+  cutOldestChainVoices(chainEffectId: string, keep: number, timeMs: number): void {
+    const lit = this.pool.filter(
+      (v) => v.active && v.chainEffectId === chainEffectId && v.bornAtMs < timeMs && !isCut(v),
+    );
+    if (lit.length <= keep) return;
+    lit.sort((a, b) => b.bornAtMs - a.bornAtMs);
+    for (const v of lit.slice(Math.max(0, keep))) cutVoice(v, timeMs);
   }
 
   /**
@@ -369,3 +378,16 @@ function makeVoiceSlot(): Voice {
 }
 
 const EMPTY_SPECS: ParamSpec[] = [];
+
+/** Silence a voice NOW with no release ramp; the next frame reaps it. */
+function cutVoice(v: Voice, timeMs: number): void {
+  v.phase = 'release';
+  v.releaseAtMs = timeMs;
+  v.releaseFromLevel = 0;
+  v.level = 0;
+}
+
+/** Was this voice cut (released from silence)? It still occupies a slot until the reap. */
+function isCut(v: Voice): boolean {
+  return v.phase === 'release' && v.releaseFromLevel === 0;
+}

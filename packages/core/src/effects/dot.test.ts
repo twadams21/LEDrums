@@ -1,0 +1,202 @@
+/* Dot (Tim, 2026-10-03): small pulses that travel round hoops, up drums, across the kit or through
+   space — or sit still and twinkle — each with its own Lifespan. */
+import { describe, expect, it } from 'vitest';
+import { parseKit } from '../geometry/kit-schema';
+import { buildPixelModel, type PixelModel } from '../geometry/pixel-model';
+import { Framebuffer } from '../engine/framebuffer';
+import type { RenderContext } from '../engine/render-context';
+import { resolveGenerator } from '../effect-chain/generators';
+import { defaultParams, type ResolvedParams } from './types';
+import { tryGetEffect } from './registry';
+import { dot, dotLiveVoices } from './impl/dot';
+
+/** Two drums of three 40-pixel hoops, 600mm apart. */
+function model(): PixelModel {
+  return buildPixelModel(parseKit({
+    global: { ledDensityPxPerM: 40, hoopCount: 3, defaultHoopSpacingMm: 50, maxPixelsPerOutput: 100000 },
+    drums: ['a', 'b'].map((id, i) => ({
+      id, diameterIn: 12, hoopSpacingMm: 50, pixelsPerHoop: 40, origin: { x: i * 600, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 },
+    })),
+  }));
+}
+
+const M = model();
+
+/** Play one voice for `ms`, frame by frame, returning the last frame and the dots' state. */
+function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number } = {}) {
+  const p = { ...defaultParams(dot.paramSpec), ...params };
+  const state = dot.createState!(M, opts.seed ?? 7);
+  let fb = new Framebuffer(M.pixelCount);
+  for (let t = 0; t <= ms; t += 10) {
+    fb = new Framebuffer(M.pixelCount);
+    const ctx: RenderContext = {
+      model: M, timeMs: t, dt: t === 0 ? 0 : 10,
+      transport: { timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true },
+      triggers: [{ seq: 1, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
+    };
+    dot.render(ctx, p, fb, state);
+  }
+  return { fb, state };
+}
+
+function lit(fb: Framebuffer): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < fb.pixelCount; i++) if (fb.rgba[i * 4 + 3]! > 0.004) out.push(i);
+  return out;
+}
+
+function brightest(fb: Framebuffer): number {
+  let best = -1;
+  let bestA = 0;
+  for (let i = 0; i < fb.pixelCount; i++) if (fb.rgba[i * 4 + 3]! > bestA) { bestA = fb.rgba[i * 4 + 3]!; best = i; }
+  return best;
+}
+
+const FIXED = { start: 'fixed', startHoop: 1, startAngle: 0 };
+
+describe('Dot — registry', () => {
+  it('is a registered effect and a Generator kind', () => {
+    expect(tryGetEffect('dot')?.description).toBeTruthy();
+    expect(resolveGenerator({ kind: 'dot', style: '', params: {} })?.effectId).toBe('dot');
+  });
+});
+
+describe('Dot — placement and shape', () => {
+  it('a single one-pixel dot starts on the struck drum', () => {
+    const { fb } = play({ speed: 0 }, 0, { drum: 'b' });
+    const on = lit(fb);
+    expect(on).toHaveLength(1);
+    expect(M.pixels[on[0]!]!.drumId).toBe('b');
+  });
+
+  it('Length sets how many pixels it covers; Height spreads it over neighbouring hoops', () => {
+    const { fb } = play({ ...FIXED, speed: 0, length: 5, form: 'bar', height: 3, startHoop: 2 }, 0);
+    const on = lit(fb);
+    expect(on).toHaveLength(15);
+    expect(new Set(on.map((i) => M.pixels[i]!.hoopIndex))).toEqual(new Set([1, 2, 3]));
+  });
+
+  it('a Diamond tapers on the outer hoops', () => {
+    const { fb } = play({ ...FIXED, speed: 0, length: 7, form: 'diamond', height: 3, startHoop: 2 }, 0);
+    const perHoop = (h: number) => lit(fb).filter((i) => M.pixels[i]!.hoopIndex === h).length;
+    expect(perHoop(2)).toBeGreaterThan(perHoop(1));
+    expect(perHoop(1)).toBe(perHoop(3));
+  });
+});
+
+describe('Dot — moving around', () => {
+  it('travels round its hoop at Speed pixels a second, either way', () => {
+    const fwd = play({ ...FIXED, speed: 40 }, 500).fb;
+    expect(M.pixels[brightest(fwd)]!.indexInHoop - 1).toBe(20);
+    const rev = play({ ...FIXED, speed: 40, direction: 'reverse' }, 500).fb;
+    expect(M.pixels[brightest(rev)]!.indexInHoop - 1).toBe(20);
+    // 20 px either way round a 40-px ring lands opposite the start; a quarter tells them apart.
+    const q = play({ ...FIXED, speed: 40, direction: 'reverse' }, 250).fb;
+    expect(M.pixels[brightest(q)]!.indexInHoop - 1).toBe(30);
+  });
+
+  it('Speed per beat follows the tempo (120 bpm = 2 beats a second)', () => {
+    const { fb } = play({ ...FIXED, speed: 5, speedPer: 'beat' }, 1000);
+    expect(M.pixels[brightest(fb)]!.indexInHoop - 1).toBe(10);
+  });
+
+  it('a Trail lights pixels behind it, not ahead', () => {
+    const { fb } = play({ ...FIXED, speed: 40, trail: 4 }, 250);
+    const idx = lit(fb).map((i) => M.pixels[i]!.indexInHoop - 1);
+    expect(Math.max(...idx)).toBe(10);
+    expect(Math.min(...idx)).toBeGreaterThanOrEqual(6);
+  });
+
+  it('Ping-pong turns back after Span pixels', () => {
+    const at = (ms: number) => M.pixels[brightest(play({ ...FIXED, speed: 40, bounce: 'pingpong', span: 10 }, ms).fb)]!.indexInHoop - 1;
+    expect(at(250)).toBe(10);
+    expect(at(500)).toBe(0);
+  });
+
+  it('Bounce: two dots meeting head-on turn back', () => {
+    const { state } = play({ ...FIXED, start: 'even', count: 2, direction: 'alternate', bounce: 'bounce', speed: 40 }, 400);
+    expect(state.dots.map((d) => d.dir)).toEqual([-1, 1]);
+  });
+
+  it('Speed 0 holds still: dots stay where they appeared', () => {
+    const a = lit(play({ start: 'random', count: 5, speed: 0 }, 0).fb);
+    const b = lit(play({ start: 'random', count: 5, speed: 0 }, 1000).fb);
+    expect(a.length).toBeGreaterThan(0);
+    expect(b).toEqual(a);
+  });
+});
+
+describe('Dot — moving through', () => {
+  it('Through a drum: each lap steps up a hoop, and Bounce turns back at the top', () => {
+    const hoop = (ms: number, bounce = 'bounce') => play({ ...FIXED, speed: 40, through: 'drum', bounce }, ms).state.dots[0]!.hoop;
+    expect([hoop(500), hoop(1050), hoop(2050), hoop(3050)]).toEqual([0, 1, 2, 1]);
+    expect(hoop(3050, 'wrap')).toBe(0);
+  });
+
+  it('Through the kit: each lap hops to the next drum', () => {
+    const { state } = play({ ...FIXED, speed: 40, through: 'kit' }, 1050, { drum: 'a' });
+    expect(M.drums[state.dots[0]!.drum]!.drumId).toBe('b');
+  });
+
+  it('Through space: flies off its drum and stays inside the kit, bouncing off its edges', () => {
+    const { state } = play({ ...FIXED, speed: 200, through: 'space', bounce: 'bounce', direction: 'random' }, 5000);
+    const { min, max } = M.bounds;
+    const p = state.dots[0]!.p;
+    for (const k of ['x', 'y', 'z'] as const) {
+      expect(p[k]).toBeGreaterThanOrEqual(min[k] - 1e-6);
+      expect(p[k]).toBeLessThanOrEqual(max[k] + 1e-6);
+    }
+  });
+});
+
+describe('Dot — dots, life and colour', () => {
+  it('Stagger spawns one per Interval up to the count', () => {
+    const at = (ms: number) => play({ speed: 0, start: 'random', count: 3, spawn: 'stagger', interval: 100 }, ms).state.dots.length;
+    expect([at(50), at(150), at(450)]).toEqual([1, 2, 3]);
+  });
+
+  it('a Stream keeps spawning, recycling the oldest past the count', () => {
+    const { state } = play({ speed: 0, start: 'random', count: 2, spawn: 'stream', interval: 100 }, 1000);
+    expect(state.dots).toHaveLength(2);
+    expect(state.spawned).toBe(11);
+  });
+
+  it('Lifespan ends a dot; Max live caps the dots in a hit', () => {
+    expect(lit(play({ speed: 0, life: 200 }, 100).fb)).toHaveLength(1);
+    expect(lit(play({ speed: 0, life: 200 }, 300).fb)).toHaveLength(0);
+    expect(play({ speed: 0, start: 'random', count: 10, maxLive: 4 }, 0).state.dots).toHaveLength(4);
+  });
+
+  it('Vel → dots: a soft hit plays fewer', () => {
+    expect(play({ speed: 0, start: 'random', count: 8, velCount: 1 }, 0, { velocity: 0.5 }).state.dots).toHaveLength(4);
+  });
+
+  it('a Background lights the rest; None leaves it dark', () => {
+    expect(lit(play({ speed: 0 }, 0).fb)).toHaveLength(1);
+    const { fb } = play({ speed: 0, background: 'other', bgColor: '#0000ff', bgLevel: 0.2, color: '#ff0000' }, 0);
+    expect(lit(fb)).toHaveLength(M.pixelCount);
+    const head = brightest(fb);
+    expect(fb.rgba[head * 4]).toBeCloseTo(1);
+    const other = head === 0 ? 1 : 0;
+    expect(fb.rgba[other * 4 + 2]).toBeCloseTo(0.2);
+  });
+
+  it('Change → to colour fades each dot to the second colour over its life', () => {
+    const { fb } = play({ speed: 0, life: 1000, fade: 0, color: '#ff0000', shift: 'to-colour', colorTo: '#0000ff' }, 990);
+    const head = brightest(fb);
+    expect(fb.rgba[head * 4 + 2]!).toBeGreaterThan(fb.rgba[head * 4]!);
+  });
+
+  it('replays exactly from the same seed', () => {
+    const params = { start: 'random', count: 6, through: 'space', direction: 'random', bounce: 'random', speed: 120 };
+    expect(Array.from(play(params, 2000).fb.rgba)).toEqual(Array.from(play(params, 2000).fb.rgba));
+  });
+});
+
+describe('dotLiveVoices — Max live across hits', () => {
+  it('keeps as many earlier hits as fit beside the new one', () => {
+    expect(dotLiveVoices({ maxLive: 6, count: 2 })).toBe(2);
+    expect(dotLiveVoices({ maxLive: 1, count: 4 })).toBe(0);
+    expect(dotLiveVoices({ maxLive: 0, count: 2 })).toBeUndefined();
+  });
+});

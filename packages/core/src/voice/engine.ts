@@ -63,6 +63,7 @@ import {
 } from '../effect-chain/input-mappings';
 import { applySectionMaster, createSectionMasterState, resetSectionMaster } from '../effect-chain/master';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
+import { tryGetEffect } from '../effects/registry';
 import type { Effect } from '../effect-chain/types';
 import type {
   EffectSkipReason,
@@ -915,6 +916,10 @@ class VoiceBusEngine implements RenderEngine {
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
     // Retrigger `cut`: this fire silences the earlier light in its cell (its own and its cell-mates').
     for (const id of retriggerCutTargets(section, effect)) this.voices.cutChainVoices(id, this.timeMs);
+    // A cap across hits (Dot's Max live): the oldest hits' voices go first.
+    const hostedId = this.chainEffects.get(action.effectId)?.generatorId;
+    const keep = hostedId ? tryGetEffect(hostedId)?.liveVoices?.(action.params) : undefined;
+    if (keep !== undefined) this.voices.cutOldestChainVoices(effect.id, keep, this.timeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {
         effectsById: this.chainEffects,

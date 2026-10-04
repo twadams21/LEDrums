@@ -59,6 +59,8 @@ import { gravityDrops } from './impl/gravity-drops';
 import { segments } from './impl/segments';
 // World-space continuous field with hit-centred distortion (GH #214).
 import { spatialField } from './impl/spatial-field';
+// Small travelling / twinkling dots through hoops, drums, the kit and 3D space (Tim, 2026-10-03).
+import { dot } from './impl/dot';
 
 const ALL: EffectGenerator<any>[] = [
   solidBase,
@@ -109,6 +111,7 @@ const ALL: EffectGenerator<any>[] = [
   gravityDrops,
   segments,
   spatialField,
+  dot,
 ];
 
 const registry = new Map<string, EffectGenerator<any>>();
