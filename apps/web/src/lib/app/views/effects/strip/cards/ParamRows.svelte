@@ -34,6 +34,8 @@
     /** Several keys at once (`undefined` removes one). Given, a ms / Hz param gets a switch to
         beats; without it (a host that can't remove a key) the param stays in its unit. */
     onPatch?: (patch: Record<string, ParamValue | undefined>) => void;
+    /** The choices for a param whose options are the kit's drums (`optionsFrom: 'drums'`). */
+    drumOptions?: readonly { value: string; label: string }[];
   }
 
   let {
@@ -47,6 +49,7 @@
     onGestureEnd,
     mapParam,
     onPatch,
+    drumOptions = [],
   }: Props = $props();
 
   // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
@@ -72,7 +75,7 @@
       {#if p.kind === 'enum'}
         <Select
           value={String(v)}
-          options={(p.options ?? []).map((o) => ({ value: o, label: enumLabel(o) }))}
+          options={p.optionsFrom === 'drums' ? [...drumOptions] : (p.options ?? []).map((o) => ({ value: o, label: enumLabel(o) }))}
           segment={false}
           {disabled}
           ariaLabel={aria(p)}

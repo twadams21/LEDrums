@@ -22,6 +22,12 @@ export interface ParamSpec {
   section?: string;
   /** An explanation, shown behind an ⓘ beside the label. Display only. */
   info?: string;
+  /** Show the param only while another param holds one of these values (Dot's Angle only for
+      Through a drum). Display only — a hidden param keeps its value and still renders. */
+  showIf?: { key: string; is: readonly (string | number | boolean)[] };
+  /** An `enum` whose choices are the kit's drums (value = drum id), filled in by the card after
+      its fixed `options` (Dot: `['@hit']`, the drum you hit). Display only. */
+  optionsFrom?: 'drums';
 }
 
 export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';

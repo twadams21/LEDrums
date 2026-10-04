@@ -32,6 +32,8 @@ export interface CardParam {
   tempo?: false;
   /** The section it sits under, shown as a capitalised header (core `ParamSpec.section`). */
   section?: string;
+  /** An enum whose choices are the kit's drums, filled in by the card (core `optionsFrom`). */
+  optionsFrom?: 'drums';
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -49,7 +51,23 @@ export function toCardParam(spec: ParamSpec): CardParam {
     ...(spec.unit === '%' && spec.max !== undefined && spec.max <= 1 ? { percent: true } : {}),
     ...(spec.info ? { info: spec.info } : {}),
     ...(spec.section ? { section: spec.section } : {}),
+    ...(spec.optionsFrom ? { optionsFrom: spec.optionsFrom } : {}),
   };
+}
+
+/** Is this param shown for these values — its `showIf` param holding one of the listed values?
+    (Tim, 2026-10-05: a setting that does nothing in the current mode reads as broken.) */
+function shown(spec: ParamSpec, specs: readonly ParamSpec[], values: Readonly<Record<string, ParamValue>>): boolean {
+  if (!spec.showIf) return true;
+  const { key, is } = spec.showIf;
+  const v = values[key] ?? specs.find((s) => s.key === key)?.default;
+  return v !== undefined && is.includes(v);
+}
+
+/** The "Drum" choices for an `optionsFrom: 'drums'` param: the drum you hit, then the kit's drums. */
+export const HIT_DRUM = '@hit';
+export function drumParamOptions(drums: readonly { id: string; label: string }[]): { value: string; label: string }[] {
+  return [{ value: HIT_DRUM, label: 'Drum you hit' }, ...drums.map((d) => ({ value: d.id, label: d.label }))];
 }
 
 /** The device's own value for `p`, else the spec default (an unwritten param has no entry). */
@@ -212,16 +230,18 @@ function spliceParamHidden(key: string, params: Readonly<Record<string, ParamVal
 /**
  * The params the Generator card shows for this device, in declaration order. Splice / Slice
  * read their own list (mode-irrelevant fields hidden); Scene drops its picker param (the card
- * shows a scene Select for it); everything else is the chosen Style's params.
+ * shows a scene Select for it); everything else is the chosen Style's params, less any whose
+ * `showIf` the current values don't meet.
  */
 export function generatorParams(device: GeneratorDevice): CardParam[] {
   if (isSlotted(device.kind)) {
     const all = effectChain.spliceGeneratorParamSpec(device.kind).map(toCardParam);
     return all.filter((p) => !spliceParamHidden(p.key, device.params, all));
   }
-  return effectChain
-    .generatorParamSpec(device.kind, device.style)
+  const specs = effectChain.generatorParamSpec(device.kind, device.style);
+  return specs
     .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
+    .filter((s) => shown(s, specs, device.params))
     .map(toCardParam);
 }
 

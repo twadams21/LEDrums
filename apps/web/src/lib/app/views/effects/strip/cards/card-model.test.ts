@@ -4,6 +4,7 @@ import {
   adsrPath,
   describeMapping,
   describeSlot,
+  drumParamOptions,
   envelopePoints,
   envelopeShapeOf,
   formatParam,
@@ -205,16 +206,35 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     expect(cols.map((c) => c.map((x) => x.label))).toEqual([['A', 'B'], ['C', 'D'], ['E']]);
   });
 
-  it('the Dot card: eight sections in four columns, landscape', () => {
-    const params = generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot' } }).generator);
+  const dotDevice = (params: Record<string, string | number> = {}) =>
+    effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator;
+
+  it('the Dot card: seven sections in three columns, landscape', () => {
+    const params = generatorParams(dotDevice());
     const cols = sectionColumns(paramSections(params)!);
     expect(cols.map((c) => c.map((x) => x.label))).toEqual([
-      ['Dots', 'Life'], ['Shape', 'Move around'], ['Move through', 'Colour'], ['Background', 'Velocity'],
+      ['Dots', 'Life', 'Shape'], ['Movement', 'Colour', 'Background'], ['Velocity'],
     ]);
     expect(paramsLandscape(params)).toBe(true);
     expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max alive', info: expect.stringContaining('most dots alive') });
     // A 0..1 amount with a `%` unit reads as a whole percent.
     expect(params.find((x) => x.key === 'fade')).toMatchObject({ percent: true });
     expect(params.find((x) => x.key === 'count')?.percent).toBeUndefined();
+  });
+
+  it('a setting shows only in the mode it acts in (showIf) — Tim, 2026-10-05', () => {
+    const on = (params: Record<string, string | number>) => keys(generatorParams(dotDevice(params)));
+    expect(on({})).not.toContain('climb');
+    expect(on({ through: 'drum' })).toContain('climb');
+    expect(on({})).not.toContain('startDrum');
+    expect(on({ start: 'set-point' })).toEqual(expect.arrayContaining(['startDrum', 'startHoop', 'startAngle']));
+    expect(on({})).not.toContain('span');
+    expect(on({ bounce: 'pingpong' })).toContain('span');
+    expect(on({ through: 'kit' })).toEqual(expect.arrayContaining(['kitOrder', 'hopEvery']));
+  });
+
+  it('the set point\'s Drum lists the drum you hit, then the kit\'s drums', () => {
+    expect(drumParamOptions([{ id: 'kick', label: 'Kick' }])).toEqual([{ value: '@hit', label: 'Drum you hit' }, { value: 'kick', label: 'Kick' }]);
+    expect(generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')).toMatchObject({ kind: 'enum', optionsFrom: 'drums' });
   });
 });

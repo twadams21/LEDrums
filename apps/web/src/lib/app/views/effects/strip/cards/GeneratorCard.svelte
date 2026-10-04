@@ -27,6 +27,7 @@
     generatorLabel,
     generatorParams,
     paramsLandscape,
+    drumParamOptions,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -51,6 +52,8 @@
   const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
   const landscape = $derived(spliceFace || paramsLandscape(params));
   const thumb = $derived(thumbSource(device));
+  // A param that picks a drum (Dot's set point) lists the kit's drums.
+  const drumOptions = $derived(drumParamOptions(api.gridRows.filter((r) => r.id !== 'kit').map((r) => ({ id: r.id, label: r.label }))));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
@@ -195,6 +198,7 @@
       onPatch={(patch) => api.setGeneratorParams(effect.id, patch)}
       onGestureStart={() => api.beginGesture()}
       onGestureEnd={() => api.endGesture()}
+      {drumOptions}
     />
   {/if}
 </DeviceCard>

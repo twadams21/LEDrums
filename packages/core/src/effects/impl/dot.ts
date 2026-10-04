@@ -216,9 +216,15 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   const rng = state.rng;
   const struckId = ctx.triggers[0]?.drumId ?? '';
   const struck = drums.findIndex((d) => d.drumId === struckId);
-  const startDrum = Math.round(pnum(params, 'startDrum', 0));
-  const chosen = startDrum >= 1 ? Math.min(drums.length, startDrum) - 1 : struck >= 0 ? struck : 0;
-  const start = pstr(params, 'start', 'hit');
+  // The set point's drum: a drum id ('@hit' — or anything not in the kit — = the drum you hit; an
+  // older 1-based number still reads).
+  const pick = params.startDrum;
+  const named = typeof pick === 'string' && pick ? drums.findIndex((x) => x.drumId === pick)
+    : typeof pick === 'number' && pick >= 1 ? Math.min(drums.length, Math.round(pick)) - 1
+    : -1;
+  const chosen = named >= 0 ? named : struck >= 0 ? struck : 0;
+  // `fixed` was the set point's first name.
+  const start = pstr(params, 'start', 'hit') === 'fixed' ? 'set-point' : pstr(params, 'start', 'hit');
   const randomDrum = () => Math.floor(rng() * drums.length) % drums.length;
 
   let drum: number;
@@ -550,13 +556,17 @@ export const dot: EffectGenerator<DotState> = {
     { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1, section: 'Dots' },
     { key: 'spawn', label: 'Spawn', type: 'enum', default: 'together', options: ['together', 'stagger', 'stream'], section: 'Dots',
       info: 'Together: every dot at the hit. Stagger: one per Interval up to the count. Stream: one per Interval for as long as the Effect plays, the oldest making way.' },
-    { key: 'interval', label: 'Interval', type: 'number', default: 250, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Dots' },
-    { key: 'start', label: 'Start', type: 'enum', default: 'hit', options: ['hit', 'random', 'fixed', 'even'], section: 'Dots',
-      info: 'Hit: anywhere on the drum you hit. Random: anywhere on the kit. Fixed: the start drum, hoop and angle below. Even: spaced evenly round that hoop.' },
-    { key: 'startDrum', label: 'Start drum', type: 'number', default: 0, min: 0, max: 16, step: 1, section: 'Dots',
-      info: 'Which drum, counting through the kit from 1. 0 = the drum you hit.' },
-    { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Dots' },
-    { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Dots' },
+    { key: 'interval', label: 'Interval', type: 'number', default: 250, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Dots',
+      showIf: { key: 'spawn', is: ['stagger', 'stream'] } },
+    { key: 'start', label: 'Start', type: 'enum', default: 'hit', options: ['hit', 'random', 'set-point', 'even'], section: 'Dots',
+      info: 'Where each dot begins. Hit: anywhere on the drum you hit. Random: anywhere on the kit. Set point: exactly the drum, hoop and angle below. Even: spread evenly round that hoop.' },
+    // Its one fixed option is '@hit' (the drum you hit); the card adds the kit's drums.
+    { key: 'startDrum', label: 'Start drum', type: 'enum', default: '@hit', options: ['@hit'], optionsFrom: 'drums', section: 'Dots',
+      showIf: { key: 'start', is: ['set-point', 'even', 'fixed'] } },
+    { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Dots',
+      showIf: { key: 'start', is: ['set-point', 'even', 'fixed'] }, info: 'Counting from the bottom hoop, 1. Past the drum\'s top hoop it uses the top one.' },
+    { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Dots',
+      showIf: { key: 'start', is: ['set-point', 'even', 'fixed'] }, info: 'Where round the hoop it begins, from the hoop\'s first pixel.' },
     { key: 'life', label: 'Lifespan', type: 'number', default: 2000, min: 0, max: 20000, step: 10, unit: 'ms', section: 'Life',
       info: 'How long each dot lives. With the Trigger card\'s Sustain on "Until dots end" (a new Dot\'s default) the hit lasts until the last dot finishes; on a time instead, a dot also ends when the envelope does. 0 = forever — until Max alive, a Cut, or the section changes.' },
     { key: 'fade', label: 'Fade in/out', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01, unit: '%', section: 'Life',
@@ -565,38 +575,48 @@ export const dot: EffectGenerator<DotState> = {
       info: 'The most dots alive at once, across hits. When a new hit would go over, the oldest dots go first. 0 = no limit.' },
     { key: 'oldest', label: 'Oldest', type: 'enum', default: 'cut', options: ['cut', 'fade'], section: 'Life',
       info: 'Past Max alive (or a Stream past its count): the oldest dots cut out at once, or fade out over Fade time.' },
-    { key: 'oldestFade', label: 'Fade time', type: 'number', default: 400, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Life' },
+    { key: 'oldestFade', label: 'Fade time', type: 'number', default: 400, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Life',
+      showIf: { key: 'oldest', is: ['fade'] } },
     { key: 'length', label: 'Length', type: 'number', default: 1, min: 1, max: 32, step: 1, unit: 'px', section: 'Shape' },
     { key: 'height', label: 'Height', type: 'number', default: 1, min: 1, max: 5, step: 1, unit: 'hoops', section: 'Shape' },
     { key: 'form', label: 'Shape', type: 'enum', default: 'dot', options: ['dot', 'bar', 'diamond'], section: 'Shape',
       info: 'Dot: rounded ends, glides smoothly between pixels. Bar: crisp, square. Diamond: tapers over the hoops either side (Height 3 or more).' },
     { key: 'trail', label: 'Trail', type: 'number', default: 0, min: 0, max: 64, step: 1, unit: 'px', section: 'Shape' },
-    { key: 'speed', label: 'Speed', type: 'number', default: 40, min: 0, max: 400, step: 1, unit: 'px/s', section: 'Move around',
-      info: 'Pixels a second (or a beat, below). 0 = the dots stay where they appear.' },
-    { key: 'speedPer', label: 'Speed per', type: 'enum', default: 'second', options: ['second', 'beat'], section: 'Move around' },
-    { key: 'direction', label: 'Direction', type: 'enum', default: 'forward', options: ['forward', 'reverse', 'random', 'alternate'], section: 'Move around' },
-    { key: 'bounce', label: 'Bounce', type: 'enum', default: 'wrap', options: ['wrap', 'bounce', 'random', 'pingpong'], section: 'Move around',
-      info: 'At an edge (the top or bottom hoop, the last drum, the side of the kit): Wrap carries on from the other end, Bounce turns back — and dots meeting head-on turn too — Random picks a new way, Ping-pong swings back and forth over Span.' },
-    { key: 'span', label: 'Span', type: 'number', default: 12, min: 1, max: 200, step: 1, unit: 'px', section: 'Move around' },
-    { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01, unit: '%', section: 'Move around',
+    // Movement — one heading for every way a dot travels (Tim, 2026-10-05: "we are talking about
+    // dot movement in any direction, so it should probably be under the one heading").
+    { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'], section: 'Movement',
+      info: 'Hoop: round its own hoop. Drum: across the drum\'s hoops at the Travel angle below — up, round, or a spiral. Kit: from drum to drum. Space: straight through the air of the kit, lighting the pixels it passes.' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 40, min: 0, max: 400, step: 1, unit: 'px/s', section: 'Movement',
+      info: 'How fast it travels, whichever way it is going — pixels a second (or a beat, below). 0 = the dots stay where they appear.' },
+    { key: 'speedPer', label: 'Speed per', type: 'enum', default: 'second', options: ['second', 'beat'], section: 'Movement' },
+    { key: 'climb', label: 'Travel angle', type: 'number', default: 90, min: -90, max: 90, step: 1, unit: '°', section: 'Movement',
+      showIf: { key: 'through', is: ['drum'] },
+      info: 'Which way it travels across the drum: 90° straight up, 0° round the hoop, in between a spiral; below 0 heads down.' },
+    { key: 'direction', label: 'Direction', type: 'enum', default: 'forward', options: ['forward', 'reverse', 'random', 'alternate'], section: 'Movement',
+      info: 'Forward or Reverse along its way (Reverse on a drum heads down), Random per dot, or Alternate dot by dot.' },
+    { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random'], section: 'Movement',
+      showIf: { key: 'through', is: ['kit'] } },
+    { key: 'hopEvery', label: 'Hop after', type: 'number', default: 0, min: 0, max: 400, step: 1, unit: 'px', section: 'Movement',
+      showIf: { key: 'through', is: ['kit'] },
+      info: 'How far a dot travels on a drum before hopping to the next. 0 = one lap.' },
+    { key: 'bounce', label: 'Bounce', type: 'enum', default: 'wrap', options: ['wrap', 'bounce', 'random', 'pingpong'], section: 'Movement',
+      info: 'At an edge (the top or bottom hoop, the last drum, the side of the kit): Wrap carries on from the other end, Bounce turns back — and dots meeting head-on turn too — Random picks a new way. Ping-pong swings back and forth over Swing.' },
+    { key: 'span', label: 'Swing', type: 'number', default: 12, min: 1, max: 200, step: 1, unit: 'px', section: 'Movement',
+      showIf: { key: 'bounce', is: ['pingpong'] },
+      info: 'Ping-pong only: how far each dot swings before turning back.' },
+    { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01, unit: '%', section: 'Movement',
       info: 'Over each dot\'s life: below 0 it slows to a stop, above 0 it speeds up (to 3×).' },
-    { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'], section: 'Move through',
-      info: 'Hoop: round its own hoop. Drum: up and down the drum, at the Climb angle. Kit: hops from drum to drum. Space: straight through the air of the kit, lighting the pixels it passes.' },
-    { key: 'climb', label: 'Climb', type: 'number', default: 90, min: -90, max: 90, step: 1, unit: '°', section: 'Move through',
-      info: 'Through a drum: 90° goes straight up it, 0° round the hoop, in between a spiral; below 0 heads down. Direction Reverse flips it.' },
-    { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random'], section: 'Move through' },
-    { key: 'hopEvery', label: 'Hop after', type: 'number', default: 0, min: 0, max: 400, step: 1, unit: 'px', section: 'Move through',
-      info: 'Through the kit: how far a dot travels on a drum before hopping to the next. 0 = one lap.' },
     { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'per-hit', 'rainbow', 'random'], section: 'Colour',
       info: 'Single: the colour below. Per hit: each new hit a different colour. Rainbow: the dots of a hit spread round the colour wheel. Random: every dot its own.' },
     { key: 'color', label: 'Colour', type: 'color', default: '#00e5ff', section: 'Colour' },
     { key: 'shift', label: 'Change', type: 'enum', default: 'off', options: ['off', 'to-colour', 'hue-cycle'], section: 'Colour' },
-    { key: 'colorTo', label: 'To colour', type: 'color', default: '#ff2bd6', section: 'Colour' },
-    { key: 'hueRate', label: 'Hue rate', type: 'number', default: 60, min: 0, max: 720, step: 1, unit: '°/s', section: 'Colour' },
+    { key: 'colorTo', label: 'To colour', type: 'color', default: '#ff2bd6', section: 'Colour', showIf: { key: 'shift', is: ['to-colour'] } },
+    { key: 'hueRate', label: 'Hue rate', type: 'number', default: 60, min: 0, max: 720, step: 1, unit: '°/s', section: 'Colour', showIf: { key: 'shift', is: ['hue-cycle'] } },
     { key: 'background', label: 'Background', type: 'enum', default: 'none', options: ['none', 'same', 'other'], section: 'Background',
       info: 'Light behind the dots across the Effect\'s Target: none, the dot colour dimmed, or a colour of its own.' },
-    { key: 'bgLevel', label: 'Level', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01, unit: '%', section: 'Background' },
-    { key: 'bgColor', label: 'Colour', type: 'color', default: '#1a1440', section: 'Background' },
+    { key: 'bgLevel', label: 'Level', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01, unit: '%', section: 'Background',
+      showIf: { key: 'background', is: ['same', 'other'] } },
+    { key: 'bgColor', label: 'Colour', type: 'color', default: '#1a1440', section: 'Background', showIf: { key: 'background', is: ['other'] } },
     { key: 'velSize', label: 'Size', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity',
       info: 'How much a softer hit shrinks the dots. 0 = every hit the same.' },
     { key: 'velSpeed', label: 'Speed', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity' },

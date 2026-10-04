@@ -53,7 +53,7 @@ function brightest(fb: Framebuffer): number {
   return best;
 }
 
-const FIXED = { start: 'fixed', startHoop: 1, startAngle: 0 };
+const FIXED = { start: 'set-point', startHoop: 1, startAngle: 0 };
 
 describe('Dot — registry', () => {
   it('is a registered effect and a Generator kind', () => {
@@ -68,6 +68,15 @@ describe('Dot — placement and shape', () => {
     const on = lit(fb);
     expect(on).toHaveLength(1);
     expect(M.pixels[on[0]!]!.drumId).toBe('b');
+  });
+
+  it('Set point: every dot begins at the chosen drum, hoop and angle', () => {
+    const { fb } = play({ start: 'set-point', startDrum: 'b', startHoop: 2, startAngle: 90, speed: 0, count: 3 }, 0, { drum: 'a' });
+    const on = lit(fb).map((i) => M.pixels[i]!);
+    expect(on).toHaveLength(1); // three dots, one pixel
+    expect(on[0]).toMatchObject({ drumId: 'b', hoopIndex: 2, indexInHoop: 11 }); // 90° of 40 px = pixel 10 (0-based)
+    // The older name and a 1-based drum number still read.
+    expect(M.pixels[lit(play({ start: 'fixed', startDrum: 2, speed: 0 }, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b');
   });
 
   it('Length sets how many pixels it covers; Height spreads it over neighbouring hoops', () => {
@@ -259,7 +268,8 @@ describe('Dot — card sections', () => {
   it('every param sits under a section, in card order', () => {
     expect(dot.paramSpec.every((p) => p.section)).toBe(true);
     const order = [...new Set(dot.paramSpec.map((p) => p.section))];
-    expect(order).toEqual(['Dots', 'Life', 'Shape', 'Move around', 'Move through', 'Colour', 'Background', 'Velocity']);
+    // Move around + Move through became one Movement heading (Tim, 2026-10-05).
+    expect(order).toEqual(['Dots', 'Life', 'Shape', 'Movement', 'Colour', 'Background', 'Velocity']);
     expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max alive');
   });
 });
