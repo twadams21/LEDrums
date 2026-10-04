@@ -209,10 +209,10 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     const params = generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot' } }).generator);
     const cols = sectionColumns(paramSections(params)!);
     expect(cols.map((c) => c.map((x) => x.label))).toEqual([
-      ['Dots', 'Life'], ['Shape', 'Move around'], ['Move through', 'Colour', 'Background'], ['Velocity'],
+      ['Dots', 'Life'], ['Shape', 'Move around'], ['Move through', 'Colour'], ['Background', 'Velocity'],
     ]);
     expect(paramsLandscape(params)).toBe(true);
-    expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max life', info: expect.stringContaining('most dots alive') });
+    expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max alive', info: expect.stringContaining('most dots alive') });
     // A 0..1 amount with a `%` unit reads as a whole percent.
     expect(params.find((x) => x.key === 'fade')).toMatchObject({ percent: true });
     expect(params.find((x) => x.key === 'count')?.percent).toBeUndefined();

@@ -126,7 +126,7 @@ export class VoicePool {
     }
   }
 
-  /** An Effect's cap on what stays alive across hits (Dot's Max life: the oldest hit's dots go
+  /** An Effect's cap on what stays alive across hits (Dot's Max alive: the oldest hit's dots go
       first). Keep the newest `keep` voices of this authored Effect born before `timeMs`; the rest
       are cut NOW, as Retrigger `cut` does — or, given `fadeMs`, fade out over it. A voice already
       on its way out (cut or fading) no longer counts. */

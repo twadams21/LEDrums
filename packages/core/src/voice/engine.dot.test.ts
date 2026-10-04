@@ -1,6 +1,6 @@
-/* Dot's Max life across hits (Tim, 2026-10-03: "a set maximum amount of pulses before cycling back
-   to the first pulse"; renamed from Max live, 2026-10-04): when a new hit would take the dots alive
-   past Max life, the engine cuts the oldest hits' voices — or fades them (Oldest = Fade). */
+/* Dot's Max alive across hits (Tim, 2026-10-03: "a set maximum amount of pulses before cycling back
+   to the first pulse"; renamed from Max live → Max alive → Max alive, 2026-10-05): when a new hit would take the dots alive
+   past Max alive, the engine cuts the oldest hits' voices — or fades them (Oldest = Fade). */
 import { describe, expect, it } from 'vitest';
 import { parseKit } from '../geometry/kit-schema';
 import { buildPixelModel } from '../geometry/pixel-model';
@@ -40,12 +40,12 @@ function voicesAfter(hits: number, params: Record<string, number | string>, sett
   return engine.stats().voices.length;
 }
 
-describe('Dot Max life across hits', () => {
+describe('Dot Max alive across hits', () => {
   it('with no cap, every hit stays alive', () => {
     expect(voicesAfter(5, { count: 2 })).toBe(5);
   });
 
-  it('cuts the oldest hits so the dots alive stay within Max life', () => {
+  it('cuts the oldest hits so the dots alive stay within Max alive', () => {
     expect(voicesAfter(5, { count: 2, maxLive: 6 })).toBe(3);
     expect(voicesAfter(5, { count: 1, maxLive: 2 })).toBe(2);
   });

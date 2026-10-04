@@ -707,7 +707,7 @@ export interface Voice extends GeometryState {
   bornAtMs: number;
   releaseAtMs: number | null;
   releaseFromLevel: number;
-  /** A release ramp set by an Effect's cap across hits (Dot's Max life, Fade) — wins over the
+  /** A release ramp set by an Effect's cap across hits (Dot's Max alive, Fade) — wins over the
       mode's own ramp for this release. Cleared on spawn. */
   capReleaseMs?: number;
   via: string;

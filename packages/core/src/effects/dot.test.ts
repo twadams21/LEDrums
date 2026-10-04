@@ -127,15 +127,45 @@ describe('Dot — moving around', () => {
 });
 
 describe('Dot — moving through', () => {
-  it('Through a drum: each lap steps up a hoop, and Bounce turns back at the top', () => {
-    const hoop = (ms: number, bounce = 'bounce') => play({ ...FIXED, speed: 40, through: 'drum', bounce }, ms).state.dots[0]!.hoop;
-    expect([hoop(500), hoop(1050), hoop(2050), hoop(3050)]).toEqual([0, 1, 2, 1]);
-    expect(hoop(3050, 'wrap')).toBe(0);
+  // Tim, 2026-10-05: "i can't get any vertical motion happening" — a dot used to step up a hoop
+  // only after a full lap, so it never climbed within a hit. Now it travels at the Climb angle.
+  const GAP = dot.createState!(M, 1).gapPx[0]!;
+
+  it('Through a drum at Climb 90°: straight up, a hoop every gap of pixels, no travel round', () => {
+    const d = play({ ...FIXED, speed: GAP * 2, through: 'drum' }, 500).state.dots[0]!;
+    expect(d.hf).toBeCloseTo(1, 1);
+    expect(d.u).toBeCloseTo(0, 5);
   });
 
-  it('Through the kit: each lap hops to the next drum', () => {
+  it('at the top hoop Bounce turns back down; Wrap comes back in at the bottom', () => {
+    const at = (ms: number, bounce: string) => play({ ...FIXED, speed: GAP * 2, through: 'drum', bounce }, ms).state.dots[0]!;
+    expect(at(1250, 'bounce').hf).toBeCloseTo(1.5, 1);
+    expect(at(1250, 'bounce').step).toBe(-1);
+    expect(at(1400, 'wrap').hoop).toBe(0);
+  });
+
+  it('Climb 45° spirals: up the drum and round it together; Reverse heads down', () => {
+    const d = play({ ...FIXED, speed: GAP * 2, through: 'drum', climb: 45 }, 500).state.dots[0]!;
+    expect(d.hf).toBeGreaterThan(0.5);
+    expect(d.u).toBeGreaterThan(0);
+    const down = play({ ...FIXED, speed: GAP * 2, through: 'drum', direction: 'reverse', startHoop: 3 }, 500).state.dots[0]!;
+    expect(down.hf).toBeCloseTo(1, 1);
+  });
+
+  it('a climbing one-pixel dot glides between hoops, shared across the two', () => {
+    const { fb } = play({ ...FIXED, speed: GAP * 2, through: 'drum' }, 250);
+    expect(new Set(lit(fb).map((i) => M.pixels[i]!.hoopIndex))).toEqual(new Set([1, 2]));
+  });
+
+  it('Climb 0° keeps a dot on its hoop, like Through a hoop', () => {
+    expect(play({ ...FIXED, speed: 40, through: 'drum', climb: 0 }, 2000).state.dots[0]!.hoop).toBe(0);
+  });
+
+  it('Through the kit: each lap hops to the next drum — or after Hop after pixels', () => {
     const { state } = play({ ...FIXED, speed: 40, through: 'kit' }, 1050, { drum: 'a' });
     expect(M.drums[state.dots[0]!.drum]!.drumId).toBe('b');
+    const soon = play({ ...FIXED, speed: 40, through: 'kit', hopEvery: 8 }, 250, { drum: 'a' }).state;
+    expect(M.drums[soon.dots[0]!.drum]!.drumId).toBe('b');
   });
 
   it('Through space: flies off its drum and stays inside the kit, bouncing off its edges', () => {
@@ -161,7 +191,7 @@ describe('Dot — dots, life and colour', () => {
     expect(state.spawned).toBe(11);
   });
 
-  it('Lifespan ends a dot; Max life caps the dots in a hit', () => {
+  it('Lifespan ends a dot; Max alive caps the dots in a hit', () => {
     expect(lit(play({ speed: 0, life: 200 }, 100).fb)).toHaveLength(1);
     expect(lit(play({ speed: 0, life: 200 }, 300).fb)).toHaveLength(0);
     expect(play({ speed: 0, start: 'random', count: 10, maxLive: 4 }, 0).state.dots).toHaveLength(4);
@@ -212,7 +242,7 @@ describe('Dot — dots, life and colour', () => {
   });
 });
 
-describe('dotCap — Max life across hits', () => {
+describe('dotCap — Max alive across hits', () => {
   it('keeps as many earlier hits as fit beside the new one', () => {
     expect(dotCap({ maxLive: 6, count: 2 })).toEqual({ keep: 2 });
     expect(dotCap({ maxLive: 1, count: 4 })).toEqual({ keep: 0 });
@@ -229,6 +259,6 @@ describe('Dot — card sections', () => {
     expect(dot.paramSpec.every((p) => p.section)).toBe(true);
     const order = [...new Set(dot.paramSpec.map((p) => p.section))];
     expect(order).toEqual(['Dots', 'Life', 'Shape', 'Move around', 'Move through', 'Colour', 'Background', 'Velocity']);
-    expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max life');
+    expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max alive');
   });
 });

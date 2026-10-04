@@ -89,7 +89,7 @@ export interface EffectGenerator<State = unknown> {
   /**
    * A cap across hits: how many EARLIER voices of the same Effect may `keep` living when a new
    * one fires, or `undefined` for no cap. The engine cuts the oldest beyond it at fire — or
-   * fades them over `fadeMs` (Dot's Max life). Read from the fire's params, so a modulated value
+   * fades them over `fadeMs` (Dot's Max alive). Read from the fire's params, so a modulated value
    * applies from the next hit.
    */
   liveVoices?(params: ResolvedParams): { keep: number; fadeMs?: number } | undefined;

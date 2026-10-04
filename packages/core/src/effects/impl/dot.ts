@@ -7,8 +7,8 @@ import { pnum, pstr, type EffectGenerator, type ResolvedParams } from '../types'
  * Dot (Tim, 2026-10-03): small pulses — as little as one pixel — that travel in set directions
  * and speeds around a hoop, up a drum, across the kit or straight through 3D space, or sit still
  * and twinkle. Each dot has its own Lifespan; the Effect's brightness envelope is the master
- * over them all, so a dot ends at whichever comes first. "Max life" (the most dots alive at once;
- * Tim renamed it from "Max live", 2026-10-04) is enforced in two places: within a voice here, and
+ * over them all, so a dot ends at whichever comes first. "Max alive" (the most dots alive at once;
+ * Tim renamed it from "Max live", then "Max alive", 2026-10-05) is enforced in two places: within a voice here, and
  * across hits by the engine, which cuts or fades the oldest hits' voices (see {@link dotCap}).
  *
  * Voice timebase: motion integrates `ctx.dt` into per-voice state seeded from the voice's seed,
@@ -25,15 +25,19 @@ interface Dot {
   bornMs: number;
   /** Index into `model.drums`. */
   drum: number;
-  /** 0-based hoop. */
+  /** 0-based hoop (the nearest, while climbing between hoops). */
   hoop: number;
+  /** The hoop as a float — Through a drum, a climbing dot glides between hoops. */
+  hf: number;
+  /** Where Ping-pong swings from, vertically. */
+  hf0: number;
   /** Position around the ring, 0..1 (angle-mapped, so it carries across hoops of any size). */
   u: number;
   /** Travel around the ring: +1 / -1. */
   dir: number;
-  /** Through a drum: the hoop step. Across the kit: the step through the drum order. */
+  /** Through a drum: up (+1) or down (−1). Across the kit: the step through the drum order. */
   step: number;
-  /** Pixels travelled toward the next lap (a lap moves it to the next hoop / drum). */
+  /** Pixels travelled on this drum (Across the kit: Hop after moves it on). */
   lapPx: number;
   /** Pixels travelled in all (Ping-pong: the distance along its back-and-forth). */
   runPx: number;
@@ -62,6 +66,8 @@ export interface DotState {
   pitchMm: number;
   /** Nearest-neighbour tour of the drums (Across the kit, Nearest order). */
   tour: number[];
+  /** Per drum: the distance between neighbouring hoops, in pixels (Through a drum, Climb). */
+  gapPx: number[];
   /** Per-pixel scratch: the strongest dot coverage and its colour this frame. */
   cov: Float32Array;
   col: Float32Array;
@@ -104,6 +110,35 @@ function nearestTour(model: PixelModel): number[] {
   return tour;
 }
 
+/** Per drum, the mean distance between neighbouring hoop centres in pixels — so a climbing dot
+    moves up the drum at the same pixel speed it moves round it. */
+function hoopGaps(model: PixelModel, pitchMm: number): number[] {
+  return model.drums.map((d) => {
+    const centres: Vec3[] = [];
+    for (let h = 1; h <= d.hoopCount; h++) {
+      const r = getHoopPixelRange(model, d.drumId, h);
+      if (!r || r.end <= r.start) continue;
+      const c = { x: 0, y: 0, z: 0 };
+      for (let i = r.start; i < r.end; i++) {
+        const w = model.pixels[i]!.world;
+        c.x += w.x;
+        c.y += w.y;
+        c.z += w.z;
+      }
+      const k = r.end - r.start;
+      centres.push({ x: c.x / k, y: c.y / k, z: c.z / k });
+    }
+    if (centres.length < 2) return 2;
+    let sum = 0;
+    for (let i = 1; i < centres.length; i++) {
+      const a = centres[i - 1]!;
+      const b = centres[i]!;
+      sum += Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    }
+    return Math.max(0.5, sum / (centres.length - 1) / pitchMm);
+  });
+}
+
 function meanPitch(model: PixelModel): number {
   let sum = 0;
   let n = 0;
@@ -133,7 +168,7 @@ function ringPixel(model: PixelModel, drum: number, hoop: number, u: number): nu
   return range.start + (Math.floor(wrap(u, 1) * n) % n);
 }
 
-/** Dots alive in one voice, after the velocity amount and the Max life cap. */
+/** Dots alive in one voice, after the velocity amount and the Max alive cap. */
 function voiceCount(params: ResolvedParams, velocity: number): number {
   const count = Math.max(1, Math.round(pnum(params, 'count', 1)));
   const vel = clamp01(pnum(params, 'velCount', 0));
@@ -144,7 +179,7 @@ function voiceCount(params: ResolvedParams, velocity: number): number {
 
 /**
  * How many EARLIER voices of the same Effect may keep living when a new hit fires, so the dots
- * alive across hits stay within Max life — or `undefined` when there is no cap. Counted at the
+ * alive across hits stay within Max alive — or `undefined` when there is no cap. Counted at the
  * dots-per-hit before velocity, so the cap never lets a loud hit overshoot it. With Oldest =
  * Fade the rest fade out over Fade time instead of cutting.
  */
@@ -208,7 +243,7 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   else v = { x: t.x * sign, y: t.y * sign, z: t.z * sign };
 
   return {
-    slot, bornMs, drum, hoop, u, dir: sign, step: sign, lapPx: 0, runPx: 0,
+    slot, bornMs, drum, hoop, hf: hoop, hf0: hoop, u, dir: sign, step: sign, lapPx: 0, runPx: 0,
     u0: u, dir0: sign, p0: { ...p }, v0: { ...v },
     turnAtMs: bornMs + 400 + rng() * 1200, hue, p, v,
   };
@@ -241,57 +276,83 @@ function nextKitDrum(model: PixelModel, state: DotState, dot: Dot, order: string
   return seq[next]!;
 }
 
-/** One lap done through a drum: step to the next hoop, turning or wrapping at the ends. */
-function nextHoop(model: PixelModel, state: DotState, dot: Dot, bounce: Bounce): number {
-  const count = hoopCount(model, dot.drum);
-  if (count <= 1) return 0;
-  if (bounce === 'random') {
-    const pick = Math.floor(state.rng() * (count - 1)) % (count - 1);
-    return pick >= dot.hoop ? pick + 1 : pick;
-  }
-  let next = dot.hoop + dot.step;
-  if (next < 0 || next >= count) {
-    if (bounce === 'wrap') next = wrap(next, count);
-    else {
-      dot.step = -dot.step;
-      next = dot.hoop + dot.step;
-    }
-  }
-  return next;
-}
-
 /** Ping-pong: how far along its stretch a dot is after `run` px, and which way it is heading. */
 function swing(run: number, span: number): { at: number; heading: number } {
   const m = wrap(run, 2 * span);
   return m < span ? { at: m, heading: 1 } : { at: 2 * span - m, heading: -1 };
 }
 
-function moveOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, ageMs: number, through: Through, bounce: Bounce, span: number, order: string): void {
+/** How a dot moves on the rings this frame. */
+interface RingMotion {
+  through: Through;
+  bounce: Bounce;
+  span: number;
+  order: string;
+  /** Through a drum: the Climb angle's share of the travel round the hoop and up the drum. */
+  around: number;
+  up: number;
+  /** Across the kit: px on a drum before hopping on (0 = one lap). */
+  hopPx: number;
+}
+
+/** A float hoop folded back into [0, top] — a ping-pong swing reflects off the end hoops. */
+function foldHoop(h: number, top: number): number {
+  if (top <= 0) return 0;
+  const m = wrap(h, 2 * top);
+  return m <= top ? m : 2 * top - m;
+}
+
+function moveOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, ageMs: number, m: RingMotion): void {
   if (px <= 0) return;
   const n = hoopSize(model, dot.drum, dot.hoop);
-  if (bounce === 'pingpong') {
-    // Back and forth over Span from where it started, staying on its hoop.
+  const top = hoopCount(model, dot.drum) - 1;
+  // Through a drum at a Climb angle: part of the travel goes up (or down) the drum.
+  const climbing = m.through === 'drum' && m.up !== 0 && top > 0;
+  const around = climbing ? m.around : 1;
+  const gap = state.gapPx[dot.drum] ?? 2;
+  if (m.bounce === 'pingpong') {
+    // Back and forth over Span from where it started, along its heading.
     dot.runPx += px;
-    const { at, heading } = swing(dot.runPx, span);
+    const { at, heading } = swing(dot.runPx, m.span);
     dot.dir = dot.dir0 * heading;
-    dot.u = wrap(dot.u0 + (dot.dir0 * at) / n, 1);
+    dot.u = wrap(dot.u0 + (dot.dir0 * at * around) / n, 1);
+    if (climbing) {
+      dot.step = dot.dir0 * heading;
+      dot.hf = foldHoop(dot.hf0 + (dot.dir0 * at * m.up) / gap, top);
+      dot.hoop = Math.round(dot.hf);
+    }
     return;
   }
-  if (bounce === 'random' && through === 'hoop' && ageMs >= dot.turnAtMs) {
+  if (m.bounce === 'random' && m.through !== 'kit' && ageMs >= dot.turnAtMs) {
     if (state.rng() < 0.5) dot.dir = -dot.dir;
     dot.turnAtMs = ageMs + 400 + state.rng() * 1200;
   }
-  dot.u = wrap(dot.u + (dot.dir * px) / n, 1);
-  // Every full lap moves the dot on to the next hoop / drum.
-  if (through === 'hoop') return;
-  dot.lapPx += px;
-  while (dot.lapPx >= hoopSize(model, dot.drum, dot.hoop)) {
-    dot.lapPx -= hoopSize(model, dot.drum, dot.hoop);
-    if (through === 'drum') dot.hoop = nextHoop(model, state, dot, bounce);
-    else {
-      dot.drum = nextKitDrum(model, state, dot, order, bounce);
-      dot.hoop = Math.min(dot.hoop, hoopCount(model, dot.drum) - 1);
+  dot.u = wrap(dot.u + (dot.dir * px * around) / n, 1);
+  if (climbing) {
+    let h = dot.hf + (dot.step * px * m.up) / gap;
+    if (m.bounce === 'wrap') {
+      // Off the top hoop, back in at the bottom (and the other way).
+      if (h > top + 0.5) h -= top + 1;
+      else if (h < -0.5) h += top + 1;
+    } else if (h > top || h < 0) {
+      h = h > top ? 2 * top - h : -h;
+      dot.step = -dot.step;
+      if (m.bounce === 'random' && state.rng() < 0.5) dot.dir = -dot.dir;
     }
+    dot.hf = h;
+    dot.hoop = Math.min(top, Math.max(0, Math.round(h)));
+    return;
+  }
+  if (m.through !== 'kit') return;
+  // Across the kit: after Hop after px (or a lap) on a drum, hop to the next.
+  dot.lapPx += px;
+  for (;;) {
+    const hop = m.hopPx > 0 ? m.hopPx : hoopSize(model, dot.drum, dot.hoop);
+    if (dot.lapPx < hop) break;
+    dot.lapPx -= hop;
+    dot.drum = nextKitDrum(model, state, dot, m.order, m.bounce);
+    dot.hoop = Math.min(dot.hoop, hoopCount(model, dot.drum) - 1);
+    dot.hf = dot.hoop;
   }
 }
 
@@ -366,21 +427,33 @@ function stamp(state: DotState, pixel: number, v: number, rgb: Rgb): void {
   state.col[i + 2] = rgb.b;
 }
 
-function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number, rgb: Rgb, length: number, height: number, form: string, trail: number): void {
+function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number, rgb: Rgb, length: number, height: number, form: string, trail: number, around: number, up: number): void {
   const info = model.drums[dot.drum];
   if (!info) return;
-  const lo = -Math.floor((height - 1) / 2);
+  const centre = dot.hf;
   const halfH = (height - 1) / 2;
   const half = length / 2;
-  for (let off = lo; off < lo + height; off++) {
-    const hoop = dot.hoop + off;
+  const barLo = Math.round(centre) - Math.floor(halfH);
+  // Climbing: the trail follows the heading, up the drum as well as round it.
+  const climbing = up !== 0;
+  const gap = state.gapPx[dot.drum] ?? 2;
+  const hx = dot.dir * around;
+  const hy = dot.step * up;
+  const thick = Math.max(0.5, halfH * gap);
+  const vReach = halfH + 1 + (climbing ? (trail * Math.abs(up)) / gap : 0);
+  for (let hoop = Math.ceil(centre - vReach); hoop <= Math.floor(centre + vReach); hoop++) {
     if (hoop < 0 || hoop >= info.hoopCount) continue;
+    const off = hoop - centre;
+    // How much of this hoop the dot covers: a Bar fills whole hoops; a Dot / Diamond glides
+    // between them, shared across the two it sits between.
+    const cover = form === 'bar' ? (hoop >= barLo && hoop < barLo + height ? 1 : 0) : clamp01(halfH + 1 - Math.abs(off));
+    if (cover <= 0 && !climbing) continue;
     const range = getHoopPixelRange(model, info.drumId, hoop + 1);
     if (!range || range.end <= range.start) continue;
     const n = range.end - range.start;
     const c = dot.u * n;
     // Half the length on this row: a Dot rounds its ends, a Diamond tapers, a Bar is square.
-    const across = halfH > 0 ? Math.abs(off) / (halfH + 1) : 0;
+    const across = halfH > 0 ? Math.min(1, Math.abs(off) / (halfH + 1)) : 0;
     const rowHalf = form === 'diamond' ? half * (1 - across)
       : form === 'dot' ? half * Math.sqrt(Math.max(0, 1 - across * across))
       : half;
@@ -399,11 +472,23 @@ function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number
       } else {
         b = clamp01(rowHalf + 0.5 - Math.abs(d));
       }
+      b *= cover;
       if (trail > 0) {
-        const behind = -dot.dir * d - rowHalf;
-        if (behind > 0 && behind <= trail) {
-          const f = 1 - behind / trail;
-          b = Math.max(b, f * f * 0.8);
+        if (!climbing) {
+          const behind = -dot.dir * d - rowHalf;
+          if (behind > 0 && behind <= trail) {
+            const f = 1 - behind / trail;
+            b = Math.max(b, f * f * 0.8 * cover);
+          }
+        } else {
+          // In pixels on the drum's unrolled surface: x round the hoop, y up the drum.
+          const y = off * gap;
+          const behind = -(d * hx + y * hy) - half;
+          if (behind > 0 && behind <= trail) {
+            const perp = Math.abs(d * hy - y * hx);
+            const f = 1 - behind / trail;
+            b = Math.max(b, f * f * 0.8 * clamp01(thick + 0.5 - perp));
+          }
         }
       }
       if (b > 0) stamp(state, range.start + idx, b * level, rgb);
@@ -460,10 +545,10 @@ export const dot: EffectGenerator<DotState> = {
       info: 'How long each dot lives. 0 = until the brightness envelope ends — a dot ends at whichever comes first.' },
     { key: 'fade', label: 'Fade in/out', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01, unit: '%', section: 'Life',
       info: 'Each dot fades in and out over this share of its Lifespan.' },
-    { key: 'maxLive', label: 'Max life', type: 'number', default: 0, min: 0, max: 256, step: 1, section: 'Life',
+    { key: 'maxLive', label: 'Max alive', type: 'number', default: 0, min: 0, max: 256, step: 1, section: 'Life',
       info: 'The most dots alive at once, across hits. When a new hit would go over, the oldest dots go first. 0 = no limit.' },
     { key: 'oldest', label: 'Oldest', type: 'enum', default: 'cut', options: ['cut', 'fade'], section: 'Life',
-      info: 'Past Max life (or a Stream past its count): the oldest dots cut out at once, or fade out over Fade time.' },
+      info: 'Past Max alive (or a Stream past its count): the oldest dots cut out at once, or fade out over Fade time.' },
     { key: 'oldestFade', label: 'Fade time', type: 'number', default: 400, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Life' },
     { key: 'length', label: 'Length', type: 'number', default: 1, min: 1, max: 32, step: 1, unit: 'px', section: 'Shape' },
     { key: 'height', label: 'Height', type: 'number', default: 1, min: 1, max: 5, step: 1, unit: 'hoops', section: 'Shape' },
@@ -480,8 +565,12 @@ export const dot: EffectGenerator<DotState> = {
     { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01, unit: '%', section: 'Move around',
       info: 'Over each dot\'s life: below 0 it slows to a stop, above 0 it speeds up (to 3×).' },
     { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'], section: 'Move through',
-      info: 'Hoop: round its own hoop. Drum: each lap steps to the next hoop — a spiral. Kit: each lap hops to the next drum. Space: straight through the air of the kit, lighting the pixels it passes.' },
+      info: 'Hoop: round its own hoop. Drum: up and down the drum, at the Climb angle. Kit: hops from drum to drum. Space: straight through the air of the kit, lighting the pixels it passes.' },
+    { key: 'climb', label: 'Climb', type: 'number', default: 90, min: -90, max: 90, step: 1, unit: '°', section: 'Move through',
+      info: 'Through a drum: 90° goes straight up it, 0° round the hoop, in between a spiral; below 0 heads down. Direction Reverse flips it.' },
     { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random'], section: 'Move through' },
+    { key: 'hopEvery', label: 'Hop after', type: 'number', default: 0, min: 0, max: 400, step: 1, unit: 'px', section: 'Move through',
+      info: 'Through the kit: how far a dot travels on a drum before hopping to the next. 0 = one lap.' },
     { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'per-hit', 'rainbow', 'random'], section: 'Colour',
       info: 'Single: the colour below. Per hit: each new hit a different colour. Rainbow: the dots of a hit spread round the colour wheel. Random: every dot its own.' },
     { key: 'color', label: 'Colour', type: 'color', default: '#00e5ff', section: 'Colour' },
@@ -498,12 +587,14 @@ export const dot: EffectGenerator<DotState> = {
     { key: 'velCount', label: 'Dots', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity' },
   ],
   createState(model: PixelModel, seed?: number): DotState {
+    const pitchMm = meanPitch(model);
     return {
       dots: [],
       spawned: 0,
       rng: mulberry32(seed ?? SEED),
-      pitchMm: meanPitch(model),
+      pitchMm,
       tour: nearestTour(model),
+      gapPx: hoopGaps(model, pitchMm),
       cov: new Float32Array(model.pixelCount),
       col: new Float32Array(model.pixelCount * 3),
     };
@@ -551,6 +642,16 @@ export const dot: EffectGenerator<DotState> = {
     const bounce = pstr(params, 'bounce', 'wrap') as Bounce;
     const span = Math.max(1, pnum(params, 'span', 12));
     const order = pstr(params, 'kitOrder', 'kit');
+    const climbRad = (Math.max(-90, Math.min(90, pnum(params, 'climb', 90))) * Math.PI) / 180;
+    const climbs = through === 'drum';
+    const motion: RingMotion = {
+      through, bounce, span, order,
+      around: climbs ? Math.cos(climbRad) : 1,
+      up: climbs ? Math.sin(climbRad) : 0,
+      hopPx: Math.max(0, pnum(params, 'hopEvery', 0)),
+    };
+    // Below a hair, cos/sin of ±90° leave a sliver of travel round the hoop; drop it.
+    if (Math.abs(motion.around) < 1e-9) motion.around = 0;
     const accel = pnum(params, 'accel', 0);
     const velSpeed = clamp01(pnum(params, 'velSpeed', 0));
     const velSize = clamp01(pnum(params, 'velSize', 0));
@@ -572,7 +673,7 @@ export const dot: EffectGenerator<DotState> = {
       if (!alive(d)) continue;
       const px = pxPerSec * accelMult(accel, lifeFrac(d)) * dtSec;
       if (through === 'space') moveInSpace(model, state, d, px, bounce, span);
-      else moveOnRings(model, state, d, px, ageMs - d.bornMs, through, bounce, span, order);
+      else moveOnRings(model, state, d, px, ageMs - d.bornMs, motion);
     }
     if (bounce === 'bounce' && through !== 'space' && pxPerSec > 0) collide(model, dots.filter(alive), Math.max(1, length));
 
@@ -607,7 +708,7 @@ export const dot: EffectGenerator<DotState> = {
       if (level <= 0) continue;
       const rgb = colourOf(d);
       if (through === 'space') drawInSpace(model, state, d, level, rgb, length, trail);
-      else drawOnRings(model, state, d, level, rgb, length, height, form, trail);
+      else drawOnRings(model, state, d, level, rgb, length, height, form, trail, motion.around, hoopCount(model, d.drum) > 1 ? motion.up : 0);
     }
 
     const bgMode = pstr(params, 'background', 'none');
