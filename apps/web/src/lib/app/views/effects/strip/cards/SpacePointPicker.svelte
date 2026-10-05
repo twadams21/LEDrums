@@ -1,10 +1,11 @@
 <script lang="ts">
   /* A point in the kit's space, picked on two views of the kit (Tim, 2026-10-05: "can you make a
-     little graphic for the X, Y and Z starting point, so it shows where exactly in space the starting
-     point is? having it as a percentage doesn't work … refer to height, width and depth"). From
-     above sets width and depth; from the front, width and height. Each drum is drawn as the box round
-     its pixels, so the point reads against the real kit. Click or drag in a view; with a view
-     focused, the arrows move the point (Shift: finer). Every drag is one undo step. */
+     little graphic for the X, Y and Z starting point … refer to height, width and depth", then "put
+     the drums as we see them in the visualiser"). Top sets width and depth, Front width and height —
+     each the visualiser's camera of that name: x to the right, Top with the drummer's side at the
+     top, Front with up up. Every drum is drawn as its hoops, from the pixel positions. Click or drag
+     in a view; with a view focused, the arrows move the point (Shift: finer). A drag is one undo
+     step. */
   import type { KitPlan } from '../strip-model';
 
   type Point = { width: number; depth: number; height: number };
@@ -38,19 +39,23 @@
   const vAxis = (view: View) => (view === 'above' ? 'y' : 'z');
   const vKey = (view: View): keyof Point => (view === 'above' ? 'depth' : 'height');
 
-  /** Each drum as an ellipse over the box round its pixels, in a view's 0..1 coordinates. */
-  function shapes(view: View) {
+  /** Down the view, 0..1 for a value 0..1: Top has the drummer's side (low y) at the top; Front
+      has height going up. */
+  const alongDown = (view: View, v: number) => (view === 'above' ? v : 1 - v);
+
+  /** Each drum's hoops as closed paths, in a view's pixels. */
+  function shapes(view: View, h: number) {
     const a = vAxis(view);
-    return (plan?.drums ?? []).map((d) => {
-      const x0 = nx(d.min.x, 'x');
-      const x1 = nx(d.max.x, 'x');
-      const y0 = nx(d.min[a], a);
-      const y1 = nx(d.max[a], a);
-      return { id: d.id, label: d.label, cx: (x0 + x1) / 2, cy: 1 - (y0 + y1) / 2, rx: Math.max(0.02, (x1 - x0) / 2), ry: Math.max(0.02, (y1 - y0) / 2) };
-    });
+    return (plan?.drums ?? []).map((d) => ({
+      id: d.id,
+      label: d.label,
+      path: d.hoops
+        .map((ring) => ring.map((pt, i) => `${i ? 'L' : 'M'}${(nx(pt.x, 'x') * W).toFixed(1)} ${(alongDown(view, nx(pt[a], a)) * h).toFixed(1)}`).join(' ') + ' Z')
+        .join(' '),
+    }));
   }
-  const aboveShapes = $derived(shapes('above'));
-  const frontShapes = $derived(shapes('front'));
+  const aboveShapes = $derived(shapes('above', hAbove));
+  const frontShapes = $derived(shapes('front', hFront));
 
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const clamp = (v: number) => Math.min(1, Math.max(0, Number(v.toFixed(3))));
@@ -59,8 +64,8 @@
   function pick(view: View, event: PointerEvent): void {
     const box = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
     const width = clamp((event.clientX - box.left) / box.width);
-    const up = clamp(1 - (event.clientY - box.top) / box.height);
-    onChange({ width, [vKey(view)]: up });
+    const other = clamp(alongDown(view, (event.clientY - box.top) / box.height));
+    onChange({ width, [vKey(view)]: other });
   }
   function down(view: View, event: PointerEvent): void {
     if (disabled || event.button !== 0) return;
@@ -84,8 +89,9 @@
     const moves: Record<string, Partial<Point>> = {
       ArrowLeft: { width: clamp(value.width - step) },
       ArrowRight: { width: clamp(value.width + step) },
-      ArrowUp: { [v]: clamp(value[v] + step) },
-      ArrowDown: { [v]: clamp(value[v] - step) },
+      // Up the picture: Front raises the height; Top moves towards the drummer (less depth).
+      ArrowUp: { [v]: clamp(value[v] + (view === 'above' ? -step : step)) },
+      ArrowDown: { [v]: clamp(value[v] - (view === 'above' ? -step : step)) },
     };
     const next = moves[event.key];
     if (!next) return;
@@ -96,7 +102,7 @@
 
 {#snippet view(name: View, h: number, list: ReturnType<typeof shapes>, caption: string, vName: string)}
   {@const px = value.width * W}
-  {@const py = (1 - value[vKey(name)]) * h}
+  {@const py = alongDown(name, value[vKey(name)]) * h}
   <figure class="view">
     <svg
       viewBox={`0 0 ${W} ${h}`}
@@ -118,7 +124,7 @@
     >
       <rect class="box" x="0.5" y="0.5" width={W - 1} height={h - 1} rx="3" />
       {#each list as d (d.id)}
-        <ellipse class="drum" cx={d.cx * W} cy={d.cy * h} rx={d.rx * W} ry={d.ry * h}><title>{d.label}</title></ellipse>
+        <path class="drum" d={d.path}><title>{d.label}</title></path>
       {/each}
       <line class="cross" x1={px} y1="0" x2={px} y2={h} />
       <line class="cross" x1="0" y1={py} x2={W} y2={py} />
@@ -130,8 +136,8 @@
 
 <div class="picker">
   <div class="views">
-    {@render view('above', hAbove, aboveShapes, 'From above', 'Depth')}
-    {@render view('front', hFront, frontShapes, 'From the front', 'Height')}
+    {@render view('above', hAbove, aboveShapes, 'Top', 'Depth')}
+    {@render view('front', hFront, frontShapes, 'Front', 'Height')}
   </div>
   <p class="read">Width {pct(value.width)} · Depth {pct(value.depth)} · Height {pct(value.height)}</p>
 </div>
@@ -173,9 +179,10 @@
     stroke: var(--border-faint);
   }
   .drum {
-    fill: color-mix(in oklch, var(--text-faint) 18%, transparent);
-    stroke: var(--text-faint);
-    stroke-width: 0.75;
+    fill: none;
+    stroke: var(--text-muted);
+    stroke-width: 0.9;
+    stroke-linejoin: round;
   }
   .cross {
     stroke: color-mix(in oklch, var(--accent) 45%, transparent);

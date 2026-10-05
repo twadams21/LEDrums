@@ -1,4 +1,4 @@
-import { hexToHsv, hexToRgb, hsvToRgb, type Rgb } from '../../color/color';
+import { hsvToRgb, type Rgb } from '../../color/color';
 import { clamp01, mulberry32, wrap, type Vec3 } from '../../math';
 import { getHoopPixelRange, type PixelModel } from '../../geometry/pixel-model';
 import { pnum, pstr, type EffectGenerator, type ResolvedParams } from '../types';
@@ -37,6 +37,9 @@ interface Dot {
   hf0: number;
   /** Position around the ring, 0..1 (angle-mapped, so it carries across hoops of any size). */
   u: number;
+  /** Where round the ring it shows: climbing (Travel angle ≠ 0°) it jumps hoop to hoop, so this
+      only moves when the dot changes hoop — it never slides round its own hoop (Tim, 2026-10-05). */
+  uShown: number;
   /** Travel around the ring: +1 / -1. */
   dir: number;
   /** Climbing a drum: up (+1) or down (−1). */
@@ -74,12 +77,95 @@ export interface DotState {
   pitchMm: number;
   /** Nearest-neighbour tour of the drums (Across the kit, Nearest order). */
   tour: number[];
+  /** Per drum, per hoop: which pixel is 0° and which way the pixel order turns. */
+  frames: HoopFrame[][];
   /** Per-pixel scratch: the strongest dot coverage and its colour this frame. */
   cov: Float32Array;
   col: Float32Array;
 }
 
 const SEED = 0xd07d07;
+
+/** A hoop's angle frame: `front` is the pixel at 0° — the front of the drum, the side nearest the
+    drummer — and `sense` is +1 when the pixel order runs towards 90° (the drummer's right). */
+interface HoopFrame {
+  front: number;
+  sense: number;
+}
+
+type V = { x: number; y: number; z: number };
+const sub = (a: V, b: V): V => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const dot3 = (a: V, b: V) => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross = (a: V, b: V): V => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+const unit = (a: V): V => {
+  const l = Math.hypot(a.x, a.y, a.z) || 1;
+  return { x: a.x / l, y: a.y / l, z: a.z / l };
+};
+
+/**
+ * Every hoop's angle frame (Tim, 2026-10-05: "the bottom of the ring should be 0 degrees and … the
+ * front of the drum — the closest point to the drummer's playing position"). The audience faces
+ * the kit from +y (the visualiser's front camera), so the drummer sits towards −y: 0° is the
+ * pixel furthest that way round its hoop. A drum whose hoops face the drummer (a kick on its
+ * side) has no such side, so its 0° is the bottom. 90° is the drummer's right.
+ */
+function hoopFrames(model: PixelModel): HoopFrame[][] {
+  return model.drums.map((d) => {
+    const hoops: { start: number; end: number; c: V }[] = [];
+    for (let h = 1; h <= d.hoopCount; h++) {
+      const r = getHoopPixelRange(model, d.drumId, h);
+      if (!r || r.end <= r.start) {
+        hoops.push({ start: 0, end: 0, c: { x: 0, y: 0, z: 0 } });
+        continue;
+      }
+      const c = { x: 0, y: 0, z: 0 };
+      for (let i = r.start; i < r.end; i++) {
+        const w = model.pixels[i]!.world;
+        c.x += w.x;
+        c.y += w.y;
+        c.z += w.z;
+      }
+      const k = r.end - r.start;
+      hoops.push({ start: r.start, end: r.end, c: { x: c.x / k, y: c.y / k, z: c.z / k } });
+    }
+    const real = hoops.filter((h) => h.end > h.start);
+    // The drum's axis, bottom hoop to top; a one-hoop drum stands upright.
+    const axis = real.length > 1 ? unit(sub(real[real.length - 1]!.c, real[0]!.c)) : { x: 0, y: 0, z: 1 };
+    const towards = (dir: V): V => {
+      const along = dot3(dir, axis);
+      return { x: dir.x - axis.x * along, y: dir.y - axis.y * along, z: dir.z - axis.z * along };
+    };
+    let e1 = towards({ x: 0, y: -1, z: 0 });
+    if (Math.hypot(e1.x, e1.y, e1.z) < 0.3) e1 = towards({ x: 0, y: 0, z: -1 });
+    e1 = unit(e1);
+    const e2 = cross(axis, e1);
+    return hoops.map((h) => {
+      const n = h.end - h.start;
+      if (n <= 0) return { front: 0, sense: 1 };
+      const angle = (i: number) => {
+        const r = sub(model.pixels[h.start + i]!.world, h.c);
+        return Math.atan2(dot3(r, e2), dot3(r, e1));
+      };
+      let front = 0;
+      let best = Infinity;
+      for (let i = 0; i < n; i++) {
+        const a = Math.abs(angle(i));
+        if (a < best) {
+          best = a;
+          front = i;
+        }
+      }
+      return { front, sense: n > 1 && angle((front + 1) % n) < angle(front) ? -1 : 1 };
+    });
+  });
+}
+
+/** Where round a hoop (0..1 of its pixel order) `deg` degrees from its front lands, on a pixel. */
+function ringAt(state: DotState, model: PixelModel, drum: number, hoop: number, deg: number): number {
+  const n = hoopSize(model, drum, hoop);
+  const f = state.frames[drum]?.[hoop] ?? { front: 0, sense: 1 };
+  return wrap(Math.round(f.front + (f.sense * deg * n) / 360), n) / n;
+}
 
 /** Signed ring distance from `from` to `to` on a ring of `n` pixels, in [-n/2, n/2). */
 function ringDelta(from: number, to: number, n: number): number {
@@ -193,34 +279,38 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   const rng = state.rng;
   const struckId = ctx.triggers[0]?.drumId ?? '';
   const struck = drums.findIndex((d) => d.drumId === struckId);
-  // The set point's drum: a drum id ('@hit' — or anything not in the kit — = the drum you hit; an
-  // older 1-based number still reads).
+  const through = pstr(params, 'through', 'hoop');
+  // Start is always the set point; RANDOM says how far each dot may stray from it (Tim, 2026-10-05:
+  // "i can't choose whether that randomness is going to be on a certain hoop of a drum or a certain
+  // pixel of a hoop"). An older Dot's Start choice still reads.
+  const legacy = typeof params.start === 'string' ? params.start : '';
+  const amount = (key: string, whole: boolean) => (whole ? 1 : clamp01(pnum(params, key, 0)));
+  const randDrum = amount('randDrum', legacy === 'random');
+  const randHoop = amount('randHoop', legacy === 'random' || legacy === 'hit');
+  const randAngle = amount('randAngle', legacy === 'random' || legacy === 'hit');
+  const spread = params.spread === true || legacy === 'even';
+
+  // The drum: the one chosen (or the drum you hit); Through the kit in a Custom order, the first in
+  // that order (Tim, 2026-10-05: "if i make the drum order start with the kick, i am seeing the
+  // bottom hoop on tom 1 light up first"). An older 1-based number still reads.
   const pick = params.startDrum;
   const named = typeof pick === 'string' && pick ? drums.findIndex((x) => x.drumId === pick)
     : typeof pick === 'number' && pick >= 1 ? Math.min(drums.length, Math.round(pick)) - 1
     : -1;
-  const chosen = named >= 0 ? named : struck >= 0 ? struck : 0;
-  // `fixed` was the set point's first name.
-  const start = pstr(params, 'start', 'hit') === 'fixed' ? 'set-point' : pstr(params, 'start', 'hit');
-  const randomDrum = () => Math.floor(rng() * drums.length) % drums.length;
+  let drum = named >= 0 ? named : struck >= 0 ? struck : 0;
+  if (through === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom') drum = customDrumOrder(model, pstr(params, 'kitList', ''))[0] ?? drum;
+  else if (randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
 
-  let drum: number;
-  let hoop: number;
-  let u: number;
-  if (start === 'random' || start === 'hit') {
-    drum = start === 'hit' && struck >= 0 ? struck : randomDrum();
-    hoop = Math.floor(rng() * hoopCount(model, drum)) % hoopCount(model, drum);
-    // On a pixel, so a still one-pixel dot is exactly one pixel.
-    const n = hoopSize(model, drum, hoop);
-    u = (Math.floor(rng() * n) % n) / n;
-  } else {
-    drum = chosen;
-    hoop = Math.min(hoopCount(model, drum), Math.max(1, Math.round(pnum(params, 'startHoop', 1)))) - 1;
-    // Start pixel, 1-based, clamped to the hoop (Tim, 2026-10-05: "which pixel … on the hoop").
-    const n = hoopSize(model, drum, hoop);
-    const pixel = Math.min(n, Math.max(1, Math.round(pnum(params, 'startPixel', 1)))) - 1;
-    u = wrap(pixel / n + (start === 'even' ? slot / Math.max(1, count) : 0), 1);
-  }
+  // The hoop: the set one, pulled towards a random hoop by Random hoop.
+  const hc = hoopCount(model, drum);
+  const setHoop = Math.min(hc, Math.max(1, Math.round(pnum(params, 'startHoop', 1)))) - 1;
+  const anyHoop = Math.floor(rng() * hc) % hc;
+  const hoop = Math.round(setHoop + (anyHoop - setHoop) * randHoop);
+
+  // The angle: degrees from the front, swung up to ±180° by Random angle; Spread shares the hoop
+  // out evenly among a hit's dots.
+  const deg = pnum(params, 'startAngle', 0) + (rng() * 2 - 1) * 180 * randAngle + (spread ? (slot * 360) / Math.max(1, count) : 0);
+  const u = ringAt(state, model, drum, hoop, deg);
 
   const direction = pstr(params, 'direction', 'forward');
   const sign = direction === 'reverse' ? -1
@@ -239,25 +329,21 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   const pixel = at === null ? null : model.pixels[at]!;
   let p: Vec3 = pixel ? { ...pixel.world } : { ...model.bounds.center };
   let v: Vec3;
-  if (pstr(params, 'through', 'hoop') === 'space') {
-    // Through space (Tim, 2026-10-05: "a starting point that pertains to the 3d space the drums
-    // sit within"): a point in the kit's box — anywhere, or the set X / Y / Z — or on the drum hit.
+  if (through === 'space') {
+    // Through space: the Start point in the kit's box, pulled towards a random point by Random
+    // position. Its heading: round the kit (Heading, level) and up (Elevation); the kit is z-up.
     const { min, max } = model.bounds;
     const across = (lo: number, hi: number, t: number) => lo + (hi - lo) * clamp01(t);
-    if (start === 'random') p = { x: across(min.x, max.x, rng()), y: across(min.y, max.y, rng()), z: across(min.z, max.z, rng()) };
-    else if (start === 'set-point' || start === 'even') {
-      p = {
-        x: across(min.x, max.x, pnum(params, 'spaceX', 0.5)),
-        y: across(min.y, max.y, pnum(params, 'spaceY', 0.5)),
-        z: across(min.z, max.z, pnum(params, 'spaceZ', 0.5)),
-      };
-    }
-    // Its heading: round the kit (Heading, level with the floor) and up (Travel angle); the kit is
-    // z-up. Even spreads the dots' headings round the circle.
+    const r = amount('randSpace', legacy === 'random');
+    const toward = (axis: 'x' | 'y' | 'z', key: string) => {
+      const set = pnum(params, key, 0.5);
+      return across(min[axis], max[axis], set + (rng() - set) * r);
+    };
+    p = legacy === 'hit' && pixel ? { ...pixel.world } : { x: toward('x', 'spaceX'), y: toward('y', 'spaceY'), z: toward('z', 'spaceZ') };
     if (direction === 'random') v = randomUnit(rng);
     else {
-      const az = ((pnum(params, 'heading', 0) + (start === 'even' ? (slot * 360) / Math.max(1, count) : 0)) * Math.PI) / 180;
-      const el = (Math.max(-90, Math.min(90, pnum(params, 'climb', 90))) * Math.PI) / 180;
+      const az = ((pnum(params, 'heading', 0) + (spread ? (slot * 360) / Math.max(1, count) : 0)) * Math.PI) / 180;
+      const el = (Math.max(-90, Math.min(90, pnum(params, 'elevation', 0))) * Math.PI) / 180;
       v = { x: Math.cos(el) * Math.cos(az) * sign, y: Math.cos(el) * Math.sin(az) * sign, z: Math.sin(el) * sign };
     }
   } else {
@@ -267,7 +353,7 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   }
 
   return {
-    slot, bornMs, drum, hoop, hf: hoop, hf0: hoop, u, dir: sign, step: sign, kstep: sign, lapPx: 0, runPx: 0,
+    slot, bornMs, drum, hoop, hf: hoop, hf0: hoop, u, uShown: u, dir: sign, step: sign, kstep: sign, lapPx: 0, runPx: 0,
     u0: u, dir0: sign, p0: { ...p }, v0: { ...v },
     turnAtMs: bornMs + 400 + rng() * 1200, hue, p, v,
   };
@@ -351,7 +437,24 @@ function foldHoop(h: number, top: number): number {
   return m <= top ? m : 2 * top - m;
 }
 
+/** Move a dot on the rings; a climbing dot shows round its ring only where it changed hoop. */
 function moveOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, ageMs: number, m: RingMotion): void {
+  const { hoop, drum } = dot;
+  const climbing = m.up !== 0 && ((m.through === 'drum' && hoopCount(model, drum) > 1) || m.through === 'kit');
+  stepOnRings(model, state, dot, px, ageMs, m);
+  // Tim, 2026-10-05: "if light is supposed to be travelling through a drum's hoops it should never
+  // travel around the hoop" — at 45° it jumps straight to the pixel on the next hoop.
+  if (!climbing) dot.uShown = dot.u;
+  else if (dot.hoop !== hoop || dot.drum !== drum) {
+    // On a new hoop: shown where the path crosses that hoop's line, so each hoop step lands exactly
+    // HOOP_STEP × (round / up) pixels on — two at 45° — not where the dot happened to round over.
+    const n = hoopSize(model, dot.drum, dot.hoop);
+    const perHoop = (dot.dir * m.around * HOOP_STEP) / (n * dot.step * m.up);
+    dot.uShown = wrap(dot.u - (dot.hf - dot.hoop) * perHoop, 1);
+  }
+}
+
+function stepOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, ageMs: number, m: RingMotion): void {
   if (px <= 0) return;
   const n = hoopSize(model, dot.drum, dot.hoop);
   const top = hoopCount(model, dot.drum) - 1;
@@ -487,10 +590,6 @@ function collide(model: PixelModel, dots: readonly Dot[], gap: number): void {
   }
 }
 
-function lerpRgb(a: Rgb, b: Rgb, t: number): Rgb {
-  return { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t };
-}
-
 /** Write a coverage into the scratch, keeping the strongest dot's colour per pixel. */
 function stamp(state: DotState, pixel: number, v: number, rgb: Rgb): void {
   if (v <= state.cov[pixel]!) return;
@@ -501,7 +600,7 @@ function stamp(state: DotState, pixel: number, v: number, rgb: Rgb): void {
   state.col[i + 2] = rgb.b;
 }
 
-function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number, rgb: Rgb, length: number, height: number, form: string, trail: number, around: number, up: number, glide: boolean): void {
+function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number, colour: (along: number) => Rgb, length: number, height: number, form: string, trail: number, around: number, up: number, glide: boolean): void {
   const info = model.drums[dot.drum];
   if (!info) return;
   // Glide off (the default): the dot steps whole pixels and hoops, crisp like a Bar (Tim,
@@ -527,7 +626,7 @@ function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number
     const range = getHoopPixelRange(model, info.drumId, hoop + 1);
     if (!range || range.end <= range.start) continue;
     const n = range.end - range.start;
-    const c = glide ? dot.u * n : Math.round(dot.u * n);
+    const c = glide ? dot.u * n : Math.round(dot.uShown * n);
     // Half the length on this row: a Dot rounds its ends, a Diamond tapers, a Bar is square.
     const across = halfH > 0 ? Math.min(1, Math.abs(off) / (halfH + 1)) : 0;
     const rowHalf = form === 'diamond' ? half * (1 - across)
@@ -567,7 +666,9 @@ function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number
           }
         }
       }
-      if (b > 0) stamp(state, range.start + idx, b * level, rgb);
+      // Along the dot, tail (0) to head (1) — Colours Per pixel gives each pixel its own.
+      const along = length > 1 ? clamp01((Math.round(dot.dir * d + (length - 1) / 2)) / (length - 1)) : 1;
+      if (b > 0) stamp(state, range.start + idx, b * level, colour(along));
     }
   }
 }
@@ -578,7 +679,7 @@ function drawOnRings(model: PixelModel, state: DotState, dot: Dot, level: number
  * Disc: a flat round sheet facing the way it flies. Beam: a rod along its heading, Size each way.
  * Box: a cube, square to the kit. Edges soften over a pixel.
  */
-function drawInSpace(model: PixelModel, state: DotState, dot: Dot, level: number, rgb: Rgb, radiusMm: number, trail: number, form: string): void {
+function drawInSpace(model: PixelModel, state: DotState, dot: Dot, level: number, colour: (along: number) => Rgb, radiusMm: number, trail: number, form: string): void {
   const pitch = state.pitchMm;
   const radius = Math.max(1, radiusMm);
   const thin = pitch * 0.75;
@@ -611,7 +712,8 @@ function drawInSpace(model: PixelModel, state: DotState, dot: Dot, level: number
         b = Math.max(b, edge(trailR - perp) * f * f * 0.8);
       }
     }
-    if (b > 0) stamp(state, i, b * level, rgb);
+    // Per pixel through space: by distance from the centre out to the edge.
+    if (b > 0) stamp(state, i, b * level, colour(clamp01(dist / radius)));
   }
 }
 
@@ -623,30 +725,38 @@ export const dot: EffectGenerator<DotState> = {
   liveVoices: dotCap,
   contentSpanMs: dotSpanMs,
   paramSpec: [
+    // Dots — how many, and the set point each begins at (Tim, 2026-10-05: "can you simplify this
+    // section"). Where it may stray from that point is RANDOM, further down.
     { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1, section: 'Dots' },
     { key: 'spawn', label: 'Spawn', type: 'enum', default: 'together', options: ['together', 'stagger', 'stream'], section: 'Dots',
       info: 'Together: every dot at the hit. Stagger: one per Interval up to the count. Stream: one per Interval for as long as the Effect plays, the oldest making way.' },
     { key: 'interval', label: 'Interval', type: 'number', default: 250, min: 10, max: 4000, step: 1, unit: 'ms', section: 'Dots',
       showIf: { key: 'spawn', is: ['stagger', 'stream'] } },
-    { key: 'start', label: 'Start', type: 'enum', default: 'hit', options: ['hit', 'random', 'set-point', 'even'], section: 'Dots',
-      info: 'Where each dot begins. Hit: anywhere on the drum you hit. Random: anywhere on the kit (through space: anywhere in its box). Set point: exactly the drum, hoop and pixel below — through space, the point you click in the kit. Even: spread evenly round that hoop — through space, headings spread round the circle.' },
     // Its one fixed option is '@hit' (the drum you hit); the card adds the kit's drums.
     { key: 'startDrum', label: 'Start drum', type: 'enum', default: '@hit', options: ['@hit'], optionsFrom: 'drums', section: 'Dots',
-      showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', not: ['space'] }] },
+      showIf: [{ key: 'through', not: ['space'] }, { any: [{ key: 'through', not: ['kit'] }, { key: 'kitOrder', not: ['custom'] }] }],
+      info: 'The drum each dot begins on. Through the kit in a Custom order, dots begin on the first drum of that order.' },
     { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Dots', rangeFrom: 'start-hoops',
-      showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', not: ['space'] }], info: 'Counting from the bottom hoop, 1. Past the drum\'s top hoop it uses the top one.' },
-    { key: 'startPixel', label: 'Start pixel', type: 'number', default: 1, min: 1, max: 400, step: 1, section: 'Dots', rangeFrom: 'start-pixels',
-      widget: { kind: 'hoop-pixel' }, showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', not: ['space'] }],
-      info: 'Which pixel of the start hoop it begins on — click it on the ring, or type its number. Even spreads the dots round the hoop from here.' },
-    // Through space, the set point is a point in the kit's box.
+      widget: { kind: 'hoop-pick' }, showIf: { key: 'through', not: ['space'] }, info: 'Counting from the bottom hoop, 1.' },
+    { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 359, step: 1, unit: '°', section: 'Dots', rangeFrom: 'start-pixels',
+      widget: { kind: 'hoop-angle' }, showIf: { key: 'through', not: ['space'] },
+      info: 'Where round the hoop it begins, seen from the throne: 0° the front of the drum — the side nearest you — 90° your right, 180° the far side. Click the ring or type it.' },
     { key: 'spaceX', label: 'Start point', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots',
-      widget: { kind: 'space-point', keys: ['spaceX', 'spaceY', 'spaceZ'] },
-      showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', is: ['space'] }],
-      info: 'Where in the kit\'s space it begins. Click it from above (width and depth) or from the front (width and height).' },
-    { key: 'spaceY', label: 'Start depth', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots', partOf: 'spaceX',
-      showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', is: ['space'] }] },
-    { key: 'spaceZ', label: 'Start height', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots', partOf: 'spaceX',
-      showIf: [{ key: 'start', is: ['set-point', 'even', 'fixed'] }, { key: 'through', is: ['space'] }] },
+      widget: { kind: 'space-point', keys: ['spaceX', 'spaceY', 'spaceZ'] }, showIf: { key: 'through', is: ['space'] },
+      info: 'Where in the kit\'s space it begins — click it on the kit seen from the top or the front, as the visualiser shows them.' },
+    { key: 'spaceY', label: 'Start depth', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots', partOf: 'spaceX', showIf: { key: 'through', is: ['space'] } },
+    { key: 'spaceZ', label: 'Start height', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots', partOf: 'spaceX', showIf: { key: 'through', is: ['space'] } },
+    { key: 'spread', label: 'Spread out', type: 'bool', default: false, section: 'Dots',
+      info: 'Several dots: share them out evenly round the hoop from the start angle (through space, round the compass from the heading) instead of all at the one point.' },
+    // Random — how far each dot may stray from the set point, one amount per way it can.
+    { key: 'randDrum', label: 'Drum', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Random', showIf: { key: 'through', not: ['space'] },
+      info: 'The chance a dot begins on a random drum instead of the start drum. 0%: never; 100%: always.' },
+    { key: 'randHoop', label: 'Hoop', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Random', showIf: { key: 'through', not: ['space'] },
+      info: 'How far a dot may stray from the start hoop. 0%: always the start hoop; 100%: any hoop.' },
+    { key: 'randAngle', label: 'Angle', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Random', showIf: { key: 'through', not: ['space'] },
+      info: 'How far round the hoop a dot may stray from the start angle. 0%: exactly there; 50%: within a quarter turn either way; 100%: anywhere round.' },
+    { key: 'randSpace', label: 'Position', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Random', showIf: { key: 'through', is: ['space'] },
+      info: 'How far a dot may stray from the start point through the kit\'s space. 0%: exactly there; 100%: anywhere.' },
     { key: 'life', label: 'Lifespan', type: 'number', default: 2000, min: 0, max: 20000, step: 10, unit: 'ms', section: 'Life',
       info: 'How long each dot lives. With the Trigger card\'s Sustain on "Until dots end" (a new Dot\'s default) the hit lasts until the last dot finishes; on a time instead, a dot also ends when the envelope does. 0 = forever — until Max alive, a Cut, or the section changes.' },
     { key: 'fade', label: 'Fade in/out', type: 'number', default: 0.15, min: 0, max: 0.5, step: 0.01, unit: '%', section: 'Life',
@@ -662,55 +772,60 @@ export const dot: EffectGenerator<DotState> = {
     { key: 'form', label: 'Shape', type: 'enum', default: 'dot', options: ['dot', 'bar', 'diamond'], section: 'Shape', showIf: { key: 'through', not: ['space'] },
       info: 'Dot: rounded ends. Bar: square. Diamond: tapers over the hoops either side (Height 3 or more).' },
     { key: 'glide', label: 'Glide', type: 'bool', default: false, section: 'Shape', showIf: { key: 'through', not: ['space'] },
-      info: 'Off: the dot steps from pixel to pixel and hoop to hoop — crisp. On: it blends between them, smoother at slow speeds but softer.' },
-    { key: 'spaceForm', label: 'Shape', type: 'enum', default: 'ball', options: ['ball', 'shell', 'disc', 'beam', 'box'], section: 'Shape',
-      showIf: { key: 'through', is: ['space'] },
+      info: 'Off: the dot steps from pixel to pixel and hoop to hoop — crisp, and climbing it jumps straight to the next hoop. On: it blends between them, smoother at slow speeds but softer.' },
+    { key: 'spaceForm', label: 'Shape', type: 'enum', default: 'ball', options: ['ball', 'shell', 'disc', 'beam', 'box'], section: 'Shape', showIf: { key: 'through', is: ['space'] },
       info: 'Ball: every pixel inside it lights. Shell: a hollow ball — just its skin. Disc: a flat round sheet facing the way it flies. Beam: a rod along its heading. Box: a cube, square to the kit.' },
-    { key: 'radius', label: 'Size', type: 'number', default: 60, min: 5, max: 500, step: 1, unit: 'mm', section: 'Shape',
-      showIf: { key: 'through', is: ['space'] }, info: 'Through space: how big the shape is — a Ball\'s or Shell\'s radius, a Disc\'s, a Beam\'s half-length, half a Box\'s side.' },
+    { key: 'radius', label: 'Size', type: 'number', default: 120, min: 5, max: 500, step: 1, unit: 'mm', section: 'Shape', showIf: { key: 'through', is: ['space'] },
+      info: 'How big the shape is — a Ball\'s or Shell\'s radius, a Disc\'s, a Beam\'s half-length, half a Box\'s side. Pixels only sit on the hoops, so a small shape in the air between drums lights nothing.' },
     { key: 'trail', label: 'Trail', type: 'number', default: 0, min: 0, max: 64, step: 1, unit: 'px', section: 'Shape' },
-    // Movement — one heading for every way a dot travels (Tim, 2026-10-05: "we are talking about
-    // dot movement in any direction, so it should probably be under the one heading").
+    // Movement — one heading for every way a dot travels (Tim, 2026-10-05).
     { key: 'through', label: 'Through', type: 'enum', default: 'hoop', options: ['hoop', 'drum', 'kit', 'space'], section: 'Movement',
-      info: 'Hoop: round its own hoop. Drum: across the drum\'s hoops at the Travel angle — up, round, or a diagonal. Kit: up through a drum\'s hoops at the Travel angle, then on into the next drum. Space: a shape of light flying straight through the kit\'s 3D space from its start point, lighting the pixels it passes.' },
+      info: 'Hoop: round its own hoop. Drum: across the drum\'s hoops at the Travel angle — up, round, or a diagonal. Kit: up through a drum\'s hoops at the Travel angle, then on into the next drum. Space: a shape of light flying straight through the kit\'s 3D space from its start point, lighting the pixels it passes. A Dot through the kit or space lights the whole kit, so its Target widens to the Kit.' },
     { key: 'speed', label: 'Speed', type: 'number', default: 40, min: 0, max: 400, step: 1, unit: 'px/s', section: 'Movement',
       info: 'How fast it travels, whichever way it is going — pixels a second (or a beat, below). 0 = the dots stay where they appear.' },
     { key: 'speedPer', label: 'Speed per', type: 'enum', default: 'second', options: ['second', 'beat'], section: 'Movement' },
     { key: 'climb', label: 'Travel angle', type: 'number', default: 90, min: -90, max: 90, step: 1, unit: '°', section: 'Movement',
-      showIf: { key: 'through', is: ['drum', 'kit', 'space'] },
-      info: 'Drum / Kit: which way it crosses the hoops on the LED grid — 90° straight up, 0° round the hoop, 45° a diagonal (two pixels round for each hoop); below 0 heads down. Space: how steeply it climbs — 90° straight up, 0° level.' },
-    { key: 'heading', label: 'Heading', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Movement',
-      showIf: { key: 'through', is: ['space'] },
-      info: 'Space: which way round it flies, level with the floor — 0° along the kit\'s X axis, 90° along Y. Travel angle tilts it up or down.' },
+      showIf: { key: 'through', is: ['drum', 'kit'] },
+      info: 'Which way it crosses the hoops: 90° straight up, 0° round the hoop, 45° a diagonal (two pixels round for each hoop); below 0 heads down. At any angle but 0° it jumps hoop to hoop — it never slides round its own hoop.' },
+    { key: 'heading', label: 'Heading', type: 'number', default: 0, min: 0, max: 360, step: 1, unit: '°', section: 'Movement', showIf: { key: 'through', is: ['space'] },
+      info: 'Which way round it flies, level with the floor — 0° along the kit\'s X axis (right in the Top view), 90° along Y.' },
+    { key: 'elevation', label: 'Elevation', type: 'number', default: 0, min: -90, max: 90, step: 1, unit: '°', section: 'Movement', showIf: { key: 'through', is: ['space'] },
+      info: 'How steeply it climbs: 0° level, 90° straight up, −90° straight down.' },
     { key: 'direction', label: 'Direction', type: 'enum', default: 'forward', options: ['forward', 'reverse', 'random', 'alternate'], section: 'Movement',
       info: 'Forward or Reverse along its way (Reverse on a drum heads down), Random per dot, or Alternate dot by dot.' },
     { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random', 'custom'], section: 'Movement',
       showIf: { key: 'through', is: ['kit'] },
-      info: 'Which drum comes next. Kit: the kit\'s own order. Nearest: the closest drum. Random. Custom: the order you drag below.' },
+      info: 'Which drum comes next. Kit: the kit\'s own order. Nearest: the closest drum. Random. Custom: the order you drag below — dots begin on its first drum.' },
     { key: 'kitList', label: 'Drum order', type: 'enum', default: '', options: [''], widget: { kind: 'drum-order' }, section: 'Movement',
       showIf: [{ key: 'through', is: ['kit'] }, { key: 'kitOrder', is: ['custom'] }],
-      info: 'Drag the drums into the order the dot visits them — or focus one and press ← / →.' },
+      info: 'Drag the drums into the order the dot visits them — or focus one and press ← / →. Dots begin on the first.' },
     { key: 'hopEvery', label: 'Hop after', type: 'number', default: 0, min: 0, max: 400, step: 1, unit: 'px', section: 'Movement',
       showIf: { key: 'through', is: ['kit'] },
       info: 'At Travel angle 0° (round only): how far a dot travels on a drum before hopping to the next. 0 = one lap. At any other angle it hops when it leaves the top or bottom of a drum.' },
     { key: 'bounce', label: 'Bounce', type: 'enum', default: 'wrap', options: ['wrap', 'bounce', 'random', 'pingpong', 'leave'], section: 'Movement',
       info: 'At an edge (the top or bottom hoop, the last drum, the side of the kit): Wrap carries on from the other end, Bounce turns back — and dots meeting head-on turn too — Random picks a new way, Leave goes off the edge and is gone. Ping-pong swings back and forth over Swing.' },
     { key: 'span', label: 'Swing', type: 'number', default: 12, min: 1, max: 200, step: 1, unit: 'px', section: 'Movement',
-      showIf: { key: 'bounce', is: ['pingpong'] },
-      info: 'Ping-pong only: how far each dot swings before turning back.' },
+      showIf: { key: 'bounce', is: ['pingpong'] }, info: 'Ping-pong only: how far each dot swings before turning back.' },
     { key: 'accel', label: 'Accel', type: 'number', default: 0, min: -1, max: 1, step: 0.01, unit: '%', section: 'Movement',
       info: 'Over each dot\'s life: below 0 it slows to a stop, above 0 it speeds up (to 3×).' },
-    { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'per-hit', 'rainbow', 'random'], section: 'Colour',
-      info: 'Single: the colour below. Per hit: each new hit a different colour. Rainbow: the dots of a hit spread round the colour wheel. Random: every dot its own.' },
-    { key: 'color', label: 'Colour', type: 'color', default: '#00e5ff', section: 'Colour' },
-    { key: 'shift', label: 'Change', type: 'enum', default: 'off', options: ['off', 'to-colour', 'hue-cycle'], section: 'Colour' },
-    { key: 'colorTo', label: 'To colour', type: 'color', default: '#ff2bd6', section: 'Colour', showIf: { key: 'shift', is: ['to-colour'] } },
+    // Colour — Hue and Saturation, as on the other effects.
+    { key: 'colorMode', label: 'Colours', type: 'enum', default: 'single', options: ['single', 'per-hit', 'per-pixel', 'rainbow', 'random'], section: 'Colour',
+      info: 'Single: the Hue below. Per hit: each new hit a different colour. Per pixel: each pixel of a dot its own colour, spread round the wheel from the Hue. Rainbow: the dots of a hit spread round the wheel. Random: every dot its own.' },
+    { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, step: 1, unit: '°', section: 'Colour' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, unit: '%', section: 'Colour' },
+    { key: 'hueSpread', label: 'Spread', type: 'number', default: 360, min: 0, max: 360, step: 1, unit: '°', section: 'Colour',
+      showIf: { key: 'colorMode', is: ['per-pixel'] },
+      info: 'Per pixel: how far round the colour wheel a dot\'s pixels reach, tail to head. 360°: a 5-pixel dot shows 5 colours evenly round the wheel.' },
+    { key: 'shift', label: 'Change', type: 'enum', default: 'off', options: ['off', 'to-hue', 'hue-cycle'], section: 'Colour',
+      info: 'Off. To hue: each dot turns to a second hue over its life. Hue cycle: the colours keep turning round the wheel.' },
+    { key: 'hueTo', label: 'To hue', type: 'number', default: 320, min: 0, max: 360, step: 1, unit: '°', section: 'Colour', showIf: { key: 'shift', is: ['to-hue'] } },
     { key: 'hueRate', label: 'Hue rate', type: 'number', default: 60, min: 0, max: 720, step: 1, unit: '°/s', section: 'Colour', showIf: { key: 'shift', is: ['hue-cycle'] } },
     { key: 'background', label: 'Background', type: 'enum', default: 'none', options: ['none', 'same', 'other'], section: 'Background',
       info: 'Light behind the dots across the Effect\'s Target: none, the dot colour dimmed, or a colour of its own.' },
     { key: 'bgLevel', label: 'Level', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01, unit: '%', section: 'Background',
       showIf: { key: 'background', is: ['same', 'other'] } },
-    { key: 'bgColor', label: 'Colour', type: 'color', default: '#1a1440', section: 'Background', showIf: { key: 'background', is: ['other'] } },
+    { key: 'bgHue', label: 'Hue', type: 'number', default: 250, min: 0, max: 360, step: 1, unit: '°', section: 'Background', showIf: { key: 'background', is: ['other'] } },
+    { key: 'bgSat', label: 'Saturation', type: 'number', default: 0.7, min: 0, max: 1, step: 0.01, unit: '%', section: 'Background', showIf: { key: 'background', is: ['other'] } },
     { key: 'velSize', label: 'Size', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity',
       info: 'How much a softer hit shrinks the dots. 0 = every hit the same.' },
     { key: 'velSpeed', label: 'Speed', type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Velocity' },
@@ -724,6 +839,7 @@ export const dot: EffectGenerator<DotState> = {
       rng: mulberry32(seed ?? SEED),
       pitchMm,
       tour: nearestTour(model),
+      frames: hoopFrames(model),
       cov: new Float32Array(model.pixelCount),
       col: new Float32Array(model.pixelCount * 3),
     };
@@ -809,21 +925,28 @@ export const dot: EffectGenerator<DotState> = {
     }
     if (bounce === 'bounce' && through !== 'space' && pxPerSec > 0) collide(model, dots.filter(alive), Math.max(1, length));
 
-    // Colour.
-    const base = pstr(params, 'color', '#00e5ff');
-    const baseHsv = hexToHsv(base);
-    const baseRgb = hexToRgb(base);
-    const toRgb = hexToRgb(pstr(params, 'colorTo', '#ff2bd6'));
+    // Colour — Hue and Saturation, like the other effects (Tim, 2026-10-05: "The colour palette is
+    // different than other effects. Make it the same").
+    const hue = pnum(params, 'hue', 190);
+    const sat = clamp01(pnum(params, 'saturation', 1));
     const colorMode = pstr(params, 'colorMode', 'single');
     const shift = pstr(params, 'shift', 'off');
     const hueRate = pnum(params, 'hueRate', 60);
-    const colourOf = (d: Dot): Rgb => {
+    const hueTo = pnum(params, 'hueTo', 320);
+    // Per pixel: the dot's pixels spread round the colour wheel, tail to head ("if we have 5 pixels,
+    // we can have 5 different colours associated with them").
+    const spreadDeg = colorMode === 'per-pixel' ? pnum(params, 'hueSpread', 360) : 0;
+    const colourFor = (d: Dot) => {
       const a = ageMs - d.bornMs;
-      const cycle = shift === 'hue-cycle' ? (hueRate * a) / 1000 : 0;
-      const own = colorMode === 'single' && cycle === 0
-        ? baseRgb
-        : hsvToRgb(baseHsv.h + d.hue + cycle, colorMode === 'single' ? baseHsv.s : Math.max(baseHsv.s, 0.85), Math.max(baseHsv.v, 0.0001));
-      return shift === 'to-colour' ? lerpRgb(own, toRgb, lifeFrac(d)) : own;
+      let h = hue + d.hue + (shift === 'hue-cycle' ? (hueRate * a) / 1000 : 0);
+      if (shift === 'to-hue') h += ringDelta(h, hueTo, 360) * lifeFrac(d);
+      if (!spreadDeg) {
+        const rgb = hsvToRgb(h, sat, 1);
+        return () => rgb;
+      }
+      // With n pixels, n colours: steps of spread / n, so a full 360° never repeats the first.
+      const steps = Math.max(1, through === 'space' ? 6 : length);
+      return (along: number) => hsvToRgb(h + Math.round(along * (steps - 1)) * (spreadDeg / steps), sat, 1);
     };
 
     // Draw every live dot into the scratch, then compose over the background.
@@ -838,14 +961,14 @@ export const dot: EffectGenerator<DotState> = {
       }
       if (d.dyingAtMs !== undefined) level *= clamp01(1 - (ageMs - d.dyingAtMs) / oldestFade);
       if (level <= 0) continue;
-      const rgb = colourOf(d);
-      if (through === 'space') drawInSpace(model, state, d, level, rgb, radiusMm, trail, pstr(params, 'spaceForm', 'ball'));
-      else drawOnRings(model, state, d, level, rgb, length, height, form, trail, motion.around, hoopCount(model, d.drum) > 1 ? motion.up : 0, glide);
+      const colour = colourFor(d);
+      if (through === 'space') drawInSpace(model, state, d, level, colour, radiusMm, trail, pstr(params, 'spaceForm', 'ball'));
+      else drawOnRings(model, state, d, level, colour, length, height, form, trail, motion.around, hoopCount(model, d.drum) > 1 ? motion.up : 0, glide);
     }
 
     const bgMode = pstr(params, 'background', 'none');
     const bgLevel = bgMode === 'none' ? 0 : clamp01(pnum(params, 'bgLevel', 0.15));
-    const bg = bgMode === 'other' ? hexToRgb(pstr(params, 'bgColor', '#1a1440')) : baseRgb;
+    const bg = bgMode === 'other' ? hsvToRgb(pnum(params, 'bgHue', 250), clamp01(pnum(params, 'bgSat', 0.7)), 1) : hsvToRgb(hue, sat, 1);
     const { cov, col } = state;
     for (let p = 0; p < model.pixelCount; p++) {
       const a = cov[p]!;

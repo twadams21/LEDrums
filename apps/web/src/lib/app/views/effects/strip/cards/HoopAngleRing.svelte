@@ -1,8 +1,10 @@
 <script lang="ts">
-  /* A hoop's pixels as a ring to click (Tim, 2026-10-05: "i should have an option for which pixel /
-     area on the hoop i am starting from"). Pixel 1 sits at the top and they run clockwise; the
-     chosen one is lit. A press or a drag picks the nearest pixel by angle. The number field beside
-     it is the keyboard route, so the ring itself is a pointer aid. Every drag is one undo step. */
+  /* The Start angle as a ring of the hoop's pixels, seen from the throne (Tim, 2026-10-05: "it
+     should be in degrees. the bottom of the ring should be 0 degrees and … correlate to the front of
+     the drum — the closest point to the drummer's playing position"). 0° at the bottom, 90° to the
+     right (the drummer's right), 180° at the top. A press or a drag picks the angle of the nearest
+     pixel; the number field beside it is the keyboard route, so the ring is a pointer aid. Every
+     drag is one undo step. */
   let {
     count,
     value,
@@ -11,38 +13,40 @@
     onGestureStart,
     onGestureEnd,
   }: {
-    /** Pixels on the hoop. */
+    /** Pixels on the hoop — the ring's dots, one step of 360° / count apart. */
     count: number;
-    /** The chosen pixel, 1-based. */
+    /** The angle, degrees from the front. */
     value: number;
     disabled?: boolean;
-    onChange: (pixel: number) => void;
+    onChange: (degrees: number) => void;
     onGestureStart?: () => void;
     onGestureEnd?: () => void;
   } = $props();
 
   const n = $derived(Math.max(1, Math.round(count)));
-  const chosen = $derived(Math.min(n, Math.max(1, Math.round(value))));
+  const step = $derived(360 / n);
   const R = 40;
   // Dots shrink as the hoop gets denser, so neighbours never touch.
   const dotR = $derived(Math.max(0.9, Math.min(3, (Math.PI * R) / n / 1.4)));
-  const at = (i: number) => {
-    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
-    return { x: 50 + R * Math.cos(a), y: 50 + R * Math.sin(a) };
+  /** A point on the ring `deg` from the bottom, turning towards the right. */
+  const at = (deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: 50 + R * Math.sin(a), y: 50 + R * Math.cos(a) };
   };
-  const dots = $derived(Array.from({ length: n }, (_, i) => at(i)));
-  const mark = $derived(at(chosen - 1));
+  const dots = $derived(Array.from({ length: n }, (_, i) => at(i * step)));
+  const shown = $derived(((Math.round(value / step) % n) + n) % n);
+  const mark = $derived(at(shown * step));
+  const label = $derived(Math.round(((value % 360) + 360) % 360));
 
   let dragging = false;
   function pick(event: PointerEvent): void {
-    const svg = event.currentTarget as SVGSVGElement;
-    const box = svg.getBoundingClientRect();
+    const box = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
     const dx = event.clientX - (box.left + box.width / 2);
     const dy = event.clientY - (box.top + box.height / 2);
-    // Angle clockwise from the top, 0..1 of the way round.
-    const turn = (Math.atan2(dx, -dy) / (Math.PI * 2) + 1) % 1;
-    const pixel = (Math.round(turn * n) % n) + 1;
-    if (pixel !== chosen) onChange(pixel);
+    // Degrees from the bottom, towards the right — snapped to a pixel.
+    const deg = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+    const snapped = Math.round(((Math.round(deg / step) % n) * step) % 360);
+    if (snapped !== Math.round(value)) onChange(snapped);
   }
   function down(event: PointerEvent): void {
     if (disabled || event.button !== 0) return;
@@ -75,9 +79,10 @@
   {#each dots as d, i (i)}
     <circle class="px" cx={d.x} cy={d.y} r={dotR} />
   {/each}
+  <!-- The front of the drum: the drummer's side. -->
+  <text class="front" x="50" y="99">front</text>
   <circle class="on" cx={mark.x} cy={mark.y} r={Math.max(3.2, dotR * 1.8)} />
-  <text class="num" x="50" y="50">{chosen}</text>
-  <text class="of" x="50" y="62">of {n}</text>
+  <text class="num" x="50" y="50">{label}°</text>
 </svg>
 
 <style>
@@ -86,6 +91,7 @@
     width: 88px;
     height: 88px;
     flex: none;
+    overflow: visible;
     cursor: pointer;
     touch-action: none;
   }
@@ -114,11 +120,11 @@
     text-anchor: middle;
     dominant-baseline: middle;
   }
-  .of {
+  .front {
     fill: var(--text-faint);
-    font-family: var(--font-mono);
-    font-size: 8px;
+    font-size: 7px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     text-anchor: middle;
-    dominant-baseline: middle;
   }
 </style>

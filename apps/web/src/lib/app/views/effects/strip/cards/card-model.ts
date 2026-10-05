@@ -4,7 +4,7 @@
    DOM: which params a card shows (and which a mode hides), how a value reads, which params a
    control is driving (the "modulated" badge), the list a mapping can target, and the Envelope
    control's shape presets. No runes, no DOM. */
-import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec } from '@ledrums/core';
+import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec, type ShowIf } from '@ledrums/core';
 
 type Effect = effectChain.Effect;
 type GeneratorDevice = effectChain.GeneratorDevice;
@@ -37,6 +37,8 @@ export interface CardParam {
   /** A richer control the card draws (core `widget`): a hoop's pixel ring, drum-order chips, a
       point in the kit's space. */
   widget?: ParamSpec['widget'];
+  /** The start hoop's pixel count, for a Start angle ring's dots (core `rangeFrom: start-pixels`). */
+  ringCount?: number;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -68,8 +70,8 @@ export interface KitRanges {
 
 /**
  * Params sized to the kit (Tim, 2026-10-05: "the start hoop param should only have 4 options, as
- * there are only 4 hoops"): `start-hoops` tops out at the start drum's hoop count, `start-pixels`
- * at its start hoop's pixel count. With the drum you hit (no drum chosen) — the most any drum has.
+ * there are only 4 hoops"): `start-hoops` tops out at the start drum's hoop count; `start-pixels`
+ * gives a Start angle ring its dots — the start hoop's pixel count. With the drum you hit (no drum chosen) — the most any drum has.
  * A host that can't say leaves the spec's range.
  */
 export function withKitRanges(
@@ -86,7 +88,8 @@ export function withKitRanges(
     const rangeFrom = specs.find((s) => s.key === p.key)?.rangeFrom;
     if (!rangeFrom) return p;
     const max = Math.max(0, ...drums.map((d) => (rangeFrom === 'start-hoops' ? kit.hoops(d) : kit.pixels(d, Math.min(hoop, Math.max(1, kit.hoops(d)))))));
-    return max > 0 ? { ...p, max: Math.max(p.min ?? 1, max) } : p;
+    if (max <= 0) return p;
+    return rangeFrom === 'start-hoops' ? { ...p, max: Math.max(p.min ?? 1, max) } : { ...p, ringCount: max };
   });
 }
 
@@ -95,13 +98,14 @@ export function withKitRanges(
     as broken.) */
 function shown(spec: ParamSpec, specs: readonly ParamSpec[], values: Readonly<Record<string, ParamValue>>): boolean {
   if (!spec.showIf) return true;
-  const conditions = Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf];
-  return conditions.every(({ key, is, not }) => {
-    const v = values[key] ?? specs.find((s) => s.key === key)?.default;
+  const holds = (c: ShowIf): boolean => {
+    if ('any' in c) return c.any.some(holds);
+    const v = values[c.key] ?? specs.find((s) => s.key === c.key)?.default;
     if (v === undefined) return false;
-    if (is && !is.includes(v)) return false;
-    return !(not && not.includes(v));
-  });
+    if (c.is && !c.is.includes(v)) return false;
+    return !(c.not && c.not.includes(v));
+  };
+  return (Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf]).every(holds);
 }
 
 /** The "Drum" choices for an `optionsFrom: 'drums'` param: the drum you hit, then the kit's drums. */
@@ -184,7 +188,7 @@ export function paramSections(params: readonly CardParam[]): ParamSection[] | nu
     point picker's two views ~4, drum chips ~1). */
 function rowLines(p: CardParam): number {
   switch (p.widget?.kind) {
-    case 'hoop-pixel': return 4;
+    case 'hoop-angle': return 4;
     case 'space-point': return 5;
     case 'drum-order': return 2;
     default: return 1;
@@ -197,18 +201,28 @@ function rowLines(p: CardParam): number {
  * than a row), else starts the next. Short sections share a column, so the card stays compact; a
  * section longer than that has a column to itself.
  */
-export function sectionColumns(sections: readonly ParamSection[]): ParamSection[][] {
+export function sectionColumns(sections: readonly ParamSection[], previous?: readonly (readonly string[])[] | null): ParamSection[][] {
   const max = PARAM_ROWS_MAX + 2;
+  const size = (s: ParamSection) => s.params.reduce((n, p) => n + rowLines(p), 0) + 1;
+  // Keep the last arrangement while it still fits (a little taller is fine), so a row appearing or
+  // disappearing doesn't send a section to another column (Tim, 2026-10-05: "Colour was in one
+  // spot, then suddenly in another when I changed the hue cycle").
+  if (previous) {
+    const byLabel = new Map(sections.map((s) => [s.label, s]));
+    const same = previous.flat().length === sections.length && previous.flat().every((l) => byLabel.has(l));
+    const kept = same ? previous.map((col) => col.map((l) => byLabel.get(l)!)) : null;
+    if (kept && kept.every((col) => col.reduce((n, s) => n + size(s), 0) <= max + 4)) return kept;
+  }
   const columns: ParamSection[][] = [];
   let lines = Infinity;
   for (const s of sections) {
-    const size = s.params.reduce((n, p) => n + rowLines(p), 0) + 1;
-    if (lines + size > max) {
+    const sizeOf = size(s);
+    if (lines + sizeOf > max) {
       columns.push([s]);
-      lines = size;
+      lines = sizeOf;
     } else {
       columns[columns.length - 1]!.push(s);
-      lines += size;
+      lines += sizeOf;
     }
   }
   return columns;

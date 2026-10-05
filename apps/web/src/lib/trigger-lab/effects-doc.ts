@@ -301,9 +301,25 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
   });
 }
 
+/**
+ * A Dot that reaches past the drum you hit — through the kit or space, from a chosen drum, or onto
+ * random drums — lights the whole kit, so its Target widens from the row's default to the Kit
+ * (Tim, 2026-10-05: Through Space lit "no light at all" — the drum row's Target cropped the dot
+ * the moment it left the drum). A Target the author changed is left alone.
+ */
+function widenForDot(e: Effect): Effect {
+  if (e.generator.kind !== 'dot') return e;
+  const p = e.generator.params;
+  const reaches = p.through === 'kit' || p.through === 'space'
+    || (typeof p.startDrum === 'string' && p.startDrum !== '@hit' && p.startDrum !== '')
+    || (typeof p.randDrum === 'number' && p.randDrum > 0);
+  if (!reaches || e.target.kind === 'kit') return e;
+  return JSON.stringify(e.target) === JSON.stringify(effectChain.defaultTargetForRow(e.cell.row)) ? { ...e, target: { kind: 'kit' } } : e;
+}
+
 export function setGeneratorParam<S extends EffectsSection>(section: S, effectId: string, key: string, value: ParamValue): S {
   return updateEffect(section, effectId, (e) =>
-    e.generator.params[key] === value ? null : { ...e, generator: { ...e.generator, params: { ...e.generator.params, [key]: value } } },
+    e.generator.params[key] === value ? null : widenForDot({ ...e, generator: { ...e.generator, params: { ...e.generator.params, [key]: value } } }),
   );
 }
 
@@ -323,7 +339,7 @@ export function setGeneratorParams<S extends EffectsSection>(section: S, effectI
         changed = true;
       }
     }
-    return changed ? { ...e, generator: { ...e.generator, params } } : null;
+    return changed ? widenForDot({ ...e, generator: { ...e.generator, params } }) : null;
   });
 }
 

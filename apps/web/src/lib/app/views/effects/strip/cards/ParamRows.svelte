@@ -17,7 +17,8 @@
   import { enumLabel, formatParam, isTempoParam, paramColumns, paramSections, paramValue, sectionColumns, tempoBeats, tempoTogglePatch, type CardParam, type ParamValue } from './card-model';
   import { beatsLabel, type KitPlan } from '../strip-model';
   import OrderList from '../../../../../ui/OrderList.svelte';
-  import HoopPixelRing from './HoopPixelRing.svelte';
+  import HoopAngleRing from './HoopAngleRing.svelte';
+  import SegmentedControl from '../../../../../ui/SegmentedControl.svelte';
   import SpacePointPicker from './SpacePointPicker.svelte';
 
   interface Props {
@@ -75,7 +76,14 @@
   const layout = $derived(paramColumns(params.length));
   // Sectioned params: headers, the sections packed into columns left to right.
   const sections = $derived(paramSections(params));
-  const columns = $derived(sections ? sectionColumns(sections) : []);
+  // The last arrangement, kept while it fits so sections don't jump columns as rows come and go.
+  let lastColumns: string[][] | null = null;
+  const columns = $derived.by(() => {
+    if (!sections) return [];
+    const cols = sectionColumns(sections, lastColumns);
+    lastColumns = cols.map((col) => col.map((sec) => sec.label));
+    return cols;
+  });
 
   /** What a typed value means: a percent is typed as shown (25 → 0.25); ms / beats read units. */
   const entryOf = (p: CardParam) => (p.percent ? { factor: 100, unit: '%' } : { unit: p.unit });
@@ -120,16 +128,33 @@
         onReorder={(ids) => onChange(p.key, ids.join(','))}
       />
     </li>
+  {:else if p.widget?.kind === 'hoop-pick'}
+    <!-- A button per hoop (Tim, 2026-10-05: "only 4 options … i don't like the slider"). -->
+    {@const hoops = Math.max(1, Math.round(p.max ?? 1))}
+    <li class="row">
+      {@render labelOf(p, false)}
+      <span class="ctl">
+        <SegmentedControl
+          value={String(Math.min(hoops, Math.max(1, Math.round(Number(paramValue(p, values))))))}
+          options={Array.from({ length: hoops }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
+          {disabled}
+          ariaLabel={aria(p)}
+          onChange={(v) => onChange(p.key, Number(v))}
+          class="hoops"
+        />
+      </span>
+    </li>
   {:else}
     {@render plainRow(p)}
-    {#if p.widget?.kind === 'hoop-pixel' && p.max !== undefined}
-      <!-- The hoop's pixels as a ring: click the one to start on (the field above types it). -->
+    {#if p.widget?.kind === 'hoop-angle'}
+      <!-- The hoop's pixels as a ring, seen from the throne: click where to start (the field above
+           types it). Its dots are the start hoop's pixels (ringCount; 36 when the host can't say). -->
       <li class="widget ring">
-        <HoopPixelRing
-          count={p.max}
+        <HoopAngleRing
+          count={p.ringCount ?? 36}
           value={Number(paramValue(p, values))}
           {disabled}
-          onChange={(px) => onChange(p.key, px)}
+          onChange={(deg) => onChange(p.key, deg)}
           {onGestureStart}
           {onGestureEnd}
         />
@@ -373,6 +398,9 @@
   .utog:focus-visible {
     outline: none;
     box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px var(--accent-soft);
+  }
+  .ctl :global(.hoops) {
+    flex: 0 1 auto;
   }
   .ctl :global(.cardsel) {
     width: 128px;

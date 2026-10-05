@@ -53,7 +53,24 @@ function brightest(fb: Framebuffer): number {
   return best;
 }
 
-const FIXED = { start: 'set-point', startHoop: 1, startPixel: 1 };
+const FRAMES = dot.createState!(M, 1).frames;
+/** How many pixels on from its hoop's 0° (the front) a pixel sits, in pixel order. */
+function fromFront(pixel: number): number {
+  const px = M.pixels[pixel]!;
+  const drum = M.drums.findIndex((d) => d.drumId === px.drumId);
+  const f = FRAMES[drum]![px.hoopIndex - 1]!;
+  return ((((px.indexInHoop - 1 - f.front) * f.sense) % 40) + 40) % 40;
+}
+/** The Start point (0..1 across the kit's box) that sits on a pixel. */
+function spaceAt(pixel: number) {
+  const { min, max } = M.bounds;
+  const w = M.pixels[pixel]!.world;
+  const t = (k: 'x' | 'y' | 'z') => (max[k] - min[k] < 1e-6 ? 0.5 : (w[k] - min[k]) / (max[k] - min[k]));
+  return { spaceX: t('x'), spaceY: t('y'), spaceZ: t('z') };
+}
+
+const FIXED = { startHoop: 1, startAngle: 0 };
+const RANDOM = { randDrum: 1, randHoop: 1, randAngle: 1 };
 
 describe('Dot — registry', () => {
   it('is a registered effect and a Generator kind', () => {
@@ -62,28 +79,37 @@ describe('Dot — registry', () => {
   });
 });
 
-describe('Dot — placement and shape', () => {
-  it('a single one-pixel dot starts on the struck drum', () => {
-    const { fb } = play({ speed: 0 }, 0, { drum: 'b' });
-    const on = lit(fb);
+describe('Dot — the set point', () => {
+  it('a single one-pixel dot starts on the drum you hit, at the front of its bottom hoop', () => {
+    const on = lit(play({ speed: 0 }, 0, { drum: 'b' }).fb);
     expect(on).toHaveLength(1);
-    expect(M.pixels[on[0]!]!.drumId).toBe('b');
+    expect(M.pixels[on[0]!]).toMatchObject({ drumId: 'b', hoopIndex: 1 });
+    expect(fromFront(on[0]!)).toBe(0);
   });
 
-  it('Set point: every dot begins at the chosen drum, hoop and pixel', () => {
-    const { fb } = play({ start: 'set-point', startDrum: 'b', startHoop: 2, startPixel: 11, speed: 0, count: 3 }, 0, { drum: 'a' });
-    const on = lit(fb).map((i) => M.pixels[i]!);
+  it('0° is the front of the drum — the pixel nearest the drummer (towards −y)', () => {
+    const start = M.drums[0]!.pixelStart;
+    let nearest = start;
+    for (let i = start; i < start + 40; i++) if (M.pixels[i]!.world.y < M.pixels[nearest]!.world.y) nearest = i;
+    expect(fromFront(nearest)).toBe(0);
+  });
+
+  it('Start drum, hoop and angle: every dot begins exactly there', () => {
+    const on = lit(play({ startDrum: 'b', startHoop: 2, startAngle: 90, speed: 0, count: 3 }, 0, { drum: 'a' }).fb);
     expect(on).toHaveLength(1); // three dots, one pixel
-    expect(on[0]).toMatchObject({ drumId: 'b', hoopIndex: 2, indexInHoop: 11 });
-    // Past the hoop's last pixel it uses the last.
-    expect(M.pixels[lit(play({ start: 'set-point', startDrum: 'b', startPixel: 400, speed: 0 }, 0).fb)[0]!]!.indexInHoop).toBe(40);
-    // The older name and a 1-based drum number still read.
-    expect(M.pixels[lit(play({ start: 'fixed', startDrum: 2, speed: 0 }, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b');
+    expect(M.pixels[on[0]!]).toMatchObject({ drumId: 'b', hoopIndex: 2 });
+    expect(fromFront(on[0]!)).toBe(10); // 90° of a 40-pixel hoop
+    // An older Dot's 1-based drum number still reads.
+    expect(M.pixels[lit(play({ startDrum: 2, speed: 0 }, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b');
+  });
+
+  it('Spread out shares several dots evenly round the hoop', () => {
+    const on = lit(play({ count: 4, spread: true, speed: 0 }, 0).fb).map(fromFront).sort((x, y) => x - y);
+    expect(on).toEqual([0, 10, 20, 30]);
   });
 
   it('Length sets how many pixels it covers; Height spreads it over neighbouring hoops', () => {
-    const { fb } = play({ ...FIXED, speed: 0, length: 5, form: 'bar', height: 3, startHoop: 2 }, 0);
-    const on = lit(fb);
+    const on = lit(play({ ...FIXED, speed: 0, length: 5, form: 'bar', height: 3, startHoop: 2 }, 0).fb);
     expect(on).toHaveLength(15);
     expect(new Set(on.map((i) => M.pixels[i]!.hoopIndex))).toEqual(new Set([1, 2, 3]));
   });
@@ -96,43 +122,72 @@ describe('Dot — placement and shape', () => {
   });
 });
 
+describe('Dot — Random: how far each dot strays from the set point', () => {
+  const where = (params: Record<string, number>, seed: number) => {
+    const px = M.pixels[lit(play({ speed: 0, ...params }, 0, { seed }).fb)[0]!]!;
+    return { drum: px.drumId, hoop: px.hoopIndex, at: fromFront(px.id) };
+  };
+  const seeds = Array.from({ length: 24 }, (_, i) => i + 1);
+
+  it('at 0% every dot begins exactly at the set point', () => {
+    expect(new Set(seeds.map((s) => JSON.stringify(where({}, s)))).size).toBe(1);
+  });
+
+  it('Hoop strays across the hoops only; Angle round the hoop only; Drum onto other drums', () => {
+    const hoops = seeds.map((s) => where({ randHoop: 1 }, s));
+    expect(new Set(hoops.map((w) => w.hoop)).size).toBeGreaterThan(1);
+    expect(new Set(hoops.map((w) => w.at))).toEqual(new Set([0]));
+    const angles = seeds.map((s) => where({ randAngle: 1 }, s));
+    expect(new Set(angles.map((w) => w.hoop))).toEqual(new Set([1]));
+    expect(new Set(angles.map((w) => w.at)).size).toBeGreaterThan(1);
+    expect(new Set(seeds.map((s) => where({ randDrum: 1 }, s).drum))).toEqual(new Set(['a', 'b']));
+  });
+
+  it('50% Angle stays within a quarter turn of the set angle', () => {
+    for (const s of seeds) {
+      const at = where({ randAngle: 0.5 }, s).at;
+      expect(Math.min(at, 40 - at)).toBeLessThanOrEqual(10);
+    }
+  });
+});
+
 describe('Dot — moving around', () => {
   it('travels round its hoop at Speed pixels a second, either way', () => {
-    const fwd = play({ ...FIXED, speed: 40 }, 500).fb;
-    expect(M.pixels[brightest(fwd)]!.indexInHoop - 1).toBe(20);
-    const rev = play({ ...FIXED, speed: 40, direction: 'reverse' }, 500).fb;
-    expect(M.pixels[brightest(rev)]!.indexInHoop - 1).toBe(20);
-    // 20 px either way round a 40-px ring lands opposite the start; a quarter tells them apart.
-    const q = play({ ...FIXED, speed: 40, direction: 'reverse' }, 250).fb;
-    expect(M.pixels[brightest(q)]!.indexInHoop - 1).toBe(30);
+    const fwd = fromFront(brightest(play({ ...FIXED, speed: 40 }, 250).fb));
+    const rev = fromFront(brightest(play({ ...FIXED, speed: 40, direction: 'reverse' }, 250).fb));
+    expect([fwd, rev].sort((x, y) => x - y)).toEqual([10, 30]);
   });
 
   it('Speed per beat follows the tempo (120 bpm = 2 beats a second)', () => {
-    const { fb } = play({ ...FIXED, speed: 5, speedPer: 'beat' }, 1000);
-    expect(M.pixels[brightest(fb)]!.indexInHoop - 1).toBe(10);
+    expect([10, 30]).toContain(fromFront(brightest(play({ ...FIXED, speed: 5, speedPer: 'beat' }, 1000).fb)));
   });
 
   it('a Trail lights pixels behind it, not ahead', () => {
-    const { fb } = play({ ...FIXED, speed: 40, trail: 4 }, 250);
-    const idx = lit(fb).map((i) => M.pixels[i]!.indexInHoop - 1);
-    expect(Math.max(...idx)).toBe(10);
-    expect(Math.min(...idx)).toBeGreaterThanOrEqual(6);
+    const head = fromFront(brightest(play({ ...FIXED, speed: 40, trail: 4 }, 250).fb));
+    const lead = head === 10 ? 1 : -1;
+    const at = lit(play({ ...FIXED, speed: 40, trail: 4 }, 250).fb).map(fromFront);
+    // Every lit pixel is the head or up to 4 behind it.
+    for (const a of at) {
+      const back = (((head - a) * lead) % 40 + 40) % 40;
+      expect(back).toBeLessThanOrEqual(4);
+    }
+    expect(at.length).toBeGreaterThan(1);
   });
 
-  it('Ping-pong turns back after Span pixels', () => {
-    const at = (ms: number) => M.pixels[brightest(play({ ...FIXED, speed: 40, bounce: 'pingpong', span: 10 }, ms).fb)]!.indexInHoop - 1;
-    expect(at(250)).toBe(10);
+  it('Ping-pong turns back after Swing pixels', () => {
+    const at = (ms: number) => fromFront(brightest(play({ ...FIXED, speed: 40, bounce: 'pingpong', span: 10 }, ms).fb));
+    expect([10, 30]).toContain(at(250));
     expect(at(500)).toBe(0);
   });
 
   it('Bounce: two dots meeting head-on turn back', () => {
-    const { state } = play({ ...FIXED, start: 'even', count: 2, direction: 'alternate', bounce: 'bounce', speed: 40 }, 400);
+    const { state } = play({ ...FIXED, spread: true, count: 2, direction: 'alternate', bounce: 'bounce', speed: 40 }, 400);
     expect(state.dots.map((d) => d.dir)).toEqual([-1, 1]);
   });
 
   it('Speed 0 holds still: dots stay where they appeared', () => {
-    const a = lit(play({ start: 'random', count: 5, speed: 0 }, 0).fb);
-    const b = lit(play({ start: 'random', count: 5, speed: 0 }, 1000).fb);
+    const a = lit(play({ ...RANDOM, count: 5, speed: 0 }, 0).fb);
+    const b = lit(play({ ...RANDOM, count: 5, speed: 0 }, 1000).fb);
     expect(a.length).toBeGreaterThan(0);
     expect(b).toEqual(a);
   });
@@ -144,13 +199,23 @@ describe('Dot — moving through', () => {
   it('Through a drum at Travel angle 90°: straight up, a hoop per two pixels of travel, none round', () => {
     const d = play({ ...FIXED, speed: 4, through: 'drum' }, 500).state.dots[0]!;
     expect(d.hf).toBeCloseTo(1, 1);
-    expect(d.u).toBeCloseTo(0, 5);
+    expect(d.u).toBeCloseTo(d.u0, 5);
   });
 
-  it('at 45° a diagonal: two pixels round for each hoop', () => {
-    const d = play({ ...FIXED, speed: 4 * Math.SQRT2, through: 'drum', climb: 45 }, 500).state.dots[0]!;
-    expect(d.hf).toBeCloseTo(1, 1);
-    expect(d.u * 40).toBeCloseTo(2, 1); // 40-pixel hoops: two pixels round
+  it('at 45° it jumps hoop to hoop, two pixels round each time — never sliding round its own hoop', () => {
+    // Tim, 2026-10-05: "don't show the light from the second pixel, just go straight to the pixel on
+    // the next hoop … it shouldn't ever move along its same hoop unless the angle is 0 degrees".
+    const seen: { hoop: number; at: number }[] = [];
+    for (let ms = 0; ms <= 1000; ms += 20) {
+      const px = brightest(play({ ...FIXED, speed: 4 * Math.SQRT2, through: 'drum', climb: 45, bounce: 'bounce' }, ms).fb);
+      seen.push({ hoop: M.pixels[px]!.hoopIndex, at: fromFront(px) });
+    }
+    for (let i = 1; i < seen.length; i++) {
+      if (seen[i]!.hoop === seen[i - 1]!.hoop) expect(seen[i]!.at).toBe(seen[i - 1]!.at);
+    }
+    const two = seen.find((s) => s.hoop === 2)!.at;
+    expect([2, 38]).toContain(two);
+    expect(seen.find((s) => s.hoop === 3)!.at).toBe(two === 2 ? 4 : 36);
   });
 
   it('at the top hoop Bounce turns back down; Wrap comes back in at the bottom; Reverse heads down; Leave is gone', () => {
@@ -174,20 +239,20 @@ describe('Dot — moving through', () => {
   });
 
   it('Through the kit: up through a drum\'s hoops, then on into the next drum at its bottom hoop', () => {
-    // Three hoops at 2 a second: out of the top of drum a at 1.25 s, into drum b.
     const d = play({ ...FIXED, speed: 4, through: 'kit' }, 1500, { drum: 'a' }).state.dots[0]!;
     expect(M.drums[d.drum]!.drumId).toBe('b');
     expect(d.hoop).toBe(0);
   });
 
-  it('Custom kit order: the dragged order (Tim, 2026-10-05: "choose the order of the drums, like splice")', () => {
+  it('Custom kit order: dots begin on its first drum and visit them in that order', () => {
+    // Tim, 2026-10-05: "if i make the drum order start with the kick, i am seeing the bottom hoop on
+    // tom 1 light up first".
     expect(customDrumOrder(M, 'b,a')).toEqual([1, 0]);
     expect(customDrumOrder(M, 'b')).toEqual([1, 0]); // an unlisted drum follows
-    // From b, Custom 'b,a' goes on to a; past the end with Leave the dot is gone.
-    const next = play({ ...FIXED, speed: 4, through: 'kit', kitOrder: 'custom', kitList: 'b,a' }, 1500, { drum: 'b' }).state.dots[0]!;
-    expect(M.drums[next.drum]!.drumId).toBe('a');
-    const gone = play({ ...FIXED, speed: 4, through: 'kit', kitOrder: 'custom', kitList: 'a,b', bounce: 'leave' }, 1500, { drum: 'b' }).state.dots[0]!;
-    expect(gone.gone).toBe(true);
+    const custom = { ...FIXED, speed: 4, through: 'kit', kitOrder: 'custom', kitList: 'b,a' };
+    expect(M.pixels[lit(play(custom, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b'); // hit a, begins on b
+    expect(M.drums[play(custom, 1500, { drum: 'a' }).state.dots[0]!.drum]!.drumId).toBe('a');
+    expect(play({ ...custom, bounce: 'leave', life: 0 }, 3000, { drum: 'a' }).state.dots[0]!.gone).toBe(true);
   });
 
   it('Through the kit at 0°: round only, hopping each lap — or after Hop after pixels', () => {
@@ -197,29 +262,31 @@ describe('Dot — moving through', () => {
     expect(M.drums[soon.dots[0]!.drum]!.drumId).toBe('b');
   });
 
-  it('Through space: starts at the set X / Y / Z point of the kit\'s box and flies along its Heading', () => {
+  it('Through space: starts at the Start point in the kit\'s box and flies along its Heading', () => {
     const { min, max } = M.bounds;
-    const at0 = play({ start: 'set-point', through: 'space', spaceX: 0.25, spaceY: 0.5, spaceZ: 0.5, speed: 0 }, 0).state.dots[0]!.p;
+    const at0 = play({ through: 'space', spaceX: 0.25, spaceY: 0.5, spaceZ: 0.5, speed: 0 }, 0).state.dots[0]!.p;
     expect(at0.x).toBeCloseTo(min.x + (max.x - min.x) * 0.25, 3);
-    const flown = play({ start: 'set-point', through: 'space', spaceX: 0.25, heading: 0, climb: 0, speed: 10 }, 500).state.dots[0]!.p;
+    const flown = play({ through: 'space', spaceX: 0.25, heading: 0, elevation: 0, speed: 10 }, 500).state.dots[0]!.p;
     expect(flown.x).toBeGreaterThan(at0.x); // Heading 0°, level: along +X
     expect(flown.y).toBeCloseTo(at0.y, 3);
     expect(flown.z).toBeCloseTo(at0.z, 3);
   });
 
-  it('Through space: Size is the ball of light — bigger lights more pixels', () => {
-    const count = (radius: number) => lit(play({ through: 'space', speed: 0, radius }, 0, { drum: 'a' }).fb).length;
+  it('Through space: Size is the shape\'s size — bigger lights more pixels', () => {
+    const on = { through: 'space', speed: 0, ...spaceAt(M.drums[0]!.pixelStart) };
+    const count = (radius: number) => lit(play({ ...on, radius }, 0).fb).length;
     expect(count(60)).toBeGreaterThan(count(10));
     expect(count(10)).toBeGreaterThan(0);
   });
 
   it('Through space: Leave goes out of the kit and is gone, instead of wrapping back in', () => {
-    const d = play({ start: 'set-point', through: 'space', heading: 0, climb: 0, speed: 200, bounce: 'leave', life: 0 }, 3000).state.dots[0]!;
+    const d = play({ through: 'space', heading: 0, elevation: 0, speed: 200, bounce: 'leave', life: 0 }, 3000).state.dots[0]!;
     expect(d.gone).toBe(true);
   });
 
   it('Through space: five shapes — a Shell lights fewer pixels than a Ball the same size, a Box more', () => {
-    const count = (spaceForm: string) => lit(play({ through: 'space', speed: 0, radius: 60, spaceForm }, 0, { drum: 'a' }).fb).length;
+    const on = { through: 'space', speed: 0, radius: 60, ...spaceAt(M.drums[0]!.pixelStart) };
+    const count = (spaceForm: string) => lit(play({ ...on, spaceForm }, 0).fb).length;
     const ball = count('ball');
     expect(count('shell')).toBeLessThan(ball);
     expect(count('box')).toBeGreaterThanOrEqual(ball);
@@ -227,7 +294,7 @@ describe('Dot — moving through', () => {
   });
 
   it('Through space: stays inside the kit, bouncing off its edges', () => {
-    const { state } = play({ ...FIXED, speed: 200, through: 'space', bounce: 'bounce', direction: 'random', life: 0 }, 5000);
+    const { state } = play({ speed: 200, through: 'space', bounce: 'bounce', direction: 'random', life: 0 }, 5000);
     const { min, max } = M.bounds;
     const p = state.dots[0]!.p;
     for (const k of ['x', 'y', 'z'] as const) {
@@ -239,12 +306,12 @@ describe('Dot — moving through', () => {
 
 describe('Dot — dots, life and colour', () => {
   it('Stagger spawns one per Interval up to the count', () => {
-    const at = (ms: number) => play({ speed: 0, start: 'random', count: 3, spawn: 'stagger', interval: 100 }, ms).state.dots.length;
+    const at = (ms: number) => play({ speed: 0, ...RANDOM, count: 3, spawn: 'stagger', interval: 100 }, ms).state.dots.length;
     expect([at(50), at(150), at(450)]).toEqual([1, 2, 3]);
   });
 
   it('a Stream keeps spawning, recycling the oldest past the count', () => {
-    const { state } = play({ speed: 0, start: 'random', count: 2, spawn: 'stream', interval: 100 }, 1000);
+    const { state } = play({ speed: 0, ...RANDOM, count: 2, spawn: 'stream', interval: 100 }, 1000);
     expect(state.dots).toHaveLength(2);
     expect(state.spawned).toBe(11);
   });
@@ -252,35 +319,48 @@ describe('Dot — dots, life and colour', () => {
   it('Lifespan ends a dot; Max alive caps the dots in a hit', () => {
     expect(lit(play({ speed: 0, life: 200 }, 100).fb)).toHaveLength(1);
     expect(lit(play({ speed: 0, life: 200 }, 300).fb)).toHaveLength(0);
-    expect(play({ speed: 0, start: 'random', count: 10, maxLive: 4 }, 0).state.dots).toHaveLength(4);
+    expect(play({ speed: 0, ...RANDOM, count: 10, maxLive: 4 }, 0).state.dots).toHaveLength(4);
   });
 
   it('a Stream with Oldest = Fade fades the recycled dot out over Fade time', () => {
-    const p = { speed: 0, start: 'random', count: 1, spawn: 'stream', interval: 1000, oldest: 'fade', oldestFade: 400 };
+    const p = { speed: 0, ...RANDOM, count: 1, spawn: 'stream', interval: 1000, oldest: 'fade', oldestFade: 400 };
     // At 1000ms the second dot arrives; the first is fading, so both still show.
     expect(play(p, 1200).state.dots).toHaveLength(2);
     expect(play(p, 1500).state.dots).toHaveLength(1);
     expect(play({ ...p, oldest: 'cut' }, 1200).state.dots).toHaveLength(1);
   });
 
+  const rgbOf = (fb: Framebuffer, i: number) => [0, 1, 2].map((c) => fb.rgba[i * 4 + c]!.toFixed(3)).join(',');
+
+  it('colour is Hue and Saturation, like the other effects', () => {
+    const { fb } = play({ speed: 0, hue: 0, saturation: 1 }, 0);
+    expect(rgbOf(fb, brightest(fb))).toBe('1.000,0.000,0.000');
+  });
+
   it('Per hit: each hit a different colour, every dot of one hit the same', () => {
-    const p = { speed: 0, start: 'random', count: 3, colorMode: 'per-hit', color: '#ff0000' };
     const colours = (seq: number) => {
-      const { fb } = play(p, 0, { seq });
-      return lit(fb).map((i) => [0, 1, 2].map((c) => fb.rgba[i * 4 + c]!.toFixed(3)).join(','));
+      const { fb } = play({ speed: 0, ...RANDOM, count: 3, colorMode: 'per-hit' }, 0, { seq });
+      return lit(fb).map((i) => rgbOf(fb, i));
     };
     const one = colours(1);
     expect(new Set(one).size).toBe(1);
     expect(colours(2)[0]).not.toBe(one[0]);
   });
 
+  it('Per pixel: a 5-pixel dot shows 5 colours (Tim, 2026-10-05: "5 pixels … 5 different colours")', () => {
+    const { fb } = play({ speed: 0, length: 5, form: 'bar', colorMode: 'per-pixel', hueSpread: 360 }, 0);
+    const on = lit(fb);
+    expect(on).toHaveLength(5);
+    expect(new Set(on.map((i) => rgbOf(fb, i))).size).toBe(5);
+  });
+
   it('Vel → dots: a soft hit plays fewer', () => {
-    expect(play({ speed: 0, start: 'random', count: 8, velCount: 1 }, 0, { velocity: 0.5 }).state.dots).toHaveLength(4);
+    expect(play({ speed: 0, ...RANDOM, count: 8, velCount: 1 }, 0, { velocity: 0.5 }).state.dots).toHaveLength(4);
   });
 
   it('a Background lights the rest; None leaves it dark', () => {
     expect(lit(play({ speed: 0 }, 0).fb)).toHaveLength(1);
-    const { fb } = play({ speed: 0, background: 'other', bgColor: '#0000ff', bgLevel: 0.2, color: '#ff0000' }, 0);
+    const { fb } = play({ speed: 0, background: 'other', bgHue: 240, bgSat: 1, bgLevel: 0.2, hue: 0 }, 0);
     expect(lit(fb)).toHaveLength(M.pixelCount);
     const head = brightest(fb);
     expect(fb.rgba[head * 4]).toBeCloseTo(1);
@@ -288,14 +368,14 @@ describe('Dot — dots, life and colour', () => {
     expect(fb.rgba[other * 4 + 2]).toBeCloseTo(0.2);
   });
 
-  it('Change → to colour fades each dot to the second colour over its life', () => {
-    const { fb } = play({ speed: 0, life: 1000, fade: 0, color: '#ff0000', shift: 'to-colour', colorTo: '#0000ff' }, 990);
+  it('Change → To hue turns each dot to the second hue over its life', () => {
+    const { fb } = play({ speed: 0, life: 1000, fade: 0, hue: 0, shift: 'to-hue', hueTo: 240 }, 990);
     const head = brightest(fb);
     expect(fb.rgba[head * 4 + 2]!).toBeGreaterThan(fb.rgba[head * 4]!);
   });
 
   it('replays exactly from the same seed', () => {
-    const params = { start: 'random', count: 6, through: 'space', direction: 'random', bounce: 'random', speed: 120, life: 0 };
+    const params = { ...RANDOM, randSpace: 1, count: 6, through: 'space', direction: 'random', bounce: 'random', speed: 120, life: 0 };
     expect(Array.from(play(params, 2000).fb.rgba)).toEqual(Array.from(play(params, 2000).fb.rgba));
   });
 });
@@ -316,8 +396,8 @@ describe('Dot — card sections', () => {
   it('every param sits under a section, in card order', () => {
     expect(dot.paramSpec.every((p) => p.section)).toBe(true);
     const order = [...new Set(dot.paramSpec.map((p) => p.section))];
-    // Move around + Move through became one Movement heading (Tim, 2026-10-05).
-    expect(order).toEqual(['Dots', 'Life', 'Shape', 'Movement', 'Colour', 'Background', 'Velocity']);
+    // Move around + Move through became one Movement heading; Random has its own (Tim, 2026-10-05).
+    expect(order).toEqual(['Dots', 'Random', 'Life', 'Shape', 'Movement', 'Colour', 'Background', 'Velocity']);
     expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max alive');
   });
 });

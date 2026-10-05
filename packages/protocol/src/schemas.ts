@@ -348,7 +348,13 @@ const serializedModelSchema = z.object({
 });
 
 const showIfValues = z.array(z.union([z.string(), z.number(), z.boolean()])).readonly();
-const showIfSchema = z.object({ key: z.string(), is: showIfValues.optional(), not: showIfValues.optional() });
+type ShowIfWire = { key: string; is?: readonly (string | number | boolean)[]; not?: readonly (string | number | boolean)[] } | { any: readonly ShowIfWire[] };
+const showIfSchema: z.ZodType<ShowIfWire> = z.lazy(() =>
+  z.union([
+    z.object({ key: z.string(), is: showIfValues.optional(), not: showIfValues.optional() }),
+    z.object({ any: z.array(showIfSchema).readonly() }),
+  ]),
+);
 
 const paramSpecSchema = z.object({
   key: z.string(),
@@ -365,7 +371,8 @@ const paramSpecSchema = z.object({
   showIf: z.union([showIfSchema, z.array(showIfSchema).readonly()]).optional(),
   optionsFrom: z.literal('drums').optional(),
   widget: z.union([
-    z.object({ kind: z.literal('hoop-pixel') }),
+    z.object({ kind: z.literal('hoop-pick') }),
+    z.object({ kind: z.literal('hoop-angle') }),
     z.object({ kind: z.literal('drum-order') }),
     z.object({ kind: z.literal('space-point'), keys: z.tuple([z.string(), z.string(), z.string()]).readonly() }),
   ]).optional(),

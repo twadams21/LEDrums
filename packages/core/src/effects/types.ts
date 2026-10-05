@@ -5,12 +5,11 @@ import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';
 
-/** A condition on another param's value, for {@link ParamSpec.showIf}. */
-export interface ShowIf {
-  key: string;
-  is?: readonly (string | number | boolean)[];
-  not?: readonly (string | number | boolean)[];
-}
+/** A condition on another param's value, for {@link ParamSpec.showIf}: it holds one of `is` (or
+    none of `not`) — or, with `any`, at least one of those conditions holds. */
+export type ShowIf =
+  | { key: string; is?: readonly (string | number | boolean)[]; not?: readonly (string | number | boolean)[] }
+  | { any: readonly ShowIf[] };
 
 /** Declares a single effect parameter so the UI can render a control generically. */
 export interface ParamSpec {
@@ -37,14 +36,16 @@ export interface ParamSpec {
       its fixed `options` (Dot: `['@hit']`, the drum you hit). Display only. */
   optionsFrom?: 'drums';
   /** A richer control than a slider or a list, drawn by the card. Display only.
-      `hoop-pixel`: a ring of the hoop's pixels to click (Dot's Start pixel). `drum-order`: the
-      kit's drums as chips to drag, stored as comma-separated drum ids. `space-point`: a plan and an
-      elevation of the kit to click a point in, editing the three 0..1 params named in `keys`. */
-  widget?: { kind: 'hoop-pixel' } | { kind: 'drum-order' } | { kind: 'space-point'; keys: readonly [string, string, string] };
+      `hoop-pick`: a button per hoop (its range from `rangeFrom`). `hoop-angle`: a ring of the
+      hoop's pixels to click, in degrees from the front (0° at the bottom). `drum-order`: the kit's
+      drums as chips to drag, stored as comma-separated drum ids. `space-point`: the kit seen from
+      the top and the front to click a point in, editing the three 0..1 params named in `keys`. */
+  widget?: { kind: 'hoop-pick' } | { kind: 'hoop-angle' } | { kind: 'drum-order' } | { kind: 'space-point'; keys: readonly [string, string, string] };
   /** Edited by another param's widget, so the card shows no row of its own. Display only. */
   partOf?: string;
   /** A range the card reads from the kit (Dot: `start-hoops` — the start drum's hoop count;
-      `start-pixels` — its start hoop's pixel count). Display only; the effect clamps anyway. */
+      `start-pixels` — its start hoop's pixel count, the dots on the Start angle ring). Display
+      only; the effect clamps anyway. */
   rangeFrom?: 'start-hoops' | 'start-pixels';
 }
 

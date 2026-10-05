@@ -323,27 +323,28 @@ export interface StripKitInfo {
 }
 
 type Vec3 = { x: number; y: number; z: number };
-/** The kit in plan: its bounds and every drum's extent, mm (z up). */
+/** The kit for a point picker: its bounds and every drum's hoops as rings of points, mm (z up). */
 export interface KitPlan {
   bounds: { min: Vec3; max: Vec3 };
-  drums: { id: string; label: string; min: Vec3; max: Vec3 }[];
+  drums: { id: string; label: string; hoops: Vec3[][] }[];
 }
 
-/** A kit plan from a pixel model: each drum's extent is the box round its pixels. */
+/** A kit plan from a pixel model: each hoop's pixel positions, thinned to at most 48 a hoop — the
+    drums drawn as the visualiser draws them. */
 export function kitPlanOf(model: PixelModel): KitPlan {
   const drums = model.drums.map((d) => {
-    const min = { x: Infinity, y: Infinity, z: Infinity };
-    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
-    for (let i = d.pixelStart; i < d.pixelStart + d.pixelCount; i++) {
-      const w = model.pixels[i]!.world;
-      for (const k of ['x', 'y', 'z'] as const) {
-        min[k] = Math.min(min[k], w[k]);
-        max[k] = Math.max(max[k], w[k]);
-      }
+    const hoops: Vec3[][] = [];
+    let start = d.pixelStart;
+    for (const n of d.hoopPixelCounts) {
+      const every = Math.max(1, Math.ceil(n / 48));
+      const ring: Vec3[] = [];
+      for (let i = 0; i < n; i += every) ring.push({ ...model.pixels[start + i]!.world });
+      if (ring.length) hoops.push(ring);
+      start += n;
     }
-    return { id: d.drumId, label: d.label, min, max };
+    return { id: d.drumId, label: d.label, hoops };
   });
-  return { bounds: { min: { ...model.bounds.min }, max: { ...model.bounds.max } }, drums: drums.filter((d) => d.min.x <= d.max.x) };
+  return { bounds: { min: { ...model.bounds.min }, max: { ...model.bounds.max } }, drums: drums.filter((d) => d.hoops.length) };
 }
 
 /** A hoop's pixel count from a host that reports it, else 0. */
