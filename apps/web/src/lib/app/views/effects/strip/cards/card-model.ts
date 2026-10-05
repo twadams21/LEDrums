@@ -34,6 +34,9 @@ export interface CardParam {
   section?: string;
   /** An enum whose choices are the kit's drums, filled in by the card (core `optionsFrom`). */
   optionsFrom?: 'drums';
+  /** A richer control the card draws (core `widget`): a hoop's pixel ring, drum-order chips, a
+      point in the kit's space. */
+  widget?: ParamSpec['widget'];
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -52,7 +55,39 @@ export function toCardParam(spec: ParamSpec): CardParam {
     ...(spec.info ? { info: spec.info } : {}),
     ...(spec.section ? { section: spec.section } : {}),
     ...(spec.optionsFrom ? { optionsFrom: spec.optionsFrom } : {}),
+    ...(spec.widget ? { widget: spec.widget } : {}),
   };
+}
+
+/** The kit, as the card reads it to size a param's range (core `rangeFrom`). */
+export interface KitRanges {
+  drumIds: readonly string[];
+  hoops(drumId: string): number;
+  pixels(drumId: string, hoop: number): number;
+}
+
+/**
+ * Params sized to the kit (Tim, 2026-10-05: "the start hoop param should only have 4 options, as
+ * there are only 4 hoops"): `start-hoops` tops out at the start drum's hoop count, `start-pixels`
+ * at its start hoop's pixel count. With the drum you hit (no drum chosen) — the most any drum has.
+ * A host that can't say leaves the spec's range.
+ */
+export function withKitRanges(
+  device: GeneratorDevice,
+  params: readonly CardParam[],
+  kit: KitRanges,
+): CardParam[] {
+  const specs = effectChain.generatorParamSpec(device.kind, device.style);
+  const val = (key: string) => device.params[key] ?? specs.find((s) => s.key === key)?.default;
+  const chosen = String(val('startDrum') ?? '');
+  const drums = kit.drumIds.includes(chosen) ? [chosen] : [...kit.drumIds];
+  const hoop = Math.max(1, Math.round(Number(val('startHoop') ?? 1)));
+  return params.map((p) => {
+    const rangeFrom = specs.find((s) => s.key === p.key)?.rangeFrom;
+    if (!rangeFrom) return p;
+    const max = Math.max(0, ...drums.map((d) => (rangeFrom === 'start-hoops' ? kit.hoops(d) : kit.pixels(d, Math.min(hoop, Math.max(1, kit.hoops(d)))))));
+    return max > 0 ? { ...p, max: Math.max(p.min ?? 1, max) } : p;
+  });
 }
 
 /** Is this param shown for these values — every `showIf` condition met (its param holding one of
@@ -79,7 +114,10 @@ export function drumParamOptions(drums: readonly { id: string; label: string }[]
 export function paramValue(p: CardParam, params: Readonly<Record<string, ParamValue>> | undefined): ParamValue {
   const v = params?.[p.key];
   if (v === undefined) return p.default;
-  if (p.kind === 'enum' && (typeof v !== 'string' || !(p.options ?? []).includes(v))) return p.default;
+  // An enum outside its options reads as its default — except one whose choices come from the kit
+  // (a drum id) or a widget (a drum order), which its fixed options can't list.
+  const open = !!p.optionsFrom || p.widget?.kind === 'drum-order';
+  if (p.kind === 'enum' && (typeof v !== 'string' || (!open && !(p.options ?? []).includes(v)))) return p.default;
   return v;
 }
 
@@ -142,6 +180,17 @@ export function paramSections(params: readonly CardParam[]): ParamSection[] | nu
   return out;
 }
 
+/** How many row-heights a param takes: a widget is taller than a row (a hoop's ring ~3 more, a
+    point picker's two views ~4, drum chips ~1). */
+function rowLines(p: CardParam): number {
+  switch (p.widget?.kind) {
+    case 'hoop-pixel': return 4;
+    case 'space-point': return 5;
+    case 'drum-order': return 2;
+    default: return 1;
+  }
+}
+
 /**
  * Sections packed into columns, left to right: a section joins the column above it while the
  * column stays within {@link PARAM_ROWS_MAX} + 2 lines (a header counts as one — it is shorter
@@ -153,7 +202,7 @@ export function sectionColumns(sections: readonly ParamSection[]): ParamSection[
   const columns: ParamSection[][] = [];
   let lines = Infinity;
   for (const s of sections) {
-    const size = s.params.length + 1;
+    const size = s.params.reduce((n, p) => n + rowLines(p), 0) + 1;
     if (lines + size > max) {
       columns.push([s]);
       lines = size;
@@ -247,6 +296,8 @@ export function generatorParams(device: GeneratorDevice): CardParam[] {
   return specs
     .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
     .filter((s) => shown(s, specs, device.params))
+    // A param another param's widget edits has no row of its own (Dot's Start depth / height).
+    .filter((s) => !s.partOf)
     .map(toCardParam);
 }
 

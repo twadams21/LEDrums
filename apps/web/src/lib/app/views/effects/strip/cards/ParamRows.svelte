@@ -15,7 +15,10 @@
   import { mappable } from '../../../../map-mode/mappable.svelte';
   import { effectChain } from '@ledrums/core';
   import { enumLabel, formatParam, isTempoParam, paramColumns, paramSections, paramValue, sectionColumns, tempoBeats, tempoTogglePatch, type CardParam, type ParamValue } from './card-model';
-  import { beatsLabel } from '../strip-model';
+  import { beatsLabel, type KitPlan } from '../strip-model';
+  import OrderList from '../../../../../ui/OrderList.svelte';
+  import HoopPixelRing from './HoopPixelRing.svelte';
+  import SpacePointPicker from './SpacePointPicker.svelte';
 
   interface Props {
     params: readonly CardParam[];
@@ -36,6 +39,8 @@
     onPatch?: (patch: Record<string, ParamValue | undefined>) => void;
     /** The choices for a param whose options are the kit's drums (`optionsFrom: 'drums'`). */
     drumOptions?: readonly { value: string; label: string }[];
+    /** The kit in plan, for a point-in-space widget (null: the views show the bounds only). */
+    kitPlan?: KitPlan | null;
   }
 
   let {
@@ -50,7 +55,21 @@
     mapParam,
     onPatch,
     drumOptions = [],
+    kitPlan = null,
   }: Props = $props();
+
+  /** A 0..1 param a widget edits, read from the values (it may have no row — `partOf`). */
+  const amount = (key: string): number => {
+    const v = values?.[key];
+    return typeof v === 'number' ? v : 0.5;
+  };
+  /** The kit's drums in a drum-order param's order: listed ids first, then the rest. */
+  function orderedDrums(list: string): { id: string; label: string }[] {
+    const drums = drumOptions.filter((d) => !d.value.startsWith('@')).map((d) => ({ id: d.value, label: d.label }));
+    const ids = list.split(',').map((id) => id.trim()).filter(Boolean);
+    const first = ids.map((id) => drums.find((d) => d.id === id)).filter((d): d is { id: string; label: string } => !!d);
+    return [...first, ...drums.filter((d) => !ids.includes(d.id))];
+  }
 
   // More than PARAM_ROWS_MAX rows: balanced columns, filled top to bottom, then left to right.
   const layout = $derived(paramColumns(params.length));
@@ -64,13 +83,68 @@
   const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
 </script>
 
+{#snippet labelOf(p: CardParam, unit: boolean)}
+  <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && unit}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
+{/snippet}
+
 {#snippet row(p: CardParam)}
+  {#if p.widget?.kind === 'space-point'}
+    {@const [kx, ky, kz] = p.widget.keys}
+    <!-- A point in the kit's space: two views to click, editing three params at once. -->
+    <li class="widget">
+      {@render labelOf(p, false)}
+      <SpacePointPicker
+        plan={kitPlan}
+        value={{ width: amount(kx), depth: amount(ky), height: amount(kz) }}
+        {disabled}
+        onChange={(next) => {
+          const patch: Record<string, ParamValue> = {};
+          if (next.width !== undefined) patch[kx] = next.width;
+          if (next.depth !== undefined) patch[ky] = next.depth;
+          if (next.height !== undefined) patch[kz] = next.height;
+          if (onPatch) onPatch(patch);
+          else for (const [k, val] of Object.entries(patch)) onChange(k, val);
+        }}
+        {onGestureStart}
+        {onGestureEnd}
+      />
+    </li>
+  {:else if p.widget?.kind === 'drum-order'}
+    <!-- The kit's drums as chips to drag into order, stored as comma-separated ids. -->
+    <li class="widget">
+      {@render labelOf(p, false)}
+      <OrderList
+        items={orderedDrums(String(paramValue(p, values)))}
+        {disabled}
+        ariaLabel={aria(p)}
+        onReorder={(ids) => onChange(p.key, ids.join(','))}
+      />
+    </li>
+  {:else}
+    {@render plainRow(p)}
+    {#if p.widget?.kind === 'hoop-pixel' && p.max !== undefined}
+      <!-- The hoop's pixels as a ring: click the one to start on (the field above types it). -->
+      <li class="widget ring">
+        <HoopPixelRing
+          count={p.max}
+          value={Number(paramValue(p, values))}
+          {disabled}
+          onChange={(px) => onChange(p.key, px)}
+          {onGestureStart}
+          {onGestureEnd}
+        />
+      </li>
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet plainRow(p: CardParam)}
   {@const v = paramValue(p, values)}
   {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
   {@const tempo = !!onPatch && isTempoParam(p)}
   {@const beats = tempo ? tempoBeats(p, values) : undefined}
   <li class="row" class:modulated={modulated?.has(p.key)}>
-    <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && !tempo}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
+    {@render labelOf(p, !tempo)}
     <span class="ctl" {@attach map && mappable(map)}>
       {#if p.kind === 'enum'}
         <Select
@@ -220,6 +294,18 @@
     letter-spacing: var(--tracking-label);
     text-transform: uppercase;
     color: var(--text-faint);
+  }
+  /* A widget's row: its label above, the widget below, the column's full width. (Not `.block`:
+     the styleguide's page styles own that name.) */
+  .widget {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 0 4px;
+  }
+  .widget.ring {
+    align-items: center;
+    padding-top: 0;
   }
   .row {
     display: flex;

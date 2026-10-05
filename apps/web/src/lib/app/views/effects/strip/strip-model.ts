@@ -2,7 +2,7 @@
    Trigger / Target cards, the Effect header and the reorder drags all route their decisions
    through here so the rules are unit-tested once and the components stay thin. */
 
-import { effectChain, voice } from '@ledrums/core';
+import { effectChain, voice, type PixelModel } from '@ledrums/core';
 import type { EffectsAuthoringApi, GridRow } from '../../../../trigger-lab/effects-api';
 
 type Effect = effectChain.Effect;
@@ -316,6 +316,47 @@ export interface StripKitInfo {
   drumHoopCount(drumId: string): number;
   /** The kit's bounds in mm, when the host knows its geometry (a Slice's Space box). */
   kitBounds?(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
+  /** How many pixels hoop `hoop` (1-based) of a drum has (Dot's Start pixel). */
+  hoopPixelCount?(drumId: string, hoop: number): number;
+  /** The kit laid out for a point picker: its bounds and each drum's extent (Dot's Start point). */
+  kitPlan?(): KitPlan;
+}
+
+type Vec3 = { x: number; y: number; z: number };
+/** The kit in plan: its bounds and every drum's extent, mm (z up). */
+export interface KitPlan {
+  bounds: { min: Vec3; max: Vec3 };
+  drums: { id: string; label: string; min: Vec3; max: Vec3 }[];
+}
+
+/** A kit plan from a pixel model: each drum's extent is the box round its pixels. */
+export function kitPlanOf(model: PixelModel): KitPlan {
+  const drums = model.drums.map((d) => {
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (let i = d.pixelStart; i < d.pixelStart + d.pixelCount; i++) {
+      const w = model.pixels[i]!.world;
+      for (const k of ['x', 'y', 'z'] as const) {
+        min[k] = Math.min(min[k], w[k]);
+        max[k] = Math.max(max[k], w[k]);
+      }
+    }
+    return { id: d.drumId, label: d.label, min, max };
+  });
+  return { bounds: { min: { ...model.bounds.min }, max: { ...model.bounds.max } }, drums: drums.filter((d) => d.min.x <= d.max.x) };
+}
+
+/** A hoop's pixel count from a host that reports it, else 0. */
+export function hoopPixelCount(api: EffectsAuthoringApi, drumId: string, hoop: number): number {
+  const fn = (api as Partial<StripKitInfo>).hoopPixelCount;
+  const n = typeof fn === 'function' ? fn.call(api, drumId, hoop) : 0;
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** The kit plan from a host that reports it, else null. */
+export function kitPlan(api: EffectsAuthoringApi): KitPlan | null {
+  const fn = (api as Partial<StripKitInfo>).kitPlan;
+  return typeof fn === 'function' ? fn.call(api) : null;
 }
 
 /** The kit's bounds from a host that reports them, else null. */

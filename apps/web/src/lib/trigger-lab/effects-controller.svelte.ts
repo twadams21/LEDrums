@@ -14,7 +14,8 @@
 
     {@link createStandaloneEffectsApi} is an in-memory host for styleguide demos + component tests. */
 
-import { effectChain, inputMapSchema, type InputMap, type KitConfig } from '@ledrums/core';
+import { buildPixelModel, effectChain, inputMapSchema, type InputMap, type KitConfig, type PixelModel } from '@ledrums/core';
+import { kitPlanOf, type KitPlan } from '../app/views/effects/strip/strip-model';
 import {
   MASTER_CELL,
   type ApplyResult,
@@ -606,9 +607,28 @@ interface StandaloneState {
 /** A controller over an in-memory section, with a snapshot undo stack and a fire log. */
 export class StandaloneEffectsApi extends EffectsController {
   readonly #state: StandaloneState;
+  readonly #kit: () => KitConfig;
+  #model: PixelModel | null = null;
   constructor(state: StandaloneState, host: EffectsControllerHost) {
     super(host);
     this.#state = state;
+    this.#kit = () => host.kit();
+  }
+  /** The kit's pixel model, built once — the strip's kit geometry (StripKitInfo). */
+  get #pixels(): PixelModel {
+    return (this.#model ??= buildPixelModel(this.#kit()));
+  }
+  drumHoopCount(drumId: string): number {
+    return this.#pixels.drumById.get(drumId)?.hoopCount ?? 0;
+  }
+  kitBounds(): PixelModel['bounds'] {
+    return this.#pixels.bounds;
+  }
+  hoopPixelCount(drumId: string, hoop: number): number {
+    return this.#pixels.drumById.get(drumId)?.hoopPixelCounts[hoop - 1] ?? 0;
+  }
+  kitPlan(): KitPlan {
+    return kitPlanOf(this.#pixels);
   }
   /** The current in-memory section. */
   get section(): EffectsSection {

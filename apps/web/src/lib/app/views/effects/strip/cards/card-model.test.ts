@@ -5,6 +5,7 @@ import {
   describeMapping,
   describeSlot,
   drumParamOptions,
+  withKitRanges,
   envelopePoints,
   envelopeShapeOf,
   formatParam,
@@ -227,20 +228,35 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     expect(on({})).not.toContain('climb');
     expect(on({ through: 'drum' })).toContain('climb');
     expect(on({})).not.toContain('startDrum');
-    expect(on({ start: 'set-point' })).toEqual(expect.arrayContaining(['startDrum', 'startHoop', 'startAngle']));
+    expect(on({ start: 'set-point' })).toEqual(expect.arrayContaining(['startDrum', 'startHoop', 'startPixel']));
     expect(on({})).not.toContain('span');
     expect(on({ bounce: 'pingpong' })).toContain('span');
     expect(on({ through: 'kit' })).toEqual(expect.arrayContaining(['kitOrder', 'hopEvery']));
     // Every condition must hold: through space, the set point is X / Y / Z, not a drum and hoop.
     const space = on({ start: 'set-point', through: 'space' });
-    expect(space).toEqual(expect.arrayContaining(['spaceX', 'spaceY', 'spaceZ', 'heading', 'climb', 'radius']));
+    expect(space).toEqual(expect.arrayContaining(['spaceX', 'heading', 'climb', 'radius', 'spaceForm']));
+    // The Start point picker edits depth and height too, so they have no rows of their own.
+    expect(space).not.toContain('spaceY');
     expect(space).not.toContain('startDrum');
     expect(space).not.toContain('length');
     expect(on({ start: 'set-point' })).not.toContain('spaceX');
   });
 
+  it('Start hoop and Start pixel top out at the kit\'s (Tim, 2026-10-05: "only 4 options")', () => {
+    const kit = { drumIds: ['kick', 'snare'], hoops: (id: string) => (id === 'kick' ? 4 : 3), pixels: (id: string, h: number) => (id === 'kick' ? 196 : 108 + h) };
+    const at = (params: Record<string, string | number>) => {
+      const device = dotDevice({ start: 'set-point', ...params });
+      return Object.fromEntries(withKitRanges(device, generatorParams(device), kit).filter((p) => p.key.startsWith('start')).map((p) => [p.key, p.max]));
+    };
+    expect(at({ startDrum: 'snare', startHoop: 2 })).toMatchObject({ startHoop: 3, startPixel: 110 });
+    expect(at({})).toMatchObject({ startHoop: 4, startPixel: 196 }); // the drum you hit: the most any drum has
+  });
+
   it('the set point\'s Drum lists the drum you hit, then the kit\'s drums', () => {
     expect(drumParamOptions([{ id: 'kick', label: 'Kick' }])).toEqual([{ value: '@hit', label: 'Drum you hit' }, { value: 'kick', label: 'Kick' }]);
     expect(generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')).toMatchObject({ kind: 'enum', optionsFrom: 'drums' });
+    // A drum id (or a drum order) is not in the fixed options, yet reads as itself.
+    const startDrum = generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')!;
+    expect(paramValue(startDrum, { startDrum: 'snare' })).toBe('snare');
   });
 });

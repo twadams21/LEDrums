@@ -364,6 +364,13 @@ const paramSpecSchema = z.object({
   info: z.string().optional(),
   showIf: z.union([showIfSchema, z.array(showIfSchema).readonly()]).optional(),
   optionsFrom: z.literal('drums').optional(),
+  widget: z.union([
+    z.object({ kind: z.literal('hoop-pixel') }),
+    z.object({ kind: z.literal('drum-order') }),
+    z.object({ kind: z.literal('space-point'), keys: z.tuple([z.string(), z.string(), z.string()]).readonly() }),
+  ]).optional(),
+  partOf: z.string().optional(),
+  rangeFrom: z.enum(['start-hoops', 'start-pixels']).optional(),
 });
 
 const effectSpecSchema = z.object({

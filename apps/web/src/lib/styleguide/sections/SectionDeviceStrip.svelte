@@ -114,6 +114,7 @@
           generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
         }),
         fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
+        fx({ id: 'fx-dot-kit', name: 'Dots round the kit', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { start: 'set-point', startDrum: 'snare', startHoop: 2, startPixel: 27, through: 'kit', kitOrder: 'custom', kitList: 'tom1,snare,tom2,kick' } }, amp: { length: 'auto' } }),
         fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit', start: 'set-point', through: 'space' } }, amp: { length: 'auto' } }),
       ],
       master: [],
@@ -123,6 +124,7 @@
   const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
   const sliceFx = $derived(spliceApi.effectById('fx-slice')!);
   const dotFx = $derived(spliceApi.effectById('fx-dot')!);
+  const dotKitFx = $derived(spliceApi.effectById('fx-dot-kit')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -181,7 +183,7 @@
     <DemoCard
       title="Generator card — sectioned params (Dot)"
       src={['lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
-      note="Params that name a section (core ParamSpec.section) sit under capitalised headers — DOTS · LIFE · SHAPE · MOVEMENT · COLOUR · BACKGROUND · VELOCITY — packed into columns left to right: a section joins the column above while it stays within 14 lines (a header counts as one), so short sections share a column and the card stays compact. A hairline separates the columns, as on the Splice face. Explanations sit behind ⓘ (ParamSpec.info). A param with showIf appears only in the mode it acts in (Travel angle for Through a drum / kit / space; Heading, Size and the Start X · Y · Z point through space; Swing for Ping-pong; Start drum · Start hoop · Start angle for a Set point on the hoops; showIf conditions can be combined, each with is or not); an optionsFrom: 'drums' enum lists the kit's drums, after Drum you hit."
+      note="Params that name a section (core ParamSpec.section) sit under capitalised headers — DOTS · LIFE · SHAPE · MOVEMENT · COLOUR · BACKGROUND · VELOCITY — packed into columns left to right: a section joins the column above while it stays within 14 lines (a header counts as one), so short sections share a column and the card stays compact. A hairline separates the columns, as on the Splice face. Explanations sit behind ⓘ (ParamSpec.info). A param with showIf appears only in the mode it acts in (Travel angle for Through a drum / kit / space; Heading, Size and the Start X · Y · Z point through space; Swing for Ping-pong; Start drum · Start hoop · Start angle for a Set point on the hoops; showIf conditions can be combined, each with is or not); an optionsFrom: 'drums' enum lists the kit's drums, after Drum you hit. Through space, the Start point is a space-point widget: the kit from above (width × depth) and from the front (width × height), each drum drawn as the box round its pixels — click, drag, or arrow keys; the depth and height params it also edits (partOf) have no rows."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={dotFx} /></div>
@@ -190,6 +192,15 @@
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}
       note="Kind switch moves the Effect's column. Zone is read-only (the cell's). Below, the Effect's brightness envelope: Attack · Curve · Sustain (time, beats, While held, Loop) · Decay — the one envelope the Effect has; the old ADSR drop (Drop / Drop to) shows only on an Effect that still uses one.">
       <div class="cards"><TriggerCard {api} effect={pulse} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — widgets (Dot through the kit)"
+      src={['lib/app/views/effects/strip/cards/HoopPixelRing', 'lib/ui/OrderList', 'lib/app/views/effects/strip/cards/ParamRows']}
+      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pixel: the start hoop's pixels as a ring — pixel 1 at the top, clockwise; click or drag to pick, the field above types it. drum-order: the kit's drums as OrderList chips to drag (or ←/→), stored as comma-separated ids. rangeFrom sizes a param to the kit: Start hoop tops out at the chosen drum's hoop count, Start pixel at that hoop's pixel count. A widget counts as several rows when sections pack into columns."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={dotKitFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — Dot" src={['lib/app/views/effects/strip/AmpEnvelopeField', 'lib/app/views/effects/strip/strip-model']}

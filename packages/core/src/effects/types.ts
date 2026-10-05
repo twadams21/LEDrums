@@ -36,6 +36,16 @@ export interface ParamSpec {
   /** An `enum` whose choices are the kit's drums (value = drum id), filled in by the card after
       its fixed `options` (Dot: `['@hit']`, the drum you hit). Display only. */
   optionsFrom?: 'drums';
+  /** A richer control than a slider or a list, drawn by the card. Display only.
+      `hoop-pixel`: a ring of the hoop's pixels to click (Dot's Start pixel). `drum-order`: the
+      kit's drums as chips to drag, stored as comma-separated drum ids. `space-point`: a plan and an
+      elevation of the kit to click a point in, editing the three 0..1 params named in `keys`. */
+  widget?: { kind: 'hoop-pixel' } | { kind: 'drum-order' } | { kind: 'space-point'; keys: readonly [string, string, string] };
+  /** Edited by another param's widget, so the card shows no row of its own. Display only. */
+  partOf?: string;
+  /** A range the card reads from the kit (Dot: `start-hoops` — the start drum's hoop count;
+      `start-pixels` — its start hoop's pixel count). Display only; the effect clamps anyway. */
+  rangeFrom?: 'start-hoops' | 'start-pixels';
 }
 
 export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';

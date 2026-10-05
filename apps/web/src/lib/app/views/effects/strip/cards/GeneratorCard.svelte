@@ -18,7 +18,7 @@
   import SlotsEditor from './SlotsEditor.svelte';
   import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
-  import { effectDisplayName } from '../strip-model';
+  import { drumHoopCount, effectDisplayName, hoopPixelCount, kitPlan } from '../strip-model';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import {
     SCENE_PARAM,
@@ -28,6 +28,7 @@
     generatorParams,
     paramsLandscape,
     drumParamOptions,
+    withKitRanges,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -47,13 +48,22 @@
   const label = $derived(generatorLabel(device.kind));
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
-  const params = $derived(generatorParams(device));
+  const params = $derived(
+    withKitRanges(device, generatorParams(device), {
+      drumIds: api.gridRows.filter((r) => r.id !== 'kit').map((r) => r.id),
+      hoops: (id) => drumHoopCount(api, id),
+      pixels: (id, hoop) => hoopPixelCount(api, id, hoop),
+    }),
+  );
   // Splice and Slice have their own sectioned face, always laid out left to right; others go landscape when long.
   const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
   const landscape = $derived(spliceFace || paramsLandscape(params));
   const thumb = $derived(thumbSource(device));
   // A param that picks a drum (Dot's set point) lists the kit's drums.
-  const drumOptions = $derived(drumParamOptions(api.gridRows.filter((r) => r.id !== 'kit').map((r) => ({ id: r.id, label: r.label }))));
+  const drumRows = $derived(api.gridRows.filter((r) => r.id !== 'kit'));
+  const drumOptions = $derived(drumParamOptions(drumRows.map((r) => ({ id: r.id, label: r.label }))));
+  // A Start point in space is picked on the kit's plan; Start hoop / pixel top out at the kit's.
+  const plan = $derived(kitPlan(api));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
@@ -199,6 +209,7 @@
       onGestureStart={() => api.beginGesture()}
       onGestureEnd={() => api.endGesture()}
       {drumOptions}
+      kitPlan={plan}
     />
   {/if}
 </DeviceCard>
