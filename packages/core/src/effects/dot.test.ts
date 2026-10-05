@@ -94,6 +94,16 @@ describe('Dot — the set point', () => {
     expect(fromFront(nearest)).toBe(0);
   });
 
+  it('90° is the right side of the hoop as the visualiser shows the kit (−x: it draws world x, y, z as x, z, y)', () => {
+    // Tim, 2026-10-05: "the right most point of the ring … should be the right most point of the
+    // corresponding drum's hoop".
+    const on = lit(play({ startAngle: 90, speed: 0 }, 0).fb)[0]!;
+    const start = M.drums[0]!.pixelStart;
+    let cx = 0;
+    for (let i = start; i < start + 40; i++) cx += M.pixels[i]!.world.x / 40;
+    expect(M.pixels[on]!.world.x).toBeLessThan(cx - 1);
+  });
+
   it('Start drum, hoop and angle: every dot begins exactly there', () => {
     const on = lit(play({ startDrum: 'b', startHoop: 2, startAngle: 90, speed: 0, count: 3 }, 0, { drum: 'a' }).fb);
     expect(on).toHaveLength(1); // three dots, one pixel

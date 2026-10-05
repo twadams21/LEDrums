@@ -199,7 +199,7 @@
     <DemoCard
       title="Generator card — widgets (Dot through the kit)"
       src={['lib/app/views/effects/strip/cards/HoopAngleRing', 'lib/ui/SegmentedControl', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pick: a button per hoop of the start drum (rangeFrom start-hoops). hoop-angle: the Start angle as a ring of the start hoop's pixels seen from the throne — 0° at the bottom (FRONT, the side nearest the drummer), 90° the drummer's right; click or drag to pick a pixel, the field above types it (rangeFrom start-pixels gives the ring its dots, the field keeps 0–359°). Below it, RANDOM: how far a dot may stray from the set point, one amount each for drum, hoop and angle. Colours Per pixel: each pixel of the dot its own hue."
+      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pick: a button per hoop of the start drum (rangeFrom start-hoops). hoop-angle: the Start angle as the hoop itself, seen from the throne — one dot per pixel of the start hoop (rangeFrom start-pixels), FRONT at the bottom (the point nearest the drummer), the drum's right side on the right as the visualiser shows it; no number — click or drag a pixel, or focus it and step with the arrows. Below it, RANDOM: how far a dot may stray from the set point, one amount each for drum, hoop and angle. Colours Per pixel: each pixel of the dot its own hue."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={dotKitFx} /></div>

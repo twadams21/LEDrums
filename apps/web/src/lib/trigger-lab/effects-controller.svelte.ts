@@ -131,6 +131,24 @@ export class EffectsController implements EffectsAuthoringApi {
     return this.host.activeSectionId();
   }
   #rows = $derived.by((): GridRow[] => gridRows(this.host.kit()));
+  /** The kit's pixel model, the strip's kit geometry (StripKitInfo) — rebuilt when the kit changes. */
+  #pixels = $derived.by((): PixelModel => buildPixelModel(this.host.kit()));
+
+  // ---- kit geometry for the strip (StripKitInfo) ----------------------------------------------
+  // On the controller every Effects mount receives — the app's and the styleguide's — so cards that
+  // size to the kit work in the app too (Tim, 2026-10-05: Start hoop showed 8 buttons, no label).
+  drumHoopCount(drumId: string): number {
+    return this.#pixels.drumById.get(drumId)?.hoopCount ?? 0;
+  }
+  kitBounds(): PixelModel['bounds'] {
+    return this.#pixels.bounds;
+  }
+  hoopPixelCount(drumId: string, hoop: number): number {
+    return this.#pixels.drumById.get(drumId)?.hoopPixelCounts[hoop - 1] ?? 0;
+  }
+  kitPlan(): KitPlan {
+    return kitPlanOf(this.#pixels);
+  }
   #columns = $derived.by((): GridColumn[] => gridColumns(this.host.kit(), this.host.inputMap()));
   get gridRows(): readonly GridRow[] {
     return this.#rows;
@@ -607,28 +625,9 @@ interface StandaloneState {
 /** A controller over an in-memory section, with a snapshot undo stack and a fire log. */
 export class StandaloneEffectsApi extends EffectsController {
   readonly #state: StandaloneState;
-  readonly #kit: () => KitConfig;
-  #model: PixelModel | null = null;
   constructor(state: StandaloneState, host: EffectsControllerHost) {
     super(host);
     this.#state = state;
-    this.#kit = () => host.kit();
-  }
-  /** The kit's pixel model, built once — the strip's kit geometry (StripKitInfo). */
-  get #pixels(): PixelModel {
-    return (this.#model ??= buildPixelModel(this.#kit()));
-  }
-  drumHoopCount(drumId: string): number {
-    return this.#pixels.drumById.get(drumId)?.hoopCount ?? 0;
-  }
-  kitBounds(): PixelModel['bounds'] {
-    return this.#pixels.bounds;
-  }
-  hoopPixelCount(drumId: string, hoop: number): number {
-    return this.#pixels.drumById.get(drumId)?.hoopPixelCounts[hoop - 1] ?? 0;
-  }
-  kitPlan(): KitPlan {
-    return kitPlanOf(this.#pixels);
   }
   /** The current in-memory section. */
   get section(): EffectsSection {

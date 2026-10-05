@@ -52,6 +52,28 @@ describe('GeneratorCard', () => {
     expect(container.querySelector('section[aria-label="Shape"] .rows')!.children).toHaveLength(1);
   });
 
+  it('the controller every Effects mount gets knows the kit — hoops, pixels, plan (Tim, 2026-10-05: Start hoop showed 8 buttons)', () => {
+    const { api } = demo();
+    const kit = api as unknown as { drumHoopCount(id: string): number; hoopPixelCount(id: string, h: number): number; kitPlan(): { drums: unknown[] } };
+    expect(kit.drumHoopCount('kick')).toBeGreaterThan(0);
+    expect(kit.hoopPixelCount('kick', 1)).toBeGreaterThan(0);
+    expect(kit.kitPlan().drums.length).toBe(api.gridRows.length - 1);
+  });
+
+  it('a Dot\'s Start angle is a ring of the hoop\'s pixels — no number — stepped with the arrows', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const ring = container.querySelector<SVGElement>('svg.ring[role="slider"]')!;
+    expect(ring).toBeTruthy();
+    expect(ring.getAttribute('aria-valuetext')).toBe('the front');
+    expect(container.querySelector('svg.ring text.num')).toBeNull();
+    await fireEvent.keyDown(ring, { key: 'ArrowRight' });
+    expect(Number(effect().generator.params.startAngle)).toBeGreaterThan(0);
+    // Start hoop: a button per hoop of the drum.
+    expect(container.querySelectorAll('.row.pick [role="radio"], .row.pick button').length).toBeGreaterThan(0);
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });

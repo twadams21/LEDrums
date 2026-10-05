@@ -44,7 +44,6 @@ import type {
   Project,
 } from '@ledrums/core';
 import { applyDrumVelocity, BUILTIN_CANVAS_SCENES, buildPixelModel, defaultProject, effectChain, globalControlForNote, withGlobalControlBinding } from '@ledrums/core';
-import { kitPlanOf, type KitPlan } from '../app/views/effects/strip/strip-model';
 import type { KitConfig } from '@ledrums/core';
 import { voice } from '@ledrums/core';
 import * as canvasScenesLib from './store/canvas-scenes';
@@ -1418,14 +1417,6 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   /** The project kit's bounds, mm (a Slice's Space box starts as the whole kit). */
   kitBounds(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } } {
     return this.kitPixelModel.bounds;
-  }
-  /** A hoop's pixel count (1-based hoop) — Dot's Start pixel. */
-  hoopPixelCount(drumId: string, hoop: number): number {
-    return this.kitPixelModel.drumById.get(drumId)?.hoopPixelCounts[hoop - 1] ?? 0;
-  }
-  /** The kit in plan — Dot's Start point picker. */
-  kitPlan(): KitPlan {
-    return kitPlanOf(this.kitPixelModel);
   }
   setSpliceSlots(effectId: string, slots: effectChain.SpliceSlot[]): void {
     this.effectsCtl.setSpliceSlots(effectId, slots);

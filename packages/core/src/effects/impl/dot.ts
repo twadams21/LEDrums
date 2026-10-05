@@ -107,7 +107,11 @@ const unit = (a: V): V => {
  * front of the drum — the closest point to the drummer's playing position"). The audience faces
  * the kit from +y (the visualiser's front camera), so the drummer sits towards −y: 0° is the
  * pixel furthest that way round its hoop. A drum whose hoops face the drummer (a kick on its
- * side) has no such side, so its 0° is the bottom. 90° is the drummer's right.
+ * side) has no such side, so its 0° is the bottom. 90° is the drummer's right AS THE VISUALISER
+ * SHOWS THE KIT (Tim, 2026-10-05: "the right most point of the ring … should be the right most
+ * point of the corresponding drum's hoop"). The visualiser draws world (x, y, z) as (x, z, y) — a
+ * mirror — and a kit's Mirror setting is chosen so that picture matches the real kit, so the
+ * real right is −x in world terms: front × axis, not axis × front.
  */
 function hoopFrames(model: PixelModel): HoopFrame[][] {
   return model.drums.map((d) => {
@@ -138,7 +142,7 @@ function hoopFrames(model: PixelModel): HoopFrame[][] {
     let e1 = towards({ x: 0, y: -1, z: 0 });
     if (Math.hypot(e1.x, e1.y, e1.z) < 0.3) e1 = towards({ x: 0, y: 0, z: -1 });
     e1 = unit(e1);
-    const e2 = cross(axis, e1);
+    const e2 = cross(e1, axis);
     return hoops.map((h) => {
       const n = h.end - h.start;
       if (n <= 0) return { front: 0, sense: 1 };
@@ -740,7 +744,7 @@ export const dot: EffectGenerator<DotState> = {
       widget: { kind: 'hoop-pick' }, showIf: { key: 'through', not: ['space'] }, info: 'Counting from the bottom hoop, 1.' },
     { key: 'startAngle', label: 'Start angle', type: 'number', default: 0, min: 0, max: 359, step: 1, unit: '°', section: 'Dots', rangeFrom: 'start-pixels',
       widget: { kind: 'hoop-angle' }, showIf: { key: 'through', not: ['space'] },
-      info: 'Where round the hoop it begins, seen from the throne: 0° the front of the drum — the side nearest you — 90° your right, 180° the far side. Click the ring or type it.' },
+      info: 'Where round the hoop it begins. The ring is the hoop seen from the throne: its bottom is the front of the drum — the point nearest you — its right side the drum\'s right side. Click a pixel, or use the arrow keys.' },
     { key: 'spaceX', label: 'Start point', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, unit: '%', section: 'Dots',
       widget: { kind: 'space-point', keys: ['spaceX', 'spaceY', 'spaceZ'] }, showIf: { key: 'through', is: ['space'] },
       info: 'Where in the kit\'s space it begins — click it on the kit seen from the top or the front, as the visualiser shows them.' },

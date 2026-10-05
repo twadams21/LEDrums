@@ -131,7 +131,7 @@
   {:else if p.widget?.kind === 'hoop-pick'}
     <!-- A button per hoop (Tim, 2026-10-05: "only 4 options … i don't like the slider"). -->
     {@const hoops = Math.max(1, Math.round(p.max ?? 1))}
-    <li class="row">
+    <li class="row pick">
       {@render labelOf(p, false)}
       <span class="ctl">
         <SegmentedControl
@@ -144,22 +144,25 @@
         />
       </span>
     </li>
-  {:else}
-    {@render plainRow(p)}
-    {#if p.widget?.kind === 'hoop-angle'}
-      <!-- The hoop's pixels as a ring, seen from the throne: click where to start (the field above
-           types it). Its dots are the start hoop's pixels (ringCount; 36 when the host can't say). -->
-      <li class="widget ring">
+  {:else if p.widget?.kind === 'hoop-angle'}
+    <!-- The Start angle as the hoop seen from the throne — its dots the start hoop's pixels
+         (ringCount; 36 when the host can't say). No number: a pixel is picked on the ring. -->
+    <li class="widget">
+      {@render labelOf(p, false)}
+      <span class="ringwrap">
         <HoopAngleRing
           count={p.ringCount ?? 36}
           value={Number(paramValue(p, values))}
           {disabled}
+          ariaLabel={aria(p)}
           onChange={(deg) => onChange(p.key, deg)}
           {onGestureStart}
           {onGestureEnd}
         />
-      </li>
-    {/if}
+      </span>
+    </li>
+  {:else}
+    {@render plainRow(p)}
   {/if}
 {/snippet}
 
@@ -328,9 +331,13 @@
     gap: 4px;
     padding: 2px 0 4px;
   }
-  .widget.ring {
-    align-items: center;
-    padding-top: 0;
+  .ringwrap {
+    display: flex;
+    justify-content: center;
+  }
+  /* The hoop buttons keep their label: it never gives way to them. */
+  .row.pick .label {
+    flex: none;
   }
   .row {
     display: flex;
