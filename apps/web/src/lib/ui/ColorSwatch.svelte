@@ -24,6 +24,8 @@
     /** Fired with the decoded HSV when the user picks a colour. */
     onChange?: (hsv: Hsv) => void;
     ariaLabel?: string;
+    /** A small well alone — no hex — to sit beside a param's slider on a card row. */
+    compact?: boolean;
     class?: string;
   };
 
@@ -35,6 +37,7 @@
     disabled = false,
     onChange,
     ariaLabel = 'Colour',
+    compact = false,
     class: klass,
   }: Props = $props();
 
@@ -45,7 +48,7 @@
   }
 </script>
 
-<div class={['colorswatch', klass]} class:disabled>
+<div class={['colorswatch', klass]} class:disabled class:compact>
   <span class="well" class:modulated style="--swatch: {hex}">
     <input type="color" value={hex} {disabled} oninput={pick} aria-label={ariaLabel} />
     {#if modulated}
@@ -54,7 +57,7 @@
       </span>
     {/if}
   </span>
-  <span class="hex">{modulated ? `base ${hex}` : hex}</span>
+  {#if !compact}<span class="hex">{modulated ? `base ${hex}` : hex}</span>{/if}
 </div>
 
 <style>
@@ -63,6 +66,15 @@
     align-items: center;
     gap: var(--space-3);
     width: 100%;
+  }
+  .colorswatch.compact {
+    width: auto;
+    flex: none;
+  }
+  .colorswatch.compact .well {
+    width: 26px;
+    height: 18px;
+    border-radius: var(--radius-1);
   }
   .colorswatch.disabled {
     opacity: 0.4;

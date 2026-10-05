@@ -40,7 +40,19 @@ export interface ParamSpec {
       hoop's pixels to click, in degrees from the front (0° at the bottom). `drum-order`: the kit's
       drums as chips to drag, stored as comma-separated drum ids. `space-point`: the kit seen from
       the top and the front to click a point in, editing the three 0..1 params named in `keys`. */
-  widget?: { kind: 'hoop-pick' } | { kind: 'hoop-angle' } | { kind: 'drum-order' } | { kind: 'space-point'; keys: readonly [string, string, string] };
+  widget?:
+    | { kind: 'hoop-pick' }
+    | { kind: 'hoop-angle' }
+    | { kind: 'drum-order' }
+    | { kind: 'space-point'; keys: readonly [string, string, string] }
+    /** The way a dot flies through the kit's space — Heading and Elevation (`keys`) — dragged on
+        the kit seen from the top and the front, with the effect running live (Dot). */
+    | { kind: 'space-motion'; keys: readonly [string, string] };
+  /** On a hue param: a colour well beside it that sets the hue — and the named saturation /
+      brightness params — from a colour picker (the play-node inspector's ColorSwatch). A `hue`
+      param gets one by default, with `saturation` / `brightness` when the effect has them.
+      Display only. */
+  swatch?: { saturation?: string; brightness?: string };
   /** Edited by another param's widget, so the card shows no row of its own. Display only. */
   partOf?: string;
   /** A range the card reads from the kit (Dot: `start-hoops` — the start drum's hoop count;

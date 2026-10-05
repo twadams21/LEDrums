@@ -320,6 +320,8 @@ export interface StripKitInfo {
   hoopPixelCount?(drumId: string, hoop: number): number;
   /** The kit laid out for a point picker: its bounds and each drum's extent (Dot's Start point). */
   kitPlan?(): KitPlan;
+  /** The kit's pixel model, for a live preview that runs an effect on it (Dot through space). */
+  pixelModel?(): PixelModel;
 }
 
 type Vec3 = { x: number; y: number; z: number };
@@ -352,6 +354,12 @@ export function hoopPixelCount(api: EffectsAuthoringApi, drumId: string, hoop: n
   const fn = (api as Partial<StripKitInfo>).hoopPixelCount;
   const n = typeof fn === 'function' ? fn.call(api, drumId, hoop) : 0;
   return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** The kit's pixel model from a host that reports it, else null. */
+export function kitPixelModel(api: EffectsAuthoringApi): PixelModel | null {
+  const fn = (api as Partial<StripKitInfo>).pixelModel;
+  return typeof fn === 'function' ? fn.call(api) : null;
 }
 
 /** The kit plan from a host that reports it, else null. */

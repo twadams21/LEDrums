@@ -18,6 +18,7 @@ import {
   paramsLandscape,
   paramValue,
   sectionColumns,
+  withSwatches,
   parseMapTargetKey,
   mapTargetKey,
   slotGeneratorOptions,
@@ -237,7 +238,10 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     expect(on({ through: 'kit' })).toEqual(expect.arrayContaining(['kitOrder', 'hopEvery']));
     // Every condition must hold: through space, the set point is X / Y / Z, not a drum and hoop.
     const space = on({ through: 'space' });
-    expect(space).toEqual(expect.arrayContaining(['spaceX', 'heading', 'elevation', 'radius', 'spaceForm', 'randSpace']));
+    expect(space).toEqual(expect.arrayContaining(['spaceX', 'heading', 'radius', 'spaceForm', 'randSpace']));
+    // Heading and Elevation are one graphic, the live preview (Tim, 2026-10-06).
+    expect(space).not.toContain('elevation');
+    expect(generatorParams(dotDevice({ through: 'space' })).find((x) => x.key === 'heading')!.widget).toEqual({ kind: 'space-motion', keys: ['heading', 'elevation'] });
     expect(space).not.toContain('climb');
     expect(space).not.toContain('randHoop');
     // The Start point picker edits depth and height too, so they have no rows of their own.
@@ -273,5 +277,23 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     // A drum id (or a drum order) is not in the fixed options, yet reads as itself.
     const startDrum = generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')!;
     expect(paramValue(startDrum, { startDrum: 'snare' })).toBe('snare');
+  });
+});
+
+describe('colour wells (Tim, 2026-10-06: "i now can\'t even see a colour palette to choose a colour from")', () => {
+  const p = (key: string): CardParam => ({ key, label: key, kind: 'number', default: 0 });
+
+  it('every hue param gets a well, with the saturation / brightness beside it', () => {
+    expect(withSwatches([p('hue'), p('saturation'), p('brightness')])[0]!.swatch).toEqual({ saturation: 'saturation', brightness: 'brightness' });
+    expect(withSwatches([p('hue')])[0]!.swatch).toEqual({});
+    expect(withSwatches([p('speed')])[0]!.swatch).toBeUndefined();
+  });
+
+  it('a Dot\'s hues: the dot\'s, the background\'s (with its own saturation), and To hue', () => {
+    const dot = (params: Record<string, string>) =>
+      generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator);
+    expect(dot({}).find((x) => x.key === 'hue')!.swatch).toEqual({ saturation: 'saturation' });
+    expect(dot({ background: 'other' }).find((x) => x.key === 'bgHue')!.swatch).toEqual({ saturation: 'bgSat' });
+    expect(dot({ shift: 'to-hue' }).find((x) => x.key === 'hueTo')!.swatch).toEqual({});
   });
 });

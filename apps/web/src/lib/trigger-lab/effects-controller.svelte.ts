@@ -149,6 +149,9 @@ export class EffectsController implements EffectsAuthoringApi {
   kitPlan(): KitPlan {
     return kitPlanOf(this.#pixels);
   }
+  pixelModel(): PixelModel {
+    return this.#pixels;
+  }
   #columns = $derived.by((): GridColumn[] => gridColumns(this.host.kit(), this.host.inputMap()));
   get gridRows(): readonly GridRow[] {
     return this.#rows;

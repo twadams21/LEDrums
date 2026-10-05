@@ -74,6 +74,29 @@ describe('GeneratorCard', () => {
     expect(container.querySelectorAll('.row.pick [role="radio"], .row.pick button').length).toBeGreaterThan(0);
   });
 
+  it('a hue row has a colour well that sets hue and saturation in one step', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const well = container.querySelector<HTMLInputElement>('.colorswatch.compact input[type="color"]')!;
+    expect(well).toBeTruthy();
+    const depth = api.undoDepth;
+    await fireEvent.input(well, { target: { value: '#ff0000' } });
+    expect(effect().generator.params).toMatchObject({ hue: 0, saturation: 1 });
+    expect(api.undoDepth).toBe(depth + 1);
+  });
+
+  it('through space, Flight is a live preview of the kit to aim the dot on', () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setGeneratorParam(effect().id, 'through', 'space');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const motion = container.querySelector('.motion[role="slider"]')!;
+    expect(motion).toBeTruthy();
+    expect(container.querySelectorAll('.motion canvas')).toHaveLength(2);
+    expect(motion.getAttribute('aria-valuetext')).toBe('Heading 0°, elevation 0°');
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });

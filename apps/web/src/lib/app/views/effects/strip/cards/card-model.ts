@@ -39,6 +39,8 @@ export interface CardParam {
   widget?: ParamSpec['widget'];
   /** The start hoop's pixel count, for a Start angle ring's dots (core `rangeFrom: start-pixels`). */
   ringCount?: number;
+  /** A hue param's colour well: the saturation / brightness params it sets too (core `swatch`). */
+  swatch?: { saturation?: string; brightness?: string };
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -58,7 +60,22 @@ export function toCardParam(spec: ParamSpec): CardParam {
     ...(spec.section ? { section: spec.section } : {}),
     ...(spec.optionsFrom ? { optionsFrom: spec.optionsFrom } : {}),
     ...(spec.widget ? { widget: spec.widget } : {}),
+    ...(spec.swatch ? { swatch: spec.swatch } : {}),
   };
+}
+
+/**
+ * Every `hue` param gets a colour well (Tim, 2026-10-06: "i now can't even see a colour palette to
+ * choose a colour from") — the play-node inspector's ColorSwatch, so every effect picks its colour
+ * the same way: with the `saturation` / `brightness` params beside it when the effect has them.
+ */
+export function withSwatches(params: CardParam[]): CardParam[] {
+  const has = (key: string) => params.some((p) => p.key === key);
+  return params.map((p) =>
+    p.key === 'hue' && !p.swatch && p.kind === 'number'
+      ? { ...p, swatch: { ...(has('saturation') ? { saturation: 'saturation' } : {}), ...(has('brightness') ? { brightness: 'brightness' } : {}) } }
+      : p,
+  );
 }
 
 /** The kit, as the card reads it to size a param's range (core `rangeFrom`). */
@@ -190,6 +207,7 @@ function rowLines(p: CardParam): number {
   switch (p.widget?.kind) {
     case 'hoop-angle': return 4;
     case 'space-point': return 5;
+    case 'space-motion': return 6;
     case 'drum-order': return 2;
     default: return 1;
   }
@@ -307,12 +325,14 @@ export function generatorParams(device: GeneratorDevice): CardParam[] {
     return all.filter((p) => !spliceParamHidden(p.key, device.params, all));
   }
   const specs = effectChain.generatorParamSpec(device.kind, device.style);
-  return specs
-    .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
-    .filter((s) => shown(s, specs, device.params))
-    // A param another param's widget edits has no row of its own (Dot's Start depth / height).
-    .filter((s) => !s.partOf)
-    .map(toCardParam);
+  return withSwatches(
+    specs
+      .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
+      .filter((s) => shown(s, specs, device.params))
+      // A param another param's widget edits has no row of its own (Dot's Start depth / height).
+      .filter((s) => !s.partOf)
+      .map(toCardParam),
+  );
 }
 
 /** What the live thumbnail hosts: the resolved effect id + full params, or null (unknown Style,

@@ -18,7 +18,7 @@
   import SlotsEditor from './SlotsEditor.svelte';
   import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
-  import { drumHoopCount, effectDisplayName, hoopPixelCount, kitPlan } from '../strip-model';
+  import { drumHoopCount, effectDisplayName, hoopPixelCount, kitPixelModel, kitPlan } from '../strip-model';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import {
     SCENE_PARAM,
@@ -64,6 +64,7 @@
   const drumOptions = $derived(drumParamOptions(drumRows.map((r) => ({ id: r.id, label: r.label }))));
   // A Start point in space is picked on the kit's plan; Start hoop / pixel top out at the kit's.
   const plan = $derived(kitPlan(api));
+  const pixels = $derived(kitPixelModel(api));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
@@ -210,6 +211,7 @@
       onGestureEnd={() => api.endGesture()}
       {drumOptions}
       kitPlan={plan}
+      pixelModel={pixels}
     />
   {/if}
 </DeviceCard>

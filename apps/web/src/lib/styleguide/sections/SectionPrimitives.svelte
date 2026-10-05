@@ -454,7 +454,19 @@
       <Slider value={0.6} min={0} max={1} step={0.01} ariaLabel="Depth" format={(v) => `${v.toFixed(2)}×`} />
     </DemoCard>
 
-    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
+    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating. compact: the well alone (no hex), as it sits at the start of every Hue row on an Effect card — Tim, 2026-10-06: a colour palette to choose from.">
+      <ColorSwatch
+        compact
+        hue={swHue}
+        saturation={swSat}
+        brightness={swBri}
+        ariaLabel="Demo colour (compact)"
+        onChange={(hsv) => {
+          swHue = hsv.h;
+          swSat = hsv.s;
+          swBri = hsv.v;
+        }}
+      />
       <ColorSwatch
         hue={swHue}
         saturation={swSat}

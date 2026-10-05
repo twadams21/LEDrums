@@ -20,6 +20,9 @@
   import HoopAngleRing from './HoopAngleRing.svelte';
   import SegmentedControl from '../../../../../ui/SegmentedControl.svelte';
   import SpacePointPicker from './SpacePointPicker.svelte';
+  import SpaceMotionPreview from './SpaceMotionPreview.svelte';
+  import ColorSwatch from '../../../../../ui/ColorSwatch.svelte';
+  import type { PixelModel } from '@ledrums/core';
 
   interface Props {
     params: readonly CardParam[];
@@ -42,6 +45,8 @@
     drumOptions?: readonly { value: string; label: string }[];
     /** The kit in plan, for a point-in-space widget (null: the views show the bounds only). */
     kitPlan?: KitPlan | null;
+    /** The kit's pixel model, for a live space-motion preview (null: no preview). */
+    pixelModel?: PixelModel | null;
   }
 
   let {
@@ -57,7 +62,21 @@
     onPatch,
     drumOptions = [],
     kitPlan = null,
+    pixelModel = null,
   }: Props = $props();
+
+  /** A number param's value, or its default from the list (it may have no row). */
+  const valueOf = (key: string, fallback: number): number => {
+    const v = values?.[key];
+    if (typeof v === 'number') return v;
+    const d = params.find((p) => p.key === key)?.default;
+    return typeof d === 'number' ? d : fallback;
+  };
+  /** Several params at once: through onPatch when the host has it (one undo step), else one by one. */
+  const patchAll = (patch: Record<string, ParamValue>) => {
+    if (onPatch) onPatch(patch);
+    else for (const [k, val] of Object.entries(patch)) onChange(k, val);
+  };
 
   /** A 0..1 param a widget edits, read from the values (it may have no row — `partOf`). */
   const amount = (key: string): number => {
@@ -113,6 +132,23 @@
           if (onPatch) onPatch(patch);
           else for (const [k, val] of Object.entries(patch)) onChange(k, val);
         }}
+        {onGestureStart}
+        {onGestureEnd}
+      />
+    </li>
+  {:else if p.widget?.kind === 'space-motion'}
+    {@const [kh, ke] = p.widget.keys}
+    <!-- Which way it flies, set on the kit with the effect running live. -->
+    <li class="widget">
+      {@render labelOf(p, false)}
+      <SpaceMotionPreview
+        model={pixelModel}
+        params={values}
+        headingKey={kh}
+        elevationKey={ke}
+        {disabled}
+        ariaLabel={aria(p)}
+        onChange={(patch) => patchAll(patch)}
         {onGestureStart}
         {onGestureEnd}
       />
@@ -212,6 +248,25 @@
           {onGestureEnd}
         />
       {:else}
+        {#if p.swatch}
+          <!-- The colour well: picks the hue (and saturation / brightness) from a colour picker. -->
+          <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
+            <ColorSwatch
+              compact
+              hue={Number(v)}
+              saturation={p.swatch.saturation ? valueOf(p.swatch.saturation, 1) : 1}
+              brightness={p.swatch.brightness ? valueOf(p.swatch.brightness, 1) : 1}
+              {disabled}
+              ariaLabel={`${aria(p)} colour`}
+              onChange={(hsv) => {
+                const patch: Record<string, ParamValue> = { [p.key]: Math.round(hsv.h) };
+                if (p.swatch?.saturation) patch[p.swatch.saturation] = Number(hsv.s.toFixed(2));
+                if (p.swatch?.brightness) patch[p.swatch.brightness] = Number(hsv.v.toFixed(2));
+                patchAll(patch);
+              }}
+            />
+          </GestureScope>
+        {/if}
         <FaceParamControl
           kind={p.kind}
           value={v}
