@@ -114,7 +114,7 @@
           generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
         }),
         fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
-        fx({ id: 'fx-dot-kit', name: 'Dots round the kit', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { startDrum: 'snare', startHoop: 2, startAngle: 90, randAngle: 0.25, through: 'kit', kitOrder: 'kit', colorMode: 'per-pixel', length: 5 } }, amp: { length: 'auto' } }),
+        fx({ id: 'fx-dot-kit', name: 'Dots round the kit', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { startDrum: 'snare', startHoop: 2, startAngle: 90, randAngle: 0.25, through: 'kit', kitOrder: 'kit', colorMode: 'per-pixel', length: 5, shift: 'to-colour', palette: '#ff3b30,#ffd60a,#34c759,#0a84ff,#bf5af2' } }, amp: { length: 'auto' } }),
         fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, target: { kind: 'kit' }, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit', through: 'space', spaceX: 0.3, spaceY: 0.6, spaceZ: 0.7 } }, amp: { length: 'auto' } }),
         fx({ id: 'fx-dot-order', name: 'Dots in order', cell: kickHead, target: { kind: 'kit' }, generator: { kind: 'dot', style: 'dot', params: { through: 'kit', kitOrder: 'custom', kitList: 'tom1,snare,tom2,kick' } }, amp: { length: 'auto' } }),
       ],
@@ -185,7 +185,7 @@
     <DemoCard
       title="Generator card — sectioned params (Dot)"
       src={['lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
-      note="Params that name a section (core ParamSpec.section) sit under capitalised headers — DOTS · RANDOM · LIFE · SHAPE · MOVEMENT · COLOUR · BACKGROUND · VELOCITY — packed into columns left to right: a section joins the column above while it stays within 14 lines (a header counts as one), so short sections share a column and the card stays compact. A hairline separates the columns, as on the Splice face. Explanations sit behind ⓘ (ParamSpec.info). A param with showIf appears only in the mode it acts in (Travel angle for Through a drum / kit / space; Heading, Size and the Start X · Y · Z point through space; Swing for Ping-pong; Start drum · Start hoop · Start angle for a Set point on the hoops; showIf conditions can be combined, each with is or not); an optionsFrom: 'drums' enum lists the kit's drums, after Drum you hit. Every Hue row starts with a compact ColorSwatch well — pick a colour and it sets the hue (and the saturation / brightness the param names, ParamSpec.swatch). Through space, Flight is a space-motion widget: the kit's every pixel from the Top and the Front, the REAL Dot effect rendering on the kit's pixel model each frame (lit pixels in their colours, each dot's centre ringed at its Size), an arrow from the start point — drag Top to set Heading, Front to set Elevation, or arrows; it loops, pauses off-screen, and holds a still frame under reduced motion. The Start point is a space-point widget: the kit as the visualiser's Top camera (width × depth, x to the right, the drummer's side at the top) and Front camera (width × height), each drum drawn as its hoops — click, drag, or arrow keys; the depth and height params it also edits (partOf) have no rows."
+      note="Laid out by the Generator standard (docs/design/generator-standard.md): FORM (named for the plugin — DOTS) · START · SHAPE · MOVEMENT · TIMING · COLOUR · BACKGROUND, capitalised headers, packed into columns that keep their places. A Random sits as a sub-row (set in, a hairline) directly under what it varies. A setting that doesn't apply in the current mode is DIMMED in place — its ⓘ says when it applies (showIf → 'Only when Through is Space') — never hidden; alternatives share one place the height of the tallest (ParamSpec.slot: Start angle ↔ Start point, Length ↔ Size, Travel angle ↔ Flight, Colour ↔ Palette), so changing Through never moves the card. Colour is a colour box (ColorSwatch), no sliders: an effect's hue / saturation / brightness become one Colour row (a Control can still drive each). Through space shown here: the Start point views and Flight, the live pre-visualiser (drag to aim, the real Dot effect running)."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={dotFx} /></div>
@@ -199,7 +199,7 @@
     <DemoCard
       title="Generator card — widgets (Dot through the kit)"
       src={['lib/app/views/effects/strip/cards/HoopAngleRing', 'lib/ui/SegmentedControl', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pick: a button per hoop of the start drum (rangeFrom start-hoops). hoop-angle: the Start angle as the hoop itself, seen from the throne — one dot per pixel of the start hoop (rangeFrom start-pixels), FRONT at the bottom (the point nearest the drummer), the drum's right side on the right as the visualiser shows it; no number — click or drag a pixel, or focus it and step with the arrows. Below it, RANDOM: how far a dot may stray from the set point, one amount each for drum, hoop and angle. Colours Per pixel: each pixel of the dot its own hue."
+      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pick: a button per hoop of the start drum (rangeFrom start-hoops). hoop-angle: the Start angle as the hoop itself, seen from the throne — one dot per pixel of the start hoop (rangeFrom start-pixels), FRONT at the bottom, the drum's right side on the right as the visualiser shows it; click or drag a pixel, or the arrows. palette: Colours Per dot / Per hit / Per pixel / Random read a Palette — colour boxes in order, − / + and a fill round the colour wheel. Change: To colour (a colour box) with Blend Fade / Wheel and a Time, or Cycle at a Speed — the one that applies in the shared place."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={dotKitFx} /></div>
@@ -208,7 +208,7 @@
     <DemoCard
       title="Generator card — drum order (Dot)"
       src={['lib/ui/OrderList', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="drum-order: the kit's drums as OrderList chips to drag (or ←/→), stored as comma-separated ids. With Kit order Custom the dots begin on the first drum, so Start drum hides (a showIf any-condition). Sections keep the columns they had while they still fit, so rows appearing or disappearing don't move them."
+      note="drum-order: the kit's drums as OrderList chips to drag (or ←/→), stored as comma-separated ids. With Kit order Custom the dots begin on the first drum, so Start drum dims (a showIf any-condition). Edges: Repeat · Bounce · Random · Ping-pong · Leave."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={dotOrderFx} /></div>

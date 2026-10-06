@@ -74,16 +74,36 @@ describe('GeneratorCard', () => {
     expect(container.querySelectorAll('.row.pick [role="radio"], .row.pick button').length).toBeGreaterThan(0);
   });
 
-  it('a hue row has a colour well that sets hue and saturation in one step', async () => {
+  it('Colour is a colour box that sets hue and saturation in one step', async () => {
     const { api, effect } = demo();
     api.setGenerator(effect().id, 'dot');
     const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
-    const well = container.querySelector<HTMLInputElement>('.colorswatch.compact input[type="color"]')!;
-    expect(well).toBeTruthy();
+    const box = container.querySelector<HTMLInputElement>('.colorswatch input[type="color"]')!;
+    expect(box).toBeTruthy();
     const depth = api.undoDepth;
-    await fireEvent.input(well, { target: { value: '#ff0000' } });
+    await fireEvent.input(box, { target: { value: '#ff0000' } });
     expect(effect().generator.params).toMatchObject({ hue: 0, saturation: 1 });
     expect(api.undoDepth).toBe(depth + 1);
+  });
+
+  it('a Palette: colour boxes in order, added to, taken from, filled round the wheel', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setGeneratorParams(effect().id, { colorMode: 'per-dot', palette: '#123456,#abcdef,#fedcba' });
+    const { container, getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
+    expect(container.querySelectorAll('.colour-palette input[type="color"]')).toHaveLength(3);
+    await fireEvent.click(getByRole('button', { name: 'Fill round the colour wheel' }));
+    expect(effect().generator.params.palette).toBe('#ff0000,#00ff00,#0000ff');
+    await fireEvent.click(getByRole('button', { name: 'Add a colour' }));
+    expect(String(effect().generator.params.palette).split(',')).toHaveLength(4);
+  });
+
+  it('a setting that doesn\'t apply is dimmed in place and can\'t be used', () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const swing = [...container.querySelectorAll('li.inactive')].find((li) => li.textContent?.includes('Swing'));
+    expect(swing).toBeTruthy();
   });
 
   it('through space, Flight is a live preview of the kit to aim the dot on', () => {
@@ -120,7 +140,8 @@ describe('GeneratorCard', () => {
 
   it('edits a Style param from its face control', async () => {
     const { api, effect } = demo();
-    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && s.min !== undefined && s.max !== undefined)!;
+    // Not one of the colour's params — those are the Colour box now.
+    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && s.min !== undefined && s.max !== undefined && !['hue', 'saturation', 'brightness'].includes(s.key))!;
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
     const slider = getByRole('slider', { name: `Wave ${spec.label}` });
     await fireEvent.keyDown(slider, { key: 'ArrowRight' });
@@ -130,7 +151,7 @@ describe('GeneratorCard', () => {
   });
 
   it('badges a param a control drives', () => {
-    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number')!;
+    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && !['hue', 'saturation', 'brightness'].includes(s.key))!;
     const { api, effect } = demo({ controls: [{ uid: 'c1', kind: 'lfo', mappings: [{ device: 'generator', param: spec.key }] }] });
     const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelectorAll('.modbadge').length).toBe(1);

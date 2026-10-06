@@ -23,7 +23,7 @@ function model(): PixelModel {
 const M = model();
 
 /** Play one voice for `ms`, frame by frame, returning the last frame and the dots' state. */
-function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number } = {}) {
+function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number; hit?: number } = {}) {
   // No fade-in unless a test asks: most checks read the very first frames.
   const p = { ...defaultParams(dot.paramSpec), fade: 0, ...params };
   const state = dot.createState!(M, opts.seed ?? 7);
@@ -33,7 +33,7 @@ function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocit
     const ctx: RenderContext = {
       model: M, timeMs: t, dt: t === 0 ? 0 : 10,
       transport: { timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true },
-      triggers: [{ seq: opts.seq ?? 1, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
+      triggers: [{ seq: opts.seq ?? 1, hit: opts.hit ?? 0, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
     };
     dot.render(ctx, p, fb, state);
   }
@@ -109,8 +109,6 @@ describe('Dot — the set point', () => {
     expect(on).toHaveLength(1); // three dots, one pixel
     expect(M.pixels[on[0]!]).toMatchObject({ drumId: 'b', hoopIndex: 2 });
     expect(fromFront(on[0]!)).toBe(10); // 90° of a 40-pixel hoop
-    // An older Dot's 1-based drum number still reads.
-    expect(M.pixels[lit(play({ startDrum: 2, speed: 0 }, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b');
   });
 
   it('Spread out shares several dots evenly round the hoop', () => {
@@ -228,11 +226,11 @@ describe('Dot — moving through', () => {
     expect(seen.find((s) => s.hoop === 3)!.at).toBe(two === 2 ? 4 : 36);
   });
 
-  it('at the top hoop Bounce turns back down; Wrap comes back in at the bottom; Reverse heads down; Leave is gone', () => {
+  it('at the top hoop the Edges: Bounce turns back down; Repeat comes back in at the bottom; Leave is gone; Reverse heads down', () => {
     const at = (ms: number, extra: Record<string, string | number>) => play({ ...FIXED, speed: 4, through: 'drum', ...extra }, ms).state.dots[0]!;
     expect(at(1250, { bounce: 'bounce' }).hf).toBeCloseTo(1.5, 1);
     expect(at(1250, { bounce: 'bounce' }).step).toBe(-1);
-    expect(at(1400, { bounce: 'wrap' }).hoop).toBe(0);
+    expect(at(1400, { bounce: 'repeat' }).hoop).toBe(0);
     expect(at(500, { direction: 'reverse', startHoop: 3 }).hf).toBeCloseTo(1, 1);
     expect(at(1400, { bounce: 'leave' }).gone).toBe(true);
     expect(lit(play({ ...FIXED, speed: 4, through: 'drum', bounce: 'leave' }, 1400).fb)).toHaveLength(0);
@@ -347,25 +345,40 @@ describe('Dot — dots, life and colour', () => {
     expect(rgbOf(fb, brightest(fb))).toBe('1.000,0.000,0.000');
   });
 
-  it('Per hit: each hit a different colour, every dot of one hit the same', () => {
-    const colours = (seq: number) => {
-      const { fb } = play({ speed: 0, ...RANDOM, count: 3, colorMode: 'per-hit' }, 0, { seq });
-      return lit(fb).map((i) => rgbOf(fb, i));
+  // Tim, 2026-10-07: "in the colours (per hit) param, it doesn't give me any control over which
+  // colours are being played" — every mode but Single reads the Palette, in order.
+  const PAL = { palette: '#ff0000,#00ff00,#0000ff' };
+  const RED = '1.000,0.000,0.000';
+  const GREEN = '0.000,1.000,0.000';
+  const BLUE = '0.000,0.000,1.000';
+
+  it('Per hit: each hit takes the next palette colour; every dot of one hit the same', () => {
+    const colours = (hit: number) => {
+      const { fb } = play({ speed: 0, ...RANDOM, count: 3, colorMode: 'per-hit', ...PAL }, 0, { hit });
+      return [...new Set(lit(fb).map((i) => rgbOf(fb, i)))];
     };
-    const one = colours(1);
-    expect(new Set(one).size).toBe(1);
-    expect(colours(2)[0]).not.toBe(one[0]);
+    expect([colours(0), colours(1), colours(2), colours(3)]).toEqual([[RED], [GREEN], [BLUE], [RED]]);
   });
 
-  it('Per pixel: a 5-pixel dot shows 5 colours (Tim, 2026-10-05: "5 pixels … 5 different colours")', () => {
-    const { fb } = play({ speed: 0, length: 5, form: 'bar', colorMode: 'per-pixel', hueSpread: 360 }, 0);
+  it('Per dot: the dots of a hit take the palette in turn', () => {
+    const { fb } = play({ speed: 0, count: 3, spread: true, colorMode: 'per-dot', ...PAL }, 0);
+    expect(new Set(lit(fb).map((i) => rgbOf(fb, i)))).toEqual(new Set([RED, GREEN, BLUE]));
+  });
+
+  it('Per pixel: a dot\'s pixels take the palette in turn, tail to head (Tim: "5 pixels … 5 different colours")', () => {
+    const { fb } = play({ speed: 0, length: 5, form: 'bar', colorMode: 'per-pixel', palette: '#ff0000,#00ff00,#0000ff,#ffff00,#ff00ff' }, 0);
     const on = lit(fb);
     expect(on).toHaveLength(5);
     expect(new Set(on.map((i) => rgbOf(fb, i))).size).toBe(5);
   });
 
-  it('Vel → dots: a soft hit plays fewer', () => {
-    expect(play({ speed: 0, ...RANDOM, count: 8, velCount: 1 }, 0, { velocity: 0.5 }).state.dots).toHaveLength(4);
+  it('Random: every dot a colour from the palette, never one outside it', () => {
+    const { fb } = play({ speed: 0, ...RANDOM, count: 12, colorMode: 'random', ...PAL }, 0);
+    for (const i of lit(fb)) expect([RED, GREEN, BLUE]).toContain(rgbOf(fb, i));
+  });
+
+  it('velocity is the Velocity Control\'s job — a Dot has no velocity settings of its own', () => {
+    expect(dot.paramSpec.filter((p) => p.key.startsWith('vel'))).toEqual([]);
   });
 
   it('a Background lights the rest; None leaves it dark', () => {
@@ -378,10 +391,26 @@ describe('Dot — dots, life and colour', () => {
     expect(fb.rgba[other * 4 + 2]).toBeCloseTo(0.2);
   });
 
-  it('Change → To hue turns each dot to the second hue over its life', () => {
-    const { fb } = play({ speed: 0, life: 1000, fade: 0, hue: 0, shift: 'to-hue', hueTo: 240 }, 990);
-    const head = brightest(fb);
-    expect(fb.rgba[head * 4 + 2]!).toBeGreaterThan(fb.rgba[head * 4]!);
+  it('Change → To colour, over Time — straight across (Fade) or round the wheel (Wheel)', () => {
+    // Tim, 2026-10-07: "it goes through quite a few colours first … maybe … fades between the colours";
+    // "we don't have a speed setting for how quickly the colours change".
+    const mid = (blend: string) => {
+      const { fb } = play({ speed: 0, life: 0, hue: 0, shift: 'to-colour', hueTo: 120, blend, changeMs: 1000 }, 500);
+      const i = brightest(fb);
+      return [0, 1, 2].map((c) => fb.rgba[i * 4 + c]!);
+    };
+    expect(mid('fade')[0]).toBeCloseTo(0.5, 1); // half red, half green
+    expect(mid('fade')[1]).toBeCloseTo(0.5, 1);
+    expect(mid('wheel')[0]).toBeCloseTo(1, 1); // through yellow
+    expect(mid('wheel')[1]).toBeCloseTo(1, 1);
+    // At Time, it has arrived.
+    const { fb } = play({ speed: 0, life: 0, hue: 0, shift: 'to-colour', hueTo: 120, changeMs: 400 }, 600);
+    expect(rgbOf(fb, brightest(fb))).toBe(GREEN);
+  });
+
+  it('Change → Cycle turns round the wheel at Speed', () => {
+    const { fb } = play({ speed: 0, life: 0, hue: 0, shift: 'cycle', hueRate: 120 }, 1000);
+    expect(rgbOf(fb, brightest(fb))).toBe(GREEN); // 0° + 120°
   });
 
   it('replays exactly from the same seed', () => {
@@ -407,7 +436,8 @@ describe('Dot — card sections', () => {
     expect(dot.paramSpec.every((p) => p.section)).toBe(true);
     const order = [...new Set(dot.paramSpec.map((p) => p.section))];
     // Move around + Move through became one Movement heading; Random has its own (Tim, 2026-10-05).
-    expect(order).toEqual(['Dots', 'Random', 'Life', 'Shape', 'Movement', 'Colour', 'Background', 'Velocity']);
+    // The Generator standard (docs/design/generator-standard.md), Tim, 2026-10-07.
+    expect(order).toEqual(['Dots', 'Start', 'Shape', 'Movement', 'Timing', 'Colour', 'Background']);
     expect(dot.paramSpec.find((p) => p.key === 'maxLive')?.label).toBe('Max alive');
   });
 });

@@ -70,3 +70,37 @@ describe('Dot with Sustain "Until dots end"', () => {
     expect(voicesAfter(1, { life: 1500 }, 1600, auto)).toBe(0);
   });
 });
+
+describe('Dot Colours Per hit counts this Effect\'s hits (Tim, 2026-10-07)', () => {
+  it('the first hit takes the first palette colour, the next hit the next', () => {
+    const engine = createVoiceBusEngine();
+    const m = buildPixelModel(parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
+      drums: [{ id: 'kick', diameterIn: 12, hoopSpacingMm: 50, origin: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
+    }));
+    engine.setModel(m);
+    const effect = parseEffect({
+      id: 'dots', cell: KICK, retrigger: 'cut',
+      generator: { kind: 'dot', style: 'dot', params: { speed: 0, fade: 0, colorMode: 'per-hit', palette: '#ff0000,#00ff00' } },
+      amp: { attackMs: 0, length: { ms: 5000 }, releaseMs: 0 },
+    });
+    engine.setShow({ ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] });
+    let now = 0;
+    const step = (ms: number) => {
+      for (const end = now + ms; now < end; now += 10) engine.tick(now, 10, transport);
+    };
+    const colour = () => {
+      const f = engine.frame();
+      let best = 0;
+      for (let i = 0; i < m.pixelCount; i++) if (f[i * 4]! + f[i * 4 + 1]! > f[best * 4]! + f[best * 4 + 1]!) best = i;
+      return f[best * 4]! > f[best * 4 + 1]! ? 'red' : 'green';
+    };
+    step(10);
+    engine.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: now });
+    step(50);
+    const first = colour();
+    engine.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: now });
+    step(50);
+    expect([first, colour()]).toEqual(['red', 'green']);
+  });
+});

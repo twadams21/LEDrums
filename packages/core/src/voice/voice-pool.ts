@@ -329,6 +329,7 @@ export class VoicePool {
     slot.originNodeId = a.originNodeId;
     // Effect-path fields — carried verbatim.
     slot.chainEffectId = a.chainEffectId;
+    slot.hitIndex = a.hitIndex;
     slot.blend = a.blend;
     slot.opacity = a.opacity;
     slot.layerOrder = a.layerOrder;

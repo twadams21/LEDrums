@@ -39,8 +39,16 @@ export interface CardParam {
   widget?: ParamSpec['widget'];
   /** The start hoop's pixel count, for a Start angle ring's dots (core `rangeFrom: start-pixels`). */
   ringCount?: number;
-  /** A hue param's colour well: the saturation / brightness params it sets too (core `swatch`). */
-  swatch?: { saturation?: string; brightness?: string };
+  /** Why it is dimmed: it doesn't apply in the current mode ("Only when Through is Space"). The
+      card shows it in place, greyed — never hides it (the Generator standard, Rule 5). */
+  inactive?: string;
+  /** A shared place's height in rows (core `slot`), so the card keeps its shape whichever of its
+      alternatives shows. */
+  slotLines?: number;
+  /** A sub-row of the setting above (a Random under what it varies). */
+  sub?: boolean;
+  /** The screen-reader name, when the label alone is ambiguous. */
+  aria?: string;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -60,22 +68,39 @@ export function toCardParam(spec: ParamSpec): CardParam {
     ...(spec.section ? { section: spec.section } : {}),
     ...(spec.optionsFrom ? { optionsFrom: spec.optionsFrom } : {}),
     ...(spec.widget ? { widget: spec.widget } : {}),
-    ...(spec.swatch ? { swatch: spec.swatch } : {}),
+    ...(spec.sub ? { sub: true } : {}),
+    ...(spec.aria ? { aria: spec.aria } : {}),
   };
 }
 
 /**
- * Every `hue` param gets a colour well (Tim, 2026-10-06: "i now can't even see a colour palette to
- * choose a colour from") — the play-node inspector's ColorSwatch, so every effect picks its colour
- * the same way: with the `saturation` / `brightness` params beside it when the effect has them.
+ * Every effect picks its colour the same way: a colour box, no sliders (Tim, 2026-10-07: "isn't it
+ * more concise just picking the colour from the window that opens when you click the colour box?").
+ * A `hue` param that isn't already a colour box becomes the effect's Colour, taking its
+ * `saturation` / `brightness` with it — those leave the card (a Control can still drive them).
  */
-export function withSwatches(params: CardParam[]): CardParam[] {
-  const has = (key: string) => params.some((p) => p.key === key);
-  return params.map((p) =>
-    p.key === 'hue' && !p.swatch && p.kind === 'number'
-      ? { ...p, swatch: { ...(has('saturation') ? { saturation: 'saturation' } : {}), ...(has('brightness') ? { brightness: 'brightness' } : {}) } }
-      : p,
-  );
+export function withColours(params: CardParam[]): CardParam[] {
+  const hue = params.find((p) => p.key === 'hue' && p.kind === 'number' && !p.widget);
+  if (!hue) return params;
+  const keys = ['hue', ...['saturation', 'brightness'].filter((k) => params.some((p) => p.key === k))];
+  return params
+    .filter((p) => p === hue || !keys.includes(p.key))
+    .map((p) => (p === hue ? { ...p, label: 'Colour', widget: { kind: 'colour' as const, keys } } : p));
+}
+
+/** When a dimmed setting applies, in words: "Only when Through is Space". */
+function whenText(spec: ParamSpec, specs: readonly ParamSpec[]): string {
+  const conditions = spec.showIf ? (Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf]) : [];
+  const say = (c: ShowIf): string => {
+    if ('any' in c) return c.any.map(say).join(' or ');
+    const of = specs.find((s) => s.key === c.key);
+    const name = of?.label ?? c.key;
+    const words = (vs: readonly (string | number | boolean)[]) => vs.map((v) => (typeof v === 'string' ? enumLabel(v) : String(v))).join(' or ');
+    if (c.is) return `${name} is ${words(c.is)}`;
+    if (c.not) return `${name} isn't ${words(c.not)}`;
+    return name;
+  };
+  return `Only when ${conditions.map(say).join(' and ')}`;
 }
 
 /** The kit, as the card reads it to size a param's range (core `rangeFrom`). */
@@ -136,8 +161,8 @@ export function paramValue(p: CardParam, params: Readonly<Record<string, ParamVa
   const v = params?.[p.key];
   if (v === undefined) return p.default;
   // An enum outside its options reads as its default — except one whose choices come from the kit
-  // (a drum id) or a widget (a drum order), which its fixed options can't list.
-  const open = !!p.optionsFrom || p.widget?.kind === 'drum-order';
+  // (a drum id) or a widget (a drum order, a palette), which its fixed options can't list.
+  const open = !!p.optionsFrom || p.widget?.kind === 'drum-order' || p.widget?.kind === 'palette';
   if (p.kind === 'enum' && (typeof v !== 'string' || (!open && !(p.options ?? []).includes(v)))) return p.default;
   return v;
 }
@@ -208,6 +233,7 @@ function rowLines(p: CardParam): number {
     case 'hoop-angle': return 4;
     case 'space-point': return 5;
     case 'space-motion': return 6;
+    case 'palette': return 2;
     case 'drum-order': return 2;
     default: return 1;
   }
@@ -221,7 +247,7 @@ function rowLines(p: CardParam): number {
  */
 export function sectionColumns(sections: readonly ParamSection[], previous?: readonly (readonly string[])[] | null): ParamSection[][] {
   const max = PARAM_ROWS_MAX + 2;
-  const size = (s: ParamSection) => s.params.reduce((n, p) => n + rowLines(p), 0) + 1;
+  const size = (s: ParamSection) => s.params.reduce((n, p) => n + (p.slotLines ?? rowLines(p)), 0) + 1;
   // Keep the last arrangement while it still fits (a little taller is fine), so a row appearing or
   // disappearing doesn't send a section to another column (Tim, 2026-10-05: "Colour was in one
   // spot, then suddenly in another when I changed the hue cycle").
@@ -325,14 +351,28 @@ export function generatorParams(device: GeneratorDevice): CardParam[] {
     return all.filter((p) => !spliceParamHidden(p.key, device.params, all));
   }
   const specs = effectChain.generatorParamSpec(device.kind, device.style);
-  return withSwatches(
-    specs
-      .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
-      .filter((s) => shown(s, specs, device.params))
-      // A param another param's widget edits has no row of its own (Dot's Start depth / height).
-      .filter((s) => !s.partOf)
-      .map(toCardParam),
-  );
+  // A param another param's widget edits has no row of its own (Dot's Start depth / height).
+  const rows = specs.filter((s) => (s.key !== SCENE_PARAM || device.kind !== 'scene') && !s.partOf);
+  const out: CardParam[] = [];
+  const placed = new Set<string>();
+  for (const s of rows) {
+    if (s.slot) {
+      // Alternatives share one place: the one that applies, else the first, dimmed — kept the
+      // height of the tallest, so the card keeps its shape whichever shows.
+      if (placed.has(s.slot)) continue;
+      placed.add(s.slot);
+      const members = rows.filter((m) => m.slot === s.slot);
+      const on = members.find((m) => shown(m, specs, device.params));
+      const pick = on ?? members[0]!;
+      const slotLines = Math.max(...members.map((m) => rowLines(toCardParam(m))));
+      out.push({ ...toCardParam(pick), slotLines, ...(on ? {} : { inactive: whenText(pick, specs) }) });
+      continue;
+    }
+    // A setting that doesn't apply stays in its place, dimmed (Tim, 2026-10-07: "there needs to be
+    // a certainty of where on the card they will appear each time").
+    out.push(shown(s, specs, device.params) ? toCardParam(s) : { ...toCardParam(s), inactive: whenText(s, specs) });
+  }
+  return withColours(out);
 }
 
 /** What the live thumbnail hosts: the resolved effect id + full params, or null (unknown Style,
@@ -503,7 +543,12 @@ function modifierLabels(effect: Effect): Map<string, string> {
 export function mappingTargets(effect: Effect): MapTarget[] {
   const out: MapTarget[] = [];
   const gen = generatorLabel(effect.generator.kind);
-  for (const p of generatorParams(effect.generator)) {
+  // Every number setting the Generator has — dimmed, sharing a place or edited by a colour box —
+  // so a Control can drive any of them (an LFO on the hue behind a colour box).
+  const generatorTargets = isSlotted(effect.generator.kind)
+    ? generatorParams(effect.generator)
+    : effectChain.generatorParamSpec(effect.generator.kind, effect.generator.style).map(toCardParam);
+  for (const p of generatorTargets) {
     if (p.kind !== 'number') continue;
     out.push({ device: 'generator', param: p.key, label: `${gen} · ${p.label}`, min: p.min ?? 0, max: p.max ?? 1 });
   }

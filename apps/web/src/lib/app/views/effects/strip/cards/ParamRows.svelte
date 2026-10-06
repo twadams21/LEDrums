@@ -22,6 +22,7 @@
   import SpacePointPicker from './SpacePointPicker.svelte';
   import SpaceMotionPreview from './SpaceMotionPreview.svelte';
   import ColorSwatch from '../../../../../ui/ColorSwatch.svelte';
+  import PaletteEditor from './PaletteEditor.svelte';
   import type { PixelModel } from '@ledrums/core';
 
   interface Props {
@@ -107,23 +108,29 @@
   /** What a typed value means: a percent is typed as shown (25 → 0.25); ms / beats read units. */
   const entryOf = (p: CardParam) => (p.percent ? { factor: 100, unit: '%' } : { unit: p.unit });
 
-  const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.label}` : p.label);
+  const aria = (p: CardParam): string => (labelPrefix ? `${labelPrefix} ${p.aria ?? p.label}` : (p.aria ?? p.label));
+  /** A row's height when it holds a shared place: the tallest of its alternatives (26px a row). */
+  const slotHeight = (p: CardParam): string | undefined => (p.slotLines ? `${p.slotLines * 26}px` : undefined);
 </script>
 
 {#snippet labelOf(p: CardParam, unit: boolean)}
-  <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && unit}<span class="unit">{p.unit}</span>{/if}{#if p.info}<Tooltip text={p.info} side="top"><span class="info" aria-label={`About ${p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
+  <!-- A dimmed setting's ⓘ says first when it applies. -->
+  {@const about = p.inactive ? `${p.inactive}.${p.info ? ` ${p.info}` : ''}` : p.info}
+  <span class="label" title={p.unit ? `${p.label} (${p.unit})` : p.label}>{p.label}{#if p.unit && p.kind === 'number' && unit}<span class="unit">{p.unit}</span>{/if}{#if about}<Tooltip text={about} side="top"><span class="info" aria-label={`About ${p.aria ?? p.label}`}><Info size={11} aria-hidden="true" /></span></Tooltip>{/if}</span>
 {/snippet}
 
 {#snippet row(p: CardParam)}
+  <!-- A setting that doesn't apply right now is dimmed and can't be touched; it keeps its place. -->
+  {@const dis = disabled || !!p.inactive}
   {#if p.widget?.kind === 'space-point'}
     {@const [kx, ky, kz] = p.widget.keys}
     <!-- A point in the kit's space: two views to click, editing three params at once. -->
-    <li class="widget">
+    <li class="widget" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <SpacePointPicker
         plan={kitPlan}
         value={{ width: amount(kx), depth: amount(ky), height: amount(kz) }}
-        {disabled}
+        disabled={dis}
         onChange={(next) => {
           const patch: Record<string, ParamValue> = {};
           if (next.width !== undefined) patch[kx] = next.width;
@@ -139,14 +146,14 @@
   {:else if p.widget?.kind === 'space-motion'}
     {@const [kh, ke] = p.widget.keys}
     <!-- Which way it flies, set on the kit with the effect running live. -->
-    <li class="widget">
+    <li class="widget" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <SpaceMotionPreview
         model={pixelModel}
         params={values}
         headingKey={kh}
         elevationKey={ke}
-        {disabled}
+        disabled={dis}
         ariaLabel={aria(p)}
         onChange={(patch) => patchAll(patch)}
         {onGestureStart}
@@ -155,11 +162,11 @@
     </li>
   {:else if p.widget?.kind === 'drum-order'}
     <!-- The kit's drums as chips to drag into order, stored as comma-separated ids. -->
-    <li class="widget">
+    <li class="widget" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <OrderList
         items={orderedDrums(String(paramValue(p, values)))}
-        {disabled}
+        disabled={dis}
         ariaLabel={aria(p)}
         onReorder={(ids) => onChange(p.key, ids.join(','))}
       />
@@ -167,13 +174,13 @@
   {:else if p.widget?.kind === 'hoop-pick'}
     <!-- A button per hoop (Tim, 2026-10-05: "only 4 options … i don't like the slider"). -->
     {@const hoops = Math.max(1, Math.round(p.max ?? 1))}
-    <li class="row pick">
+    <li class="row pick" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <span class="ctl">
         <SegmentedControl
           value={String(Math.min(hoops, Math.max(1, Math.round(Number(paramValue(p, values))))))}
           options={Array.from({ length: hoops }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
-          {disabled}
+          disabled={dis}
           ariaLabel={aria(p)}
           onChange={(v) => onChange(p.key, Number(v))}
           class="hoops"
@@ -183,13 +190,13 @@
   {:else if p.widget?.kind === 'hoop-angle'}
     <!-- The Start angle as the hoop seen from the throne — its dots the start hoop's pixels
          (ringCount; 36 when the host can't say). No number: a pixel is picked on the ring. -->
-    <li class="widget">
+    <li class="widget" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <span class="ringwrap">
         <HoopAngleRing
           count={p.ringCount ?? 36}
           value={Number(paramValue(p, values))}
-          {disabled}
+          disabled={dis}
           ariaLabel={aria(p)}
           onChange={(deg) => onChange(p.key, deg)}
           {onGestureStart}
@@ -197,17 +204,54 @@
         />
       </span>
     </li>
+  {:else if p.widget?.kind === 'colour'}
+    {@const [kh, ks, kb] = p.widget.keys}
+    <!-- A colour, picked from the colour window — no sliders (Tim, 2026-10-07). -->
+    <li class="row" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
+      {@render labelOf(p, false)}
+      <span class="ctl">
+        <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
+          <ColorSwatch
+            hue={valueOf(kh!, 0)}
+            saturation={ks ? valueOf(ks, 1) : 1}
+            brightness={kb ? valueOf(kb, 1) : 1}
+            modulated={p.widget.keys.some((k) => modulated?.has(k))}
+            disabled={dis}
+            ariaLabel={aria(p)}
+            onChange={(hsv) => {
+              const patch: Record<string, ParamValue> = { [kh!]: Math.round(hsv.h) % 360 };
+              if (ks) patch[ks] = Number(hsv.s.toFixed(2));
+              if (kb) patch[kb] = Number(hsv.v.toFixed(2));
+              patchAll(patch);
+            }}
+          />
+        </GestureScope>
+      </span>
+    </li>
+  {:else if p.widget?.kind === 'palette'}
+    <!-- Several colours in order, as colour boxes. -->
+    <li class="widget" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
+      {@render labelOf(p, false)}
+      <PaletteEditor
+        value={String(paramValue(p, values) || p.default)}
+        disabled={dis}
+        ariaLabel={aria(p)}
+        onChange={(next) => onChange(p.key, next)}
+        {onGestureStart}
+        {onGestureEnd}
+      />
+    </li>
   {:else}
-    {@render plainRow(p)}
+    {@render plainRow(p, dis)}
   {/if}
 {/snippet}
 
-{#snippet plainRow(p: CardParam)}
+{#snippet plainRow(p: CardParam, dis: boolean)}
   {@const v = paramValue(p, values)}
   {@const map = p.kind === 'number' ? (mapParam?.(p) ?? null) : null}
   {@const tempo = !!onPatch && isTempoParam(p)}
   {@const beats = tempo ? tempoBeats(p, values) : undefined}
-  <li class="row" class:modulated={modulated?.has(p.key)}>
+  <li class="row" class:modulated={modulated?.has(p.key)} class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
     {@render labelOf(p, !tempo)}
     <span class="ctl" {@attach map && mappable(map)}>
       {#if p.kind === 'enum'}
@@ -215,7 +259,7 @@
           value={String(v)}
           options={p.optionsFrom === 'drums' ? [...drumOptions] : (p.options ?? []).map((o) => ({ value: o, label: enumLabel(o) }))}
           segment={false}
-          {disabled}
+          disabled={dis}
           ariaLabel={aria(p)}
           onChange={(next) => onChange(p.key, next)}
           class="cardsel"
@@ -226,7 +270,7 @@
             value={typeof v === 'string' ? v : null}
             fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
             clearable={false}
-            {disabled}
+            disabled={dis}
             ariaLabel={aria(p)}
             onChange={(next) => onChange(p.key, next ?? p.default)}
           />
@@ -240,7 +284,7 @@
           min={0}
           max={64}
           step={0.0625}
-          {disabled}
+          disabled={dis}
           ariaLabel={`${aria(p)} beats`}
           entry={{ unit: 'beats' }}
           onChange={(next) => onChange(effectChain.tempoKey(p.key), next)}
@@ -248,25 +292,6 @@
           {onGestureEnd}
         />
       {:else}
-        {#if p.swatch}
-          <!-- The colour well: picks the hue (and saturation / brightness) from a colour picker. -->
-          <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-            <ColorSwatch
-              compact
-              hue={Number(v)}
-              saturation={p.swatch.saturation ? valueOf(p.swatch.saturation, 1) : 1}
-              brightness={p.swatch.brightness ? valueOf(p.swatch.brightness, 1) : 1}
-              {disabled}
-              ariaLabel={`${aria(p)} colour`}
-              onChange={(hsv) => {
-                const patch: Record<string, ParamValue> = { [p.key]: Math.round(hsv.h) };
-                if (p.swatch?.saturation) patch[p.swatch.saturation] = Number(hsv.s.toFixed(2));
-                if (p.swatch?.brightness) patch[p.swatch.brightness] = Number(hsv.v.toFixed(2));
-                patchAll(patch);
-              }}
-            />
-          </GestureScope>
-        {/if}
         <FaceParamControl
           kind={p.kind}
           value={v}
@@ -275,7 +300,7 @@
           max={p.max}
           step={p.step}
           modulated={modulated?.has(p.key) ?? false}
-          {disabled}
+          disabled={dis}
           ariaLabel={aria(p)}
           entry={entryOf(p)}
           onChange={(next) => onChange(p.key, next)}
@@ -288,7 +313,7 @@
           type="button"
           class="utog"
           class:beats={beats !== undefined}
-          {disabled}
+          disabled={dis}
           aria-label={`${aria(p)}: in ${beats !== undefined ? 'beats' : p.unit}. Switch to ${beats !== undefined ? p.unit : 'beats'}`}
           title={beats !== undefined
             ? `In beats — ${p.unit === 'Hz' ? 'one cycle per' : 'lasts'} this many, at the tempo. Click for ${p.unit}.`
@@ -420,6 +445,32 @@
     display: inline-flex;
     margin-left: 4px;
     vertical-align: -1px;
+    color: var(--text-faint);
+  }
+  /* A setting that doesn't apply in the current mode: in its place, greyed (its ⓘ says when). */
+  .inactive > :global(:not(.label)) {
+    opacity: 0.38;
+  }
+  .inactive > .label {
+    color: var(--text-faint);
+  }
+  /* A shared place, sized for its tallest alternative: a short one sits at its top, not adrift. */
+  .row.slotted {
+    align-items: flex-start;
+  }
+  .row.slotted > .label,
+  .row.slotted > .ctl {
+    min-height: 26px;
+    display: inline-flex;
+    align-items: center;
+  }
+  /* A sub-row (a Random under what it varies): set in, a hairline joining it to its setting. */
+  .sub {
+    margin-left: 6px;
+    padding-left: 8px;
+    box-shadow: inset 1px 0 0 var(--border-faint);
+  }
+  .sub > .label {
     color: var(--text-faint);
   }
   .row.modulated .label {

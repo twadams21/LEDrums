@@ -5,6 +5,14 @@ import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';
 
+/**
+ * The Generator standard's sections, in order (docs/design/generator-standard.md). A plugin's
+ * first section is its FORM, named for the plugin (Dots, Splices…); the rest come from this list,
+ * each at most once, in this order — any it doesn't need left out. There is no Random section (a
+ * Random sits under what it varies) and no Velocity section (the Velocity Control's job).
+ */
+export const GENERATOR_SECTIONS = ['Start', 'Shape', 'Movement', 'Timing', 'Colour', 'Background'] as const;
+
 /** A condition on another param's value, for {@link ParamSpec.showIf}: it holds one of `is` (or
     none of `not`) — or, with `any`, at least one of those conditions holds. */
 export type ShowIf =
@@ -47,12 +55,22 @@ export interface ParamSpec {
     | { kind: 'space-point'; keys: readonly [string, string, string] }
     /** The way a dot flies through the kit's space — Heading and Elevation (`keys`) — dragged on
         the kit seen from the top and the front, with the effect running live (Dot). */
-    | { kind: 'space-motion'; keys: readonly [string, string] };
-  /** On a hue param: a colour well beside it that sets the hue — and the named saturation /
-      brightness params — from a colour picker (the play-node inspector's ColorSwatch). A `hue`
-      param gets one by default, with `saturation` / `brightness` when the effect has them.
-      Display only. */
-  swatch?: { saturation?: string; brightness?: string };
+    | { kind: 'space-motion'; keys: readonly [string, string] }
+    /** A colour, picked from the colour window: the hue param it sits on, then its saturation
+        and brightness params when it has them (`keys`). No sliders — the standard's colour box. */
+    | { kind: 'colour'; keys: readonly string[] }
+    /** Several colours as a row of colour boxes, stored as comma-separated `#rrggbb` (Dot's
+        Palette — like Splice's bands). */
+    | { kind: 'palette' };
+  /** Params that are alternatives of each other — only one ever applies — share one place on the
+      card: the one that applies shows there, the space kept the size of the largest, so changing
+      a mode never moves the card (the Generator standard, Rule 5). Display only. */
+  slot?: string;
+  /** A setting that belongs to the one above it (a Random under what it varies), drawn as its
+      sub-row. Display only. */
+  sub?: boolean;
+  /** The screen-reader name when the label alone is ambiguous (three "Random" rows). */
+  aria?: string;
   /** Edited by another param's widget, so the card shows no row of its own. Display only. */
   partOf?: string;
   /** A range the card reads from the kit (Dot: `start-hoops` — the start drum's hoop count;

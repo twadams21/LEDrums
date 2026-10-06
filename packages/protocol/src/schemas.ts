@@ -376,8 +376,12 @@ const paramSpecSchema = z.object({
     z.object({ kind: z.literal('drum-order') }),
     z.object({ kind: z.literal('space-point'), keys: z.tuple([z.string(), z.string(), z.string()]).readonly() }),
     z.object({ kind: z.literal('space-motion'), keys: z.tuple([z.string(), z.string()]).readonly() }),
+    z.object({ kind: z.literal('colour'), keys: z.array(z.string()).readonly() }),
+    z.object({ kind: z.literal('palette') }),
   ]).optional(),
-  swatch: z.object({ saturation: z.string().optional(), brightness: z.string().optional() }).optional(),
+  slot: z.string().optional(),
+  sub: z.boolean().optional(),
+  aria: z.string().optional(),
   partOf: z.string().optional(),
   rangeFrom: z.enum(['start-hoops', 'start-pixels']).optional(),
 });

@@ -26,6 +26,9 @@ export interface Trigger {
   timeMs: number;
   /** Age of the hit at render time, ms. */
   ageMs: number;
+  /** Effect path only: which hit of its Effect this is — 0 for the Effect's first since the show
+      loaded, then 1, 2… (Dot's Colours Per hit steps through its palette by it). */
+  hit?: number;
 }
 
 /** Everything an effect needs to render a frame — a pure, read-only context. */

@@ -73,6 +73,8 @@ export interface PlayAction {
   lifeSpanMs?: number;
   /** The authored Effect id this action plays (see {@link Voice.chainEffectId}). */
   chainEffectId?: string;
+  /** Which hit of its Effect this fire is (see {@link Trigger.hit}). */
+  hitIndex?: number;
   blend?: BlendMode;
   opacity?: number;
   layerOrder?: number;

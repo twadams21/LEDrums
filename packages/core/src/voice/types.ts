@@ -665,6 +665,8 @@ export interface Voice extends GeometryState {
   /** Effect-path voices only: the authored Effect id that spawned this voice. Retrigger
       (restart / ignore) and note-off release scan by it. */
   chainEffectId?: string;
+  /** Effect-path voices only: which hit of its Effect spawned it (the generator's `Trigger.hit`). */
+  hitIndex?: number;
   /** Effect-path voices only: the Effect's blend mode (compositing semantics land in S02). */
   blend?: BlendMode;
   /** Effect-path voices only: the Effect's opacity 0..1 (compositing semantics land in S02). */

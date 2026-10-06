@@ -18,7 +18,7 @@ import {
   paramsLandscape,
   paramValue,
   sectionColumns,
-  withSwatches,
+  withColours,
   parseMapTargetKey,
   mapTargetKey,
   slotGeneratorOptions,
@@ -35,7 +35,9 @@ const keys = (ps: CardParam[]) => ps.map((p) => p.key);
 describe('generatorParams — what the Generator card shows', () => {
   it('is the Style’s param spec from core for an ordinary Generator', () => {
     const device = fx().generator;
-    expect(keys(generatorParams(device))).toEqual(effectChain.generatorParamSpec('wave', 'radial').map((s) => s.key));
+    // Its hue, saturation and brightness are one Colour box (the Generator standard).
+    expect(keys(generatorParams(device))).toEqual(effectChain.generatorParamSpec('wave', 'radial').map((s) => s.key).filter((k) => k !== 'saturation' && k !== 'brightness'));
+    expect(generatorParams(device).find((p) => p.key === 'hue')).toMatchObject({ label: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } });
     expect(generatorParams(device).length).toBeGreaterThan(0);
   });
 
@@ -211,12 +213,10 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
   const dotDevice = (params: Record<string, string | number> = {}) =>
     effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator;
 
-  it('the Dot card: eight sections in four columns, landscape', () => {
+  it('the Dot card: the standard\'s sections in order, landscape', () => {
     const params = generatorParams(dotDevice());
     const cols = sectionColumns(paramSections(params)!);
-    expect(cols.map((c) => c.map((x) => x.label))).toEqual([
-      ['Dots', 'Random'], ['Life', 'Shape'], ['Movement', 'Colour', 'Background'], ['Velocity'],
-    ]);
+    expect(cols.flat().map((x) => x.label)).toEqual(['Dots', 'Start', 'Shape', 'Movement', 'Timing', 'Colour', 'Background']);
     expect(paramsLandscape(params)).toBe(true);
     expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max alive', info: expect.stringContaining('most dots alive') });
     // A 0..1 amount with a `%` unit reads as a whole percent.
@@ -224,31 +224,46 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
     expect(params.find((x) => x.key === 'count')?.percent).toBeUndefined();
   });
 
-  it('a setting shows only in the mode it acts in (showIf) — Tim, 2026-10-05', () => {
-    const on = (params: Record<string, string | number>) => keys(generatorParams(dotDevice(params)));
-    expect(on({})).not.toContain('climb');
-    expect(on({ through: 'drum' })).toContain('climb');
-    // The set point is always there on the hoops; RANDOM says how far from it a dot may begin.
-    expect(on({})).toEqual(expect.arrayContaining(['startDrum', 'startHoop', 'startAngle', 'randDrum', 'randHoop', 'randAngle']));
-    // Through the kit in a Custom order the dots begin on its first drum, so Start drum goes.
-    expect(on({ through: 'kit', kitOrder: 'custom' })).not.toContain('startDrum');
-    expect(on({ through: 'kit' })).toContain('startDrum');
-    expect(on({})).not.toContain('span');
-    expect(on({ bounce: 'pingpong' })).toContain('span');
-    expect(on({ through: 'kit' })).toEqual(expect.arrayContaining(['kitOrder', 'hopEvery']));
-    // Every condition must hold: through space, the set point is X / Y / Z, not a drum and hoop.
-    const space = on({ through: 'space' });
-    expect(space).toEqual(expect.arrayContaining(['spaceX', 'heading', 'radius', 'spaceForm', 'randSpace']));
-    // Heading and Elevation are one graphic, the live preview (Tim, 2026-10-06).
-    expect(space).not.toContain('elevation');
-    expect(generatorParams(dotDevice({ through: 'space' })).find((x) => x.key === 'heading')!.widget).toEqual({ kind: 'space-motion', keys: ['heading', 'elevation'] });
-    expect(space).not.toContain('climb');
-    expect(space).not.toContain('randHoop');
-    // The Start point picker edits depth and height too, so they have no rows of their own.
-    expect(space).not.toContain('spaceY');
-    expect(space).not.toContain('startDrum');
-    expect(space).not.toContain('length');
-    expect(on({})).not.toContain('spaceX');
+  it('changing Through never moves the card: the same rows, the same places, the same sizes', () => {
+    // Tim, 2026-10-07: "if I change the Movement through a hoop, drum, kit or space, it rearranges
+    // the entire card … there needs to be a certainty of where on the card they will appear".
+    const layout = (through: string) => {
+      const params = generatorParams(dotDevice({ through }));
+      const sections = paramSections(params)!;
+      return {
+        columns: sectionColumns(sections).map((c) => c.map((x) => x.label)),
+        lines: sections.map((x) => x.params.reduce((n, p) => n + (p.slotLines ?? 1), 0)),
+        rows: params.length,
+      };
+    };
+    const hoop = layout('hoop');
+    for (const through of ['drum', 'kit', 'space']) expect(layout(through)).toEqual(hoop);
+  });
+
+  it('a setting that doesn\'t apply is dimmed in place, saying when it applies — never hidden', () => {
+    const at = (params: Record<string, string | number>, key: string) => generatorParams(dotDevice(params)).find((x) => x.key === key);
+    expect(at({}, 'climb')!.inactive).toBe('Only when Through is Drum or Kit');
+    expect(at({ through: 'drum' }, 'climb')!.inactive).toBeUndefined();
+    expect(at({}, 'span')!.inactive).toBe('Only when Edges is Pingpong');
+    expect(at({ through: 'kit', kitOrder: 'custom' }, 'startDrum')!.inactive).toContain('Only when');
+    expect(at({ through: 'kit' }, 'startDrum')!.inactive).toBeUndefined();
+  });
+
+  it('alternatives share one place: the one that applies shows, kept the size of the largest', () => {
+    const at = (through: string, slot: string) => generatorParams(dotDevice({ through })).find((x) => ['startAngle', 'spaceX', 'climb', 'heading', 'length', 'radius'].includes(x.key) && x.slotLines && (slot === 'start' ? ['startAngle', 'spaceX'] : slot === 'way' ? ['climb', 'heading'] : ['length', 'radius']).includes(x.key))!;
+    expect(at('hoop', 'start').key).toBe('startAngle');
+    expect(at('space', 'start').key).toBe('spaceX');
+    expect(at('hoop', 'start').slotLines).toBe(at('space', 'start').slotLines);
+    expect(at('drum', 'way').key).toBe('climb');
+    expect(at('space', 'way').key).toBe('heading');
+    expect(at('hoop', 'way')).toMatchObject({ key: 'climb', inactive: 'Only when Through is Drum or Kit' });
+    expect(at('space', 'size').key).toBe('radius');
+    // The Start point's depth and height are edited by its views: no rows, but a Control can drive them.
+    const keysOf = (through: string) => keys(generatorParams(dotDevice({ through })));
+    expect(keysOf('space')).not.toContain('spaceY');
+    expect(keysOf('space')).not.toContain('elevation');
+    const fx = effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot' } });
+    expect(mappingTargets(fx).map((t) => t.param)).toEqual(expect.arrayContaining(['spaceY', 'elevation', 'saturation', 'hue']));
   });
 
   it('Start hoop has a button per hoop of the drum; the Start angle ring a dot per pixel (Tim, 2026-10-05: "only 4 options")', () => {
@@ -280,20 +295,24 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
   });
 });
 
-describe('colour wells (Tim, 2026-10-06: "i now can\'t even see a colour palette to choose a colour from")', () => {
+describe('colour boxes (Tim, 2026-10-07: "isn\'t it more concise just picking the colour from the window that opens when you click the colour box?")', () => {
   const p = (key: string): CardParam => ({ key, label: key, kind: 'number', default: 0 });
 
-  it('every hue param gets a well, with the saturation / brightness beside it', () => {
-    expect(withSwatches([p('hue'), p('saturation'), p('brightness')])[0]!.swatch).toEqual({ saturation: 'saturation', brightness: 'brightness' });
-    expect(withSwatches([p('hue')])[0]!.swatch).toEqual({});
-    expect(withSwatches([p('speed')])[0]!.swatch).toBeUndefined();
+  it('an effect\'s hue, saturation and brightness become one Colour box — no sliders', () => {
+    const out = withColours([p('hue'), p('speed'), p('saturation'), p('brightness')]);
+    expect(keys(out)).toEqual(['hue', 'speed']);
+    expect(out[0]).toMatchObject({ label: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } });
+    expect(withColours([p('speed')])).toEqual([p('speed')]);
   });
 
-  it('a Dot\'s hues: the dot\'s, the background\'s (with its own saturation), and To hue', () => {
+  it('a Dot: its Colour (or Palette), To colour and background colour are colour boxes', () => {
     const dot = (params: Record<string, string>) =>
       generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator);
-    expect(dot({}).find((x) => x.key === 'hue')!.swatch).toEqual({ saturation: 'saturation' });
-    expect(dot({ background: 'other' }).find((x) => x.key === 'bgHue')!.swatch).toEqual({ saturation: 'bgSat' });
-    expect(dot({ shift: 'to-hue' }).find((x) => x.key === 'hueTo')!.swatch).toEqual({});
+    expect(dot({}).find((x) => x.key === 'hue')!.widget).toEqual({ kind: 'colour', keys: ['hue', 'saturation'] });
+    expect(dot({ colorMode: 'per-dot' }).find((x) => x.key === 'palette')!.widget).toEqual({ kind: 'palette' });
+    expect(dot({ colorMode: 'per-dot' }).find((x) => x.key === 'hue')).toBeUndefined(); // they share a place
+    expect(dot({ shift: 'to-colour' }).find((x) => x.key === 'hueTo')!.widget).toEqual({ kind: 'colour', keys: ['hueTo', 'satTo'] });
+    expect(dot({ background: 'other' }).find((x) => x.key === 'bgHue')!.widget).toEqual({ kind: 'colour', keys: ['bgHue', 'bgSat'] });
+    expect(keys(dot({}))).not.toContain('saturation');
   });
 });
