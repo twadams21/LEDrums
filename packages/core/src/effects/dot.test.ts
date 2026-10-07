@@ -257,7 +257,8 @@ describe('Dot — moving through', () => {
     expect(at(1250, { bounce: 'bounce' }).hf).toBeCloseTo(1.5, 1);
     expect(at(1250, { bounce: 'bounce' }).step).toBe(-1);
     expect(at(1400, { bounce: 'repeat' }).hoop).toBe(0);
-    expect(at(500, { direction: 'reverse', startHoop: 3 }).hf).toBeCloseTo(1, 1);
+    // Heading down, Start hoop counts from the top: 1 is the top hoop (index 2 of 3).
+    expect(at(500, { direction: 'reverse', startHoop: 1 }).hf).toBeCloseTo(1, 1);
     expect(at(1400, { bounce: 'leave' }).gone).toBe(true);
     expect(lit(play({ ...FIXED, speed: 4, through: 'drum', bounce: 'leave' }, 1400).fb)).toHaveLength(0);
   });
