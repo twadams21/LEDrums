@@ -56,6 +56,9 @@ export interface PlayAction {
    */
   attackMs?: number;
   sustainMs?: number;
+  /** Loop: the envelope's whole cycle (attack + sustain + release, ms). The voice repeats it — and
+      its generator restarts with fresh content each cycle — until released. */
+  loopMs?: number;
   releaseMs?: number;
   /** Curve the attack rises on — carried to the voice so its ramp is eased, and to the splice
       config so a per-unit attack uses the same shape. */

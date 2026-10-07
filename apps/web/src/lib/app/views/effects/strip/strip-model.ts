@@ -156,7 +156,9 @@ export const AMP_LENGTH_OPTIONS: Option<AmpLengthMode>[] = [
   { value: 'ms', label: 'Time' },
   { value: 'beats', label: 'Beats' },
   { value: 'hold', label: 'While held' },
-  { value: 'loop', label: 'Loop' },
+  // The light stays up until the Effect is stopped. (Repeating the hit is Loop, a switch of its
+  // own: Tim, 2026-10-07, "loop doesn't seem to be working" — this option never repeated.)
+  { value: 'loop', label: 'Until stopped' },
 ];
 
 /** The Sustain choices for this Generator: the four, plus "until it ends" first where the

@@ -26,6 +26,20 @@ describe('the brightness envelope', () => {
     expect(view.getByRole('button', { name: 'Sustain' }).textContent).toContain('Time');
   });
 
+  it('Loop is a switch of its own: it repeats a timed hit — one undo step (Tim, 2026-10-07)', async () => {
+    const { view, api, amp } = setup();
+    const loop = view.getByRole('switch', { name: 'Loop' }) as HTMLButtonElement;
+    expect(loop.disabled).toBe(false);
+    await fireEvent.click(loop);
+    expect(amp().loop).toBe(true);
+    expect(api.undoDepth).toBe(1);
+  });
+
+  it('Loop dims with a Sustain that has no end to repeat from (While held, Until stopped)', () => {
+    const { view } = setup({ length: 'hold' });
+    expect((view.getByRole('switch', { name: 'Loop' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('shows the old ADSR drop only on an Effect that still uses one, so it plays as it did', () => {
     const { view } = setup({ decayMs: 120, sustainLevel: 0.4 });
     expect(view.getByText('Drop')).toBeTruthy();

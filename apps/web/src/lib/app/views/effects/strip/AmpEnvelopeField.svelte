@@ -3,7 +3,8 @@
      "brightness envelope" as THE way a hit lights, in place of the ADSR): a live outline, then
      Attack · Curve · Sustain · Decay in the Splice inspector's words. Attack and Decay are each in ms
      or beats; Sustain is how long the light stays up from the hit — a time, a beat count, While
-     held (until the note is released), or Loop. A beat value reads as a division where it is one
+     held (until the note is released), or until stopped; Loop repeats the whole envelope with fresh
+     content each time. A beat value reads as a division where it is one
      (1/16) and can be typed as one.
      One envelope per Effect: a Splice / Slice part that pulses or fades in its turn runs this same
      envelope. The old ADSR's drop to a lower level shows only on an Effect that still uses one,
@@ -16,6 +17,7 @@
   import EasePicker from '../../../../ui/EasePicker.svelte';
   import Tooltip from '../../../../ui/Tooltip.svelte';
   import Info from '@lucide/svelte/icons/info';
+  import Switch from '../../../../ui/Switch.svelte';
   import ParamLine from './ParamLine.svelte';
   import {
     ampLengthOptions,
@@ -67,7 +69,11 @@
   // "Until dots end" joins the choices where the Generator can say when its content ends (Dot).
   const lengthOptions = $derived(ampLengthOptions(effect.generator));
   const SUSTAIN_INFO =
-    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or looping — or, on a Dot, until its last dot ends (each dot\'s Lifespan decides). Then it decays.';
+    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or until the Effect is stopped — or, on a Dot, until its last dot ends (each dot\'s Lifespan decides). Then it decays.';
+  // Loop repeats a timed envelope; held or until-stopped have no end to repeat from (dimmed, Rule 5).
+  const loopable = $derived(mode === 'ms' || mode === 'beats' || mode === 'auto');
+  const LOOP_INFO =
+    'Repeats the hit — Attack, Sustain, Decay, then again, with fresh content each time (a Dot spawns new dots) — until the Effect is stopped.';
   const CURVE_INFO = 'A linear attack reads as brightening too fast — an ease-in curve swells more evenly.';
   const DROP_INFO =
     'From the old ADSR envelope: after the attack the light drops to this level over the Drop time. Set Drop to 100% to remove it.';
@@ -153,9 +159,22 @@
   {/if}
 
   {@render stageRow('release', 'Decay', amp.releaseMs)}
+
+  {#if !always}
+    <div class="loop" class:inactive={!loopable}>
+      <ParamLine label="Loop">
+        <Switch checked={amp.loop && loopable} disabled={disabled || !loopable} ariaLabel="Loop" onChange={(on) => api.setAmp(effect.id, { loop: on })} />
+        {@render info(loopable ? LOOP_INFO : `Only with a Sustain time, beats or until it ends. ${LOOP_INFO}`, 'Loop')}
+      </ParamLine>
+    </div>
+  {/if}
 </div>
 
 <style>
+  /* Loop with a held / until-stopped Sustain: in place, greyed (its ⓘ says when it applies). */
+  .loop.inactive :global(:not(.info)) {
+    color: var(--text-faint);
+  }
   .amp {
     display: flex;
     flex-direction: column;

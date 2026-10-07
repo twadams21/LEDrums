@@ -77,8 +77,6 @@ export interface DotState {
   rng: () => number;
   /** Mean pixel spacing (mm) — turns px sizes and speeds into mm for Through space. */
   pitchMm: number;
-  /** Nearest-neighbour tour of the drums (Across the kit, Nearest order). */
-  tour: number[];
   /** Per drum, per hoop: which pixel is 0° and which way the pixel order turns. */
   frames: HoopFrame[][];
   /** Per-pixel scratch: the strongest dot coverage and its colour this frame. */
@@ -186,11 +184,12 @@ function hoopSize(model: PixelModel, drum: number, hoop: number): number {
   return Math.max(1, model.drums[drum]?.hoopPixelCounts[hoop] ?? 1);
 }
 
-/** Greedy nearest-neighbour tour of the drums from the first, by effect origin. */
-function nearestTour(model: PixelModel): number[] {
-  const left = model.drums.map((_, i) => i);
+/** Greedy nearest-neighbour tour of `drums`, from `from` (or the first), by effect origin. */
+function nearestTour(model: PixelModel, drums: readonly number[], from: number): number[] {
+  const left = [...drums];
   if (!left.length) return [];
-  const tour = [left.shift()!];
+  const first = Math.max(0, left.indexOf(from));
+  const tour = left.splice(first, 1);
   while (left.length) {
     const at = model.drums[tour[tour.length - 1]!]!.effectOriginWorld;
     let best = 0;
@@ -290,14 +289,50 @@ export function dotSpanMs(params: ResolvedParams): number | null {
  * lights — every drum for the Kit. Drum you hit: that one. A named drum: that one. Through the kit
  * in a Custom order: the order's first drum.
  */
-export function startDrums(model: PixelModel, params: ResolvedParams, trigger: { drumId?: string; targetDrums?: readonly string[] } | undefined): number[] {
+type HitTrigger = { drumId?: string; targetDrums?: readonly string[] } | undefined;
+
+/** The drums the Target lights (every drum when it doesn't say). */
+function targetIndices(model: PixelModel, trigger: HitTrigger): number[] {
+  const all = model.drums.map((_, i) => i);
+  const ids = trigger?.targetDrums;
+  if (!ids) return all;
+  const on = ids.map((id) => model.drums.findIndex((d) => d.drumId === id)).filter((i) => i >= 0);
+  return on.length ? on.sort((a, b) => a - b) : all;
+}
+
+/**
+ * The drums a dot visits Through the kit, in order — only the Target's drums, so a dot never walks
+ * onto a drum the Target hides (Tim, 2026-10-07: "in kit order, 'nearest' and 'random' don't work at
+ * all"). Kit: the kit's own order. Nearest: the closest drum next, from the drum you hit. Custom: the
+ * order dragged. Random picks from these at each hop.
+ */
+export function kitSequence(model: PixelModel, params: ResolvedParams, trigger: HitTrigger): number[] {
+  const targets = targetIndices(model, trigger);
+  const order = pstr(params, 'kitOrder', 'kit');
+  if (order === 'custom') {
+    const custom = customDrumOrder(model, pstr(params, 'kitList', '')).filter((i) => targets.includes(i));
+    return custom.length ? custom : targets;
+  }
+  if (order === 'nearest') {
+    const struck = model.drums.findIndex((d) => d.drumId === trigger?.drumId);
+    return nearestTour(model, targets, struck);
+  }
+  return targets;
+}
+
+export function startDrums(model: PixelModel, params: ResolvedParams, trigger: HitTrigger): number[] {
   const drums = model.drums;
   if (!drums.length) return [];
   const struck = drums.findIndex((d) => d.drumId === trigger?.drumId);
-  if (pstr(params, 'through', 'hoop') === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom') {
-    return [customDrumOrder(model, pstr(params, 'kitList', ''))[0] ?? 0];
-  }
   const pick = pstr(params, 'startDrum', '@target');
+  if (pstr(params, 'through', 'hoop') === 'kit') {
+    // Through the kit a dot walks the Kit order, so it begins on ONE drum: the order's first (with
+    // the Target's drums, or always in Custom order), else the drum you hit or the one named. Every
+    // drum at once would hide the order — all of them light together (Tim, 2026-10-07).
+    const seq = kitSequence(model, params, trigger);
+    const order = pstr(params, 'kitOrder', 'kit');
+    if (order === 'custom' || pick === '@target') return [seq[0] ?? 0];
+  }
   if (pick === '@hit') return [struck >= 0 ? struck : 0];
   const named = drums.findIndex((d) => d.drumId === pick);
   if (named >= 0) return [named];
@@ -325,8 +360,12 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
 
   // The drum: its start drum (see startDrums), or by Random drum's chance a random one.
   let drum = startDrum;
-  const customOrder = through === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom';
-  if (!customOrder && randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
+  const kitOrder = through === 'kit' ? pstr(params, 'kitOrder', 'kit') : '';
+  if (kitOrder === 'random' && pstr(params, 'startDrum', '@target') === '@target') {
+    // Random order begins anywhere on the Target.
+    const on = targetIndices(model, ctx.triggers[0]);
+    drum = on[Math.floor(rng() * on.length) % on.length]!;
+  } else if (kitOrder !== 'custom' && randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
 
   // The hoop: the set one, pulled towards a random hoop by Random hoop.
   const hc = hoopCount(model, drum);
@@ -381,7 +420,7 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   }
 
   return {
-    slot, bornMs, drum, hoop, hf: hoop, hf0: hoop, u, uShown: u, dir: sign, step: sign, kstep: sign, lapPx: 0, runPx: 0,
+    slot, bornMs, drum, hoop, hf: hoop, hf0: hoop, u, uShown: u, dir: sign, step: sign, kstep: 1, lapPx: 0, runPx: 0,
     u0: u, dir0: sign, p0: { ...p }, v0: { ...v },
     turnAtMs: bornMs + 400 + rng() * 1200, pal, p, v,
   };
@@ -407,19 +446,20 @@ export function customDrumOrder(model: PixelModel, list: string): number[] {
   return seq;
 }
 
-/** The next drum across the kit, or the same drum when the kit has one. Past the end of the
-    order with Bounce = Leave the dot is gone. */
-function nextKitDrum(model: PixelModel, state: DotState, dot: Dot, order: string, bounce: Bounce, list = ''): number {
-  const count = model.drums.length;
+/** The next drum across the kit — in the Kit order, always forwards along it (Reverse turns a dot
+    round on each drum, not the order: Tim, 2026-10-07, "the drum order gets mirrored when direction
+    is reversed"); Bounce / Ping-pong walk it back at the end. The same drum when there is one. Past
+    the end of the order with Edges = Leave the dot is gone. */
+function nextKitDrum(state: DotState, dot: Dot, seq: readonly number[], order: string, bounce: Bounce): number {
+  const count = seq.length;
   if (count <= 1) {
     if (bounce === 'leave') dot.gone = true;
-    return dot.drum;
+    return seq[0] ?? dot.drum;
   }
   if (order === 'random' || bounce === 'random') {
-    const pick = Math.floor(state.rng() * (count - 1)) % (count - 1);
-    return pick >= dot.drum ? pick + 1 : pick;
+    const others = seq.filter((i) => i !== dot.drum);
+    return others[Math.floor(state.rng() * others.length) % others.length]!;
   }
-  const seq = order === 'nearest' ? state.tour : order === 'custom' ? customDrumOrder(model, list) : model.drums.map((_, i) => i);
   const at = Math.max(0, seq.indexOf(dot.drum));
   let next = at + dot.kstep;
   if (next < 0 || next >= count) {
@@ -454,8 +494,8 @@ interface RingMotion {
   up: number;
   /** Through the kit at Travel angle 0°: px on a drum before hopping on (0 = one lap). */
   hopPx: number;
-  /** Through the kit in Custom order: the drum ids, comma-separated. */
-  list: string;
+  /** Through the kit: the drums visited, in order (see kitSequence). */
+  seq: readonly number[];
 }
 
 /** A float hoop folded back into [0, top] — a ping-pong swing reflects off the end hoops. */
@@ -516,7 +556,7 @@ function stepOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, a
       // Out of the top (or bottom) of this drum and on into the next, entering at its far end.
       const rising = h > top + 0.5;
       const over = rising ? h - (top + 0.5) : -0.5 - h;
-      dot.drum = nextKitDrum(model, state, dot, m.order, m.bounce, m.list);
+      dot.drum = nextKitDrum(state, dot, m.seq, m.order, m.bounce);
       const nextTop = hoopCount(model, dot.drum) - 1;
       h = rising ? -0.5 + over : nextTop + 0.5 - over;
       dot.hf = h;
@@ -548,7 +588,7 @@ function stepOnRings(model: PixelModel, state: DotState, dot: Dot, px: number, a
     const hop = m.hopPx > 0 ? m.hopPx : hoopSize(model, dot.drum, dot.hoop);
     if (dot.lapPx < hop) break;
     dot.lapPx -= hop;
-    dot.drum = nextKitDrum(model, state, dot, m.order, m.bounce, m.list);
+    dot.drum = nextKitDrum(state, dot, m.seq, m.order, m.bounce);
     if (dot.gone) return;
     dot.hoop = Math.min(dot.hoop, hoopCount(model, dot.drum) - 1);
     dot.hf = dot.hoop;
@@ -820,7 +860,7 @@ export const dot: EffectGenerator<DotState> = {
       info: 'Forward or Reverse along its way (Reverse on a drum heads down), Random per dot, or Alternate dot by dot.' },
     { key: 'kitOrder', label: 'Kit order', type: 'enum', default: 'kit', options: ['kit', 'nearest', 'random', 'custom'], section: 'Movement',
       showIf: { key: 'through', is: ['kit'] },
-      info: 'Which drum comes next. Kit: the kit\'s own order. Nearest: the closest drum. Random. Custom: the order you drag below — dots begin on its first drum.' },
+      info: 'Which of the Target\'s drums a dot visits next — it begins on the first. Kit: the kit\'s own order. Nearest: the closest drum next, from the drum you hit. Random: any drum, each time. Custom: the order you drag below.' },
     { key: 'kitList', label: 'Drum order', type: 'enum', default: '', options: [''], widget: { kind: 'drum-order' }, section: 'Movement',
       showIf: [{ key: 'through', is: ['kit'] }, { key: 'kitOrder', is: ['custom'] }],
       info: 'Drag the drums into the order the dot visits them — or focus one and press ← / →. Dots begin on the first.' },
@@ -885,7 +925,6 @@ export const dot: EffectGenerator<DotState> = {
       rounds: 0,
       rng: mulberry32(seed ?? SEED),
       pitchMm,
-      tour: nearestTour(model),
       frames: hoopFrames(model),
       cov: new Float32Array(model.pixelCount),
       col: new Float32Array(model.pixelCount * 3),
@@ -952,7 +991,7 @@ export const dot: EffectGenerator<DotState> = {
       around: climbs ? Math.cos(climbRad) : 1,
       up: climbs ? Math.sin(climbRad) : 0,
       hopPx: Math.max(0, pnum(params, 'hopEvery', 0)),
-      list: pstr(params, 'kitList', ''),
+      seq: through === 'kit' ? kitSequence(model, params, ctx.triggers[0]) : [],
     };
     // Below a hair, cos/sin of ±90° leave a sliver of travel round the hoop; drop it.
     if (Math.abs(motion.around) < 1e-9) motion.around = 0;

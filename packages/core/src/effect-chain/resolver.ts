@@ -232,6 +232,8 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   const shape = ampShape(attackMs, amp.decayMs, amp.sustainLevel);
   const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
   const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - attackMs) : 0;
+  // Loop repeats a timed envelope; a held one (or an Always Effect) already runs until released.
+  const loopMs = amp.loop && mode === 'oneshot' ? Math.max(20, attackMs + sustainMs + releaseMs) : undefined;
 
   const action: PlayAction = {
     kind: 'play',
@@ -249,7 +251,8 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
           spliceInputs: gen.spliceInputs ?? [],
         }
       : {}),
-    mode,
+    mode: loopMs ? 'loop' : mode,
+    ...(loopMs ? { loopMs } : {}),
     ...targetFields(effect, ctx.sourceDrumId),
     busId: CHAIN_BUS_ID,
     params,

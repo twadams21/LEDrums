@@ -125,6 +125,10 @@ export const ampEnvelopeSchema = z.object({
   releaseMs: nonNegMs.default(300),
   /** The decay in beats instead; when set it wins, resolved at the fire's tempo. */
   releaseBeats: z.number().min(0).optional(),
+  /** Loop (Tim, 2026-10-07: "loop doesn't seem to be working"): the hit repeats — Attack, Sustain,
+      Decay, then again with fresh content — until the Effect is stopped (Stop, a section change,
+      Cut). Only a timed Sustain (a time, beats, until it ends) has a cycle to repeat. */
+  loop: z.boolean().default(false),
 });
 
 // ---- Devices -------------------------------------------------------------------

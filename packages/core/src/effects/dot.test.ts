@@ -273,7 +273,7 @@ describe('Dot — moving through', () => {
   });
 
   it('Through the kit: up through a drum\'s hoops, then on into the next drum at its bottom hoop', () => {
-    const d = play({ ...FIXED, speed: 4, through: 'kit' }, 1500, { drum: 'a' }).state.dots[0]!;
+    const d = play({ ...FIXED, speed: 4, through: 'kit' }, 1500, { drum: 'a', targets: null }).state.dots[0]!;
     expect(M.drums[d.drum]!.drumId).toBe('b');
     expect(d.hoop).toBe(0);
   });
@@ -284,15 +284,15 @@ describe('Dot — moving through', () => {
     expect(customDrumOrder(M, 'b,a')).toEqual([1, 0]);
     expect(customDrumOrder(M, 'b')).toEqual([1, 0]); // an unlisted drum follows
     const custom = { ...FIXED, speed: 4, through: 'kit', kitOrder: 'custom', kitList: 'b,a' };
-    expect(M.pixels[lit(play(custom, 0, { drum: 'a' }).fb)[0]!]!.drumId).toBe('b'); // hit a, begins on b
-    expect(M.drums[play(custom, 1500, { drum: 'a' }).state.dots[0]!.drum]!.drumId).toBe('a');
-    expect(play({ ...custom, bounce: 'leave', life: 0 }, 3000, { drum: 'a' }).state.dots[0]!.gone).toBe(true);
+    expect(M.pixels[lit(play(custom, 0, { drum: 'a', targets: null }).fb)[0]!]!.drumId).toBe('b'); // hit a, begins on b
+    expect(M.drums[play(custom, 1500, { drum: 'a', targets: null }).state.dots[0]!.drum]!.drumId).toBe('a');
+    expect(play({ ...custom, bounce: 'leave', life: 0 }, 3000, { drum: 'a', targets: null }).state.dots[0]!.gone).toBe(true);
   });
 
   it('Through the kit at 0°: round only, hopping each lap — or after Hop after pixels', () => {
-    const { state } = play({ ...FIXED, speed: 40, through: 'kit', climb: 0 }, 1050, { drum: 'a' });
+    const { state } = play({ ...FIXED, speed: 40, through: 'kit', climb: 0 }, 1050, { drum: 'a', targets: null });
     expect(M.drums[state.dots[0]!.drum]!.drumId).toBe('b');
-    const soon = play({ ...FIXED, speed: 40, through: 'kit', climb: 0, hopEvery: 8 }, 250, { drum: 'a' }).state;
+    const soon = play({ ...FIXED, speed: 40, through: 'kit', climb: 0, hopEvery: 8 }, 250, { drum: 'a', targets: null }).state;
     expect(M.drums[soon.dots[0]!.drum]!.drumId).toBe('b');
   });
 

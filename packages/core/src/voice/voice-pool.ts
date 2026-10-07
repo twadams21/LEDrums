@@ -52,6 +52,7 @@ export function deactivateVoice(v: Voice): void {
   v.renderGenerator = undefined;
   v.genState = null;
   v.materialCycleMs = undefined;
+  v.loopMs = undefined;
   v.materialCycle = undefined;
   v.modState = undefined;
   v.mixInputs = undefined;
@@ -317,6 +318,9 @@ export class VoicePool {
     slot.lifeEnvelope = life.envelope;
     slot.lifeSpanMs = a.lifeSpanMs ?? life.spanMs;
     slot.releaseMs = a.releaseMs ?? effect.releaseMs;
+    // Loop: the envelope repeats, and the generator starts afresh each cycle (a material cycle).
+    slot.loopMs = a.loopMs;
+    if (a.loopMs) slot.materialCycleMs = a.loopMs;
     slot.phase = 'attack';
     slot.level = 0;
     slot.bornAtMs = deps.timeMs;

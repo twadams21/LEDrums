@@ -696,6 +696,8 @@ export interface Voice extends GeometryState {
   attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
+  /** Loop: the envelope cycle (ms) the voice repeats until released — see `PlayAction.loopMs`. */
+  loopMs?: number;
   /**
    * Authored amplitude-over-life curve, copied from the spawning node (S6b) and already
    * normalised. `null`/absent → no envelope, and every level below is what it always was.
