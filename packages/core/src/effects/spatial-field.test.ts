@@ -120,8 +120,9 @@ describe('spatial-field', () => {
     expect(e.tags).toEqual(expect.arrayContaining(['3d', 'kit-wide', 'texture']));
     expect(collectionOf(e.tags)).toBe('textures');
     expect(e.paramSpec.length).toBe(18);
-    for (const original of spatialFieldReference.paramSpec) {
-      expect(e.paramSpec.find((s) => s.key === original.key)).toEqual(original);
+    // The same settings as the reference — its label and layout are the Generator standard's.
+    for (const { label: _label, ...original } of spatialFieldReference.paramSpec) {
+      expect(e.paramSpec.find((s) => s.key === original.key)).toMatchObject(original);
     }
     expect(defaultParams(e.paramSpec)).toMatchObject({ warp: 0, advection: 0, detail: 0 });
     for (const s of e.paramSpec) {

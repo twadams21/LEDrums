@@ -17,8 +17,8 @@ plugin genuinely can't follow a rule, say why in its file — don't quietly diff
 | Controls | Move a setting over time — and **Velocity**: a Velocity Control makes any setting respond to how hard the drum is hit | — |
 | Target | Where light is allowed to show | — |
 
-So a Generator has **no Brightness** setting (the Effect's Opacity is the one place) and **no
-Decay** that the envelope already does. A per-element life (Dot's Lifespan) is fine — it is what
+So a Generator has **no Brightness** slider (the Effect's Opacity is the one place; a colour's
+own darkness is picked in its colour box) and **no Decay** that the envelope already does. A per-element life (Dot's Lifespan) is fine — it is what
 the light looks like, not how long the hit lasts.
 
 ## Rule 2 — the same sections, in the same order
@@ -124,8 +124,15 @@ a certainty of where on the card they will appear each time").
 1. ✅ The order held in code (`GENERATOR_SECTIONS`, `effects/generator-standard.test.ts`);
    dim-instead-of-hide, fixed slots and colour boxes in the card (2026-10-07).
 2. ✅ Dot brought fully in line (2026-10-07).
-3. The older Styles swept: sections, the standard words, Brightness removed. No change to how
-   anything looks or plays apart from Brightness moving to Opacity.
+3. ✅ The older Styles swept (2026-10-07): all 49 declare sections in the standard order (FORM
+   named per plugin — BREATHE, PLASMA, HOGS…), the standard words (Colour, Spread, Cycle, Trail,
+   Random, Speed, Lifespan for a per-element life, Fade out for a level that falls), and every
+   colour as a box. **Brightness is no longer a slider anywhere**: it is the darkness of the
+   Colour box it sits behind (`partOf`), so nothing looks or plays differently and a Control can
+   still drive it live. Solid and Scene keep a hidden Brightness for the same reason — the
+   Effect's Opacity is set at the hit, so it can't be an LFO's or a CC's. A plugin with several
+   colours (Temperature, Hogs, Flames, Collisions, Arc) shows a box each, sharing the first
+   one's saturation and brightness. `generator-standard.test.ts` now checks every Style.
 4. ✅ Splice and Slice (2026-10-07): SPLICES / SLICES · (Slice: START — On, its Drum, its Space box)
    · SHAPE · one MOVEMENT with Around / Through sub-headings, flowing down two columns · TIMING ·
    COLOUR (every band's colour box, Tint, a Slice's Colour chase). The band list keeps each band's

@@ -17,12 +17,12 @@ export const tunnel: EffectGenerator = {
   name: 'Tunnel',
   category: 'texture',
   paramSpec: [
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'rings', label: 'Rings', type: 'number', default: 8, min: 1, max: 30, step: 0.5 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: -6, max: 6, step: 0.01 },
-    { key: 'hueOffset', label: 'Hue Offset', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-    { key: 'hueRange', label: 'Hue Range', type: 'number', default: 360, min: 0, max: 360, unit: '°' },
+    { key: 'rings', label: 'Rings', type: 'number', default: 8, min: 1, max: 30, step: 0.5, section: 'Tunnel' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: -6, max: 6, step: 0.01, section: 'Movement' },
+    { key: 'hueOffset', label: 'Colour', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hueOffset', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hueOffset' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hueOffset' },
+    { key: 'hueRange', label: 'Spread', type: 'number', default: 360, min: 0, max: 360, unit: '°', section: 'Colour' },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);

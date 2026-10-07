@@ -12,11 +12,11 @@ export const hueRotateKit: EffectGenerator = {
   name: 'Hue Rotate Kit',
   category: 'base',
   paramSpec: [
-    { key: 'baseHue', label: 'Base Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.3, min: 0, max: 4, step: 0.01 },
-    { key: 'ky', label: 'Vertical Spread', type: 'number', default: 0.15, min: 0, max: 2, step: 0.01, unit: '°/mm' },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.8, min: 0, max: 1, step: 0.01 },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'ky', label: 'Vertical spread', type: 'number', default: 0.15, min: 0, max: 2, step: 0.01, unit: '°/mm', section: 'Shape' },
+    { key: 'baseHue', label: 'Colour', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['baseHue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'baseHue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.8, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'baseHue' },
+    { key: 'speed', label: 'Cycle', type: 'number', default: 0.3, min: 0, max: 4, step: 0.01, section: 'Colour' },
   ],
   render(ctx, params, fb) {
     const baseHue = pnum(params, 'baseHue', 0);

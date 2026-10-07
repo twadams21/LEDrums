@@ -41,13 +41,13 @@ export const rain3d: EffectGenerator<Rain3dState> = {
   name: 'Rain 3D',
   category: 'particle',
   paramSpec: [
-    { key: 'density', label: 'Density', type: 'number', default: 24, min: 0, max: 128, step: 1 },
-    { key: 'fallSpeed', label: 'Fall Speed', type: 'number', default: 900, min: 100, max: 4000, step: 10, unit: 'mm/s' },
-    { key: 'hue', label: 'Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },
-    { key: 'hueJitter', label: 'Hue Jitter', type: 'number', default: 30, min: 0, max: 180, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.85, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'hitBurst', label: 'Hit Burst', type: 'number', default: 12, min: 0, max: 64, step: 1 },
+    { key: 'density', label: 'Density', type: 'number', default: 24, min: 0, max: 128, step: 1, section: 'Rain' },
+    { key: 'hitBurst', label: 'Hit burst', type: 'number', default: 12, min: 0, max: 64, step: 1, section: 'Rain' },
+    { key: 'fallSpeed', label: 'Speed', type: 'number', default: 900, min: 100, max: 4000, step: 10, unit: 'mm/s', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 210, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.85, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'hueJitter', label: 'Random', type: 'number', default: 30, min: 0, max: 180, unit: '°', section: 'Colour', sub: true },
   ],
   createState(model: PixelModel, seed?: number): Rain3dState {
     return {

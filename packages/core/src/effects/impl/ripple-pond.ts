@@ -12,12 +12,12 @@ export const ripplePond: EffectGenerator = {
   name: 'Ripple Pond',
   category: 'texture',
   paramSpec: [
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'freq', label: 'Frequency', type: 'number', default: 24, min: 2, max: 60, step: 0.5 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 2, min: 0, max: 8, step: 0.01 },
-    { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'hueSpread', label: 'Hue Spread', type: 'number', default: 80, min: 0, max: 360, unit: '°' },
+    { key: 'freq', label: 'Frequency', type: 'number', default: 24, min: 2, max: 60, step: 0.5, section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 2, min: 0, max: 8, step: 0.01, section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 190, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'hueSpread', label: 'Spread', type: 'number', default: 80, min: 0, max: 360, unit: '°', section: 'Colour' },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);

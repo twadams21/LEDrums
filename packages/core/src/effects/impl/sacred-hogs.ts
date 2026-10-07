@@ -34,13 +34,13 @@ export const sacredHogs: EffectGenerator<SacredHogsState> = {
   category: 'wash',
   timebase: 'voice',
   paramSpec: [
-    { key: 'hogHue', label: 'Hog Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
-    { key: 'haloHue', label: 'Halo Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'hogsPerHoop', label: 'Hogs / Hoop', type: 'number', default: 3, min: 1, max: 12, step: 1 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 60, min: 0, max: 720, unit: '°/s' },
-    { key: 'hogWidthDeg', label: 'Hog Width', type: 'number', default: 18, min: 2, max: 90, unit: '°' },
+    { key: 'hogsPerHoop', label: 'Hogs / hoop', type: 'number', default: 3, min: 1, max: 12, step: 1, section: 'Hogs' },
+    { key: 'hogWidthDeg', label: 'Hog width', type: 'number', default: 18, min: 2, max: 90, unit: '°', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 60, min: 0, max: 720, unit: '°/s', section: 'Movement' },
+    { key: 'hogHue', label: 'Hog', type: 'number', default: 200, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hogHue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hogHue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hogHue' },
+    { key: 'haloHue', label: 'Halo', type: 'number', default: 30, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['haloHue', 'saturation', 'brightness'] }, info: 'Shares Hog\'s saturation and brightness.' },
   ],
   createState(model: PixelModel, seed?: number): SacredHogsState {
     return { rng: mulberry32(seed ?? SEED), sparkle: new Float32Array(model.pixelCount) };

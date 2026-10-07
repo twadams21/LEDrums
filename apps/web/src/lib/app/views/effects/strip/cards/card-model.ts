@@ -81,6 +81,9 @@ export function toCardParam(spec: ParamSpec): CardParam {
  * `saturation` / `brightness` with it — those leave the card (a Control can still drive them).
  */
 export function withColours(params: CardParam[]): CardParam[] {
+  // A plugin laid out by the standard declares its colour boxes in core (a scene's `hue` is a
+  // Colour shift, not a colour); this generic merge is for one that doesn't.
+  if (params.some((p) => p.section)) return params;
   const hue = params.find((p) => p.key === 'hue' && p.kind === 'number' && !p.widget);
   if (!hue) return params;
   const keys = ['hue', ...['saturation', 'brightness'].filter((k) => params.some((p) => p.key === k))];

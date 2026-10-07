@@ -11,11 +11,11 @@ export const solidBase: EffectGenerator = {
   name: 'Solid Base (Swirl)',
   category: 'base',
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.7, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.4, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.3, min: 0, max: 4, step: 0.01 },
-    { key: 'noise', label: 'Noise', type: 'number', default: 0.4, min: 0, max: 1, step: 0.01 },
+    { key: 'noise', label: 'Noise', type: 'number', default: 0.4, min: 0, max: 1, step: 0.01, section: 'Swirl' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 0.3, min: 0, max: 4, step: 0.01, section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 210, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.7, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.4, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 210);

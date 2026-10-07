@@ -56,14 +56,14 @@ export const sparkArc: EffectGenerator<SparkArcState> = {
   category: 'particle',
   timebase: 'voice',
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 45, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'travelBeats', label: 'Travel', type: 'number', default: 1, min: 0.25, max: 4, step: 0.25, unit: 'beats' },
-    { key: 'width', label: 'Beam Width', type: 'number', default: 110, min: 20, max: 400, unit: 'mm' },
-    { key: 'trail', label: 'Trail', type: 'number', default: 0.35, min: 0.05, max: 1, step: 0.05 },
-    { key: 'loft', label: 'Loft', type: 'number', default: 0.5, min: 0, max: 1.5, step: 0.05 },
-    { key: 'flashHue', label: 'Flash Hue', type: 'number', default: 20, min: 0, max: 360, unit: '°' },
+    { key: 'width', label: 'Beam width', type: 'number', default: 110, min: 20, max: 400, unit: 'mm', section: 'Shape' },
+    { key: 'trail', label: 'Trail', type: 'number', default: 0.35, min: 0.05, max: 1, step: 0.05, section: 'Shape' },
+    { key: 'loft', label: 'Loft', type: 'number', default: 0.5, min: 0, max: 1.5, step: 0.05, section: 'Shape' },
+    { key: 'travelBeats', label: 'Travel time', type: 'number', default: 1, min: 0.25, max: 4, step: 0.25, unit: 'beats', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 45, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'flashHue', label: 'Flash', type: 'number', default: 20, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['flashHue', 'saturation', 'brightness'] }, info: 'Shares Colour\'s saturation and brightness.' },
   ],
   createState(model: PixelModel, seed?: number): SparkArcState {
     return { em: createEmitterState(), rng: mulberry32(seed ?? SEED), grid: buildPixelGrid(model) };

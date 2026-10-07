@@ -17,12 +17,12 @@ export const orbitRings: EffectGenerator = {
   category: 'wash',
   timebase: 'voice',
   paramSpec: [
-    { key: 'amp', label: 'Amplitude', type: 'number', default: 1, min: 0, max: 2, step: 0.05 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0, max: 10, step: 0.05, unit: 'rad/s' },
-    { key: 'width', label: 'Width', type: 'number', default: 120, min: 5, max: 800, unit: 'mm' },
-    { key: 'hue', label: 'Hue', type: 'number', default: 160, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'amp', label: 'Amplitude', type: 'number', default: 1, min: 0, max: 2, step: 0.05, section: 'Shape' },
+    { key: 'width', label: 'Width', type: 'number', default: 120, min: 5, max: 800, unit: 'mm', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0, max: 10, step: 0.05, unit: 'rad/s', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 160, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const amp = pnum(params, 'amp', 1);

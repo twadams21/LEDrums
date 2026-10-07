@@ -16,8 +16,10 @@ export const solidColour: EffectGenerator = {
   name: 'Solid Colour',
   category: 'base',
   paramSpec: [
-    { key: 'color', label: 'Colour', type: 'color', default: '#ffffff' },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'color', label: 'Colour', type: 'color', default: '#ffffff', section: 'Colour' },
+    // Not on the card — the colour box's own darkness is the brightness — but a Control (an LFO, a
+    // CC) can still dim a Solid live, which the Effect's Opacity, set at the hit, can't.
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'color' },
   ],
   render(ctx, params, fb) {
     const { r, g, b } = hexToRgb(pstr(params, 'color', '#ffffff'));

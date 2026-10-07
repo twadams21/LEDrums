@@ -19,7 +19,7 @@ export const waveGenerator: GeneratorDef = {
     { id: 'wipe', label: 'Wipe', effectId: 'wipe-3d' },
     { id: 'radial', label: 'Radial', effectId: 'radial-wash', hiddenParams: DEAD_DECAY },
     // ripple-3d labels its travel speed "Wave Speed"; the card uses the common "Speed" label.
-    { id: 'ripple', label: 'Ripple', effectId: 'ripple-3d', paramLabels: { speed: 'Speed' } },
+    { id: 'ripple', label: 'Ripple', effectId: 'ripple-3d' },
     { id: 'pond', label: 'Ripple Pond', effectId: 'ripple-pond' },
     { id: 'sonar', label: 'Sonar', effectId: 'drum-sonar' },
     { id: 'spiral', label: 'Spiral', effectId: 'spiral' },

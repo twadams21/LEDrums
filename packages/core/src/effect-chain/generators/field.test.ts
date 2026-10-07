@@ -95,12 +95,10 @@ describe('Style param specs', () => {
     }
   });
 
-  it('the "Hue Base" param of lava-lamp, caustics and fire reads "Hue", like the other Noise Styles', () => {
-    for (const style of ['lava-lamp', 'caustics', 'fire']) {
-      expect(getEffect(getGeneratorDef('noise')!.styles.find((s) => s.id === style)!.effectId).paramSpec.find((p) => p.key === 'hue')?.label).toBe('Hue Base');
-      expect(generatorParamSpec('noise', style).find((p) => p.key === 'hue')?.label).toBe('Hue');
+  it('every Noise Style\'s hue is its Colour box (the Generator standard: one word, Colour)', () => {
+    for (const style of ['lava-lamp', 'caustics', 'fire', 'plasma', 'clouds']) {
+      expect(generatorParamSpec('noise', style).find((p) => p.key === 'hue')?.label).toBe('Colour');
     }
-    for (const style of ['plasma', 'clouds']) expect(generatorParamSpec('noise', style).find((p) => p.key === 'hue')?.label).toBe('Hue');
   });
 });
 

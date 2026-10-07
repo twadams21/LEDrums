@@ -33,14 +33,14 @@ export const scanPlane: EffectGenerator<ScanPlaneState> = {
     'Every hit launches a bright 3D scanning plane through the kit; the band crosses the gaps between drums before slicing across the next shell.',
   tags: ['wave', 'hit', '3d', 'kit-wide', 'airspace', 'emission'],
   paramSpec: [
-    { key: 'axis', label: 'Axis', type: 'enum', default: 'x', options: ['x', 'y', 'z'] },
-    { key: 'hue', label: 'Hue', type: 'number', default: 180, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.95, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1000, min: 80, max: 5000, step: 10, unit: 'mm/s' },
-    { key: 'width', label: 'Width', type: 'number', default: 160, min: 20, max: 800, step: 10, unit: 'mm' },
-    { key: 'afterglow', label: 'Afterglow', type: 'number', default: 0.28, min: 0, max: 1, step: 0.01 },
-    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1700, min: 200, max: 6000, step: 50, unit: 'ms' },
+    { key: 'width', label: 'Width', type: 'number', default: 160, min: 20, max: 800, step: 10, unit: 'mm', section: 'Shape' },
+    { key: 'afterglow', label: 'Trail', type: 'number', default: 0.28, min: 0, max: 1, step: 0.01, section: 'Shape' },
+    { key: 'axis', label: 'Axis', type: 'enum', default: 'x', options: ['x', 'y', 'z'], section: 'Movement' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1000, min: 80, max: 5000, step: 10, unit: 'mm/s', section: 'Movement' },
+    { key: 'lifeMs', label: 'Lifespan', type: 'number', default: 1700, min: 200, max: 6000, step: 50, unit: 'ms', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 180, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.95, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   createState(): ScanPlaneState {
     return { em: createEmitterState<ScanPlaneData>() };

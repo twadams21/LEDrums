@@ -14,13 +14,13 @@ export const wipe3d: EffectGenerator = {
   name: '3D Wipe',
   category: 'wash',
   paramSpec: [
-    { key: 'axis', label: 'Axis', type: 'enum', default: 'x', options: ['x', 'y', 'z'] },
-    { key: 'mode', label: 'Mode', type: 'enum', default: 'band', options: ['band', 'wipe'] },
-    { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.5, min: 0.02, max: 4, step: 0.01, unit: 'Hz' },
-    { key: 'width', label: 'Band Width', type: 'number', default: 120, min: 10, max: 800, unit: 'mm' },
+    { key: 'mode', label: 'Mode', type: 'enum', default: 'band', options: ['band', 'wipe'], section: 'Shape' },
+    { key: 'width', label: 'Band width', type: 'number', default: 120, min: 10, max: 800, unit: 'mm', section: 'Shape' },
+    { key: 'axis', label: 'Axis', type: 'enum', default: 'x', options: ['x', 'y', 'z'], section: 'Movement' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 0.5, min: 0.02, max: 4, step: 0.01, unit: 'Hz', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 190, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const axis = pstr(params, 'axis', 'x') as Axis;

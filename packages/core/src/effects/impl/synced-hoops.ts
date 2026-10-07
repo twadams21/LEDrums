@@ -18,11 +18,11 @@ export const syncedHoops: EffectGenerator = {
   category: 'base',
   timebase: 'voice',
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'hueSpread', label: 'Hue Spread', type: 'number', default: 120, min: 0, max: 360, unit: '°' },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 8, step: 0.05, unit: 'cyc/beat' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 8, step: 0.05, unit: 'cyc/beat', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 200, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'hueSpread', label: 'Spread', type: 'number', default: 120, min: 0, max: 360, unit: '°', section: 'Colour' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 200);

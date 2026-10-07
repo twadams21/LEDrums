@@ -14,12 +14,12 @@ export const checkerPulse: EffectGenerator = {
   name: 'Checker Pulse',
   category: 'texture',
   paramSpec: [
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'cols', label: 'Columns', type: 'number', default: 6, min: 1, max: 24, step: 1 },
-    { key: 'rows', label: 'Rows', type: 'number', default: 4, min: 1, max: 24, step: 1 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 6, step: 0.01 },
-    { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'cols', label: 'Columns', type: 'number', default: 6, min: 1, max: 24, step: 1, section: 'Checker' },
+    { key: 'rows', label: 'Rows', type: 'number', default: 4, min: 1, max: 24, step: 1, section: 'Checker' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 6, step: 0.01, section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 280, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);

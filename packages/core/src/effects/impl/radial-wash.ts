@@ -56,14 +56,14 @@ export const radialWash: EffectGenerator = {
   // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
   voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 280, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
-    { key: 'mode', label: 'Mode', type: 'enum', default: 'out', options: ['out', 'in', 'bounce', 'collapse'] },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms' },
-    { key: 'width', label: 'Width', type: 'number', default: 180, min: 10, max: 800, unit: 'mm' },
-    { key: 'reach', label: 'Reach', type: 'number', default: 1200, min: 100, max: 4000, unit: 'mm' },
-    { key: 'decayMs', label: 'Decay', type: 'number', default: 500, min: 50, max: 4000, unit: 'ms' },
+    { key: 'width', label: 'Width', type: 'number', default: 180, min: 10, max: 800, unit: 'mm', section: 'Shape' },
+    { key: 'reach', label: 'Reach', type: 'number', default: 1200, min: 100, max: 4000, unit: 'mm', section: 'Shape' },
+    { key: 'mode', label: 'Mode', type: 'enum', default: 'out', options: ['out', 'in', 'bounce', 'collapse'], section: 'Movement' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'mm/ms', section: 'Movement' },
+    { key: 'decayMs', label: 'Lifespan', type: 'number', default: 500, min: 50, max: 4000, unit: 'ms', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 280, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 280);
