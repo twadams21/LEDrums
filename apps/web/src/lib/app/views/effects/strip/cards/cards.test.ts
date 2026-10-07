@@ -179,7 +179,7 @@ describe('GeneratorCard', () => {
     const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }, { color: '#0000ff' }] } });
     const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelector('.preview')).toBeNull(); // a splice previews through its slots
-    expect(container.querySelectorAll('.slot')).toHaveLength(4); // Count 4: the two authored, cycling
+    expect(container.querySelectorAll('.slots .slot')).toHaveLength(4); // Count 4: the two authored, cycling
     await fireEvent.click(getByRole('button', { name: 'Add splice' }));
     expect(effect().generator.slots!.map((s) => s.color)).toEqual(['#ff0000', '#0000ff', '#ff0000', '#0000ff', '#0000ff']);
     expect(effect().generator.params.count).toBe(5);

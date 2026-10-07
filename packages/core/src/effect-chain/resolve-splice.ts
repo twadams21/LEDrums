@@ -189,7 +189,9 @@ export function spliceDeviceNode(device: GeneratorDevice): SpliceNode {
     node.sliceRotY = num(p, 'rotY');
     node.sliceRotZ = num(p, 'rotZ');
     node.sliceRegion = region(p);
-    node.sliceVelocity = num(p, 'velocity');
+    // Velocity is the Velocity Control's job (the Generator standard): the Effect's Opacity, not
+    // the Slice's own gain. The graph Slice node keeps its own.
+    node.sliceVelocity = 0;
     node.sliceIncrementPct = num(p, 'incrementPct');
   }
   return node;
@@ -287,7 +289,6 @@ const SLICE_PARAM_SPEC: readonly ParamSpec[] = [
   n('rotX', 'Tilt X', 0, 0, 360, 1, '°'),
   n('rotY', 'Tilt Y', 0, 0, 360, 1, '°'),
   n('rotZ', 'Tilt Z', 0, 0, 360, 1, '°'),
-  n('velocity', 'Velocity', 1, 0, 1, 0.01),
   n('incrementPct', 'Stagger', 10, 0, 100, 1, '%'),
 ];
 

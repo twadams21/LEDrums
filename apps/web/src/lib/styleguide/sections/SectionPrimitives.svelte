@@ -175,7 +175,7 @@
     { id: 'effects', label: 'Effects', icon: Sparkles },
     { id: 'scenes', label: 'Scenes', icon: Activity },
   ];
-  // OrderList demo — a live order the card really reorders, as the MOVE THROUGH chips do.
+  // OrderList demo — a live order the card really reorders, as MOVEMENT's Through chips do.
   let demoOrder = $state([
     { id: 'kick', label: 'Kick' },
     { id: 'snare', label: 'Snare' },
@@ -368,7 +368,7 @@
     <DemoCard
       title="Order list"
       src="lib/ui/OrderList"
-      note="A short sequence the author puts in order — which drum lights first, second, third. Drag a chip to a new place, or focus it and press ← / → to nudge it; focus stays on the chip that moved. The drop gap is decided per chip, so it stays right when the chips wrap. Used by MOVE THROUGH beside a SegmentedControl of one-click patterns; a pattern replaces a dragged order."
+      note="A short sequence the author puts in order — which drum lights first, second, third. Drag a chip to a new place, or focus it and press ← / → to nudge it; focus stays on the chip that moved. The drop gap is decided per chip, so it stays right when the chips wrap. Used by a Splice's MOVEMENT · Through beside a SegmentedControl of one-click patterns; a pattern replaces a dragged order."
     >
       <div class="comp-stack">
         <OrderList items={demoOrder} onReorder={reorderDemo} ariaLabel="Demo drum order" />

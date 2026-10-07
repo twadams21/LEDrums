@@ -79,15 +79,18 @@ describe('slice — through the real engine', () => {
     expect(render(sliceEffect([{}, { muted: true }])).voices).toBe(0);
   });
 
-  it('is velocity sensitive by default — a soft hit is a dimmer slice', () => {
-    const hard = render(sliceEffect([{ color: '#ffffff' }]), 60, 1).peak('kick');
-    const soft = render(sliceEffect([{ color: '#ffffff' }]), 60, 0.25).peak('kick');
+  // The Generator standard (2026-10-07): velocity is the Velocity Control's job — a new Slice comes
+  // with one on the Effect's Opacity (effects-doc addEffect); the Slice itself has no Velocity.
+  it('answers velocity through a Velocity Control on Opacity — a soft hit is a dimmer slice', () => {
+    const controls = [{ uid: 'v', kind: 'velocity', mappings: [{ device: 'effect', param: 'opacity', rangeMin: 0, rangeMax: 1 }] }];
+    const hard = render(sliceEffect([{ color: '#ffffff' }], {}, { controls }), 60, 1).peak('kick');
+    const soft = render(sliceEffect([{ color: '#ffffff' }], {}, { controls }), 60, 0.25).peak('kick');
     expect(soft).toBeLessThan(hard * 0.5);
   });
 
-  it('ignores velocity when its sensitivity is off', () => {
-    const hard = render(sliceEffect([{ color: '#ffffff' }], { velocity: 0 }), 60, 1).peak('kick');
-    const soft = render(sliceEffect([{ color: '#ffffff' }], { velocity: 0 }), 60, 0.25).peak('kick');
+  it('without that Control it ignores velocity — even a leftover Velocity param', () => {
+    const hard = render(sliceEffect([{ color: '#ffffff' }], { velocity: 1 }), 60, 1).peak('kick');
+    const soft = render(sliceEffect([{ color: '#ffffff' }], { velocity: 1 }), 60, 0.25).peak('kick');
     expect(soft).toBeCloseTo(hard, 3);
   });
 

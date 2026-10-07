@@ -12,7 +12,6 @@
      it started in. */
   import type { effectChain } from '@ledrums/core';
   import type { EffectsAuthoringApi } from '../../../../../trigger-lab/effects-api';
-  import ColorField from '../../../../../ui/ColorField.svelte';
   import Select from '../../../../../ui/Select.svelte';
   import IconButton from '../../../../../ui/IconButton.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
@@ -22,8 +21,6 @@
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import { tick } from 'svelte';
   import { gapAt, gapToIndex, nudgeIndex } from '../strip-model';
-  import GestureScope from './GestureScope.svelte';
-  import ParamRows from './ParamRows.svelte';
   import { slotsAtCount, spliceCountOf } from './splice-face';
   import {
     SLOT_NO_GENERATOR,
@@ -32,7 +29,6 @@
     isBlankSlot,
     slotGeneratorOptions,
     styleOptions,
-    type CardParam,
     type SpliceSlot,
   } from './card-model';
 
@@ -149,14 +145,13 @@
 
   const allBlank = $derived(slots.every(isBlankSlot));
 
-  // Tint: how strongly a slot's colour recolours its Generator — shown once a row has both.
-  const anyTinted = $derived(slots.some((s) => !s.muted && !!s.color && !!s.generator));
-  const TINT: CardParam = { key: 'tint', label: 'Tint', kind: 'number', min: 0, max: 1, step: 0.01, default: 1, percent: true, unit: '%' };
 </script>
 
-<section class="slots" aria-label={`${noun}s`}>
+<!-- "Bands", not "Splices": the FORM section beside it is SPLICES (the count), so two headings
+     with one name would read as one thing. -->
+<section class="slots" aria-label={`${noun} bands`}>
   <div class="head">
-    <span class="headlabel">{noun}s</span>
+    <span class="headlabel">Bands</span>
     <span class="count">{slots.length}</span>
     <IconButton icon={Plus} label={`Add ${noun.toLowerCase()}`} size={14} {disabled} onclick={add} />
   </div>
@@ -216,16 +211,9 @@
             onclick={() => remove(i)}
           />
         </div>
-        <!-- Colour and generator side by side, as the inspector's rows had them. -->
+        <!-- The band's Generator. Its colour is under COLOUR, with every colour (the Generator
+             standard, Tim, 2026-10-07). -->
         <div class="body">
-          <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
-            <ColorField
-              value={slot.color ?? null}
-              {disabled}
-              ariaLabel={`${noun} ${i + 1} colour`}
-              onChange={(v) => patch(i, { color: v ?? undefined })}
-            />
-          </GestureScope>
           <div class="gen">
             <Select
               value={slot.generator?.kind ?? SLOT_NO_GENERATOR}
@@ -254,20 +242,10 @@
     {/each}
   </ol>
 
-  {#if anyTinted}
-    <ParamRows
-      params={[TINT]}
-      values={effect.generator.params}
-      {disabled}
-      labelPrefix={noun}
-      onChange={(key, v) => api.setGeneratorParam(effect.id, key, v)}
-      onGestureStart={() => api.beginGesture()}
-      onGestureEnd={() => api.endGesture()}
-    />
-  {:else if allBlank}
+  {#if allBlank}
     <!-- The one explanation that earns its space: the empty state, where nothing on screen says
          yet what a row is for. -->
-    <p class="hint">Give a {noun.toLowerCase()} a colour, a generator, or both. With both, the colour tints the generator.</p>
+    <p class="hint">Give a {noun.toLowerCase()} a generator here, a colour under COLOUR, or both. With both, the colour tints the generator.</p>
   {/if}
 </section>
 
@@ -428,12 +406,7 @@
     gap: var(--space-1_5);
     min-width: 0;
   }
-  /* The swatch (+ clear) only — the row's header already spells the colour out — and the
-     generator takes the rest of the row. */
-  .body :global(.colorfield) {
-    flex: none;
-    width: auto;
-  }
+  /* (No colour here any more — it is under COLOUR.) */
   .body :global(.colorfield .hex) {
     display: none;
   }

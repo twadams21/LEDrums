@@ -126,4 +126,10 @@ a certainty of where on the card they will appear each time").
 2. ✅ Dot brought fully in line (2026-10-07).
 3. The older Styles swept: sections, the standard words, Brightness removed. No change to how
    anything looks or plays apart from Brightness moving to Opacity.
-4. Splice and Slice: one MOVEMENT with Around / Through sub-headings; their colours into COLOUR.
+4. ✅ Splice and Slice (2026-10-07): SPLICES / SLICES · (Slice: START — On, its Drum, its Space box)
+   · SHAPE · one MOVEMENT with Around / Through sub-headings, flowing down two columns · TIMING ·
+   COLOUR (every band's colour box, Tint, a Slice's Colour chase). The band list keeps each band's
+   Generator and is headed "Bands". Every mode-dependent setting is dimmed in place. Slice's own
+   Velocity is gone: a new Slice (or an Effect switched to Slice) gets a Velocity Control on the
+   Effect's Opacity instead, so a soft hit is still a dimmer slice. Splice's **Tint** is an amount
+   (how strongly a band's colour recolours its Generator), not a colour, so it keeps its name.
