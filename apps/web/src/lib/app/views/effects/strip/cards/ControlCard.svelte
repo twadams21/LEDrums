@@ -57,7 +57,8 @@
 
   const label = $derived(CONTROL_KIND_LABEL[control.kind]);
   const disabled = $derived(!api.canEdit);
-  const targets = $derived(mappingTargets(effect));
+  // What this Control can drive — the Effect's own Opacity / envelope only for Velocity and Random.
+  const targets = $derived(mappingTargets(effect, control.kind));
   const mapOptions = $derived(targets.map((t) => ({ value: mapTargetKey(t.device, t.param), label: t.label })));
 
   const begin = (): void => api.beginGesture();

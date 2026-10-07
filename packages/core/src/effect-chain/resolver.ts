@@ -18,11 +18,11 @@ import { canvasEffectId } from '../canvas/ids';
 import type { CurveValue } from '../model/curve';
 import { defaultEnvelope } from '../voice/envelope';
 import type { PlayAction } from '../voice/play-action';
-import { quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type ModParamSpec, type ModSource } from '../voice/modulation';
+import { applyModulations, quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type ModParamSpec, type ModSource } from '../voice/modulation';
 import type { ParamValues, PlayMode, Scope } from '../voice/types';
 import { resolveGenerator } from './generators';
 import { CHAIN_BUS_ID, chainEffectDefId } from './runtime';
-import { KIT_ROW, type AmpEnvelope, type ControlDevice, type Effect, type EffectCell, type EffectTarget, type GeneratorDevice } from './types';
+import { EFFECT_DEVICE, EFFECT_TARGETS, FIRE_TIME_CONTROLS, KIT_ROW, type AmpEnvelope, type ControlDevice, type Effect, type EffectCell, type EffectTarget, type GeneratorDevice } from './types';
 import { resolveTempoParams } from './tempo';
 import type { EffectGenerator } from '../effects/types';
 import { isContinuousTarget, type InputMapping } from './input-mappings';
@@ -178,9 +178,17 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   });
 
   const generatorMappings: Mapping[] = [];
+  // Mappings onto the Effect itself — Opacity and the envelope — set once, at this fire.
+  const effectMappings: Mapping[] = [];
   for (const control of effect.controls) {
     const source = controlSource(control, ctx.rng);
     for (const mapping of control.mappings) {
+      if (mapping.device === EFFECT_DEVICE) {
+        if (!FIRE_TIME_CONTROLS.includes(control.kind)) continue;
+        const m = toMapping(mapping, source, EFFECT_TARGETS);
+        if (m) effectMappings.push(m);
+        continue;
+      }
       if (mapping.device === 'generator') {
         const m = toMapping(mapping, source, hosted.paramSpec);
         if (m) generatorMappings.push(m);
@@ -198,14 +206,19 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   const msPerBeat = MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120);
   const length = resolveAmpLength(amp.length, hosted, params, ctx.bpm);
   // A stage in beats resolves at this fire's tempo; otherwise its milliseconds stand.
-  const attackMs = amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs;
-  const releaseMs = amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs;
   const mode: PlayMode = effect.trigger.kind === 'always' || length === 'loop'
     ? 'loop'
     : length === 'hold' ? 'hold' : 'oneshot';
-  const gateMs = typeof length === 'object'
-    ? 'ms' in length ? length.ms : length.beats * msPerBeat
-    : 0;
+  // Then a Velocity (or Random) Control may move them for this hit.
+  const fire = atFire(effectMappings, {
+    opacity: effect.opacity,
+    attack: amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs,
+    sustain: typeof length === 'object' ? ('ms' in length ? length.ms : length.beats * msPerBeat) : 0,
+    decay: amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs,
+  }, ctx);
+  const attackMs = fire.attack;
+  const releaseMs = fire.decay;
+  const gateMs = typeof length === 'object' ? fire.sustain : 0;
   const shape = ampShape(attackMs, amp.decayMs, amp.sustainLevel);
   const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
   const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - attackMs) : 0;
@@ -238,7 +251,7 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     releaseMs,
     chainEffectId: effect.id,
     blend: effect.blend,
-    opacity: effect.opacity,
+    opacity: fire.opacity,
     layerOrder: ctx.layerOrder,
     via: `Effect: ${effect.name || effect.id}`,
     latchKey: null,
@@ -272,6 +285,23 @@ function resolveAmpLength(
 export function supportsAutoLength(device: GeneratorDevice): boolean {
   const gen = resolveGenerator(device);
   return !!gen && !gen.canvasScene && !!tryGetEffect(gen.effectId)?.contentSpanMs;
+}
+
+/**
+ * The Effect's own Opacity, Attack, Sustain and Decay for this fire, after the Controls that drive
+ * them (Velocity, Random) — the same rule as any mapping: from the setting towards its Min…Max by
+ * the control's value, × Amount, kept in range.
+ */
+function atFire(
+  mappings: readonly Mapping[],
+  base: { opacity: number; attack: number; sustain: number; decay: number },
+  ctx: EffectFireCtx,
+): { opacity: number; attack: number; sustain: number; decay: number } {
+  if (!mappings.length) return base;
+  const out: ParamValues = { ...base };
+  applyModulations({ ...base }, out, mappings, EFFECT_TARGETS, { phase: 0, timeMs: 0, bpm: ctx.bpm, velocity: ctx.velocity });
+  const n = (k: keyof typeof base) => (typeof out[k] === 'number' ? (out[k] as number) : base[k]);
+  return { opacity: n('opacity'), attack: n('attack'), sustain: n('sustain'), decay: n('decay') };
 }
 
 /** An Effect's Generator resolved to the hosted effect implementation it plays, or `null`. */

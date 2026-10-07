@@ -123,7 +123,8 @@ describe('modulation', () => {
     const targets = mappingTargets(withControls());
     expect(targets.every((t) => typeof t.min === 'number' && typeof t.max === 'number')).toBe(true);
     const devices = new Set(targets.map((t) => t.device));
-    expect(devices).toEqual(new Set(['generator', 'm1', 'm2']));
+    // …and the Effect itself (Opacity, the envelope), for a Control fixed at the hit.
+    expect(devices).toEqual(new Set(['effect', 'generator', 'm1', 'm2']));
     expect(targets.find((t) => t.device === 'm1')!.label.startsWith('Strobe · ')).toBe(true);
     expect(targets.find((t) => t.device === 'm2')!.label.startsWith('Strobe 2 · ')).toBe(true);
     const nonNumeric = (tryGetModifier('strobe')?.paramSpec ?? []).filter((p) => p.type !== 'number').map((p) => p.key);
@@ -314,5 +315,24 @@ describe('colour boxes (Tim, 2026-10-07: "isn\'t it more concise just picking th
     expect(dot({ shift: 'to-colour' }).find((x) => x.key === 'hueTo')!.widget).toEqual({ kind: 'colour', keys: ['hueTo', 'satTo'] });
     expect(dot({ background: 'other' }).find((x) => x.key === 'bgHue')!.widget).toEqual({ kind: 'colour', keys: ['bgHue', 'bgSat'] });
     expect(keys(dot({}))).not.toContain('saturation');
+  });
+});
+
+describe('Controls on the Effect itself (Tim, 2026-10-07: "velocity for the opacity of an effect … the sustain on the brightness envelope")', () => {
+  const fx = () => effectChain.parseEffect({ id: 'e', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'wave', style: 'radial' } });
+
+  it('a Velocity or Random Control is offered the Effect\'s Opacity, Attack, Sustain and Decay', () => {
+    for (const kind of ['velocity', 'random'] as const) {
+      const effectTargets = mappingTargets(fx(), kind).filter((t) => t.device === 'effect');
+      expect(effectTargets.map((t) => t.label)).toEqual(['Effect · Opacity', 'Effect · Attack', 'Effect · Sustain', 'Effect · Decay']);
+    }
+  });
+
+  it('an LFO isn\'t — it moves during the hit, and these are set when it fires', () => {
+    expect(mappingTargets(fx(), 'lfo').some((t) => t.device === 'effect')).toBe(false);
+  });
+
+  it('an existing mapping onto the Effect reads by its name', () => {
+    expect(describeMapping(fx(), { device: 'effect', param: 'sustain', amount: 1, invert: false })).toBe('Effect · Sustain');
   });
 });

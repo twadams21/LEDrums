@@ -28,6 +28,7 @@
     stageUnitPatch,
     type AmpLengthMode,
   } from './strip-model';
+  import { modulatedKeys } from './cards/card-model';
 
   let { api, effect }: { api: EffectsAuthoringApi; effect: effectChain.Effect } = $props();
 
@@ -36,6 +37,8 @@
   const always = $derived(effect.trigger.kind === 'always');
   const path = $derived(ampPath(amp, 200, 24));
   const disabled = $derived(!api.canEdit);
+  // Which stages a Control drives (Velocity → Attack / Sustain / Decay): badged, like a driven param.
+  const driven = $derived(modulatedKeys(effect, 'effect'));
   // The old ADSR's drop: shown only where an Effect still has one (a new Effect never does).
   const legacyDrop = $derived(amp.decayMs > 0 || amp.sustainLevel < 1);
 
@@ -75,16 +78,17 @@
   {@const beats = stageBeats(stage)}
   {@const msKey = stage === 'attack' ? 'attackMs' : 'releaseMs'}
   {@const beatsKey = stage === 'attack' ? 'attackBeats' : 'releaseBeats'}
+  {@const isDriven = driven.has(stage === 'attack' ? 'attack' : 'decay')}
   <ParamLine {label}>
     <Select value={beats === undefined ? 'ms' : 'beats'} options={STAGE_UNITS} segment={false} {disabled}
       ariaLabel={`${label} unit`} onChange={(u) => setStageUnit(stage, u)} />
     {#if beats === undefined}
       <!-- The value alone, as Sustain's is: drag it, or click it and type the exact value. -->
-      <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={1}
+      <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={1} modulated={isDriven}
         ariaLabel={label} entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
         onChange={(v) => api.setAmp(effect.id, { [msKey]: Math.max(0, num(v)) })} />
     {:else}
-      <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+      <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625} modulated={isDriven}
         ariaLabel={`${label} beats`} entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
         onChange={(v) => api.setAmp(effect.id, { [beatsKey]: Math.max(0, num(v)) })} />
     {/if}
@@ -135,12 +139,12 @@
       <Select value={mode} options={lengthOptions} onChange={setMode} ariaLabel="Sustain" {disabled} segment={false} />
       {#if typeof amp.length === 'object' && 'ms' in amp.length}
         {@const ms = amp.length.ms}
-        <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10}
+        <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10} modulated={driven.has('sustain')}
           ariaLabel="Sustain time" entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { ms: Math.max(0, num(v)) } })} />
       {:else if typeof amp.length === 'object'}
         {@const beats = amp.length.beats}
-        <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+        <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625} modulated={driven.has('sustain')}
           ariaLabel="Sustain beats" entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { beats: Math.max(0, num(v)) } })} />
       {/if}

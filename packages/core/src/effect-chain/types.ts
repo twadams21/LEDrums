@@ -190,7 +190,28 @@ export const modifierDeviceSchema = z.object({
 });
 
 /** Which device (in the same Effect) a control mapping drives: the Generator, a Modifier by
-    its `uid`, or the Effect itself (opacity — resolved by a later slice). */
+    its `uid`, or the Effect itself ({@link EFFECT_DEVICE} — {@link EFFECT_TARGETS}). */
+/** A control mapping's `device` for the Effect itself, not one of its devices. */
+export const EFFECT_DEVICE = 'effect';
+
+/**
+ * What a Control can drive on the Effect itself (Tim, 2026-10-07: "being able to have velocity for
+ * the opacity of an effect would be great … things like the sustain on the brightness envelope").
+ * Set once, when the Effect fires — so only a Control whose value is fixed at the hit can drive
+ * them ({@link FIRE_TIME_CONTROLS}). Sustain is the envelope's length from the hit (Attack
+ * included), and only moves a timed one — not While held, Loop, or a looping Until dots end.
+ */
+export const EFFECT_TARGETS = [
+  { key: 'opacity', label: 'Opacity', type: 'number' as const, min: 0, max: 1, unit: '%' },
+  { key: 'attack', label: 'Attack', type: 'number' as const, min: 0, max: 2000, unit: 'ms' },
+  { key: 'sustain', label: 'Sustain', type: 'number' as const, min: 0, max: 10000, unit: 'ms' },
+  { key: 'decay', label: 'Decay', type: 'number' as const, min: 0, max: 4000, unit: 'ms' },
+] as const;
+
+/** The Controls whose value is fixed when the Effect fires — the only ones that can drive
+    {@link EFFECT_TARGETS}. An LFO or envelope moves over the hit; these don't. */
+export const FIRE_TIME_CONTROLS: readonly ControlKind[] = ['velocity', 'random'];
+
 export const controlMappingSchema = z.object({
   device: z.string().min(1),
   param: z.string().min(1),

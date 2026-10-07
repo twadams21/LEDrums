@@ -540,8 +540,16 @@ function modifierLabels(effect: Effect): Map<string, string> {
  * then each Modifier's. Only numbers modulate (the resolver drops any other mapping), so enum,
  * bool and colour params are not offered.
  */
-export function mappingTargets(effect: Effect): MapTarget[] {
+export function mappingTargets(effect: Effect, kind?: ControlKind): MapTarget[] {
   const out: MapTarget[] = [];
+  // The Effect itself — Opacity and its brightness envelope — set when it fires, so offered to a
+  // Control whose value is fixed at the hit: Velocity, Random (Tim, 2026-10-07: "velocity for the
+  // opacity of an effect … the sustain on the brightness envelope").
+  if (!kind || effectChain.FIRE_TIME_CONTROLS.includes(kind)) {
+    for (const t of effectChain.EFFECT_TARGETS) {
+      out.push({ device: effectChain.EFFECT_DEVICE, param: t.key, label: `Effect · ${t.label}`, min: t.min, max: t.max });
+    }
+  }
   const gen = generatorLabel(effect.generator.kind);
   // Every number setting the Generator has — dimmed, sharing a place or edited by a colour box —
   // so a Control can drive any of them (an LFO on the hue behind a colour box).

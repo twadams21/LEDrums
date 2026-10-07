@@ -60,8 +60,9 @@ capitals.
 **There is no VELOCITY section.** Velocity is the **Velocity Control** — its own card, which can
 make ANY setting respond to how hard the drum is hit (Tim, 2026-10-07: "choosing which particular
 param within a given plugin i want to make velocity sensitive"). A plugin has no velocity
-settings of its own. Still to build: letting it drive the Effect itself — Opacity and the
-envelope's Attack / Sustain / Decay.
+settings of its own. It also drives the Effect itself — **Effect · Opacity** and the envelope's
+**Attack / Sustain / Decay** (2026-10-07): set when the Effect fires, so offered to the Velocity and
+Random Controls only.
 
 **There is no RANDOM section.** A setting that can vary gets its own **Random** slider directly
 under it — always called Random, always looking the same — so Random angle sits under Start
