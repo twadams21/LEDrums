@@ -301,6 +301,14 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
   });
 }
 
+/** Does a Dot light drums beyond the one hit — through the kit or space, from a chosen drum, or
+    onto random drums? Then a drum Target crops it. */
+export function dotReachesPastHit(p: Readonly<Record<string, ParamValue>>): boolean {
+  return p.through === 'kit' || p.through === 'space'
+    || (typeof p.startDrum === 'string' && p.startDrum !== '@hit' && p.startDrum !== '')
+    || (typeof p.randDrum === 'number' && p.randDrum > 0);
+}
+
 /**
  * A Dot that reaches past the drum you hit — through the kit or space, from a chosen drum, or onto
  * random drums — lights the whole kit, so its Target widens from the row's default to the Kit
@@ -308,12 +316,7 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
  * the moment it left the drum). A Target the author changed is left alone.
  */
 function widenForDot(e: Effect): Effect {
-  if (e.generator.kind !== 'dot') return e;
-  const p = e.generator.params;
-  const reaches = p.through === 'kit' || p.through === 'space'
-    || (typeof p.startDrum === 'string' && p.startDrum !== '@hit' && p.startDrum !== '')
-    || (typeof p.randDrum === 'number' && p.randDrum > 0);
-  if (!reaches || e.target.kind === 'kit') return e;
+  if (e.generator.kind !== 'dot' || !dotReachesPastHit(e.generator.params) || e.target.kind === 'kit') return e;
   return JSON.stringify(e.target) === JSON.stringify(effectChain.defaultTargetForRow(e.cell.row)) ? { ...e, target: { kind: 'kit' } } : e;
 }
 

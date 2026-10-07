@@ -98,6 +98,18 @@ describe('GeneratorCard', () => {
     expect(String(effect().generator.params.palette).split(',')).toHaveLength(4);
   });
 
+  it('a Dot that travels further than its Target says so, and one click lights the whole kit', async () => {
+    // Tim, 2026-10-07: "dot seems stuck on tom 1. i can't send the light to any other drum".
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setTarget(effect().id, { kind: 'select', drums: [{ drumId: 'snare' }] });
+    api.setGeneratorParam(effect().id, 'through', 'kit');
+    const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    expect(container.querySelector('.crop')?.textContent).toMatch(/only lights snare/i);
+    await fireEvent.click(getByRole('button', { name: 'Light the whole kit' }));
+    expect(effect().target).toEqual({ kind: 'kit' });
+  });
+
   it('a setting that doesn\'t apply is dimmed in place and can\'t be used', () => {
     const { api, effect } = demo();
     api.setGenerator(effect().id, 'dot');

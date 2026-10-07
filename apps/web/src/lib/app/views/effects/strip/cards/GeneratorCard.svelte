@@ -29,6 +29,7 @@
     paramsLandscape,
     drumParamOptions,
     withKitRanges,
+    dotCropNotice,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -65,6 +66,7 @@
   // A Start point in space is picked on the kit's plan; Start hoop / pixel top out at the kit's.
   const plan = $derived(kitPlan(api));
   const pixels = $derived(kitPixelModel(api));
+  const crop = $derived(dotCropNotice(effect, (id) => api.gridRows.find((r) => r.id === id)?.label ?? id));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
@@ -156,6 +158,14 @@
       {:else}
         <span>This style can't be previewed</span>
       {/if}
+    </div>
+  {/if}
+
+  {#if crop}
+    <!-- A Dot travelling further than its Target lets it show: say so, and offer the fix. -->
+    <div class="crop" role="status">
+      <span>{crop}</span>
+      <button type="button" class="fix" {disabled} onclick={() => api.setTarget(effect.id, { kind: 'kit' })}>Light the whole kit</button>
     </div>
   {/if}
 
@@ -259,6 +269,40 @@
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
 
+  .crop {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: var(--radius-1);
+    border: 1px solid color-mix(in oklch, var(--warn) 55%, transparent);
+    background: color-mix(in oklch, var(--warn) 8%, transparent);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: 1.35;
+  }
+  .crop .fix {
+    align-self: flex-start;
+    height: 22px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-1);
+    background: color-mix(in oklch, var(--warn) 22%, transparent);
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  .crop .fix:hover {
+    background: color-mix(in oklch, var(--warn) 32%, transparent);
+  }
+  .crop .fix:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft), inset 0 0 0 1px var(--accent);
+  }
+  .crop .fix:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
   .lead {
     display: flex;
     flex-direction: column;

@@ -46,3 +46,15 @@ describe('Sustain "Until dots end" (amp length auto)', () => {
     expect(a.sustainMs).toBe(500);
   });
 });
+
+describe('a choice the plugin no longer offers plays as its default', () => {
+  it('an older Dot\'s Edges "wrap" plays as Repeat — what the card shows', () => {
+    expect(dot({ bounce: 'wrap' }).params.bounce).toBe('repeat');
+    expect(dot({ bounce: 'bounce' }).params.bounce).toBe('bounce');
+  });
+
+  it('a drum id or a palette is kept — they come from the kit and the card, not fixed options', () => {
+    const a = dot({ startDrum: 'snare', palette: '#ff0000,#00ff00' });
+    expect(a.params).toMatchObject({ startDrum: 'snare', palette: '#ff0000,#00ff00' });
+  });
+});

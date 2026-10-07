@@ -5,6 +5,7 @@
    control is driving (the "modulated" badge), the list a mapping can target, and the Envelope
    control's shape presets. No runes, no DOM. */
 import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec, type ShowIf } from '@ledrums/core';
+import { dotReachesPastHit } from '../../../../../trigger-lab/effects-doc';
 
 type Effect = effectChain.Effect;
 type GeneratorDevice = effectChain.GeneratorDevice;
@@ -689,4 +690,15 @@ export function tempoTogglePatch(p: CardParam, values: Readonly<Record<string, P
   const at120 = effectChain.tempoValue(p.unit, beats, 120) ?? Number(p.default);
   const clamped = Math.min(p.max ?? Infinity, Math.max(p.min ?? -Infinity, at120));
   return { [key]: undefined, [p.key]: Number(clamped.toFixed(p.step !== undefined && p.step < 1 ? 2 : 0)) };
+}
+
+/**
+ * Why a Dot shows on fewer drums than it travels to, or null when it doesn't (Tim, 2026-10-07: "dot
+ * seems stuck on tom 1. i can't send the light to any other drum" — its Target was Tom 1 while it
+ * ran through the kit). A Target the author set is left alone, so the card says so instead.
+ */
+export function dotCropNotice(effect: Effect, drumLabel: (drumId: string) => string): string | null {
+  if (effect.generator.kind !== 'dot' || effect.target.kind === 'kit' || !dotReachesPastHit(effect.generator.params)) return null;
+  const where = effect.target.kind === 'select' ? effect.target.drums.map((d) => drumLabel(d.drumId)).join(', ') : 'the drum you hit';
+  return `Its Target only lights ${where}, so dots that leave it disappear.`;
 }

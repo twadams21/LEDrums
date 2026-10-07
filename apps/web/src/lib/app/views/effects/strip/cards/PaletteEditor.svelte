@@ -29,7 +29,8 @@
     onGestureEnd?: () => void;
   } = $props();
 
-  const MAX = 8;
+  // Up to one colour per pixel of the longest dot (Length 32) — Tim asked why it stopped at 8.
+  const MAX = 32;
   const colours = $derived(
     value
       .split(',')

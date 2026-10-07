@@ -159,6 +159,16 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   const params: ParamValues = {};
   for (const spec of hosted.paramSpec) params[spec.key] = spec.default as ParamValues[string];
   Object.assign(params, gen.params);
+  // A choice the plugin no longer offers (an older Dot's Edges "wrap") plays as its default — what
+  // the card shows — so the card and the lights never disagree. Kit-sourced and widget-held values
+  // (a drum id, a palette) aren't in the fixed options, so they pass.
+  for (const spec of hosted.paramSpec) {
+    const v = params[spec.key];
+    const open = spec.optionsFrom || spec.widget?.kind === 'palette' || spec.widget?.kind === 'drum-order';
+    if (spec.type === 'enum' && !open && spec.options?.length && typeof v === 'string' && !spec.options.includes(v)) {
+      params[spec.key] = spec.default as ParamValues[string];
+    }
+  }
 
   const modifiers: ResolvedModifier[] = effect.modifiers.map((m) => {
     const link: ResolvedModifier = { modifierId: m.modifierId, params: { ...m.params }, mix: m.mix };
