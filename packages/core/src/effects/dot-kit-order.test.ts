@@ -60,3 +60,34 @@ describe('Dot through the kit: the Kit order', () => {
     expect(at({ kitOrder: 'kit' }, ['snare', 'tom2'])).toBe('snare>tom2>snare>tom2>snare');
   });
 });
+
+// Tim, 2026-10-08: with Reverse "it plays the last hoop of the initial drum before moving onto
+// another drum, instead of going backwards through all 4 hoops". A dot heading down counts its
+// Start hoop from the top, so it passes every hoop of a drum before it hops.
+describe('Dot through the kit, heading down', () => {
+  /** Each (drum, hoop) the first dot is on, in turn, for its first two drums. */
+  function hoopsVisited(params: Record<string, unknown>): string[] {
+    const p = { ...defaultParams(dot.paramSpec), fade: 0, count: 1, speed: 40, life: 0, through: 'kit', kitOrder: 'kit', ...params } as never;
+    const state = dot.createState!(M, 7) as { dots: { drum: number; hoop: number }[] };
+    const out: string[] = [];
+    for (let t = 0; t <= 3000; t += 10) {
+      const fb = new Framebuffer(M.pixelCount);
+      const ctx: RenderContext = { model: M, timeMs: t, dt: t ? 10 : 0, transport: { timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true },
+        triggers: [{ seq: 1, hit: 0, drumId: 'kick', note: 100, velocity: 1, timeMs: 0, ageMs: t }] };
+      dot.render(ctx, p, fb, state as never);
+      const d = state.dots[0]!;
+      const at = `${M.drums[d.drum]!.drumId}${d.hoop + 1}`;
+      if (out[out.length - 1] !== at) out.push(at);
+    }
+    return out;
+  }
+
+  it('Reverse: every hoop of the first drum, top to bottom, before the next drum', () => {
+    const walk = hoopsVisited({ direction: 'reverse' });
+    expect(walk.slice(0, 4)).toEqual(['kick2', 'kick1', 'snare2', 'snare1']);
+  });
+
+  it('Forward is unchanged: bottom to top', () => {
+    expect(hoopsVisited({}).slice(0, 4)).toEqual(['kick1', 'kick2', 'snare1', 'snare2']);
+  });
+});

@@ -367,22 +367,32 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
     drum = on[Math.floor(rng() * on.length) % on.length]!;
   } else if (kitOrder !== 'custom' && randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
 
-  // The hoop: the set one, pulled towards a random hoop by Random hoop.
+  // The hoop: the set one, pulled towards a random hoop by Random hoop. (Drawn in the same order
+  // as ever — hoop, angle, direction — so a seed keeps its look.)
   const hc = hoopCount(model, drum);
-  const setHoop = Math.min(hc, Math.max(1, Math.round(pnum(params, 'startHoop', 1)))) - 1;
+  const pickedHoop = Math.min(hc, Math.max(1, Math.round(pnum(params, 'startHoop', 1)))) - 1;
   const anyHoop = Math.floor(rng() * hc) % hc;
-  const hoop = Math.round(setHoop + (anyHoop - setHoop) * randHoop);
 
   // The angle: degrees from the front, swung up to ±180° by Random angle; Spread shares the hoop
   // out evenly among a hit's dots.
   const deg = pnum(params, 'startAngle', 0) + (rng() * 2 - 1) * 180 * randAngle + (spread ? (slot * 360) / Math.max(1, count) : 0);
-  const u = ringAt(state, model, drum, hoop, deg);
 
   const direction = pstr(params, 'direction', 'forward');
   const sign = direction === 'reverse' ? -1
     : direction === 'random' ? (rng() < 0.5 ? -1 : 1)
     : direction === 'alternate' ? (slot % 2 ? -1 : 1)
     : 1;
+
+  // A dot that heads DOWN through the hoops counts its Start hoop from the top — hoop 1 is where it
+  // comes in — so it passes every hoop before leaving the drum (Tim, 2026-10-08: with Reverse "it
+  // plays the last hoop of the initial drum before moving onto another drum, instead of going
+  // backwards through all 4 hoops").
+  // Down: Reverse on an upward Travel angle, or Forward on a downward one.
+  const climb = pnum(params, 'climb', 90);
+  const headsDown = (through === 'drum' || through === 'kit') && sign * Math.sign(climb) < 0;
+  const setHoop = headsDown ? hc - 1 - pickedHoop : pickedHoop;
+  const hoop = Math.round(setHoop + (anyHoop - setHoop) * randHoop);
+  const u = ringAt(state, model, drum, hoop, deg);
 
   // Its palette colour: Per dot by its place in the hit, Per hit by which hit of the Effect it is
   // (every dot of one hit the same), Random drawn — all read round the palette in order.
@@ -807,7 +817,7 @@ export const dot: EffectGenerator<DotState> = {
       showIf: { key: 'through', not: ['space'] },
       info: 'The chance a dot begins on a random drum instead. 0%: never; 100%: always.' },
     { key: 'startHoop', label: 'Start hoop', type: 'number', default: 1, min: 1, max: 8, step: 1, section: 'Start', rangeFrom: 'start-hoops',
-      widget: { kind: 'hoop-pick' }, showIf: { key: 'through', not: ['space'] }, info: 'Counting from the bottom hoop, 1.' },
+      widget: { kind: 'hoop-pick' }, showIf: { key: 'through', not: ['space'] }, info: 'Counting from where the dot comes in: the bottom hoop is 1 — or, heading down (Reverse, or a downward Travel angle), the top.' },
     { key: 'randHoop', label: 'Random', aria: 'Random start hoop', sub: true, type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Start',
       showIf: { key: 'through', not: ['space'] },
       info: 'How far a dot may stray from the start hoop. 0%: always that hoop; 100%: any hoop.' },
