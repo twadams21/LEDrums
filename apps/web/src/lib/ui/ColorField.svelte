@@ -8,9 +8,12 @@
      from "a colour that happens to be black". The two states are visually distinct: a colour
      fills the well, none shows the checker through it.
 
-     Built on the native <input type=color> — keyboard-accessible and dependency-free. */
+     The box opens the app's colour window (ColorPicker): a click opens it, a click again closes it
+     (Tim, 2026-10-07). */
   import X from '@lucide/svelte/icons/x';
   import Plus from '@lucide/svelte/icons/plus';
+  import { hexToHsv, hsvToHex } from '@ledrums/core';
+  import ColorPicker from './ColorPicker.svelte';
 
   type Props = {
     /** Current colour as `#rrggbb`, or `null` for none. */
@@ -24,6 +27,9 @@
     disabled?: boolean;
     ariaLabel?: string;
     class?: string;
+    /** One pick (the colour window open → closed) as one undo step. */
+    onGestureStart?: () => void;
+    onGestureEnd?: () => void;
   };
 
   let {
@@ -34,18 +40,17 @@
     disabled = false,
     ariaLabel = 'Colour',
     class: klass,
+    onGestureStart,
+    onGestureEnd,
   }: Props = $props();
 
   const hex = $derived(value ?? fallback);
 
-  function pick(e: Event & { currentTarget: HTMLInputElement }) {
-    onChange?.(e.currentTarget.value);
-  }
 </script>
 
 <div class={['colorfield', klass]} class:disabled>
   <span class="well" class:none={value == null} style="--swatch: {hex}">
-    <input type="color" value={hex} {disabled} oninput={pick} aria-label={ariaLabel} />
+    <ColorPicker hsv={hexToHsv(hex)} {disabled} {ariaLabel} onChange={(c) => onChange?.(hsvToHex(c.h, c.s, c.v))} {onGestureStart} {onGestureEnd} />
     {#if value == null}
       <span class="addhint" aria-hidden="true"><Plus size={11} /></span>
     {/if}
@@ -91,25 +96,10 @@
   .well:hover {
     box-shadow: inset 0 0 0 1px var(--border-accent), var(--shadow-1);
   }
-  .well:focus-within {
+  .well:has(:global(.colorpicker-trigger:focus-visible)) {
     box-shadow: 0 0 0 3px var(--accent-soft), inset 0 0 0 1px var(--accent);
   }
 
-  .well input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .well input:disabled {
-    cursor: default;
-  }
 
   .addhint {
     position: absolute;

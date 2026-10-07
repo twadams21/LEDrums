@@ -4,7 +4,9 @@
      Effects; the Kit row starts with the Master cell (the section's master modifier chain).
 
      - Click selects (the device strip below shows the selection). Double-click an empty cell opens
-       the Generator picker to add an Effect. Right-click: add, copy, paste, clear, save / load file.
+       the Generator picker to add an Effect; double-click a cell with Effects enlarges the Effect
+       tab below, and again shrinks it back. Drag a cell onto another to move its stack there (onto
+       a full cell the two swap; hold Alt / Option to copy). Right-click: add, copy, paste, clear, save / load file.
      - Keyboard: one roving tab stop (grid-nav.ts); arrows / Home / End move, Enter or Space selects.
        The grid is deliberately NOT a marked keyboard owner: digits 1–9 / 0 stay the app's audition
        keys while a cell has focus, and the app never claims arrows outside Perform.
@@ -28,7 +30,7 @@
 
   type EffectCell = effectChain.EffectCell;
 
-  let { api }: { api: EffectsAuthoringApi } = $props();
+  let { api, onexpand }: { api: EffectsAuthoringApi; /** Double-click on a cell with Effects: enlarge / shrink the Effect tab. */ onexpand?: () => void } = $props();
 
   const rows = $derived(api.gridRows);
   const columns = $derived(api.gridColumns);
@@ -110,6 +112,48 @@
   function activate(pos: GridPos): void {
     select(pos);
     if (pos.col !== MASTER_COL && api.cellSummary(cellAt(pos.row, pos.col)).count === 0) openPicker(pos);
+    // A cell with Effects (or the Master): enlarge the Effect tab, or shrink it back (Tim, 2026-10-07).
+    else onexpand?.();
+  }
+
+  // ---- Drag a cell onto another (Tim, 2026-10-07: "drag and drop effects between spots") --------
+  // Onto an empty cell the stack moves; onto a full one the two swap; hold Alt / Option to copy.
+  // One undo step; the selection follows the stack.
+  const DRAG_TYPE = 'application/x-ledrums-cell';
+  let dragFrom = $state<GridPos | null>(null);
+  let dropAt = $state<{ pos: GridPos; how: 'move' | 'swap' | 'copy' } | null>(null);
+  const samePos = (a: GridPos | null, b: GridPos) => a !== null && a.row === b.row && a.col === b.col;
+
+  function onDragStart(pos: GridPos, event: DragEvent): void {
+    dragFrom = pos;
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'copyMove';
+    event.dataTransfer.setData(DRAG_TYPE, `${pos.row},${pos.col}`);
+  }
+  function onDragOver(pos: GridPos, event: DragEvent): void {
+    if (!dragFrom || samePos(dragFrom, pos) || pos.col === MASTER_COL) return;
+    const s = api.cellSummary(cellAt(pos.row, pos.col));
+    if (!s.enabled) return;
+    event.preventDefault();
+    const how = event.altKey ? 'copy' : s.count > 0 ? 'swap' : 'move';
+    if (event.dataTransfer) event.dataTransfer.dropEffect = how === 'copy' ? 'copy' : 'move';
+    if (!dropAt || !samePos(dropAt.pos, pos) || dropAt.how !== how) dropAt = { pos, how };
+  }
+  function onDragLeave(pos: GridPos): void {
+    if (dropAt && samePos(dropAt.pos, pos)) dropAt = null;
+  }
+  function onDrop(pos: GridPos, event: DragEvent): void {
+    const from = dragFrom;
+    resetDrag();
+    if (!from || samePos(from, pos)) return;
+    event.preventDefault();
+    const result = api.moveCell(cellAt(from.row, from.col), cellAt(pos.row, pos.col), event.altKey);
+    if (result.ok) select(pos);
+    else report(result);
+  }
+  function resetDrag(): void {
+    dragFrom = null;
+    dropAt = null;
   }
 
   // ---- Context menu (one menu for the grid; the right-clicked cell names its target) ----------
@@ -217,6 +261,14 @@
               onactivate={() => activate({ row: r, col: c })}
               onfocus={() => (focusPos = { row: r, col: c })}
               oncontextmenu={() => (menuPos = { row: r, col: c })}
+              draggable={api.canEdit && s.enabled && s.count > 0 && c !== MASTER_COL}
+              dragging={samePos(dragFrom, { row: r, col: c })}
+              drop={dropAt && samePos(dropAt.pos, { row: r, col: c }) ? dropAt.how : null}
+              ondragstart={(e) => onDragStart({ row: r, col: c }, e)}
+              ondragover={(e) => onDragOver({ row: r, col: c }, e)}
+              ondragleave={() => onDragLeave({ row: r, col: c })}
+              ondrop={(e) => onDrop({ row: r, col: c }, e)}
+              ondragend={resetDrag}
             />
           </div>
         {/each}

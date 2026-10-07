@@ -6,7 +6,6 @@
   import FaceParamControl from '../../../../../ui/FaceParamControl.svelte';
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
-  import GestureScope from './GestureScope.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
   import Info from '@lucide/svelte/icons/info';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
@@ -77,16 +76,17 @@
               class="cardsel"
             />
           {:else if p.kind === 'color'}
-            <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-              <ColorField
-                value={typeof v === 'string' ? v : null}
-                fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
-                clearable={false}
-                {disabled}
-                ariaLabel={aria(p)}
-                onChange={(next) => onChange(p.key, next ?? p.default)}
-              />
-            </GestureScope>
+            <!-- One pick — the colour window open to closed — is one undo step. -->
+            <ColorField
+              value={typeof v === 'string' ? v : null}
+              fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
+              clearable={false}
+              {disabled}
+              ariaLabel={aria(p)}
+              onChange={(next) => onChange(p.key, next ?? p.default)}
+              onGestureStart={() => onGestureStart?.()}
+              onGestureEnd={() => onGestureEnd?.()}
+            />
           {:else if beats !== undefined}
             <!-- In beats: a duration lasts this many, a rate runs one cycle per this many. -->
             <FaceParamControl
