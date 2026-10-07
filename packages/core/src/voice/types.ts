@@ -679,6 +679,9 @@ export interface Voice extends GeometryState {
    * `targetId`; absent keeps today's scope resolution.
    */
   targets?: string[];
+  /** The drum ids its Target lights (from `targets` / `scope` + `targetId`), or absent for the
+      whole kit — the generator's `Trigger.targetDrums`. Set at spawn. */
+  targetDrums?: string[];
   /**
    * Per-frame effective params (envelopes + tempo-sync applied). A reused scratch
    * object owned by the pool slot — the engine refills it each tick before the

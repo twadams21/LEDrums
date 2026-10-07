@@ -5,7 +5,7 @@
    control is driving (the "modulated" badge), the list a mapping can target, and the Envelope
    control's shape presets. No runes, no DOM. */
 import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec, type ShowIf } from '@ledrums/core';
-import { dotReachesPastHit } from '../../../../../trigger-lab/effects-doc';
+import { dotLeavesTarget } from '../../../../../trigger-lab/effects-doc';
 
 type Effect = effectChain.Effect;
 type GeneratorDevice = effectChain.GeneratorDevice;
@@ -151,10 +151,14 @@ function shown(spec: ParamSpec, specs: readonly ParamSpec[], values: Readonly<Re
   return (Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf]).every(holds);
 }
 
-/** The "Drum" choices for an `optionsFrom: 'drums'` param: the drum you hit, then the kit's drums. */
-export const HIT_DRUM = '@hit';
+/** The "Drum" choices for an `optionsFrom: 'drums'` param: the Target's drums, the drum you hit,
+    then the kit's drums by name. */
 export function drumParamOptions(drums: readonly { id: string; label: string }[]): { value: string; label: string }[] {
-  return [{ value: HIT_DRUM, label: 'Drum you hit' }, ...drums.map((d) => ({ value: d.id, label: d.label }))];
+  return [
+    { value: '@target', label: "Target's drums" },
+    { value: '@hit', label: 'Drum you hit' },
+    ...drums.map((d) => ({ value: d.id, label: d.label })),
+  ];
 }
 
 /** The device's own value for `p`, else the spec default (an unwritten param has no entry). */
@@ -511,6 +515,11 @@ export interface MapTarget {
   param: string;
   /** "Wave · Speed", "Strobe 2 · Rate". */
   label: string;
+  /** Which card it is on — "Effect", "Trigger", the Generator, each Modifier — so a Control offers
+      one short list per card, not one list taller than the window (Tim, 2026-10-07). */
+  group: string;
+  /** Its name within that card. */
+  name: string;
   min: number;
   max: number;
 }
@@ -548,7 +557,9 @@ export function mappingTargets(effect: Effect, kind?: ControlKind): MapTarget[] 
   // opacity of an effect … the sustain on the brightness envelope").
   if (!kind || effectChain.FIRE_TIME_CONTROLS.includes(kind)) {
     for (const t of effectChain.EFFECT_TARGETS) {
-      out.push({ device: effectChain.EFFECT_DEVICE, param: t.key, label: `Effect · ${t.label}`, min: t.min, max: t.max });
+      // Opacity is the Effect's own; Attack / Sustain / Decay are the Trigger card's envelope.
+      const group = t.key === 'opacity' ? 'Effect' : 'Trigger';
+      out.push({ device: effectChain.EFFECT_DEVICE, param: t.key, label: `${group} · ${t.label}`, group, name: t.label, min: t.min, max: t.max });
     }
   }
   const gen = generatorLabel(effect.generator.kind);
@@ -559,14 +570,27 @@ export function mappingTargets(effect: Effect, kind?: ControlKind): MapTarget[] 
     : effectChain.generatorParamSpec(effect.generator.kind, effect.generator.style).map(toCardParam);
   for (const p of generatorTargets) {
     if (p.kind !== 'number') continue;
-    out.push({ device: 'generator', param: p.key, label: `${gen} · ${p.label}`, min: p.min ?? 0, max: p.max ?? 1 });
+    const name = p.aria ?? p.label;
+    out.push({ device: 'generator', param: p.key, label: `${gen} · ${name}`, group: gen, name, min: p.min ?? 0, max: p.max ?? 1 });
   }
   const labels = modifierLabels(effect);
   for (const m of effect.modifiers) {
     for (const p of modifierParams(m.modifierId)) {
       if (p.kind !== 'number') continue;
-      out.push({ device: m.uid, param: p.key, label: `${labels.get(m.uid)} · ${p.label}`, min: p.min ?? 0, max: p.max ?? 1 });
+      const group = labels.get(m.uid) ?? m.modifierId;
+      out.push({ device: m.uid, param: p.key, label: `${group} · ${p.label}`, group, name: p.label, min: p.min ?? 0, max: p.max ?? 1 });
     }
+  }
+  return out;
+}
+
+/** Targets by the card they're on, in card order — one "Map to…" list each. */
+export function mappingGroups(targets: readonly MapTarget[]): { group: string; targets: MapTarget[] }[] {
+  const out: { group: string; targets: MapTarget[] }[] = [];
+  for (const t of targets) {
+    const last = out[out.length - 1];
+    if (last?.group === t.group) last.targets.push(t);
+    else out.push({ group: t.group, targets: [t] });
   }
   return out;
 }
@@ -698,7 +722,12 @@ export function tempoTogglePatch(p: CardParam, values: Readonly<Record<string, P
  * ran through the kit). A Target the author set is left alone, so the card says so instead.
  */
 export function dotCropNotice(effect: Effect, drumLabel: (drumId: string) => string): string | null {
-  if (effect.generator.kind !== 'dot' || effect.target.kind === 'kit' || !dotReachesPastHit(effect.generator.params)) return null;
+  if (effect.generator.kind !== 'dot' || effect.target.kind === 'kit') return null;
+  const p = effect.generator.params;
+  // A named start drum the Target doesn't light is cropped too.
+  const pick = typeof p.startDrum === 'string' ? p.startDrum : '';
+  const startOff = !!pick && !pick.startsWith('@') && effect.target.kind === 'select' && !effect.target.drums.some((d) => d.drumId === pick);
+  if (!dotLeavesTarget(p) && !startOff) return null;
   const where = effect.target.kind === 'select' ? effect.target.drums.map((d) => drumLabel(d.drumId)).join(', ') : 'the drum you hit';
   return `Its Target only lights ${where}, so dots that leave it disappear.`;
 }

@@ -23,7 +23,8 @@ function model(): PixelModel {
 const M = model();
 
 /** Play one voice for `ms`, frame by frame, returning the last frame and the dots' state. */
-function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number; hit?: number } = {}) {
+/** Play one voice. Its Target is the hit drum unless `targets` says otherwise (`null`: the whole kit). */
+function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocity?: number; seed?: number; seq?: number; hit?: number; targets?: string[] | null } = {}) {
   // No fade-in unless a test asks: most checks read the very first frames.
   const p = { ...defaultParams(dot.paramSpec), fade: 0, ...params };
   const state = dot.createState!(M, opts.seed ?? 7);
@@ -33,7 +34,7 @@ function play(params: ResolvedParams, ms: number, opts: { drum?: string; velocit
     const ctx: RenderContext = {
       model: M, timeMs: t, dt: t === 0 ? 0 : 10,
       transport: { timeMs: t, beat: 0, bar: 0, beatInBar: 0, bpm: 120, beatsPerBar: 4, playing: true },
-      triggers: [{ seq: opts.seq ?? 1, hit: opts.hit ?? 0, drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
+      triggers: [{ seq: opts.seq ?? 1, hit: opts.hit ?? 0, targetDrums: opts.targets === null ? undefined : (opts.targets ?? [opts.drum ?? 'a']), drumId: opts.drum ?? 'a', note: 100, velocity: opts.velocity ?? 1, timeMs: 0, ageMs: t }],
     };
     dot.render(ctx, p, fb, state);
   }
@@ -127,6 +128,31 @@ describe('Dot — the set point', () => {
     const perHoop = (h: number) => lit(fb).filter((i) => M.pixels[i]!.hoopIndex === h).length;
     expect(perHoop(2)).toBeGreaterThan(perHoop(1));
     expect(perHoop(1)).toBe(perHoop(3));
+  });
+});
+
+describe('Dot — where the dots begin: the Target\'s drums (Tim, 2026-10-07)', () => {
+  // "if i select 'movement through' to 'drum', then in the target card select 'kit' or even 'select'
+  // (and select every drum) it still only plays tom 1".
+  const drumsLit = (opts: Parameters<typeof play>[2], params: Record<string, string | number> = {}) =>
+    [...new Set(lit(play({ speed: 0, ...params }, 0, opts).fb).map((i) => M.pixels[i]!.drumId))].sort();
+
+  it('Target Kit: a hit plays its dots on every drum', () => {
+    expect(drumsLit({ drum: 'a', targets: null })).toEqual(['a', 'b']);
+  });
+
+  it('Target Select: on the drums selected — not the one hit when it isn\'t one of them', () => {
+    expect(drumsLit({ drum: 'a', targets: ['b'] })).toEqual(['b']);
+    expect(drumsLit({ drum: 'a', targets: ['a', 'b'] })).toEqual(['a', 'b']);
+  });
+
+  it('Dots counts per start drum', () => {
+    expect(play({ speed: 0, count: 3 }, 0, { targets: null }).state.dots).toHaveLength(6);
+  });
+
+  it('Drum you hit, or a named drum, overrides the Target', () => {
+    expect(drumsLit({ drum: 'a', targets: null }, { startDrum: '@hit' })).toEqual(['a']);
+    expect(drumsLit({ drum: 'a', targets: null }, { startDrum: 'b' })).toEqual(['b']);
   });
 });
 

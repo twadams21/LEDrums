@@ -11,6 +11,7 @@ import {
   formatParam,
   generatorParams,
   isLandscape,
+  mappingGroups,
   mappingTargets,
   modulatedKeys,
   paramColumns,
@@ -288,7 +289,7 @@ describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
   });
 
   it('the set point\'s Drum lists the drum you hit, then the kit\'s drums', () => {
-    expect(drumParamOptions([{ id: 'kick', label: 'Kick' }])).toEqual([{ value: '@hit', label: 'Drum you hit' }, { value: 'kick', label: 'Kick' }]);
+    expect(drumParamOptions([{ id: 'kick', label: 'Kick' }])).toEqual([{ value: '@target', label: "Target's drums" }, { value: '@hit', label: 'Drum you hit' }, { value: 'kick', label: 'Kick' }]);
     expect(generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')).toMatchObject({ kind: 'enum', optionsFrom: 'drums' });
     // A drum id (or a drum order) is not in the fixed options, yet reads as itself.
     const startDrum = generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')!;
@@ -324,7 +325,7 @@ describe('Controls on the Effect itself (Tim, 2026-10-07: "velocity for the opac
   it('a Velocity or Random Control is offered the Effect\'s Opacity, Attack, Sustain and Decay', () => {
     for (const kind of ['velocity', 'random'] as const) {
       const effectTargets = mappingTargets(fx(), kind).filter((t) => t.device === 'effect');
-      expect(effectTargets.map((t) => t.label)).toEqual(['Effect · Opacity', 'Effect · Attack', 'Effect · Sustain', 'Effect · Decay']);
+      expect(effectTargets.map((t) => t.label)).toEqual(['Effect · Opacity', 'Trigger · Attack', 'Trigger · Sustain', 'Trigger · Decay']);
     }
   });
 
@@ -333,6 +334,15 @@ describe('Controls on the Effect itself (Tim, 2026-10-07: "velocity for the opac
   });
 
   it('an existing mapping onto the Effect reads by its name', () => {
-    expect(describeMapping(fx(), { device: 'effect', param: 'sustain', amount: 1, invert: false })).toBe('Effect · Sustain');
+    expect(describeMapping(fx(), { device: 'effect', param: 'sustain', amount: 1, invert: false })).toBe('Trigger · Sustain');
+  });
+});
+
+describe('Map to… by card (Tim, 2026-10-07: the list "goes higher than my browser can see")', () => {
+  it('a Velocity Control\'s targets come in one short list per card: Effect, Trigger, the Generator, each Modifier', () => {
+    const fx = effectChain.parseEffect({ id: 'e', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'wave', style: 'radial' }, modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
+    const groups = mappingGroups(mappingTargets(fx, 'velocity'));
+    expect(groups.map((g) => g.group)).toEqual(['Effect', 'Trigger', 'Wave', 'Strobe']);
+    expect(groups[1]!.targets.map((t) => t.name)).toEqual(['Attack', 'Sustain', 'Decay']);
   });
 });

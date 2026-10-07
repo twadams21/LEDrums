@@ -362,16 +362,12 @@ describe('effects-doc: a new Dot lasts until its dots end (Tim, 2026-10-05)', ()
   });
 });
 
-describe('effects-doc: a Dot reaching past the drum you hit widens its Target to the kit (Tim, 2026-10-05)', () => {
-  it('through the kit or space, or from another drum; a Target the author chose is left alone', () => {
+describe('effects-doc: a Dot\'s Target is left as the author set it (Tim, 2026-10-07)', () => {
+  it('changing Through or the start drum never changes the Target — it says where the dots begin', () => {
     const start = doc.addEffect(section(), kickHead, 'dot');
     const id = start.id!;
-    expect(doc.effectById(start.section, id)!.target.kind).not.toBe('kit');
-    const space = doc.setGeneratorParam(start.section, id, 'through', 'space');
-    expect(doc.effectById(space, id)!.target.kind).toBe('kit');
-    const fromSnare = doc.setGeneratorParams(start.section, id, { startDrum: 'snare' });
-    expect(doc.effectById(fromSnare, id)!.target.kind).toBe('kit');
-    const chosen = doc.setTarget(start.section, id, { kind: 'select', drums: [{ drumId: 'snare' }] });
-    expect(doc.effectById(doc.setGeneratorParam(chosen, id, 'through', 'kit'), id)!.target.kind).toBe('select');
+    const before = doc.effectById(start.section, id)!.target;
+    const after = doc.setGeneratorParams(doc.setGeneratorParam(start.section, id, 'through', 'space'), id, { startDrum: 'snare' });
+    expect(doc.effectById(after, id)!.target).toEqual(before);
   });
 });

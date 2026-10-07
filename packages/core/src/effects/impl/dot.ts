@@ -70,8 +70,10 @@ interface Dot {
 
 export interface DotState {
   dots: Dot[];
-  /** Dots spawned so far this voice (the stream's cursor). */
+  /** Dots spawned so far this voice. */
   spawned: number;
+  /** Rounds spawned so far — a round is one dot on each start drum (the stream's cursor). */
+  rounds: number;
   rng: () => number;
   /** Mean pixel spacing (mm) — turns px sizes and speeds into mm for Through space. */
   pitchMm: number;
@@ -282,7 +284,29 @@ export function dotSpanMs(params: ResolvedParams): number | null {
 }
 
 
-function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: ResolvedParams, state: DotState, slot: number, bornMs: number, count: number): Dot | null {
+/**
+ * The drums a hit's dots begin on (Tim, 2026-10-07: with the Target on Kit, or every drum selected,
+ * a Dot "still only plays tom 1"). Target's drums (the default): the drums the Effect's Target
+ * lights — every drum for the Kit. Drum you hit: that one. A named drum: that one. Through the kit
+ * in a Custom order: the order's first drum.
+ */
+export function startDrums(model: PixelModel, params: ResolvedParams, trigger: { drumId?: string; targetDrums?: readonly string[] } | undefined): number[] {
+  const drums = model.drums;
+  if (!drums.length) return [];
+  const struck = drums.findIndex((d) => d.drumId === trigger?.drumId);
+  if (pstr(params, 'through', 'hoop') === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom') {
+    return [customDrumOrder(model, pstr(params, 'kitList', ''))[0] ?? 0];
+  }
+  const pick = pstr(params, 'startDrum', '@target');
+  if (pick === '@hit') return [struck >= 0 ? struck : 0];
+  const named = drums.findIndex((d) => d.drumId === pick);
+  if (named >= 0) return [named];
+  const targets = trigger?.targetDrums;
+  const on = targets ? targets.map((id) => drums.findIndex((d) => d.drumId === id)).filter((i) => i >= 0) : drums.map((_, i) => i);
+  return on.length ? on : [struck >= 0 ? struck : 0];
+}
+
+function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: ResolvedParams, state: DotState, slot: number, bornMs: number, count: number, startDrum: number): Dot | null {
   const model = ctx.model;
   const drums = model.drums;
   if (!drums.length) return null;
@@ -299,14 +323,10 @@ function spawnDot(ctx: Parameters<EffectGenerator['render']>[0], params: Resolve
   const randAngle = amount('randAngle');
   const spread = params.spread === true;
 
-  // The drum: the one chosen (or the drum you hit); Through the kit in a Custom order, the first in
-  // that order (Tim, 2026-10-05: "if i make the drum order start with the kick, i am seeing the
-  // bottom hoop on tom 1 light up first").
-  const pick = params.startDrum;
-  const named = typeof pick === 'string' && pick ? drums.findIndex((x) => x.drumId === pick) : -1;
-  let drum = named >= 0 ? named : struck >= 0 ? struck : 0;
-  if (through === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom') drum = customDrumOrder(model, pstr(params, 'kitList', ''))[0] ?? drum;
-  else if (randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
+  // The drum: its start drum (see startDrums), or by Random drum's chance a random one.
+  let drum = startDrum;
+  const customOrder = through === 'kit' && pstr(params, 'kitOrder', 'kit') === 'custom';
+  if (!customOrder && randDrum > 0 && rng() < randDrum) drum = Math.floor(rng() * drums.length) % drums.length;
 
   // The hoop: the set one, pulled towards a random hoop by Random hoop.
   const hc = hoopCount(model, drum);
@@ -738,11 +758,11 @@ export const dot: EffectGenerator<DotState> = {
   paramSpec: [
     // FORM
     { key: 'count', label: 'Dots', type: 'number', default: 1, min: 1, max: 64, step: 1, section: 'Dots',
-      info: 'How many dots each hit plays.' },
+      info: 'How many dots each hit plays on each start drum.' },
     // START — where each dot begins; each Random sits under what it varies.
-    { key: 'startDrum', label: 'Start drum', type: 'enum', default: '@hit', options: ['@hit'], optionsFrom: 'drums', section: 'Start',
+    { key: 'startDrum', label: 'Start drum', type: 'enum', default: '@target', options: ['@target', '@hit'], optionsFrom: 'drums', section: 'Start',
       showIf: [{ key: 'through', not: ['space'] }, { any: [{ key: 'through', not: ['kit'] }, { key: 'kitOrder', not: ['custom'] }] }],
-      info: 'The drum each dot begins on. Through the kit in a Custom order, dots begin on the first drum of that order.' },
+      info: 'Where the dots begin. Target\'s drums: on every drum the Effect\'s Target lights — the Kit, or the drums you select. Drum you hit: on that drum. Or one drum by name. Through the kit in a Custom order, they begin on its first drum.' },
     { key: 'randDrum', label: 'Random', aria: 'Random start drum', sub: true, type: 'number', default: 0, min: 0, max: 1, step: 0.01, unit: '%', section: 'Start',
       showIf: { key: 'through', not: ['space'] },
       info: 'The chance a dot begins on a random drum instead. 0%: never; 100%: always.' },
@@ -862,6 +882,7 @@ export const dot: EffectGenerator<DotState> = {
     return {
       dots: [],
       spawned: 0,
+      rounds: 0,
       rng: mulberry32(seed ?? SEED),
       pitchMm,
       tour: nearestTour(model),
@@ -877,25 +898,37 @@ export const dot: EffectGenerator<DotState> = {
       state.col = new Float32Array(model.pixelCount * 3);
     }
     const ageMs = Math.max(0, ctx.timeMs);
-    const count = voiceCount(params);
+    // Dots per start drum; a hit plays them on every start drum (Target's drums: each drum the
+    // Target lights), up to Max alive.
+    const perDrum = Math.max(1, Math.round(pnum(params, 'count', 1)));
+    const starts = startDrums(model, params, ctx.triggers[0]);
+    const count = Math.min(voiceCount(params), perDrum) * Math.max(1, starts.length);
+    const cap = Math.round(pnum(params, 'maxLive', 0));
+    const allowed = cap > 0 ? Math.min(count, cap) : count;
     const spawn = pstr(params, 'spawn', 'together');
     const interval = Math.max(10, pnum(params, 'interval', 250));
 
-    // Spawn what is due: all at once, one per interval up to the count, or a stream that keeps
-    // the newest `count` (the oldest recycles).
-    const due = spawn === 'together' ? count : Math.floor(ageMs / interval) + 1;
-    const target = spawn === 'stream' ? due : Math.min(count, due);
-    while (state.spawned < target) {
-      const bornMs = spawn === 'together' ? 0 : state.spawned * interval;
-      const d = spawnDot(ctx, params, state, state.spawned, bornMs, count);
-      state.spawned++;
-      if (d) state.dots.push(d);
+    // Spawn what is due, in rounds — a round is one dot on each start drum: all at once, one round
+    // per Interval up to Dots, or a stream that keeps the newest (the oldest recycles).
+    const due = spawn === 'together' ? perDrum : Math.floor(ageMs / interval) + 1;
+    const rounds = spawn === 'stream' ? due : Math.min(perDrum, due);
+    while (state.rounds < rounds) {
+      const r = state.rounds;
+      const bornMs = spawn === 'together' ? 0 : r * interval;
+      for (const drum of starts) {
+        // Max alive caps a hit's dots (a stream recycles instead).
+        if (spawn !== 'stream' && state.spawned >= allowed) break;
+        const d = spawnDot(ctx, params, state, r, bornMs, perDrum, drum);
+        state.spawned++;
+        if (d) state.dots.push(d);
+      }
+      state.rounds++;
     }
     // A stream past its count: the oldest cut out, or (Oldest = Fade) fade out over Fade time.
     const fadeOld = pstr(params, 'oldest', 'cut') === 'fade';
     const oldestFade = Math.max(1, pnum(params, 'oldestFade', 400));
     if (spawn === 'stream') {
-      let over = state.dots.filter((d) => d.dyingAtMs === undefined).length - count;
+      let over = state.dots.filter((d) => d.dyingAtMs === undefined).length - allowed;
       for (const d of state.dots) {
         if (over <= 0) break;
         if (d.dyingAtMs !== undefined) continue;
@@ -904,7 +937,7 @@ export const dot: EffectGenerator<DotState> = {
       }
       state.dots = state.dots.filter((d) => d.dyingAtMs === undefined || ageMs - d.dyingAtMs < oldestFade);
     }
-    const dots = spawn === 'stream' ? state.dots : state.dots.slice(0, count);
+    const dots = spawn === 'stream' ? state.dots : state.dots.slice(0, allowed);
 
     const life = Math.max(0, pnum(params, 'life', 2000));
     const fade = clamp01(pnum(params, 'fade', 0.15));

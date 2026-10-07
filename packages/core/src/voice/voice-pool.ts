@@ -334,6 +334,11 @@ export class VoicePool {
     slot.opacity = a.opacity;
     slot.layerOrder = a.layerOrder;
     slot.targets = a.targets;
+    // The drums its Target lights, for a generator that starts there (Dot): a select's drums, a
+    // drum (or hoop) scope's drum, or — the whole kit — none named.
+    slot.targetDrums = a.targets?.length
+      ? [...new Set(a.targets.map((t) => t.split('#')[0]!))]
+      : a.scope !== 'kit' && a.targetId ? [a.targetId.split('#')[0]!] : undefined;
 
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;

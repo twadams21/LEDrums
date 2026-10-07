@@ -104,3 +104,43 @@ describe('Dot Colours Per hit counts this Effect\'s hits (Tim, 2026-10-07)', () 
     expect([first, colour()]).toEqual(['red', 'green']);
   });
 });
+
+describe('a Dot plays on its Target\'s drums, end to end (Tim, 2026-10-07)', () => {
+  // "if i select 'movement through' to 'drum', then in the target card select 'kit' or even 'select'
+  // (and select every drum) it still only plays tom 1. and if i unselect tom 1 … nothing plays".
+  const litDrums = (target: Record<string, unknown>): string[] => {
+    const engine = createVoiceBusEngine();
+    const m = buildPixelModel(parseKit({
+      global: { ledDensityPxPerM: 30, hoopCount: 2, defaultHoopSpacingMm: 50 },
+      drums: ['kick', 'snare'].map((id, i) => ({ id, diameterIn: 12, hoopSpacingMm: 50, origin: { x: i * 400, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } })),
+    }));
+    engine.setModel(m);
+    const effect = parseEffect({
+      id: 'dots', cell: KICK, target,
+      generator: { kind: 'dot', style: 'dot', params: { through: 'drum', speed: 0, fade: 0 } },
+      amp: { attackMs: 0, length: { ms: 2000 }, releaseMs: 0 },
+    });
+    engine.setShow({ ...emptyShow(), songs: [{ id: 'song', name: 'Song', sections: [{ id: 's', name: 's', effects: [effect] }] }] });
+    let now = 0;
+    const step = (ms: number) => {
+      for (const end = now + ms; now < end; now += 10) engine.tick(now, 10, transport);
+    };
+    step(10);
+    engine.applyInput({ kind: 'noteOn', drumId: 'kick', zone: '0', velocity: 1, timeMs: now });
+    step(50);
+    const f = engine.frame();
+    return m.drums.filter((d) => {
+      for (let i = d.pixelStart; i < d.pixelStart + d.pixelCount; i++) if (f[i * 4]! + f[i * 4 + 1]! + f[i * 4 + 2]! > 0) return true;
+      return false;
+    }).map((d) => d.drumId);
+  };
+
+  it('Target Kit: every drum', () => {
+    expect(litDrums({ kind: 'kit' })).toEqual(['kick', 'snare']);
+  });
+
+  it('Target Select: just the drums selected — even without the one hit', () => {
+    expect(litDrums({ kind: 'select', drums: [{ drumId: 'snare' }] })).toEqual(['snare']);
+    expect(litDrums({ kind: 'select', drums: [{ drumId: 'kick' }, { drumId: 'snare' }] })).toEqual(['kick', 'snare']);
+  });
+});
