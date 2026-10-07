@@ -53,7 +53,11 @@ describe('Splice card sections', () => {
     for (const label of ['Rotate', 'Smudge']) expect(section(view, 'Shape').getByText(label)).toBeTruthy();
     const movement = section(view, 'Movement');
     for (const sub of ['Around', 'Through']) expect(movement.getByRole('heading', { name: sub })).toBeTruthy();
-    expect(section(view, 'Colour').getByRole('list', { name: 'Splice colours' })).toBeTruthy();
+    // The bands live under COLOUR — order, colour box and each one's Generator (Tim, 2026-10-07).
+    const colour = section(view, 'Colour');
+    expect(colour.getByRole('region', { name: 'Splice bands' })).toBeTruthy();
+    expect(colour.getByLabelText('Splice 1 colour')).toBeTruthy();
+    expect(colour.getByRole('button', { name: 'Splice 1 generator' })).toBeTruthy();
   });
 
   it('Seed is there all along, dimmed until lengths are Random', () => {
@@ -106,7 +110,7 @@ describe('Splice card sections', () => {
     expect(api.undoDepth).toBe(1);
   });
 
-  it('every band\'s colour is under COLOUR, one undo step a pick', async () => {
+  it('every band\'s colour is under COLOUR', async () => {
     const effect = effectChain.parseEffect({ id: 'e1', cell, generator: { kind: 'splice', params: { count: 2 }, slots: [{ color: '#ff0000' }, {}] } });
     const api = createStandaloneEffectsApi({ effects: [effect], master: [] }, kit);
     const view = render(GeneratorCard, { props: { api, effect: api.effectById('e1')! } });

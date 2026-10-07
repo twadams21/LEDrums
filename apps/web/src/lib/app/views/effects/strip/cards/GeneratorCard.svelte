@@ -15,7 +15,6 @@
   import Download from '@lucide/svelte/icons/download';
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
-  import SlotsEditor from './SlotsEditor.svelte';
   import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
   import { drumHoopCount, effectDisplayName, hoopPixelCount, kitPixelModel, kitPlan } from '../strip-model';
@@ -200,9 +199,6 @@
     </div>
   {/if}
 
-  {#if slotted}
-    <SlotsEditor {api} {effect} />
-  {/if}
   </div>
 
   {#if spliceFace}

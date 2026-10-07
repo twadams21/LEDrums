@@ -112,7 +112,7 @@
     <DemoCard
       title="Splice Generator · slots · Master chain modifier"
       src={['lib/app/views/effects/strip/cards/SlotsEditor', 'lib/app/views/effects/strip/cards/ModifierCard']}
-      note="Splice and Slice have no Styles: the card shows the slots (colour, a nested Generator, or both; a muted slot stays listed) and the settings its motion needs. Master-chain modifiers take effectId = MASTER_CELL and have no per-device file save."
+      note="Splice and Slice have no Styles: their bands (a colour box, a nested Generator, or both; a muted band stays listed, dimmed) sit under COLOUR, one line each, ordered by the grip. Master-chain modifiers take effectId = MASTER_CELL and have no per-device file save."
       wide
     >
       <div class="chain" data-testid="device-cards-splice" aria-label="Device cards splice demo">

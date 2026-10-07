@@ -55,6 +55,11 @@ capitals.
    a Time) / Cycle (a Speed). A plugin with several fixed colours (Temperature's warm and cool,
    Hogs and halos) shows them here as boxes. Behind each box the hue / saturation / brightness
    stay settings of their own, so a Control can still drive them.
+   **A part's own settings live with its colour** (Tim, 2026-10-07: "the colour section could have
+   the ability to order the bands itself … might be best to put any individual effects inside the
+   colour section … a general rule"): where a plugin is made of parts that each have a colour —
+   Splice's and Slice's bands — each part is one line under COLOUR: grip to order it, its colour
+   box, its own Generator, on/off, delete. No separate list of parts elsewhere on the card.
 7. **BACKGROUND** — None / Same / Other · Level · its colour box.
 
 **There is no VELOCITY section.** Velocity is the **Velocity Control** — its own card, which can
@@ -68,6 +73,12 @@ Random Controls only.
 under it — always called Random, always looking the same — so Random angle sits under Start
 angle and Random colour under Colour. (Tim, 2026-10-07: random settings "generally work being
 in" the places they vary.)
+
+**Loop is the envelope's, on the Trigger card** (2026-10-07): Loop repeats the hit — Attack,
+Sustain, Decay, then again with fresh content — until the Effect is stopped. It is a switch under
+the envelope, not a Control card: a Control moves a setting over time; Loop decides when the hit
+happens again, which is the Trigger card's job (Rule 1). Sustain's old "Loop" (stay up, never
+repeat) is now **Until stopped**.
 
 ## Rule 3 — one word for one idea
 

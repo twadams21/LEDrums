@@ -1,6 +1,10 @@
 <script lang="ts">
-  /* The Splice / Slice slots, on the Generator card: one row per band — a colour, a nested
-     Generator, or both (the colour then tints the Generator), or neither (blank). As the graph
+  /* The Splice / Slice bands, under the card's COLOUR (Tim, 2026-10-07: "the 'bands' section probably
+     doesn't need to exist … the colour section could have the ability to order the bands itself …
+     put any individual effects inside the colour section"): one line per band — its colour box, its
+     own Generator, or both (the colour then tints the Generator), or neither (blank) — with on/off,
+     delete and the grip that orders them. The general rule: what belongs to ONE part of a plugin
+     (a band's colour, its Generator) lives with that part's colour, under COLOUR. As the graph
      Splice inspector's rows (`docks/inspectors/SpliceRows.svelte`) did, there are exactly Count
      rows: rows past the authored slots show what the cycling fallback renders there, and editing
      one materialises it. Add / remove keep Count in step. Every edit is one undo step.
@@ -13,6 +17,8 @@
   import type { effectChain } from '@ledrums/core';
   import type { EffectsAuthoringApi } from '../../../../../trigger-lab/effects-api';
   import Select from '../../../../../ui/Select.svelte';
+  import ColorField from '../../../../../ui/ColorField.svelte';
+  import GestureScope from './GestureScope.svelte';
   import IconButton from '../../../../../ui/IconButton.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
   import Plus from '@lucide/svelte/icons/plus';
@@ -25,7 +31,6 @@
   import {
     SLOT_NO_GENERATOR,
     currentStyle,
-    describeSlot,
     isBlankSlot,
     slotGeneratorOptions,
     styleOptions,
@@ -147,8 +152,8 @@
 
 </script>
 
-<!-- "Bands", not "Splices": the FORM section beside it is SPLICES (the count), so two headings
-     with one name would read as one thing. -->
+<!-- "Bands", not "Splices": the FORM section is SPLICES (the count), so two headings with one name
+     would read as one thing. -->
 <section class="slots" aria-label={`${noun} bands`}>
   <div class="head">
     <span class="headlabel">Bands</span>
@@ -189,7 +194,26 @@
             </Tooltip>
           {/if}
           <span class="idx">{i + 1}</span>
-          <span class="desc" title={describeSlot(slot)}>{describeSlot(slot)}</span>
+          <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
+            <ColorField
+              value={slot.color ?? null}
+              {disabled}
+              ariaLabel={`${noun} ${i + 1} colour`}
+              onChange={(v) => patch(i, { color: v ?? undefined })}
+              class="band"
+            />
+          </GestureScope>
+          <div class="gen">
+            <Select
+              value={slot.generator?.kind ?? SLOT_NO_GENERATOR}
+              options={genOptions}
+              segment={false}
+              {disabled}
+              ariaLabel={`${noun} ${i + 1} generator`}
+              onChange={(v) => setGenerator(i, v)}
+              class="slotsel"
+            />
+          </div>
           <Tooltip text={slot.muted ? `Turn ${noun.toLowerCase()} ${i + 1} on` : `Turn ${noun.toLowerCase()} ${i + 1} off`}>
             <button
               type="button"
@@ -211,21 +235,6 @@
             onclick={() => remove(i)}
           />
         </div>
-        <!-- The band's Generator. Its colour is under COLOUR, with every colour (the Generator
-             standard, Tim, 2026-10-07). -->
-        <div class="body">
-          <div class="gen">
-            <Select
-              value={slot.generator?.kind ?? SLOT_NO_GENERATOR}
-              options={genOptions}
-              segment={false}
-              {disabled}
-              ariaLabel={`${noun} ${i + 1} generator`}
-              onChange={(v) => setGenerator(i, v)}
-              class="slotsel"
-            />
-          </div>
-        </div>
         {#if slot.generator && styles.length > 1}
           <div class="gen">
             <Select
@@ -245,7 +254,7 @@
   {#if allBlank}
     <!-- The one explanation that earns its space: the empty state, where nothing on screen says
          yet what a row is for. -->
-    <p class="hint">Give a {noun.toLowerCase()} a generator here, a colour under COLOUR, or both. With both, the colour tints the generator.</p>
+    <p class="hint">Give a band a colour, a generator, or both. With both, the colour tints the generator.</p>
   {/if}
 </section>
 
@@ -346,8 +355,9 @@
     outline: 1px solid var(--accent);
     outline-offset: -1px;
   }
-  .slot.off .desc {
-    color: var(--text-disabled);
+  .slot.off :global(.band),
+  .slot.off .gen {
+    opacity: 0.4;
   }
   .slothead {
     display: flex;
@@ -362,14 +372,23 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
-  .desc {
-    flex: 1 1 auto;
+  /* The box (and its clear) alone, at its own width: the hex would leave the Generator no room. */
+  .slothead :global(.band) {
+    flex: none;
+    width: auto;
+    gap: 2px;
+  }
+  .slothead :global(.band .hex) {
+    display: none;
+  }
+  .slothead > .gen {
+    flex: 1 1 0;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+  .slothead :global(.slotsel) {
+    width: 100%;
+    min-width: 0;
     white-space: nowrap;
-    font-size: var(--text-2xs);
-    color: var(--text-muted);
   }
   .pwr {
     display: inline-flex;
@@ -399,23 +418,6 @@
   .pwr:focus-visible {
     outline: none;
     box-shadow: 0 0 0 2px var(--accent-ring);
-  }
-  .body {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1_5);
-    min-width: 0;
-  }
-  /* (No colour here any more — it is under COLOUR.) */
-  .body :global(.colorfield .hex) {
-    display: none;
-  }
-  .body > .gen {
-    flex: 1 1 0;
-  }
-  .body :global(.slotsel) {
-    width: 100%;
-    min-width: 0;
   }
   .gen {
     display: flex;

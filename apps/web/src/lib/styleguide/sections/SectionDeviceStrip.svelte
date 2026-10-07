@@ -167,7 +167,7 @@
     <DemoCard
       title="Generator card — Splice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/SlotsEditor']}
-      note="Splice on the Generator standard (docs/design/generator-standard.md), three fixed columns: SPLICES (count, Per, Random, Seed) · SHAPE (Rotate, Smudge) | MOVEMENT with Around and Through sub-headings — Motion, Rate, Increment, Direction; Through kit, Through drum, Around hoop, each with its Order | TIMING (On each hit, While waiting) · COLOUR (every band's colour box, Tint). The Bands list beside it holds each band's Generator. A setting a mode makes meaningless is dimmed in place, its ⓘ saying when it applies — nothing appears or disappears, so the card never moves. No envelope (the Trigger card's) and no Velocity (a Velocity Control's)."
+      note="Splice on the Generator standard (docs/design/generator-standard.md), three fixed columns: SPLICES (count, Per, Random, Seed) · SHAPE (Rotate, Smudge) | MOVEMENT with Around and Through sub-headings — Motion, Rate, Increment, Direction; Through kit, Through drum, Around hoop, each with its Order | TIMING (On each hit, While waiting) · COLOUR (the Bands: one line each — grip to order, colour box, its own Generator, on/off, delete — then Tint). A setting a mode makes meaningless is dimmed in place, its ⓘ saying when it applies — nothing appears or disappears, so the card never moves. No envelope (the Trigger card's) and no Velocity (a Velocity Control's)."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
@@ -176,7 +176,7 @@
     <DemoCard
       title="Generator card — Slice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="Slice on the same standard: SLICES (count, Random, Seed) · START (On: Kit · Drum · Space — it writes the Effect's Target; its Drum and Space box dimmed until picked) · SHAPE (Axis, Tilt X/Y/Z, Smudge) | MOVEMENT (Sweep, not Spin; Through kit, Through slices) | TIMING · COLOUR (band colours, Tint, Colour chase). A new Slice cuts the whole kit and comes with a Velocity Control on the Effect's Opacity, so a soft hit is still a dimmer slice."
+      note="Slice on the same standard: SLICES (count, Random, Seed) · START (On: Kit · Drum · Space — it writes the Effect's Target; its Drum and Space box dimmed until picked) · SHAPE (Axis, Tilt X/Y/Z, Smudge) | MOVEMENT (Sweep, not Spin; Through kit, Through slices) | TIMING · COLOUR (the Bands, Tint, Colour chase). A new Slice cuts the whole kit and comes with a Velocity Control on the Effect's Opacity, so a soft hit is still a dimmer slice."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>

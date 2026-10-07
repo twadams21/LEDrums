@@ -8,9 +8,9 @@
                   drum, hoop to hoop, splice to splice) as labelled sub-headings, one section (Tim:
                   "only if they are still kept as sub sections that are clear and easy to
                   recognise")
-       TIMING (on each hit, while waiting) · COLOUR (every band's colour, Tint, a Slice's colour chase)
-     The band list (each band's Generator, on/off, order) stays in the card's lead column; its
-     colours are under COLOUR. A setting that doesn't apply in the current mode is DIMMED in place,
+       TIMING (on each hit, while waiting) · COLOUR (the bands — each one's colour box and own
+       Generator, on/off, in order — then Tint, a Slice's colour chase)
+     A setting that doesn't apply in the current mode is DIMMED in place,
      its ⓘ saying when it applies — never hidden — so the card never moves. No envelope (it is the
      Effect's, on the Trigger card) and no Velocity (the Velocity Control's job). */
   import type { Snippet } from 'svelte';
@@ -24,7 +24,7 @@
   import CommitInput from '../../../../../ui/CommitInput.svelte';
   import Info from '@lucide/svelte/icons/info';
   import ParamRows from './ParamRows.svelte';
-  import BandColours from './BandColours.svelte';
+  import SlotsEditor from './SlotsEditor.svelte';
   import { drumHoopCount, kitBounds } from '../strip-model';
   import { toCardParam, type CardParam, type ParamValue } from './card-model';
   import {
@@ -486,10 +486,8 @@
 
     <section class="sec" aria-label="Colour">
       {@render head('Colour')}
-      {#snippet bands()}
-        <BandColours {api} {effect} {disabled} />
-      {/snippet}
-      {@render field(isSlice ? 'Slices' : 'Splices', 'Each band\'s colour, in band order — a band with no colour plays its Generator untinted. Click a box to pick, or clear it.', bands)}
+      <!-- Every band, in order: its colour box and its own Generator (Tim, 2026-10-07). -->
+      <SlotsEditor {api} {effect} />
       <ParamRows params={tintRow} values={params} {modulated} {disabled} labelPrefix={noun} {mapParam} onChange={onRow} {...gesture} />
       {#if isSlice}
         {@render layerRows(colourChase)}

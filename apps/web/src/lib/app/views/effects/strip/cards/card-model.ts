@@ -400,7 +400,7 @@ export const SLOT_NO_GENERATOR = 'none';
 /** Kinds a slot may nest: any Generator but Splice / Slice (a nested splice renders blank). */
 export function slotGeneratorOptions(): { value: string; label: string }[] {
   return [
-    { value: SLOT_NO_GENERATOR, label: 'Colour only' },
+    { value: SLOT_NO_GENERATOR, label: 'None' },
     ...generatorKinds()
       .filter((k) => !isSlotted(k.kind))
       .map((k) => ({ value: k.kind, label: k.label })),
