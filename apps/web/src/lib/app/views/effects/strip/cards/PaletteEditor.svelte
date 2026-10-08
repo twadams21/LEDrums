@@ -7,7 +7,6 @@
   import { hsvToHex } from '@ledrums/core';
   import ColorField from '../../../../../ui/ColorField.svelte';
   import IconButton from '../../../../../ui/IconButton.svelte';
-  import GestureScope from './GestureScope.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Minus from '@lucide/svelte/icons/minus';
   import Rainbow from '@lucide/svelte/icons/rainbow';
@@ -58,16 +57,16 @@
   <ol class="wells">
     {#each colours as colour, i (i)}
       <li>
-        <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-          <ColorField
-            value={colour}
-            clearable={false}
-            {disabled}
-            ariaLabel={`${ariaLabel} colour ${i + 1}`}
-            onChange={(next) => next && change(i, next)}
-            class="well"
-          />
-        </GestureScope>
+        <ColorField
+          value={colour}
+          clearable={false}
+          {disabled}
+          ariaLabel={`${ariaLabel} colour ${i + 1}`}
+          onChange={(next) => next && change(i, next)}
+          onGestureStart={() => onGestureStart?.()}
+          onGestureEnd={() => onGestureEnd?.()}
+          class="well"
+        />
       </li>
     {/each}
   </ol>

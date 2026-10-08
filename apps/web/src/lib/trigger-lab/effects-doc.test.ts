@@ -331,6 +331,45 @@ describe('effects-doc: Controls', () => {
   });
 });
 
+describe('effects-doc: drag a cell onto another (Tim, 2026-10-07)', () => {
+  const at = (s: EffectsSection, cell: EffectCell) => doc.cellEffects(s, cell).map((e) => e.id);
+
+  it('onto an empty cell the stack moves, re-homed (its default Target follows the row)', () => {
+    const start = deepFreeze(section(fx('a', kickHead), fx('b', kickHead)));
+    const { section: next, result } = doc.moveCell(start, kickHead, snareHead);
+    expect(result).toEqual({ ok: true });
+    expect(at(next, kickHead)).toEqual([]);
+    expect(at(next, snareHead)).toEqual(['a', 'b']);
+    expect(next.effects[0]!.target).toEqual(effectChain.defaultTargetForRow('snare'));
+  });
+
+  it('onto a full cell the two stacks swap', () => {
+    const { section: next } = doc.moveCell(section(fx('a', kickHead), fx('b', snareHead)), kickHead, snareHead);
+    expect(at(next, kickHead)).toEqual(['b']);
+    expect(at(next, snareHead)).toEqual(['a']);
+  });
+
+  it('copy leaves the source and pastes fresh copies', () => {
+    const { section: next } = doc.moveCell(section(fx('a', kickHead)), kickHead, snareHead, true);
+    expect(at(next, kickHead)).toEqual(['a']);
+    expect(at(next, snareHead)).toHaveLength(1);
+    expect(at(next, snareHead)[0]).not.toBe('a');
+  });
+
+  it('a Sequence / Random play setting travels with its stack', () => {
+    const start = doc.setCellPlayMode(section(fx('a', kickHead), fx('b', kickHead)), kickHead, 'sequence');
+    const { section: next } = doc.moveCell(start, kickHead, snareHead);
+    expect(effectChain.cellPlayOf(next, snareHead)?.mode).toBe('sequence');
+    expect(effectChain.cellPlayOf(next, kickHead)).toBeNull();
+  });
+
+  it('nothing to move, or the same cell: refused, nothing applied', () => {
+    const start = section(fx('a', kickHead));
+    expect(doc.moveCell(start, snareHead, kickHead).section).toBe(start);
+    expect(doc.moveCell(start, kickHead, kickHead).section).toBe(start);
+  });
+});
+
 describe('effects-doc: cells', () => {
   it('copyCell deep-copies the stack; pasteCell re-homes it with fresh ids on top of the target cell', () => {
     const start = deepFreeze(section(fx('a', kickHead), fx('b', kickHead), fx('x', snareHead)));

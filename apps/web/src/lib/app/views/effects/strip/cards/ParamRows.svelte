@@ -8,7 +8,6 @@
   import FaceParamControl from '../../../../../ui/FaceParamControl.svelte';
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
-  import GestureScope from './GestureScope.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
   import Info from '@lucide/svelte/icons/info';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
@@ -210,22 +209,23 @@
     <li class="row" class:inactive={!!p.inactive} class:sub={p.sub} class:slotted={!!p.slotLines} style:min-height={slotHeight(p)}>
       {@render labelOf(p, false)}
       <span class="ctl">
-        <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-          <ColorSwatch
-            hue={valueOf(kh!, 0)}
-            saturation={ks ? valueOf(ks, 1) : 1}
-            brightness={kb ? valueOf(kb, 1) : 1}
-            modulated={p.widget.keys.some((k) => modulated?.has(k))}
-            disabled={dis}
-            ariaLabel={aria(p)}
-            onChange={(hsv) => {
-              const patch: Record<string, ParamValue> = { [kh!]: Math.round(hsv.h) % 360 };
-              if (ks) patch[ks] = Number(hsv.s.toFixed(2));
-              if (kb) patch[kb] = Number(hsv.v.toFixed(2));
-              patchAll(patch);
-            }}
-          />
-        </GestureScope>
+        <!-- One pick — the colour window open to closed — is one undo step. -->
+        <ColorSwatch
+          hue={valueOf(kh!, 0)}
+          saturation={ks ? valueOf(ks, 1) : 1}
+          brightness={kb ? valueOf(kb, 1) : 1}
+          modulated={p.widget.keys.some((k) => modulated?.has(k))}
+          disabled={dis}
+          ariaLabel={aria(p)}
+          onChange={(hsv) => {
+            const patch: Record<string, ParamValue> = { [kh!]: Math.round(hsv.h) % 360 };
+            if (ks) patch[ks] = Number(hsv.s.toFixed(2));
+            if (kb) patch[kb] = Number(hsv.v.toFixed(2));
+            patchAll(patch);
+          }}
+          onGestureStart={() => onGestureStart?.()}
+          onGestureEnd={() => onGestureEnd?.()}
+        />
       </span>
     </li>
   {:else if p.widget?.kind === 'palette'}
@@ -265,16 +265,16 @@
           class="cardsel"
         />
       {:else if p.kind === 'color'}
-        <GestureScope onGestureStart={() => onGestureStart?.()} onGestureEnd={() => onGestureEnd?.()}>
-          <ColorField
-            value={typeof v === 'string' ? v : null}
-            fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
-            clearable={false}
-            disabled={dis}
-            ariaLabel={aria(p)}
-            onChange={(next) => onChange(p.key, next ?? p.default)}
-          />
-        </GestureScope>
+        <ColorField
+          value={typeof v === 'string' ? v : null}
+          fallback={typeof p.default === 'string' ? p.default : '#ffffff'}
+          clearable={false}
+          disabled={dis}
+          ariaLabel={aria(p)}
+          onChange={(next) => onChange(p.key, next ?? p.default)}
+          onGestureStart={() => onGestureStart?.()}
+          onGestureEnd={() => onGestureEnd?.()}
+        />
       {:else if beats !== undefined}
         <!-- In beats: a duration lasts this many, a rate runs one cycle per this many. -->
         <FaceParamControl

@@ -27,23 +27,37 @@
   const setStripH = (v: number): void => {
     panes.paneSizes = { ...panes.paneSizes, [STRIP.key]: v };
   };
+  // Double-click a cell (or the Effect tab's button) to enlarge the Effect tab over the grid, and
+  // again to shrink it back (Tim, 2026-10-07). The grid keeps a short band, so the cell stays in
+  // reach for the second double-click.
+  let expanded = $state(false);
+  let gridScroll: HTMLDivElement | undefined = $state();
+  const toggleExpand = (): void => {
+    expanded = !expanded;
+    // Keep the selected cell in the short band, ready for the double-click back.
+    if (expanded) {
+      // After the band has settled at its new height (the row change takes --dur-220).
+      setTimeout(() => gridScroll?.querySelector<HTMLElement>('[role="gridcell"][aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }), 240);
+    }
+  };
 </script>
 
-<div class="effects-view" style:--strip-h={`${stripH}px`}>
+<div class="effects-view" class:expanded style:--strip-h={`${stripH}px`}>
   <section class="pane grid-pane" aria-label="Effects grid">
     <PanelHeader icon={Blend} title="Effects">
       <span class="hint" aria-hidden="true"><kbd>1</kbd>–<kbd>0</kbd> audition</span>
     </PanelHeader>
-    <div class="grid-scroll">
-      <EffectsGrid {api} />
+    <div class="grid-scroll" bind:this={gridScroll}>
+      <EffectsGrid {api} onexpand={toggleExpand} />
     </div>
   </section>
 
   <section class="pane strip-pane" aria-label="Device strip">
-    <DeviceStrip {api} cell={api.selectedCell} />
+    <DeviceStrip {api} cell={api.selectedCell} {expanded} onToggleExpand={toggleExpand} />
   </section>
 
   <!-- On the grid↔strip divide. Inverted: the strip is anchored to the bottom, so dragging up grows it. -->
+  {#if !expanded}
   <Splitter
     orientation="horizontal"
     invert
@@ -54,6 +68,7 @@
     onResize={setStripH}
     style="left: 0; right: 0; bottom: calc(var(--strip-h) + var(--shell-gap) / 2); transform: translateY(50%);"
   />
+  {/if}
 </div>
 
 <style>
@@ -64,6 +79,17 @@
     gap: var(--shell-gap);
     height: 100%;
     min-height: 0;
+    transition: grid-template-rows var(--dur-220) var(--ease-out-quart);
+  }
+  /* Enlarged: the Effect tab takes the view; the grid keeps a short band (its header and a row or
+     two, scrolling) so the selected cell is still there to double-click back. */
+  .effects-view.expanded {
+    grid-template-rows: 196px minmax(0, 1fr);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .effects-view {
+      transition: none;
+    }
   }
   .pane {
     display: flex;

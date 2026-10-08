@@ -3,7 +3,8 @@
    card offers must land in the section as ONE undo step, a drag must fold into one, a viewer
    must not author, and the modulated badge must follow the mappings. */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { DEFAULT_KIT, effectChain, type KitConfig } from '@ledrums/core';
 import { MASTER_CELL } from '../../../../../trigger-lab/effects-api';
 import { createStandaloneEffectsApi } from '../../../../../trigger-lab/effects-controller.svelte';
@@ -78,10 +79,17 @@ describe('GeneratorCard', () => {
     const { api, effect } = demo();
     api.setGenerator(effect().id, 'dot');
     const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
-    const box = container.querySelector<HTMLInputElement>('.colorswatch input[type="color"]')!;
+    // The box opens the colour window; a pick there, closed again, is one undo step.
+    const box = container.querySelector<HTMLButtonElement>('.colorswatch .colorpicker-trigger')!;
     expect(box).toBeTruthy();
     const depth = api.undoDepth;
-    await fireEvent.input(box, { target: { value: '#ff0000' } });
+    await fireEvent.click(box);
+    await tick();
+    const hex = screen.getByLabelText('Hex') as HTMLInputElement;
+    await fireEvent.input(hex, { target: { value: '#ff0000' } });
+    await fireEvent.keyDown(hex, { key: 'Enter' });
+    await fireEvent.click(box);
+    await tick();
     expect(effect().generator.params).toMatchObject({ hue: 0, saturation: 1 });
     expect(api.undoDepth).toBe(depth + 1);
   });
@@ -91,7 +99,7 @@ describe('GeneratorCard', () => {
     api.setGenerator(effect().id, 'dot');
     api.setGeneratorParams(effect().id, { colorMode: 'per-dot', palette: '#123456,#abcdef,#fedcba' });
     const { container, getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
-    expect(container.querySelectorAll('.colour-palette input[type="color"]')).toHaveLength(3);
+    expect(container.querySelectorAll('.colour-palette .colorpicker-trigger')).toHaveLength(3);
     await fireEvent.click(getByRole('button', { name: 'Fill round the colour wheel' }));
     expect(effect().generator.params.palette).toBe('#ff0000,#00ff00,#0000ff');
     await fireEvent.click(getByRole('button', { name: 'Add a colour' }));

@@ -18,7 +18,6 @@
   import type { EffectsAuthoringApi } from '../../../../../trigger-lab/effects-api';
   import Select from '../../../../../ui/Select.svelte';
   import ColorField from '../../../../../ui/ColorField.svelte';
-  import GestureScope from './GestureScope.svelte';
   import IconButton from '../../../../../ui/IconButton.svelte';
   import Tooltip from '../../../../../ui/Tooltip.svelte';
   import Plus from '@lucide/svelte/icons/plus';
@@ -194,15 +193,15 @@
             </Tooltip>
           {/if}
           <span class="idx">{i + 1}</span>
-          <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
-            <ColorField
-              value={slot.color ?? null}
-              {disabled}
-              ariaLabel={`${noun} ${i + 1} colour`}
-              onChange={(v) => patch(i, { color: v ?? undefined })}
-              class="band"
-            />
-          </GestureScope>
+          <ColorField
+            value={slot.color ?? null}
+            {disabled}
+            ariaLabel={`${noun} ${i + 1} colour`}
+            onChange={(v) => patch(i, { color: v ?? undefined })}
+            onGestureStart={() => api.beginGesture()}
+            onGestureEnd={() => api.endGesture()}
+            class="band"
+          />
           <div class="gen">
             <Select
               value={slot.generator?.kind ?? SLOT_NO_GENERATOR}

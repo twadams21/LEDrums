@@ -12,6 +12,9 @@
   import { effectChain } from '@ledrums/core';
   import Plus from '@lucide/svelte/icons/plus';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import Maximize2 from '@lucide/svelte/icons/maximize-2';
+  import Minimize2 from '@lucide/svelte/icons/minimize-2';
+  import IconButton from '../../../../ui/IconButton.svelte';
   import { MASTER_CELL, type CellSelection, type EffectsAuthoringApi } from '../../../../trigger-lab/effects-api';
   import EffectHeader from './EffectHeader.svelte';
   import EffectChain from './EffectChain.svelte';
@@ -22,7 +25,18 @@
 
   type EffectCell = effectChain.EffectCell;
 
-  let { api, cell }: { api: EffectsAuthoringApi; cell: CellSelection | null } = $props();
+  let {
+    api,
+    cell,
+    expanded = false,
+    onToggleExpand,
+  }: {
+    api: EffectsAuthoringApi;
+    cell: CellSelection | null;
+    /** The Effect tab is enlarged over the grid (double-click a cell, or the button here). */
+    expanded?: boolean;
+    onToggleExpand?: () => void;
+  } = $props();
 
   const generators = effectChain.listGenerators();
   const zoneCell = $derived(cell !== null && cell !== MASTER_CELL ? cell : null);
@@ -102,6 +116,20 @@
   }
 </script>
 
+<!-- Enlarge / shrink the Effect tab — the button twin of double-clicking a cell in the grid. -->
+{#snippet enlarge()}
+  {#if onToggleExpand}
+    <IconButton
+      icon={expanded ? Minimize2 : Maximize2}
+      label={expanded ? 'Shrink the Effect tab (or double-click the cell)' : 'Enlarge the Effect tab (or double-click the cell)'}
+      size={14}
+      variant={expanded ? 'soft' : 'ghost'}
+      class="enlarge"
+      onclick={onToggleExpand}
+    />
+  {/if}
+{/snippet}
+
 <section class="strip" aria-label="Device strip">
   {#if cell === null}
     <p class="empty">Select a cell in the grid to see its Effects.</p>
@@ -110,6 +138,7 @@
       <SlidersHorizontal size={14} class="bar-icon" aria-hidden="true" />
       <h2>Master</h2>
       <span class="meta">Applied to everything this section renders</span>
+      {@render enlarge()}
     </header>
     <div class="master">
       <ModifierRun {api} owner={MASTER_CELL} modifiers={api.masterChain} />
@@ -137,6 +166,7 @@
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
+      {@render enlarge()}
     </header>
 
     {#if zoneCell && zoneCell.column.kind !== 'always' && effects.length > 0}
@@ -187,7 +217,7 @@
     min-height: 0;
     height: 100%;
     overflow-y: auto;
-    background: var(--bg);
+    background: var(--surface-bench);
     --device-h: 240px;
   }
   .bar {
@@ -200,8 +230,17 @@
     height: 40px;
     flex: none;
     padding: 0 var(--space-2) 0 var(--space-3);
-    background: var(--surface);
+    background: var(--surface-bench-bar);
     border-bottom: 1px solid var(--border);
+    /* A coloured top edge: the Effect tab, not the grid. */
+    box-shadow: inset 0 2px 0 var(--bench-edge);
+  }
+  /* Master's bar has no Add Effect to push the button right. */
+  .bar :global(.enlarge) {
+    margin-left: auto;
+  }
+  .bar :global(.add-effect) + :global(.enlarge) {
+    margin-left: 0;
   }
   .bar :global(.bar-icon) {
     color: var(--role-effect);

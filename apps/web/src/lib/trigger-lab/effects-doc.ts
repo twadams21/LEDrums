@@ -637,6 +637,37 @@ export function pasteCell<S extends EffectsSection>(section: S, cell: EffectCell
   return { section: withEffects(section, [...section.effects, ...pasted]), result: { ok: true } };
 }
 
+/**
+ * Drag a cell onto another in the grid (Tim, 2026-10-07: "the ability to drag and drop effects
+ * between spots in the effects grid view"). Onto an empty cell the stack moves; onto a full one the
+ * two stacks swap; `copy` (Alt / Option held) pastes a copy and leaves the source as it was. Each
+ * Effect is re-homed (its trigger and default Target follow the cell), and a Sequence / Random play
+ * setting travels with its stack. Refused, with nothing applied, when an Effect can't live where it
+ * would land.
+ */
+export function moveCell<S extends EffectsSection>(section: S, from: EffectCell, to: EffectCell, copy = false): { section: S; result: ApplyResult } {
+  if (sameCell(from, to)) return { section, result: { ok: false, reason: 'Same cell.' } };
+  const source = cellEffects(section, from);
+  if (source.length === 0) return { section, result: { ok: false, reason: 'Nothing to move.' } };
+  if (copy) return pasteCell(section, to, source);
+  const moved = new Map<string, Effect>();
+  for (const e of section.effects) {
+    const dest = sameCell(e.cell, from) ? to : sameCell(e.cell, to) ? from : null;
+    if (!dest) continue;
+    const re = relocate(e, dest);
+    if (!re) return { section, result: { ok: false, reason: 'These Effects cannot be placed in that cell.' } };
+    moved.set(e.id, re);
+  }
+  const effects = section.effects.map((e) => moved.get(e.id) ?? e);
+  // The play setting (Sequence / Random) belongs to the stack, so it moves with it; an Always cell
+  // has none (it plays continuously).
+  const plays = (section.cellPlay ?? [])
+    .map((p) => (sameCell(p.cell, from) ? { ...p, cell: cloneJson(to) } : sameCell(p.cell, to) ? { ...p, cell: cloneJson(from) } : p))
+    .filter((p) => p.cell.column.kind !== 'always');
+  const next = withEffects(section, effects);
+  return { section: section.cellPlay ? { ...next, cellPlay: plays } : next, result: { ok: true } };
+}
+
 export function clearCell<S extends EffectsSection>(section: S, cell: EffectCell): S {
   if (!section.effects.some((e) => sameCell(e.cell, cell))) return section;
   const cleared = withEffects(section, section.effects.filter((e) => !sameCell(e.cell, cell)));

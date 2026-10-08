@@ -94,6 +94,8 @@
         disabled={!project}
         ariaLabel="Drum colour"
         onChange={(hsv) => store.setDrumTransform(drum.id, { color: hsvToHex(hsv.h, hsv.s, hsv.v) })}
+        onGestureStart={() => store.beginGesture()}
+        onGestureEnd={() => store.endGesture()}
       />
     </Field>
     <Field label="Starting angle" info="All hoops.">
