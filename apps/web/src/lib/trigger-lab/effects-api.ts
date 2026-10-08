@@ -171,6 +171,8 @@ export interface EffectsAuthoringApi {
   pasteCell(cell: EffectCell): ApplyResult;
   readonly canPasteCell: boolean;
   clearCell(cell: EffectCell): void;
+  /** Drag a cell onto another: move its stack (swap with a full cell), or copy it. One undo step. */
+  moveCell(from: EffectCell, to: EffectCell, copy?: boolean): ApplyResult;
 
   // ---- Cell play: Layer / Sequence / Random (Tim, 2026-10-01) -----------------------------------
   /** The cell's play settings, or null when it layers (every Effect fires on each hit). */

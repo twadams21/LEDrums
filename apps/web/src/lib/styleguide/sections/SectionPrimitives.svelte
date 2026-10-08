@@ -454,7 +454,7 @@
       <Slider value={0.6} min={0} max={1} step={0.01} ariaLabel="Depth" format={(v) => `${v.toFixed(2)}×`} />
     </DemoCard>
 
-    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
+    <DemoCard title="Colour swatch" src="lib/ui/ColorSwatch" note="Write-through colour well over hue/saturation/brightness. Click the box to open the colour window (lib/ui/ColorPicker: saturation × brightness square, hue strip, hex — arrows step, Shift further); click it again, Esc or outside to close; one open → close is one gesture (one undo step). The swatch and the three sliders drive the same values — move either. Saturation 0 → white. A modulated param shows an env badge on the base colour instead of animating.">
       <ColorSwatch
         hue={swHue}
         saturation={swSat}

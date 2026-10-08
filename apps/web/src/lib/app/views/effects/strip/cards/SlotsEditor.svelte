@@ -22,7 +22,6 @@
   import GripVertical from '@lucide/svelte/icons/grip-vertical';
   import { tick } from 'svelte';
   import { gapAt, gapToIndex, nudgeIndex } from '../strip-model';
-  import GestureScope from './GestureScope.svelte';
   import ParamRows from './ParamRows.svelte';
   import { slotsAtCount, spliceCountOf } from './splice-face';
   import {
@@ -218,14 +217,14 @@
         </div>
         <!-- Colour and generator side by side, as the inspector's rows had them. -->
         <div class="body">
-          <GestureScope onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}>
-            <ColorField
-              value={slot.color ?? null}
-              {disabled}
-              ariaLabel={`${noun} ${i + 1} colour`}
-              onChange={(v) => patch(i, { color: v ?? undefined })}
-            />
-          </GestureScope>
+          <ColorField
+            value={slot.color ?? null}
+            {disabled}
+            ariaLabel={`${noun} ${i + 1} colour`}
+            onChange={(v) => patch(i, { color: v ?? undefined })}
+            onGestureStart={() => api.beginGesture()}
+            onGestureEnd={() => api.endGesture()}
+          />
           <div class="gen">
             <Select
               value={slot.generator?.kind ?? SLOT_NO_GENERATOR}

@@ -122,7 +122,7 @@
     <DemoCard
       title="Effects grid"
       src={['lib/app/views/effects/grid/EffectsGrid', 'lib/app/views/effects/grid/GeneratorPicker', 'lib/app/views/effects/grid/grid-nav']}
-      note="Live over createStandaloneEffectsApi. Click selects · double-click an empty cell opens the Generator picker · right-click: add, copy, paste, save / load file, clear. One roving tab stop: arrows / Home / End move (skipping disabled cells; ArrowLeft off the Kit row reaches the Master), Enter or Space selects. Digits 1–9 / 0 stay the app's audition keys (fireEffectAt, grid order) while a cell has focus. Zone headers use the zone's name when every drum agrees, else Zone N; the trigger columns sit after a divider."
+      note="Live over createStandaloneEffectsApi. Click selects · double-click an empty cell opens the Generator picker, a full one enlarges the Effect tab (again to shrink) · drag a cell onto another to move its stack (onto a full cell they swap; Alt / Option copies — a word in the target's corner says which) · right-click: add, copy, paste, save / load file, clear. One roving tab stop: arrows / Home / End move (skipping disabled cells; ArrowLeft off the Kit row reaches the Master), Enter or Space selects. Digits 1–9 / 0 stay the app's audition keys (fireEffectAt, grid order) while a cell has focus. Zone headers use the zone's name when every drum agrees, else Zone N; the trigger columns sit after a divider."
       wide
     >
       <div class="grid-demo">
@@ -142,7 +142,7 @@
     <DemoCard
       title="Effects view"
       src="lib/app/views/effects/EffectsView"
-      note="The shell's Effects tab (the trigger view): the Grid on top, a resizable splitter (height persisted in paneSizes as effectsStripH), the device strip below showing the selected cell — Ableton's Device View. The visualiser and docks stay in the shell's right column. Shares the api above, so a selection here drives both."
+      note="The shell's Effects tab (the trigger view): the Grid on top, a resizable splitter (height persisted in paneSizes as effectsStripH), the device strip below showing the selected cell — Ableton's Device View — on its own bluer bench (--surface-bench, a --bench-edge top line) so the two read as different places. Double-click a full cell, or the strip header's enlarge button, to give the strip the view (the grid keeps a short band); again to shrink back. The visualiser and docks stay in the shell's right column. Shares the api above, so a selection here drives both."
       wide
     >
       <div class="view-demo"><EffectsView {api} {panes} /></div>

@@ -482,6 +482,19 @@ export class EffectsController implements EffectsAuthoringApi {
   clearCell(cell: EffectCell): void {
     this.#edit((s) => doc.clearCell(s, cell));
   }
+  moveCell(from: EffectCell, to: EffectCell, copy = false): ApplyResult {
+    if (!this.canEdit) return READ_ONLY;
+    const kit = this.host.kit();
+    const map = this.host.inputMap();
+    if (!cellEnabled(kit, map, from) || !cellEnabled(kit, map, to)) return { ok: false, reason: 'This cell cannot hold Effects.' };
+    let result: ApplyResult = { ok: false, reason: 'Nothing to move.' };
+    this.#edit((s) => {
+      const out = doc.moveCell(s, from, to, copy);
+      result = out.result;
+      return out.section;
+    });
+    return result;
+  }
 
   // ---- Cell play ---------------------------------------------------------------------------
 

@@ -12,6 +12,8 @@
     ['--surface-2', 'Raised control / panel header'],
     ['--surface-3', 'Popover / menu / hover lift'],
     ['--surface-inset', 'Sunken wells (inputs, tracks)'],
+    ['--surface-bench', 'Effect tab canvas — bluer than the grid'],
+    ['--surface-bench-bar', 'Effect tab header bar'],
   ] as const;
 
   const borders = [

@@ -134,6 +134,33 @@ describe('EffectsGrid', () => {
     expect(api.cellEffects(kickAlways)).toHaveLength(0);
   });
 
+  it('double-click on a filled cell enlarges the Effect tab, and again shrinks it (Tim, 2026-10-07)', async () => {
+    const onexpand = vi.fn();
+    const section: EffectsSection = { effects: [fx('pulse', kickHead)], master: [] };
+    render(EffectsGrid, { props: { api: createStandaloneEffectsApi(section, kit, { inputMap }), onexpand } });
+    await fireEvent.dblClick(cellAt(1, 0));
+    await fireEvent.dblClick(cellAt(1, 0));
+    expect(onexpand).toHaveBeenCalledTimes(2);
+    await fireEvent.dblClick(cellAt(1, 2)); // an empty cell still opens the picker instead
+    expect(onexpand).toHaveBeenCalledTimes(2);
+  });
+
+  it('drag a cell onto an empty one: its stack moves there and the selection follows — one undo step', async () => {
+    const { api } = mount();
+    const data = new Map<string, string>();
+    const dataTransfer = { setData: (t: string, v: string) => data.set(t, v), getData: (t: string) => data.get(t) ?? '', effectAllowed: '', dropEffect: '' };
+    expect(cellAt(1, 0).getAttribute('draggable')).toBe('true');
+    expect(cellAt(1, 2).getAttribute('draggable')).toBeNull(); // nothing to carry
+    await fireEvent.dragStart(cellAt(1, 0), { dataTransfer });
+    await fireEvent.dragOver(cellAt(1, 2), { dataTransfer });
+    expect(cellAt(1, 2).textContent).toContain('Move here');
+    await fireEvent.drop(cellAt(1, 2), { dataTransfer });
+    expect(api.cellEffects(kickHead)).toHaveLength(0);
+    expect(api.cellEffects(kickAlways).map((e) => e.id)).toEqual(['pulse']);
+    expect(api.selectedCell).toEqual(kickAlways);
+    expect(api.undoDepth).toBe(1);
+  });
+
   it('double-click on a filled cell only selects it; a viewer never gets the picker', async () => {
     mount();
     await fireEvent.dblClick(cellAt(1, 0));

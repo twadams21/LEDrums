@@ -42,6 +42,17 @@
     playedStep?: number | null;
     /** How many steps it has (its un-bypassed Effects). */
     steps?: number;
+    /** Drag to move this cell's stack to another cell (the grid decides when; Tim, 2026-10-07). */
+    draggable?: boolean;
+    /** This cell is being carried. */
+    dragging?: boolean;
+    /** A carried stack would land here: moved, swapped with this one, or copied (Alt / Option). */
+    drop?: 'move' | 'swap' | 'copy' | null;
+    ondragstart?: (event: DragEvent) => void;
+    ondragover?: (event: DragEvent) => void;
+    ondragleave?: (event: DragEvent) => void;
+    ondrop?: (event: DragEvent) => void;
+    ondragend?: (event: DragEvent) => void;
   };
 
   let {
@@ -65,7 +76,16 @@
     playMode = 'layer',
     playedStep = null,
     steps = 0,
+    draggable = false,
+    dragging = false,
+    drop = null,
+    ondragstart,
+    ondragover,
+    ondragleave,
+    ondrop,
+    ondragend,
   }: Props = $props();
+  const DROP_WORD = { move: 'Move here', swap: 'Swap', copy: 'Copy here' } as const;
 
   /** "Seq 2/3" — which step played last, of how many; "Seq · 3" before the first hit. */
   const playBadge = $derived.by(() => {
@@ -112,6 +132,8 @@
   class:off={!enabled}
   class:bypassed={allBypassed}
   class:selected
+  class:dragging
+  class:drop-target={!!drop}
   role="gridcell"
   tabindex={enabled ? (tabbable ? 0 : -1) : undefined}
   aria-label={describe}
@@ -119,6 +141,12 @@
   aria-disabled={enabled ? undefined : true}
   data-row={row}
   data-col={col}
+  draggable={draggable ? 'true' : undefined}
+  {ondragstart}
+  {ondragover}
+  {ondragleave}
+  {ondrop}
+  {ondragend}
   {@attach map && mappable(map)}
   onclick={() => enabled && onselect?.()}
   ondblclick={() => enabled && onactivate?.()}
@@ -159,10 +187,36 @@
     {#key fireAt}
       {#if freshFire(fireAt)}<span class="flash" aria-hidden="true"></span>{/if}
     {/key}
+    {#if drop}<span class="dropword" aria-hidden="true">{DROP_WORD[drop]}</span>{/if}
   {/if}
 </div>
 
 <style>
+  /* The cell being carried fades, so the drop target reads as where it will land. */
+  .cell.dragging {
+    opacity: 0.45;
+  }
+  .cell[draggable='true'] {
+    cursor: grab;
+  }
+  .cell.drop-target {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
+    background: color-mix(in oklch, var(--accent) 8%, var(--surface-2));
+  }
+  /* What the drop will do, in a word, at the cell's corner. */
+  .dropword {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    padding: 1px 5px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: var(--on-accent);
+    background: var(--accent);
+    border-radius: var(--radius-1);
+    pointer-events: none;
+  }
   .cell {
     position: relative;
     display: flex;

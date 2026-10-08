@@ -1478,6 +1478,9 @@ export class TriggerLab implements EffectsAuthoringApi, MapModeApi {
   get canPasteCell(): boolean {
     return this.effectsCtl.canPasteCell;
   }
+  moveCell(from: effectChain.EffectCell, to: effectChain.EffectCell, copy?: boolean): ApplyResult {
+    return this.effectsCtl.moveCell(from, to, copy);
+  }
   clearCell(cell: effectChain.EffectCell): void {
     this.effectsCtl.clearCell(cell);
   }

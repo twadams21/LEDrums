@@ -6,10 +6,11 @@
      of the three is envelope-modulated the LIVE output is swept over the voice's life, so
      we show the BASE colour with a small badge rather than implying a static colour is
      authoritative. UI-only: the picker adds no persisted value (hue/sat/bri stay the
-     canonical numbers). Built on the native <input type=color> — keyboard-accessible and
-     dependency-free. */
-  import { hexToHsv, hsvToHex, type Hsv } from '@ledrums/core';
+     canonical numbers). The box opens the app's colour window (ColorPicker) — a click opens it and
+     a click again closes it (Tim, 2026-10-07), which the browser's own picker can't do. */
+  import { hsvToHex, type Hsv } from '@ledrums/core';
   import Spline from '@lucide/svelte/icons/spline';
+  import ColorPicker from './ColorPicker.svelte';
 
   type Props = {
     /** Hue in degrees (0..360). */
@@ -25,6 +26,9 @@
     onChange?: (hsv: Hsv) => void;
     ariaLabel?: string;
     class?: string;
+    /** One pick (the colour window open → closed) as one undo step. */
+    onGestureStart?: () => void;
+    onGestureEnd?: () => void;
   };
 
   let {
@@ -36,18 +40,17 @@
     onChange,
     ariaLabel = 'Colour',
     class: klass,
+    onGestureStart,
+    onGestureEnd,
   }: Props = $props();
 
   const hex = $derived(hsvToHex(hue, saturation, brightness));
 
-  function pick(e: Event & { currentTarget: HTMLInputElement }) {
-    onChange?.(hexToHsv(e.currentTarget.value));
-  }
 </script>
 
 <div class={['colorswatch', klass]} class:disabled>
   <span class="well" class:modulated style="--swatch: {hex}">
-    <input type="color" value={hex} {disabled} oninput={pick} aria-label={ariaLabel} />
+    <ColorPicker hsv={{ h: hue, s: saturation, v: brightness }} {disabled} {ariaLabel} {onChange} {onGestureStart} {onGestureEnd} />
     {#if modulated}
       <span class="badge" title="Modulated by an envelope">
         <Spline size={10} aria-hidden="true" />
@@ -86,27 +89,12 @@
   .well:hover {
     box-shadow: inset 0 0 0 1px var(--border-accent), var(--shadow-1);
   }
-  .well:focus-within {
+  .well:has(:global(.colorpicker-trigger:focus-visible)) {
     box-shadow: 0 0 0 3px var(--accent-soft), inset 0 0 0 1px var(--accent);
   }
 
   /* The native picker fills the well but paints nothing itself — the well's --swatch
      layer is the visible colour, so it survives the checker/badge overlay. */
-  .well input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    opacity: 0;
-    cursor: pointer;
-  }
-  .well input:disabled {
-    cursor: default;
-  }
 
   .badge {
     position: absolute;
