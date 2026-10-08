@@ -4,15 +4,22 @@ import {
   adsrPath,
   describeMapping,
   describeSlot,
+  drumParamOptions,
+  withKitRanges,
   envelopePoints,
   envelopeShapeOf,
   formatParam,
   generatorParams,
   isLandscape,
+  mappingGroups,
   mappingTargets,
   modulatedKeys,
   paramColumns,
+  paramSections,
+  paramsLandscape,
   paramValue,
+  sectionColumns,
+  withColours,
   parseMapTargetKey,
   mapTargetKey,
   slotGeneratorOptions,
@@ -29,7 +36,9 @@ const keys = (ps: CardParam[]) => ps.map((p) => p.key);
 describe('generatorParams — what the Generator card shows', () => {
   it('is the Style’s param spec from core for an ordinary Generator', () => {
     const device = fx().generator;
-    expect(keys(generatorParams(device))).toEqual(effectChain.generatorParamSpec('wave', 'radial').map((s) => s.key));
+    // Its hue, saturation and brightness are one Colour box (the Generator standard).
+    expect(keys(generatorParams(device))).toEqual(effectChain.generatorParamSpec('wave', 'radial').map((s) => s.key).filter((k) => k !== 'saturation' && k !== 'brightness'));
+    expect(generatorParams(device).find((p) => p.key === 'hue')).toMatchObject({ label: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } });
     expect(generatorParams(device).length).toBeGreaterThan(0);
   });
 
@@ -115,7 +124,8 @@ describe('modulation', () => {
     const targets = mappingTargets(withControls());
     expect(targets.every((t) => typeof t.min === 'number' && typeof t.max === 'number')).toBe(true);
     const devices = new Set(targets.map((t) => t.device));
-    expect(devices).toEqual(new Set(['generator', 'm1', 'm2']));
+    // …and the Effect itself (Opacity, the envelope), for a Control fixed at the hit.
+    expect(devices).toEqual(new Set(['effect', 'generator', 'm1', 'm2']));
     expect(targets.find((t) => t.device === 'm1')!.label.startsWith('Strobe · ')).toBe(true);
     expect(targets.find((t) => t.device === 'm2')!.label.startsWith('Strobe 2 · ')).toBe(true);
     const nonNumeric = (tryGetModifier('strobe')?.paramSpec ?? []).filter((p) => p.type !== 'number').map((p) => p.key);
@@ -184,5 +194,155 @@ describe('paramColumns — landscape cards (Tim, 2026-10-01: at most 12 rows dow
     expect(paramColumns(22)).toEqual({ columns: 2, rows: 11 }); // Splice: two columns, not three
     expect(paramColumns(30)).toEqual({ columns: 3, rows: 10 });
     expect(isLandscape(13)).toBe(true);
+  });
+});
+
+describe('param sections — capitalised headers (Tim, 2026-10-04)', () => {
+  const p = (key: string, section?: string): CardParam => ({ key, label: key, kind: 'number', default: 0, ...(section ? { section } : {}) });
+
+  it('groups params by their section, in order; no sections → null', () => {
+    expect(paramSections([p('a'), p('b')])).toBeNull();
+    const s = paramSections([p('a', 'Dots'), p('b', 'Dots'), p('c', 'Shape'), p('d')])!;
+    expect(s.map((x) => [x.label, keys(x.params)])).toEqual([['Dots', ['a', 'b']], ['Shape', ['c', 'd']]]);
+  });
+
+  it('short sections share a column (a header counts as a line); a full one starts the next', () => {
+    const sec = (label: string, n: number) => ({ label, params: Array.from({ length: n }, (_, k) => p(`${label}${k}`, label)) });
+    const cols = sectionColumns([sec('A', 7), sec('B', 5), sec('C', 4), sec('D', 6), sec('E', 3)]);
+    expect(cols.map((c) => c.map((x) => x.label))).toEqual([['A', 'B'], ['C', 'D'], ['E']]);
+  });
+
+  const dotDevice = (params: Record<string, string | number> = {}) =>
+    effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator;
+
+  it('the Dot card: the standard\'s sections in order, landscape', () => {
+    const params = generatorParams(dotDevice());
+    const cols = sectionColumns(paramSections(params)!);
+    expect(cols.flat().map((x) => x.label)).toEqual(['Dots', 'Start', 'Shape', 'Movement', 'Timing', 'Colour', 'Background']);
+    expect(paramsLandscape(params)).toBe(true);
+    expect(params.find((x) => x.key === 'maxLive')).toMatchObject({ label: 'Max alive', info: expect.stringContaining('most dots alive') });
+    // A 0..1 amount with a `%` unit reads as a whole percent.
+    expect(params.find((x) => x.key === 'fade')).toMatchObject({ percent: true });
+    expect(params.find((x) => x.key === 'count')?.percent).toBeUndefined();
+  });
+
+  it('changing Through never moves the card: the same rows, the same places, the same sizes', () => {
+    // Tim, 2026-10-07: "if I change the Movement through a hoop, drum, kit or space, it rearranges
+    // the entire card … there needs to be a certainty of where on the card they will appear".
+    const layout = (through: string) => {
+      const params = generatorParams(dotDevice({ through }));
+      const sections = paramSections(params)!;
+      return {
+        columns: sectionColumns(sections).map((c) => c.map((x) => x.label)),
+        lines: sections.map((x) => x.params.reduce((n, p) => n + (p.slotLines ?? 1), 0)),
+        rows: params.length,
+      };
+    };
+    const hoop = layout('hoop');
+    for (const through of ['drum', 'kit', 'space']) expect(layout(through)).toEqual(hoop);
+  });
+
+  it('a setting that doesn\'t apply is dimmed in place, saying when it applies — never hidden', () => {
+    const at = (params: Record<string, string | number>, key: string) => generatorParams(dotDevice(params)).find((x) => x.key === key);
+    expect(at({}, 'climb')!.inactive).toBe('Only when Through is Drum or Kit');
+    expect(at({ through: 'drum' }, 'climb')!.inactive).toBeUndefined();
+    expect(at({}, 'span')!.inactive).toBe('Only when Edges is Pingpong');
+    expect(at({ through: 'kit', kitOrder: 'custom' }, 'startDrum')!.inactive).toContain('Only when');
+    expect(at({ through: 'kit' }, 'startDrum')!.inactive).toBeUndefined();
+  });
+
+  it('alternatives share one place: the one that applies shows, kept the size of the largest', () => {
+    const at = (through: string, slot: string) => generatorParams(dotDevice({ through })).find((x) => ['startAngle', 'spaceX', 'climb', 'heading', 'length', 'radius'].includes(x.key) && x.slotLines && (slot === 'start' ? ['startAngle', 'spaceX'] : slot === 'way' ? ['climb', 'heading'] : ['length', 'radius']).includes(x.key))!;
+    expect(at('hoop', 'start').key).toBe('startAngle');
+    expect(at('space', 'start').key).toBe('spaceX');
+    expect(at('hoop', 'start').slotLines).toBe(at('space', 'start').slotLines);
+    expect(at('drum', 'way').key).toBe('climb');
+    expect(at('space', 'way').key).toBe('heading');
+    expect(at('hoop', 'way')).toMatchObject({ key: 'climb', inactive: 'Only when Through is Drum or Kit' });
+    expect(at('space', 'size').key).toBe('radius');
+    // The Start point's depth and height are edited by its views: no rows, but a Control can drive them.
+    const keysOf = (through: string) => keys(generatorParams(dotDevice({ through })));
+    expect(keysOf('space')).not.toContain('spaceY');
+    expect(keysOf('space')).not.toContain('elevation');
+    const fx = effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot' } });
+    expect(mappingTargets(fx).map((t) => t.param)).toEqual(expect.arrayContaining(['spaceY', 'elevation', 'saturation', 'hue']));
+  });
+
+  it('Start hoop has a button per hoop of the drum; the Start angle ring a dot per pixel (Tim, 2026-10-05: "only 4 options")', () => {
+    const kit = { drumIds: ['kick', 'snare'], hoops: (id: string) => (id === 'kick' ? 4 : 3), pixels: (id: string, h: number) => (id === 'kick' ? 196 : 108 + h) };
+    const at = (params: Record<string, string | number>) => {
+      const device = dotDevice(params);
+      const ps = withKitRanges(device, generatorParams(device), kit);
+      return { hoops: ps.find((p) => p.key === 'startHoop')!.max, ring: ps.find((p) => p.key === 'startAngle')!.ringCount, angleMax: ps.find((p) => p.key === 'startAngle')!.max };
+    };
+    expect(at({ startDrum: 'snare', startHoop: 2 })).toEqual({ hoops: 3, ring: 110, angleMax: 359 });
+    expect(at({})).toEqual({ hoops: 4, ring: 196, angleMax: 359 }); // the drum you hit: the most any drum has
+    expect(generatorParams(dotDevice()).find((p) => p.key === 'startHoop')!.widget).toEqual({ kind: 'hoop-pick' });
+  });
+
+  it('a card keeps its columns while they still fit, so a section doesn\'t jump as rows come and go', () => {
+    const before = sectionColumns(paramSections(generatorParams(dotDevice()))!);
+    const labels = before.map((c) => c.map((x) => x.label));
+    // Hue cycle adds a row to Colour; with the last arrangement passed, nothing moves.
+    const after = sectionColumns(paramSections(generatorParams(dotDevice({ shift: 'hue-cycle' })))!, labels);
+    expect(after.map((c) => c.map((x) => x.label))).toEqual(labels);
+  });
+
+  it('the set point\'s Drum lists the drum you hit, then the kit\'s drums', () => {
+    expect(drumParamOptions([{ id: 'kick', label: 'Kick' }])).toEqual([{ value: '@target', label: "Target's drums" }, { value: '@hit', label: 'Drum you hit' }, { value: 'kick', label: 'Kick' }]);
+    expect(generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')).toMatchObject({ kind: 'enum', optionsFrom: 'drums' });
+    // A drum id (or a drum order) is not in the fixed options, yet reads as itself.
+    const startDrum = generatorParams(dotDevice({ start: 'set-point' })).find((x) => x.key === 'startDrum')!;
+    expect(paramValue(startDrum, { startDrum: 'snare' })).toBe('snare');
+  });
+});
+
+describe('colour boxes (Tim, 2026-10-07: "isn\'t it more concise just picking the colour from the window that opens when you click the colour box?")', () => {
+  const p = (key: string): CardParam => ({ key, label: key, kind: 'number', default: 0 });
+
+  it('an effect\'s hue, saturation and brightness become one Colour box — no sliders', () => {
+    const out = withColours([p('hue'), p('speed'), p('saturation'), p('brightness')]);
+    expect(keys(out)).toEqual(['hue', 'speed']);
+    expect(out[0]).toMatchObject({ label: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } });
+    expect(withColours([p('speed')])).toEqual([p('speed')]);
+  });
+
+  it('a Dot: its Colour (or Palette), To colour and background colour are colour boxes', () => {
+    const dot = (params: Record<string, string>) =>
+      generatorParams(effectChain.parseEffect({ id: 'd', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'dot', style: 'dot', params } }).generator);
+    expect(dot({}).find((x) => x.key === 'hue')!.widget).toEqual({ kind: 'colour', keys: ['hue', 'saturation'] });
+    expect(dot({ colorMode: 'per-dot' }).find((x) => x.key === 'palette')!.widget).toEqual({ kind: 'palette' });
+    expect(dot({ colorMode: 'per-dot' }).find((x) => x.key === 'hue')).toBeUndefined(); // they share a place
+    expect(dot({ shift: 'to-colour' }).find((x) => x.key === 'hueTo')!.widget).toEqual({ kind: 'colour', keys: ['hueTo', 'satTo'] });
+    expect(dot({ background: 'other' }).find((x) => x.key === 'bgHue')!.widget).toEqual({ kind: 'colour', keys: ['bgHue', 'bgSat'] });
+    expect(keys(dot({}))).not.toContain('saturation');
+  });
+});
+
+describe('Controls on the Effect itself (Tim, 2026-10-07: "velocity for the opacity of an effect … the sustain on the brightness envelope")', () => {
+  const fx = () => effectChain.parseEffect({ id: 'e', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'wave', style: 'radial' } });
+
+  it('a Velocity or Random Control is offered the Effect\'s Opacity, Attack, Sustain and Decay', () => {
+    for (const kind of ['velocity', 'random'] as const) {
+      const effectTargets = mappingTargets(fx(), kind).filter((t) => t.device === 'effect');
+      expect(effectTargets.map((t) => t.label)).toEqual(['Effect · Opacity', 'Trigger · Attack', 'Trigger · Sustain', 'Trigger · Decay']);
+    }
+  });
+
+  it('an LFO isn\'t — it moves during the hit, and these are set when it fires', () => {
+    expect(mappingTargets(fx(), 'lfo').some((t) => t.device === 'effect')).toBe(false);
+  });
+
+  it('an existing mapping onto the Effect reads by its name', () => {
+    expect(describeMapping(fx(), { device: 'effect', param: 'sustain', amount: 1, invert: false })).toBe('Trigger · Sustain');
+  });
+});
+
+describe('Map to… by card (Tim, 2026-10-07: the list "goes higher than my browser can see")', () => {
+  it('a Velocity Control\'s targets come in one short list per card: Effect, Trigger, the Generator, each Modifier', () => {
+    const fx = effectChain.parseEffect({ id: 'e', cell: { row: 'kick', column: { kind: 'zone', slot: 0 } }, generator: { kind: 'wave', style: 'radial' }, modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
+    const groups = mappingGroups(mappingTargets(fx, 'velocity'));
+    expect(groups.map((g) => g.group)).toEqual(['Effect', 'Trigger', 'Wave', 'Strobe']);
+    expect(groups[1]!.targets.map((t) => t.name)).toEqual(['Attack', 'Sustain', 'Decay']);
   });
 });

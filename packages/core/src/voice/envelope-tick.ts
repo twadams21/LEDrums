@@ -22,6 +22,18 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
   for (const v of pool) {
     if (!v.active) continue;
     const age = timeMs - v.bornAtMs;
+    if (v.loopMs && v.phase !== 'release') {
+      // Loop: Attack → Sustain → Decay, then round again, until the voice is released.
+      const c = age % v.loopMs;
+      const up = v.attackMs <= 0 ? 1 : Math.min(1, c / v.attackMs);
+      const down = c - v.attackMs - v.sustainMs;
+      v.level = down <= 0
+        ? (v.attackEase ? ease(v.attackEase, up) : up)
+        : Math.max(0, 1 - down / Math.max(1, v.releaseMs));
+      v.level *= lifeEnvelopeGain(v.lifeEnvelope, c, v.lifeSpanMs ?? 0);
+      if (age >= v.attackMs) v.phase = 'sustain';
+      continue;
+    }
     if (v.phase === 'attack') {
       // An authored attack curve shapes the voice's own ramp too — otherwise picking a curve
       // would do nothing in the wait modes that have no per-unit envelope.
@@ -38,7 +50,7 @@ export function advanceEnvelopes(pool: readonly Voice[], timeMs: number, busById
       }
     } else {
       const bus = busById.get(v.busId);
-      const ramp = Math.max(60, v.mode === 'oneshot' ? v.releaseMs : bus?.crossfadeMs ?? v.releaseMs);
+      const ramp = v.capReleaseMs ?? Math.max(60, v.mode === 'oneshot' ? v.releaseMs : bus?.crossfadeMs ?? v.releaseMs);
       const since = timeMs - (v.releaseAtMs ?? timeMs);
       v.level = Math.max(0, v.releaseFromLevel * (1 - since / ramp));
     }

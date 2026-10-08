@@ -26,14 +26,15 @@ import type { CanvasScene, Lens } from './types';
 /** Scene-level params — the STANDARD paramSpec surface (D4), so the Inspector,
     envelopes, LFOs and CC drive a scene with ZERO new UI. */
 export const CANVAS_PARAM_SPEC: ParamSpec[] = [
-  { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-  { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 5, step: 0.01 },
-  { key: 'hue', label: 'Hue Rotate', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-  { key: 'canvasRotDeg', label: 'Canvas Rotate', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-  { key: 'canvasOffsetX', label: 'Canvas X', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
-  { key: 'canvasOffsetY', label: 'Canvas Y', type: 'number', default: 0, min: -1, max: 1, step: 0.01 },
-  { key: 'canvasScale', label: 'Canvas Scale', type: 'number', default: 1, min: 0.1, max: 8, step: 0.01 },
-  { key: 'samplerRotDeg', label: 'Sampler Rotate', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
+  { key: 'canvasRotDeg', label: 'Rotate', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Shape' },
+  { key: 'canvasOffsetX', label: 'X', type: 'number', default: 0, min: -1, max: 1, step: 0.01, section: 'Shape' },
+  { key: 'canvasOffsetY', label: 'Y', type: 'number', default: 0, min: -1, max: 1, step: 0.01, section: 'Shape' },
+  { key: 'canvasScale', label: 'Scale', type: 'number', default: 1, min: 0.1, max: 8, step: 0.01, section: 'Shape' },
+  { key: 'samplerRotDeg', label: 'Sampler rotate', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Shape' },
+  { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 5, step: 0.01, section: 'Movement' },
+  { key: 'hue', label: 'Colour shift', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Colour', info: 'Turns every colour of the scene round the colour wheel.' },
+  // Not on the card (the Effect's Opacity dims a scene); kept so a Control can still dim it live.
+  { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
 ];
 
 /** Memoized placement + per-pixel scratch. Pure function of (model, scene) — rebuilt

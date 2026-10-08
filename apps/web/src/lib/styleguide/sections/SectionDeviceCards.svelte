@@ -40,6 +40,15 @@
           { device: 'mod-strobe', param: 'rate', amount: 0.4, invert: true },
         ],
       },
+      // Velocity on the Effect itself: a harder hit brighter and longer (Tim, 2026-10-07).
+      {
+        uid: 'ctl-vel',
+        kind: 'velocity',
+        mappings: [
+          { device: 'effect', param: 'opacity', rangeMin: 0.2, rangeMax: 1 },
+          { device: 'effect', param: 'sustain', rangeMin: 200, rangeMax: 1500 },
+        ],
+      },
       { uid: 'ctl-cc', kind: 'cc', settings: { controller: 74, channel: 10 }, mappings: [] },
       { uid: 'ctl-env', kind: 'envelope', settings: { points: undefined }, mappings: [{ device: 'mod-strobe', param: 'rate' }] },
     ],
@@ -84,7 +93,7 @@
     <DemoCard
       title="Chain row · Generator · Modifiers · Controls"
       src={['lib/app/views/effects/strip/cards/GeneratorCard', 'lib/app/views/effects/strip/cards/ModifierCard', 'lib/app/views/effects/strip/cards/ControlCard', 'lib/app/views/effects/strip/cards/DeviceCard']}
-      note="Live against an in-memory section: edits apply and undo. The strobe is enveloped and modulated by the LFO (inverted) and the Envelope control. Trail is bypassed (power off), so its face dims but stays editable."
+      note="Live against an in-memory section: edits apply and undo. The strobe is enveloped and modulated by the LFO (inverted) and the Envelope control. Trail is bypassed (power off), so its face dims but stays editable. The Velocity control drives the Effect itself — Effect · Opacity and Effect · Sustain (a harder hit brighter and longer): a Velocity or Random control is offered the Effect's Opacity, Attack, Sustain and Decay, set when the Effect fires; an LFO or envelope isn't (they move during the hit). The Opacity in the header and the stages on the Trigger card show the driven badge."
       wide
     >
       <div class="chain" data-testid="device-cards-chain" aria-label="Device cards chain demo">
@@ -103,7 +112,7 @@
     <DemoCard
       title="Splice Generator · slots · Master chain modifier"
       src={['lib/app/views/effects/strip/cards/SlotsEditor', 'lib/app/views/effects/strip/cards/ModifierCard']}
-      note="Splice and Slice have no Styles: the card shows the slots (colour, a nested Generator, or both; a muted slot stays listed) and the settings its motion needs. Master-chain modifiers take effectId = MASTER_CELL and have no per-device file save."
+      note="Splice and Slice have no Styles: their bands (a colour box, a nested Generator, or both; a muted band stays listed, dimmed) sit under COLOUR, one line each, ordered by the grip. Master-chain modifiers take effectId = MASTER_CELL and have no per-device file save."
       wide
     >
       <div class="chain" data-testid="device-cards-splice" aria-label="Device cards splice demo">

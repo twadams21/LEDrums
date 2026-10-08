@@ -167,7 +167,10 @@
     min-width: var(--bits-select-anchor-width, 9rem);
     /* F3 item 9: 18rem made a list of eight scroll on a tall screen for no reason. A dropdown
        may use 80% of the viewport before it has to scroll anything. */
-    max-height: 80vh;
+    /* …but never more than the room on its side of the control (Tim, 2026-10-07: a long "Map
+       to…" list "goes higher than my browser can see"): bits-ui measures the space left between
+       the control and the window edge it opens towards. */
+    max-height: min(80vh, var(--bits-select-content-available-height, 80vh) - 8px);
     overflow-y: auto;
     padding: var(--space-1);
     background: var(--surface-2);

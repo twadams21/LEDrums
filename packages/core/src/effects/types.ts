@@ -5,6 +5,20 @@ import type { EffectTag } from './vocabulary';
 
 export type ParamType = 'number' | 'color' | 'enum' | 'bool';
 
+/**
+ * The Generator standard's sections, in order (docs/design/generator-standard.md). A plugin's
+ * first section is its FORM, named for the plugin (Dots, Splices…); the rest come from this list,
+ * each at most once, in this order — any it doesn't need left out. There is no Random section (a
+ * Random sits under what it varies) and no Velocity section (the Velocity Control's job).
+ */
+export const GENERATOR_SECTIONS = ['Start', 'Shape', 'Movement', 'Timing', 'Colour', 'Background'] as const;
+
+/** A condition on another param's value, for {@link ParamSpec.showIf}: it holds one of `is` (or
+    none of `not`) — or, with `any`, at least one of those conditions holds. */
+export type ShowIf =
+  | { key: string; is?: readonly (string | number | boolean)[]; not?: readonly (string | number | boolean)[] }
+  | { any: readonly ShowIf[] };
+
 /** Declares a single effect parameter so the UI can render a control generically. */
 export interface ParamSpec {
   key: string;
@@ -16,8 +30,53 @@ export interface ParamSpec {
   step?: number;
   /** Allowed values for `enum` params. */
   options?: string[];
-  /** Suffix shown in the UI (e.g. "ms", "Hz"). */
+  /** Suffix shown in the UI (e.g. "ms", "Hz"). `%` on a 0..1 param: shown as a whole percent. */
   unit?: string;
+  /** The card section this param sits under (shown as a capitalised header). Display only. */
+  section?: string;
+  /** An explanation, shown behind an ⓘ beside the label. Display only. */
+  info?: string;
+  /** Show the param only while another param holds one of `is` (or none of `not`) — every
+      condition, when a list (Dot's Travel angle only for Through a drum / kit / space). Display
+      only — a hidden param keeps its value and still renders. */
+  showIf?: ShowIf | readonly ShowIf[];
+  /** An `enum` whose choices are the kit's drums (value = drum id), filled in by the card after
+      its fixed `options` (Dot: `['@hit']`, the drum you hit). Display only. */
+  optionsFrom?: 'drums';
+  /** A richer control than a slider or a list, drawn by the card. Display only.
+      `hoop-pick`: a button per hoop (its range from `rangeFrom`). `hoop-angle`: a ring of the
+      hoop's pixels to click, in degrees from the front (0° at the bottom). `drum-order`: the kit's
+      drums as chips to drag, stored as comma-separated drum ids. `space-point`: the kit seen from
+      the top and the front to click a point in, editing the three 0..1 params named in `keys`. */
+  widget?:
+    | { kind: 'hoop-pick' }
+    | { kind: 'hoop-angle' }
+    | { kind: 'drum-order' }
+    | { kind: 'space-point'; keys: readonly [string, string, string] }
+    /** The way a dot flies through the kit's space — Heading and Elevation (`keys`) — dragged on
+        the kit seen from the top and the front, with the effect running live (Dot). */
+    | { kind: 'space-motion'; keys: readonly [string, string] }
+    /** A colour, picked from the colour window: the hue param it sits on, then its saturation
+        and brightness params when it has them (`keys`). No sliders — the standard's colour box. */
+    | { kind: 'colour'; keys: readonly string[] }
+    /** Several colours as a row of colour boxes, stored as comma-separated `#rrggbb` (Dot's
+        Palette — like Splice's bands). */
+    | { kind: 'palette' };
+  /** Params that are alternatives of each other — only one ever applies — share one place on the
+      card: the one that applies shows there, the space kept the size of the largest, so changing
+      a mode never moves the card (the Generator standard, Rule 5). Display only. */
+  slot?: string;
+  /** A setting that belongs to the one above it (a Random under what it varies), drawn as its
+      sub-row. Display only. */
+  sub?: boolean;
+  /** The screen-reader name when the label alone is ambiguous (three "Random" rows). */
+  aria?: string;
+  /** Edited by another param's widget, so the card shows no row of its own. Display only. */
+  partOf?: string;
+  /** A range the card reads from the kit (Dot: `start-hoops` — the start drum's hoop count;
+      `start-pixels` — its start hoop's pixel count, the dots on the Start angle ring). Display
+      only; the effect clamps anyway. */
+  rangeFrom?: 'start-hoops' | 'start-pixels';
 }
 
 export type EffectCategory = 'base' | 'trigger' | 'wash' | 'meter' | 'utility' | 'texture' | 'particle';
@@ -82,6 +141,19 @@ export interface EffectGenerator<State = unknown> {
    * never has to cross the wire.
    */
   voiceLife?: { key: string; unit: 'ms' | 'beats'; factor?: number };
+  /**
+   * A cap across hits: how many EARLIER voices of the same Effect may `keep` living when a new
+   * one fires, or `undefined` for no cap. The engine cuts the oldest beyond it at fire — or
+   * fades them over `fadeMs` (Dot's Max alive). Read from the fire's params, so a modulated value
+   * applies from the next hit.
+   */
+  liveVoices?(params: ResolvedParams): { keep: number; fadeMs?: number } | undefined;
+  /**
+   * How long this effect's content lasts from the hit (ms), or `null` when it never ends on its
+   * own — read when an Effect's Sustain is "until it ends" (amp length `auto`; Dot: until the
+   * last dot finishes). `params` arrive tempo-resolved.
+   */
+  contentSpanMs?(params: ResolvedParams): number | null;
   /** Build per-clip mutable state (accumulation buffers, RNG cursor, held color).
       `seed` (item C) is the host voice's per-trigger seed — RNG-backed effects seed their
       stream from it so each fire looks different yet replays exactly; absent (older callers,

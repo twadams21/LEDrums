@@ -4,7 +4,8 @@
    DOM: which params a card shows (and which a mode hides), how a value reads, which params a
    control is driving (the "modulated" badge), the list a mapping can target, and the Envelope
    control's shape presets. No runes, no DOM. */
-import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec } from '@ledrums/core';
+import { effectChain, tryGetEffect, tryGetModifier, voice, type ParamSpec, type ShowIf } from '@ledrums/core';
+import { dotLeavesTarget } from '../../../../../trigger-lab/effects-doc';
 
 type Effect = effectChain.Effect;
 type GeneratorDevice = effectChain.GeneratorDevice;
@@ -30,6 +31,25 @@ export interface CardParam {
   info?: string;
   /** `false`: this ms / Hz param has its own tempo control, so no ms ⇄ beats switch. */
   tempo?: false;
+  /** The section it sits under, shown as a capitalised header (core `ParamSpec.section`). */
+  section?: string;
+  /** An enum whose choices are the kit's drums, filled in by the card (core `optionsFrom`). */
+  optionsFrom?: 'drums';
+  /** A richer control the card draws (core `widget`): a hoop's pixel ring, drum-order chips, a
+      point in the kit's space. */
+  widget?: ParamSpec['widget'];
+  /** The start hoop's pixel count, for a Start angle ring's dots (core `rangeFrom: start-pixels`). */
+  ringCount?: number;
+  /** Why it is dimmed: it doesn't apply in the current mode ("Only when Through is Space"). The
+      card shows it in place, greyed — never hides it (the Generator standard, Rule 5). */
+  inactive?: string;
+  /** A shared place's height in rows (core `slot`), so the card keeps its shape whichever of its
+      alternatives shows. */
+  slotLines?: number;
+  /** A sub-row of the setting above (a Random under what it varies). */
+  sub?: boolean;
+  /** The screen-reader name, when the label alone is ambiguous. */
+  aria?: string;
 }
 
 export function toCardParam(spec: ParamSpec): CardParam {
@@ -43,14 +63,115 @@ export function toCardParam(spec: ParamSpec): CardParam {
     unit: spec.unit,
     options: spec.options,
     default: spec.default,
+    // A 0..1 amount whose core unit is `%` reads as a whole percent (0.15 → 15).
+    ...(spec.unit === '%' && spec.max !== undefined && spec.max <= 1 ? { percent: true } : {}),
+    ...(spec.info ? { info: spec.info } : {}),
+    ...(spec.section ? { section: spec.section } : {}),
+    ...(spec.optionsFrom ? { optionsFrom: spec.optionsFrom } : {}),
+    ...(spec.widget ? { widget: spec.widget } : {}),
+    ...(spec.sub ? { sub: true } : {}),
+    ...(spec.aria ? { aria: spec.aria } : {}),
   };
+}
+
+/**
+ * Every effect picks its colour the same way: a colour box, no sliders (Tim, 2026-10-07: "isn't it
+ * more concise just picking the colour from the window that opens when you click the colour box?").
+ * A `hue` param that isn't already a colour box becomes the effect's Colour, taking its
+ * `saturation` / `brightness` with it — those leave the card (a Control can still drive them).
+ */
+export function withColours(params: CardParam[]): CardParam[] {
+  // A plugin laid out by the standard declares its colour boxes in core (a scene's `hue` is a
+  // Colour shift, not a colour); this generic merge is for one that doesn't.
+  if (params.some((p) => p.section)) return params;
+  const hue = params.find((p) => p.key === 'hue' && p.kind === 'number' && !p.widget);
+  if (!hue) return params;
+  const keys = ['hue', ...['saturation', 'brightness'].filter((k) => params.some((p) => p.key === k))];
+  return params
+    .filter((p) => p === hue || !keys.includes(p.key))
+    .map((p) => (p === hue ? { ...p, label: 'Colour', widget: { kind: 'colour' as const, keys } } : p));
+}
+
+/** When a dimmed setting applies, in words: "Only when Through is Space". */
+function whenText(spec: ParamSpec, specs: readonly ParamSpec[]): string {
+  const conditions = spec.showIf ? (Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf]) : [];
+  const say = (c: ShowIf): string => {
+    if ('any' in c) return c.any.map(say).join(' or ');
+    const of = specs.find((s) => s.key === c.key);
+    const name = of?.label ?? c.key;
+    const words = (vs: readonly (string | number | boolean)[]) => vs.map((v) => (typeof v === 'string' ? enumLabel(v) : String(v))).join(' or ');
+    if (c.is) return `${name} is ${words(c.is)}`;
+    if (c.not) return `${name} isn't ${words(c.not)}`;
+    return name;
+  };
+  return `Only when ${conditions.map(say).join(' and ')}`;
+}
+
+/** The kit, as the card reads it to size a param's range (core `rangeFrom`). */
+export interface KitRanges {
+  drumIds: readonly string[];
+  hoops(drumId: string): number;
+  pixels(drumId: string, hoop: number): number;
+}
+
+/**
+ * Params sized to the kit (Tim, 2026-10-05: "the start hoop param should only have 4 options, as
+ * there are only 4 hoops"): `start-hoops` tops out at the start drum's hoop count; `start-pixels`
+ * gives a Start angle ring its dots — the start hoop's pixel count. With the drum you hit (no drum chosen) — the most any drum has.
+ * A host that can't say leaves the spec's range.
+ */
+export function withKitRanges(
+  device: GeneratorDevice,
+  params: readonly CardParam[],
+  kit: KitRanges,
+): CardParam[] {
+  const specs = effectChain.generatorParamSpec(device.kind, device.style);
+  const val = (key: string) => device.params[key] ?? specs.find((s) => s.key === key)?.default;
+  const chosen = String(val('startDrum') ?? '');
+  const drums = kit.drumIds.includes(chosen) ? [chosen] : [...kit.drumIds];
+  const hoop = Math.max(1, Math.round(Number(val('startHoop') ?? 1)));
+  return params.map((p) => {
+    const rangeFrom = specs.find((s) => s.key === p.key)?.rangeFrom;
+    if (!rangeFrom) return p;
+    const max = Math.max(0, ...drums.map((d) => (rangeFrom === 'start-hoops' ? kit.hoops(d) : kit.pixels(d, Math.min(hoop, Math.max(1, kit.hoops(d)))))));
+    if (max <= 0) return p;
+    return rangeFrom === 'start-hoops' ? { ...p, max: Math.max(p.min ?? 1, max) } : { ...p, ringCount: max };
+  });
+}
+
+/** Is this param shown for these values — every `showIf` condition met (its param holding one of
+    `is`, none of `not`)? (Tim, 2026-10-05: a setting that does nothing in the current mode reads
+    as broken.) */
+function shown(spec: ParamSpec, specs: readonly ParamSpec[], values: Readonly<Record<string, ParamValue>>): boolean {
+  if (!spec.showIf) return true;
+  const holds = (c: ShowIf): boolean => {
+    if ('any' in c) return c.any.some(holds);
+    const v = values[c.key] ?? specs.find((s) => s.key === c.key)?.default;
+    if (v === undefined) return false;
+    if (c.is && !c.is.includes(v)) return false;
+    return !(c.not && c.not.includes(v));
+  };
+  return (Array.isArray(spec.showIf) ? spec.showIf : [spec.showIf]).every(holds);
+}
+
+/** The "Drum" choices for an `optionsFrom: 'drums'` param: the Target's drums, the drum you hit,
+    then the kit's drums by name. */
+export function drumParamOptions(drums: readonly { id: string; label: string }[]): { value: string; label: string }[] {
+  return [
+    { value: '@target', label: "Target's drums" },
+    { value: '@hit', label: 'Drum you hit' },
+    ...drums.map((d) => ({ value: d.id, label: d.label })),
+  ];
 }
 
 /** The device's own value for `p`, else the spec default (an unwritten param has no entry). */
 export function paramValue(p: CardParam, params: Readonly<Record<string, ParamValue>> | undefined): ParamValue {
   const v = params?.[p.key];
   if (v === undefined) return p.default;
-  if (p.kind === 'enum' && (typeof v !== 'string' || !(p.options ?? []).includes(v))) return p.default;
+  // An enum outside its options reads as its default — except one whose choices come from the kit
+  // (a drum id) or a widget (a drum order, a palette), which its fixed options can't list.
+  const open = !!p.optionsFrom || p.widget?.kind === 'drum-order' || p.widget?.kind === 'palette';
+  if (p.kind === 'enum' && (typeof v !== 'string' || (!open && !(p.options ?? []).includes(v)))) return p.default;
   return v;
 }
 
@@ -92,6 +213,78 @@ export function paramColumns(count: number): { columns: number; rows: number } {
 
 /** Does a card with this many param rows go landscape (more than one column)? */
 export const isLandscape = (count: number): boolean => paramColumns(count).columns > 1;
+
+/** A run of params under one capitalised header (Tim, 2026-10-04: "the sections are not very
+    clearly visible. Can you make some headers in capitals?"). */
+export interface ParamSection {
+  label: string;
+  params: CardParam[];
+}
+
+/** The params in their sections, in order — or null when none of them names a section. A param
+    without one joins the section before it (or an unnamed first one). */
+export function paramSections(params: readonly CardParam[]): ParamSection[] | null {
+  if (!params.some((p) => p.section)) return null;
+  const out: ParamSection[] = [];
+  for (const p of params) {
+    const last = out[out.length - 1];
+    if (last && (!p.section || p.section === last.label)) last.params.push(p);
+    else out.push({ label: p.section ?? '', params: [p] });
+  }
+  return out;
+}
+
+/** How many row-heights a param takes: a widget is taller than a row (a hoop's ring ~3 more, a
+    point picker's two views ~4, drum chips ~1). */
+function rowLines(p: CardParam): number {
+  switch (p.widget?.kind) {
+    case 'hoop-angle': return 4;
+    case 'space-point': return 5;
+    case 'space-motion': return 6;
+    case 'palette': return 2;
+    case 'drum-order': return 2;
+    default: return 1;
+  }
+}
+
+/**
+ * Sections packed into columns, left to right: a section joins the column above it while the
+ * column stays within {@link PARAM_ROWS_MAX} + 2 lines (a header counts as one — it is shorter
+ * than a row), else starts the next. Short sections share a column, so the card stays compact; a
+ * section longer than that has a column to itself.
+ */
+export function sectionColumns(sections: readonly ParamSection[], previous?: readonly (readonly string[])[] | null): ParamSection[][] {
+  const max = PARAM_ROWS_MAX + 2;
+  const size = (s: ParamSection) => s.params.reduce((n, p) => n + (p.slotLines ?? rowLines(p)), 0) + 1;
+  // Keep the last arrangement while it still fits (a little taller is fine), so a row appearing or
+  // disappearing doesn't send a section to another column (Tim, 2026-10-05: "Colour was in one
+  // spot, then suddenly in another when I changed the hue cycle").
+  if (previous) {
+    const byLabel = new Map(sections.map((s) => [s.label, s]));
+    const same = previous.flat().length === sections.length && previous.flat().every((l) => byLabel.has(l));
+    const kept = same ? previous.map((col) => col.map((l) => byLabel.get(l)!)) : null;
+    if (kept && kept.every((col) => col.reduce((n, s) => n + size(s), 0) <= max + 4)) return kept;
+  }
+  const columns: ParamSection[][] = [];
+  let lines = Infinity;
+  for (const s of sections) {
+    const sizeOf = size(s);
+    if (lines + sizeOf > max) {
+      columns.push([s]);
+      lines = sizeOf;
+    } else {
+      columns[columns.length - 1]!.push(s);
+      lines += sizeOf;
+    }
+  }
+  return columns;
+}
+
+/** Does this param list go landscape — by its sections' columns when it has sections? */
+export function paramsLandscape(params: readonly CardParam[]): boolean {
+  const sections = paramSections(params);
+  return sections ? sectionColumns(sections).length > 1 : isLandscape(params.length);
+}
 
 export const pct = (v: number): string => `${Math.round(v * 100)}%`;
 
@@ -157,17 +350,37 @@ function spliceParamHidden(key: string, params: Readonly<Record<string, ParamVal
 /**
  * The params the Generator card shows for this device, in declaration order. Splice / Slice
  * read their own list (mode-irrelevant fields hidden); Scene drops its picker param (the card
- * shows a scene Select for it); everything else is the chosen Style's params.
+ * shows a scene Select for it); everything else is the chosen Style's params, less any whose
+ * `showIf` the current values don't meet.
  */
 export function generatorParams(device: GeneratorDevice): CardParam[] {
   if (isSlotted(device.kind)) {
     const all = effectChain.spliceGeneratorParamSpec(device.kind).map(toCardParam);
     return all.filter((p) => !spliceParamHidden(p.key, device.params, all));
   }
-  return effectChain
-    .generatorParamSpec(device.kind, device.style)
-    .filter((s) => s.key !== SCENE_PARAM || device.kind !== 'scene')
-    .map(toCardParam);
+  const specs = effectChain.generatorParamSpec(device.kind, device.style);
+  // A param another param's widget edits has no row of its own (Dot's Start depth / height).
+  const rows = specs.filter((s) => (s.key !== SCENE_PARAM || device.kind !== 'scene') && !s.partOf);
+  const out: CardParam[] = [];
+  const placed = new Set<string>();
+  for (const s of rows) {
+    if (s.slot) {
+      // Alternatives share one place: the one that applies, else the first, dimmed — kept the
+      // height of the tallest, so the card keeps its shape whichever shows.
+      if (placed.has(s.slot)) continue;
+      placed.add(s.slot);
+      const members = rows.filter((m) => m.slot === s.slot);
+      const on = members.find((m) => shown(m, specs, device.params));
+      const pick = on ?? members[0]!;
+      const slotLines = Math.max(...members.map((m) => rowLines(toCardParam(m))));
+      out.push({ ...toCardParam(pick), slotLines, ...(on ? {} : { inactive: whenText(pick, specs) }) });
+      continue;
+    }
+    // A setting that doesn't apply stays in its place, dimmed (Tim, 2026-10-07: "there needs to be
+    // a certainty of where on the card they will appear each time").
+    out.push(shown(s, specs, device.params) ? toCardParam(s) : { ...toCardParam(s), inactive: whenText(s, specs) });
+  }
+  return withColours(out);
 }
 
 /** What the live thumbnail hosts: the resolved effect id + full params, or null (unknown Style,
@@ -187,7 +400,7 @@ export const SLOT_NO_GENERATOR = 'none';
 /** Kinds a slot may nest: any Generator but Splice / Slice (a nested splice renders blank). */
 export function slotGeneratorOptions(): { value: string; label: string }[] {
   return [
-    { value: SLOT_NO_GENERATOR, label: 'Colour only' },
+    { value: SLOT_NO_GENERATOR, label: 'None' },
     ...generatorKinds()
       .filter((k) => !isSlotted(k.kind))
       .map((k) => ({ value: k.kind, label: k.label })),
@@ -305,6 +518,11 @@ export interface MapTarget {
   param: string;
   /** "Wave · Speed", "Strobe 2 · Rate". */
   label: string;
+  /** Which card it is on — "Effect", "Trigger", the Generator, each Modifier — so a Control offers
+      one short list per card, not one list taller than the window (Tim, 2026-10-07). */
+  group: string;
+  /** Its name within that card. */
+  name: string;
   min: number;
   max: number;
 }
@@ -335,19 +553,47 @@ function modifierLabels(effect: Effect): Map<string, string> {
  * then each Modifier's. Only numbers modulate (the resolver drops any other mapping), so enum,
  * bool and colour params are not offered.
  */
-export function mappingTargets(effect: Effect): MapTarget[] {
+export function mappingTargets(effect: Effect, kind?: ControlKind): MapTarget[] {
   const out: MapTarget[] = [];
+  // The Effect itself — Opacity and its brightness envelope — set when it fires, so offered to a
+  // Control whose value is fixed at the hit: Velocity, Random (Tim, 2026-10-07: "velocity for the
+  // opacity of an effect … the sustain on the brightness envelope").
+  if (!kind || effectChain.FIRE_TIME_CONTROLS.includes(kind)) {
+    for (const t of effectChain.EFFECT_TARGETS) {
+      // Opacity is the Effect's own; Attack / Sustain / Decay are the Trigger card's envelope.
+      const group = t.key === 'opacity' ? 'Effect' : 'Trigger';
+      out.push({ device: effectChain.EFFECT_DEVICE, param: t.key, label: `${group} · ${t.label}`, group, name: t.label, min: t.min, max: t.max });
+    }
+  }
   const gen = generatorLabel(effect.generator.kind);
-  for (const p of generatorParams(effect.generator)) {
+  // Every number setting the Generator has — dimmed, sharing a place or edited by a colour box —
+  // so a Control can drive any of them (an LFO on the hue behind a colour box).
+  const generatorTargets = isSlotted(effect.generator.kind)
+    ? generatorParams(effect.generator)
+    : effectChain.generatorParamSpec(effect.generator.kind, effect.generator.style).map(toCardParam);
+  for (const p of generatorTargets) {
     if (p.kind !== 'number') continue;
-    out.push({ device: 'generator', param: p.key, label: `${gen} · ${p.label}`, min: p.min ?? 0, max: p.max ?? 1 });
+    const name = p.aria ?? p.label;
+    out.push({ device: 'generator', param: p.key, label: `${gen} · ${name}`, group: gen, name, min: p.min ?? 0, max: p.max ?? 1 });
   }
   const labels = modifierLabels(effect);
   for (const m of effect.modifiers) {
     for (const p of modifierParams(m.modifierId)) {
       if (p.kind !== 'number') continue;
-      out.push({ device: m.uid, param: p.key, label: `${labels.get(m.uid)} · ${p.label}`, min: p.min ?? 0, max: p.max ?? 1 });
+      const group = labels.get(m.uid) ?? m.modifierId;
+      out.push({ device: m.uid, param: p.key, label: `${group} · ${p.label}`, group, name: p.label, min: p.min ?? 0, max: p.max ?? 1 });
     }
+  }
+  return out;
+}
+
+/** Targets by the card they're on, in card order — one "Map to…" list each. */
+export function mappingGroups(targets: readonly MapTarget[]): { group: string; targets: MapTarget[] }[] {
+  const out: { group: string; targets: MapTarget[] }[] = [];
+  for (const t of targets) {
+    const last = out[out.length - 1];
+    if (last?.group === t.group) last.targets.push(t);
+    else out.push({ group: t.group, targets: [t] });
   }
   return out;
 }
@@ -471,4 +717,20 @@ export function tempoTogglePatch(p: CardParam, values: Readonly<Record<string, P
   const at120 = effectChain.tempoValue(p.unit, beats, 120) ?? Number(p.default);
   const clamped = Math.min(p.max ?? Infinity, Math.max(p.min ?? -Infinity, at120));
   return { [key]: undefined, [p.key]: Number(clamped.toFixed(p.step !== undefined && p.step < 1 ? 2 : 0)) };
+}
+
+/**
+ * Why a Dot shows on fewer drums than it travels to, or null when it doesn't (Tim, 2026-10-07: "dot
+ * seems stuck on tom 1. i can't send the light to any other drum" — its Target was Tom 1 while it
+ * ran through the kit). A Target the author set is left alone, so the card says so instead.
+ */
+export function dotCropNotice(effect: Effect, drumLabel: (drumId: string) => string): string | null {
+  if (effect.generator.kind !== 'dot' || effect.target.kind === 'kit') return null;
+  const p = effect.generator.params;
+  // A named start drum the Target doesn't light is cropped too.
+  const pick = typeof p.startDrum === 'string' ? p.startDrum : '';
+  const startOff = !!pick && !pick.startsWith('@') && effect.target.kind === 'select' && !effect.target.drums.some((d) => d.drumId === pick);
+  if (!dotLeavesTarget(p) && !startOff) return null;
+  const where = effect.target.kind === 'select' ? effect.target.drums.map((d) => drumLabel(d.drumId)).join(', ') : 'the drum you hit';
+  return `Its Target only lights ${where}, so dots that leave it disappear.`;
 }

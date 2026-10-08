@@ -53,11 +53,11 @@ export const starfield: EffectGenerator<StarfieldState> = {
   category: 'particle',
   timebase: 'voice',
   paramSpec: [
-    { key: 'count', label: 'Stars', type: 'number', default: 48, min: 1, max: 512, step: 1 },
-    { key: 'rate', label: 'Twinkle Rate', type: 'number', default: 2.5, min: 0, max: 20, step: 0.1, unit: 'Hz' },
-    { key: 'hue', label: 'Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'count', label: 'Stars', type: 'number', default: 48, min: 1, max: 512, step: 1, section: 'Stars' },
+    { key: 'rate', label: 'Twinkle rate', type: 'number', default: 2.5, min: 0, max: 20, step: 0.1, unit: 'Hz', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 210, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.15, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   createState(model: PixelModel, seed?: number): StarfieldState {
     const count = 48;

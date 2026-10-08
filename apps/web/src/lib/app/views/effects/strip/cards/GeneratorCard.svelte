@@ -15,10 +15,9 @@
   import Download from '@lucide/svelte/icons/download';
   import DeviceCard from './DeviceCard.svelte';
   import ParamRows from './ParamRows.svelte';
-  import SlotsEditor from './SlotsEditor.svelte';
   import SpliceFace from './SpliceFace.svelte';
   import { GENERATOR_ICON } from './device-icons';
-  import { effectDisplayName } from '../strip-model';
+  import { drumHoopCount, effectDisplayName, hoopPixelCount, kitPixelModel, kitPlan } from '../strip-model';
   import type { MappableSpec } from '../../../../../trigger-lab/map-api';
   import {
     SCENE_PARAM,
@@ -26,7 +25,10 @@
     generatorKinds,
     generatorLabel,
     generatorParams,
-    isLandscape,
+    paramsLandscape,
+    drumParamOptions,
+    withKitRanges,
+    dotCropNotice,
     isSlotted,
     modulatedKeys,
     styleOptions,
@@ -46,11 +48,24 @@
   const label = $derived(generatorLabel(device.kind));
   const styles = $derived(styleOptions(device.kind));
   const style = $derived(currentStyle(device));
-  const params = $derived(generatorParams(device));
+  const params = $derived(
+    withKitRanges(device, generatorParams(device), {
+      drumIds: api.gridRows.filter((r) => r.id !== 'kit').map((r) => r.id),
+      hoops: (id) => drumHoopCount(api, id),
+      pixels: (id, hoop) => hoopPixelCount(api, id, hoop),
+    }),
+  );
   // Splice and Slice have their own sectioned face, always laid out left to right; others go landscape when long.
   const spliceFace = $derived(device.kind === 'splice' || device.kind === 'slice');
-  const landscape = $derived(spliceFace || isLandscape(params.length));
+  const landscape = $derived(spliceFace || paramsLandscape(params));
   const thumb = $derived(thumbSource(device));
+  // A param that picks a drum (Dot's set point) lists the kit's drums.
+  const drumRows = $derived(api.gridRows.filter((r) => r.id !== 'kit'));
+  const drumOptions = $derived(drumParamOptions(drumRows.map((r) => ({ id: r.id, label: r.label }))));
+  // A Start point in space is picked on the kit's plan; Start hoop / pixel top out at the kit's.
+  const plan = $derived(kitPlan(api));
+  const pixels = $derived(kitPixelModel(api));
+  const crop = $derived(dotCropNotice(effect, (id) => api.gridRows.find((r) => r.id === id)?.label ?? id));
   const modulated = $derived(modulatedKeys(effect, 'generator'));
   const disabled = $derived(!api.canEdit);
   const slotted = $derived(isSlotted(device.kind));
@@ -145,6 +160,14 @@
     </div>
   {/if}
 
+  {#if crop}
+    <!-- A Dot travelling further than its Target lets it show: say so, and offer the fix. -->
+    <div class="crop" role="status">
+      <span>{crop}</span>
+      <button type="button" class="fix" {disabled} onclick={() => api.setTarget(effect.id, { kind: 'kit' })}>Light the whole kit</button>
+    </div>
+  {/if}
+
   {#if styles.length > 1}
     <div class="field">
       <span class="flabel">Style</span>
@@ -176,9 +199,6 @@
     </div>
   {/if}
 
-  {#if slotted}
-    <SlotsEditor {api} {effect} />
-  {/if}
   </div>
 
   {#if spliceFace}
@@ -195,6 +215,9 @@
       onPatch={(patch) => api.setGeneratorParams(effect.id, patch)}
       onGestureStart={() => api.beginGesture()}
       onGestureEnd={() => api.endGesture()}
+      {drumOptions}
+      kitPlan={plan}
+      pixelModel={pixels}
     />
   {/if}
 </DeviceCard>
@@ -242,6 +265,40 @@
     box-shadow: 0 0 0 2px var(--accent-ring);
   }
 
+  .crop {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: var(--radius-1);
+    border: 1px solid color-mix(in oklch, var(--warn) 55%, transparent);
+    background: color-mix(in oklch, var(--warn) 8%, transparent);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    line-height: 1.35;
+  }
+  .crop .fix {
+    align-self: flex-start;
+    height: 22px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-1);
+    background: color-mix(in oklch, var(--warn) 22%, transparent);
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+  }
+  .crop .fix:hover {
+    background: color-mix(in oklch, var(--warn) 32%, transparent);
+  }
+  .crop .fix:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent-soft), inset 0 0 0 1px var(--accent);
+  }
+  .crop .fix:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
   .lead {
     display: flex;
     flex-direction: column;

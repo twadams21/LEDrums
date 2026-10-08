@@ -19,12 +19,12 @@ export const tempSweep: EffectGenerator = {
   category: 'wash',
   timebase: 'voice',
   paramSpec: [
-    { key: 'warmHue', label: 'Warm Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
-    { key: 'coolHue', label: 'Cool Hue', type: 'number', default: 210, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'kz', label: 'Spatial Freq', type: 'number', default: 0.004, min: 0.0005, max: 0.02, step: 0.0005 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 6, step: 0.05 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.8, min: 0, max: 1, step: 0.01 },
+    { key: 'kz', label: 'Spatial frequency', type: 'number', default: 0.004, min: 0.0005, max: 0.02, step: 0.0005, section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: 0, max: 6, step: 0.05, section: 'Movement' },
+    { key: 'warmHue', label: 'Warm', type: 'number', default: 30, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['warmHue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'warmHue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.8, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'warmHue' },
+    { key: 'coolHue', label: 'Cool', type: 'number', default: 210, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['coolHue', 'saturation', 'brightness'] }, info: 'Shares Warm\'s saturation and brightness.' },
   ],
   render(ctx, params, fb) {
     const warmHue = pnum(params, 'warmHue', 30);

@@ -20,7 +20,7 @@ function effect(id, source, params, band) {
     cell: { row: source.drumId, column: { kind: 'zone', slot: source.slot } },
     trigger: { kind: 'zone' },
     retrigger: 'restart',
-    amp: { attackMs: 0, decayMs: 0, sustainLevel: 1, length: 'loop', releaseMs: 0 },
+    amp: { attackMs: 0, decayMs: 0, sustainLevel: 1, length: 'loop', releaseMs: 0, loop: false },
     generator: { kind: GENERATOR.kind, style: GENERATOR.style, params },
     modifiers: [],
     controls: [{

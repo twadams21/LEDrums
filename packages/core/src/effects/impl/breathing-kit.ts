@@ -12,11 +12,11 @@ export const breathingKit: EffectGenerator = {
   name: 'Breathing Kit',
   category: 'base',
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 200, min: 0, max: 360, unit: '°' },
-    { key: 'rate', label: 'Rate', type: 'number', default: 0.1, min: 0.01, max: 2, step: 0.01, unit: 'Hz' },
-    { key: 'depth', label: 'Depth', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01 },
+    { key: 'depth', label: 'Depth', type: 'number', default: 0.5, min: 0, max: 1, step: 0.01, section: 'Breathe' },
+    { key: 'rate', label: 'Rate', type: 'number', default: 0.1, min: 0.01, max: 2, step: 0.01, unit: 'Hz', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 200, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 0.6, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const hue = pnum(params, 'hue', 200);

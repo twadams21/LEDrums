@@ -41,13 +41,13 @@ export const collisions: EffectGenerator<CollisionsState> = {
   category: 'wash',
   timebase: 'voice',
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 180, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'flashHue', label: 'Flash Hue', type: 'number', default: 50, min: 0, max: 360, unit: '°' },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'nodesPerHoop', label: 'Nodes / Hoop', type: 'number', default: 2, min: 2, max: 8, step: 1 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 90, min: 0, max: 720, unit: '°/s' },
-    { key: 'flashWidthDeg', label: 'Flash Width', type: 'number', default: 30, min: 4, max: 120, unit: '°' },
+    { key: 'nodesPerHoop', label: 'Nodes / hoop', type: 'number', default: 2, min: 2, max: 8, step: 1, section: 'Collisions' },
+    { key: 'flashWidthDeg', label: 'Flash width', type: 'number', default: 30, min: 4, max: 120, unit: '°', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 90, min: 0, max: 720, unit: '°/s', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 180, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'flashHue', label: 'Flash', type: 'number', default: 50, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['flashHue', 'saturation', 'brightness'] }, info: 'Shares Colour\'s saturation and brightness.' },
   ],
   createState(model: PixelModel): CollisionsState {
     const hoops: HoopNodes[] = [];

@@ -27,14 +27,14 @@ export const drumSonar: EffectGenerator<DrumSonarState> = {
     'Every hit pings the struck drum with expanding hoop-level sonar rings and a faint angular sweep, turning the shell into a radar display.',
   tags: ['wave', 'hit', 'per-drum', 'hoop-aware', 'emission'],
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 168, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'drum/s' },
-    { key: 'ringWidth', label: 'Ring Width', type: 'number', default: 0.12, min: 0.02, max: 0.5, step: 0.01 },
-    { key: 'sweepWidth', label: 'Sweep Width', type: 'number', default: 70, min: 10, max: 240, unit: '°' },
-    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1500, min: 150, max: 5000, step: 50, unit: 'ms' },
-    { key: 'echoes', label: 'Echoes', type: 'number', default: 3, min: 1, max: 5, step: 1 },
+    { key: 'echoes', label: 'Echoes', type: 'number', default: 3, min: 1, max: 5, step: 1, section: 'Sonar' },
+    { key: 'ringWidth', label: 'Ring width', type: 'number', default: 0.12, min: 0.02, max: 0.5, step: 0.01, section: 'Shape' },
+    { key: 'sweepWidth', label: 'Sweep width', type: 'number', default: 70, min: 10, max: 240, unit: '°', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1.2, min: 0.05, max: 6, step: 0.05, unit: 'drum/s', section: 'Movement' },
+    { key: 'lifeMs', label: 'Lifespan', type: 'number', default: 1500, min: 150, max: 5000, step: 50, unit: 'ms', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 168, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   createState(): DrumSonarState {
     return { em: createEmitterState<DrumSonarData>() };

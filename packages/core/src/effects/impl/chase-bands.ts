@@ -28,14 +28,14 @@ export const chaseBands: EffectGenerator<ChaseBandsState> = {
   // Its emission is a hard cutoff at `age >= lifeBeats`, so the host voice must live that long.
   voiceLife: { key: 'lifeBeats', unit: 'beats' },
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 30, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.25, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat' },
-    { key: 'bandWidth', label: 'Band Width', type: 'number', default: 0.25, min: 0.02, max: 1, step: 0.01, unit: 'hoop' },
-    { key: 'lifeBeats', label: 'Decay', type: 'number', default: 4, min: 0.5, max: 16, step: 0.5, unit: 'beats' },
-    { key: 'twist', label: 'Twist', type: 'number', default: 0, min: -90, max: 90, unit: '°/hoop' },
-    { key: 'hueDrift', label: 'Hue Drift', type: 'number', default: 0, min: 0, max: 360, unit: '°/rev' },
+    { key: 'bandWidth', label: 'Width', type: 'number', default: 0.25, min: 0.02, max: 1, step: 0.01, unit: 'hoop', section: 'Shape' },
+    { key: 'twist', label: 'Twist', type: 'number', default: 0, min: -90, max: 90, unit: '°/hoop', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 0.25, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat', section: 'Movement' },
+    { key: 'lifeBeats', label: 'Lifespan', type: 'number', default: 4, min: 0.5, max: 16, step: 0.5, unit: 'beats', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 30, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'hueDrift', label: 'Cycle', type: 'number', default: 0, min: 0, max: 360, unit: '°/rev', section: 'Colour' },
   ],
   createState(): ChaseBandsState {
     return { em: createEmitterState() };

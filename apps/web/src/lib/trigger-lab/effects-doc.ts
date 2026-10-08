@@ -143,6 +143,24 @@ function validStyle(kind: GeneratorKind, style: string | undefined): boolean {
 
 // ---- Effects ----------------------------------------------------------------------------
 
+/**
+ * A Slice answers how hard it's hit — the node was asked for for that — through a Velocity Control
+ * on the Effect's Opacity, the Generator standard's one place for velocity (it had its own Velocity
+ * setting until 2026-10-07). Added when an Effect becomes a Slice, unless something already drives
+ * its Opacity; remove the Control to ignore velocity.
+ */
+function withVelocityOnOpacity(controls: readonly ControlDevice[]): ControlDevice[] {
+  const driven = controls.some((c) => c.mappings.some((m) => m.device === effectChain.EFFECT_DEVICE && m.param === 'opacity'));
+  if (driven) return [...controls];
+  const uid = freshId('ctl', (id) => controls.some((c) => c.uid === id));
+  const velocity = effectChain.controlDeviceSchema.parse({
+    uid,
+    kind: 'velocity',
+    mappings: [{ device: effectChain.EFFECT_DEVICE, param: 'opacity', rangeMin: 0, rangeMax: 1 }],
+  });
+  return [...controls, velocity];
+}
+
 /** Append a new Effect to `cell` (on top of the cell's stack; last in composition order). */
 export function addEffect<S extends EffectsSection>(
   section: S,
@@ -160,6 +178,10 @@ export function addEffect<S extends EffectsSection>(
     // A Slice cuts through the whole kit by default (the graph Slice node's "On: Kit"), so its
     // slabs read across drums instead of only across the drum whose cell it sits in.
     ...(generator === 'slice' ? { target: { kind: 'kit' as const } } : {}),
+    ...(generator === 'slice' ? { controls: withVelocityOnOpacity([]) } : {}),
+    // A Dot's hit lasts until its last dot ends (Sustain "Until dots end"), so Lifespan alone
+    // decides how long dots live.
+    ...(effectChain.supportsAutoLength({ kind: generator, style: style ?? '', params: {} }) ? { amp: { length: 'auto' as const } } : {}),
   });
   if (!effect) return { section, id: null };
   return { section: withEffects(section, [...section.effects, effect]), id };
@@ -289,8 +311,28 @@ export function setGenerator<S extends EffectsSection>(section: S, effectId: str
     if (keepSlots) generator.slots = cloneJson(e.generator.slots);
     // Switching TO Slice from a drum's default Target widens it to the kit, as a new Slice starts.
     const widen = kind === 'slice' && e.generator.kind !== 'slice' && JSON.stringify(e.target) === JSON.stringify(effectChain.defaultTargetForRow(e.cell.row));
-    return widen ? { ...e, generator, target: { kind: 'kit' } } : { ...e, generator };
+    const toSlice = kind === 'slice' && e.generator.kind !== 'slice';
+    const next = {
+      ...e,
+      generator,
+      ...(widen ? { target: { kind: 'kit' as const } } : {}),
+      ...(toSlice ? { controls: withVelocityOnOpacity(e.controls) } : {}),
+    };
+    // Sustain "until it ends": a new Dot starts on it; a Generator that can't say goes back to a time.
+    const auto = effectChain.supportsAutoLength(generator);
+    if (auto && !effectChain.supportsAutoLength(e.generator)) return { ...next, amp: { ...e.amp, length: 'auto' } };
+    if (!auto && e.amp.length === 'auto') return { ...next, amp: { ...e.amp, length: { ms: 500 } } };
+    return next;
   });
+}
+
+/**
+ * Does a Dot send light off the drums it starts on — through the kit or space, or onto random
+ * drums? Then a Target narrower than the kit crops it, and the card says so (Tim, 2026-10-07: a Dot
+ * "stuck on tom 1"). Its Target is left as the author set it: it also says where the dots begin.
+ */
+export function dotLeavesTarget(p: Readonly<Record<string, ParamValue>>): boolean {
+  return p.through === 'kit' || p.through === 'space' || (typeof p.randDrum === 'number' && p.randDrum > 0);
 }
 
 export function setGeneratorParam<S extends EffectsSection>(section: S, effectId: string, key: string, value: ParamValue): S {

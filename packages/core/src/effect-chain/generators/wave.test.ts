@@ -132,7 +132,7 @@ describe('Wave generator', () => {
   });
 
   it('common params carry consistent labels across every Style', () => {
-    const common: Record<string, string> = { hue: 'Hue', saturation: 'Saturation', brightness: 'Brightness', speed: 'Speed' };
+    const common: Record<string, string> = { hue: 'Colour', saturation: 'Saturation', brightness: 'Brightness', speed: 'Speed' };
     for (const [style] of WAVE_STYLES) {
       for (const p of generatorParamSpec('wave', style)) {
         if (common[p.key]) expect(p.label, `${style}.${p.key}`).toBe(common[p.key]);

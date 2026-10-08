@@ -215,6 +215,19 @@ describe('effects-doc: Generator', () => {
 describe('effects-doc: a Slice cuts the whole kit by default (the graph Slice node’s On: Kit)', () => {
   const empty: EffectsSection = { effects: [], master: [] };
 
+  it('a Slice answers velocity through a Velocity Control on Opacity — new, or switched to (the Generator standard)', () => {
+    const opacityByVelocity = (e: effectChain.Effect) =>
+      e.controls.filter((c) => c.kind === 'velocity' && c.mappings.some((m) => m.device === 'effect' && m.param === 'opacity')).length;
+    expect(opacityByVelocity(doc.addEffect(empty, kickHead, 'slice').section.effects[0]!)).toBe(1);
+    expect(opacityByVelocity(doc.addEffect(empty, kickHead, 'wave').section.effects[0]!)).toBe(0);
+    const wave = doc.addEffect(empty, kickHead, 'wave');
+    const switched = doc.setGenerator(wave.section, wave.id!, 'slice');
+    expect(opacityByVelocity(switched.effects[0]!)).toBe(1);
+    // Back and forth doesn't stack a second one.
+    const again = doc.setGenerator(doc.setGenerator(switched, wave.id!, 'wave'), wave.id!, 'slice');
+    expect(opacityByVelocity(again.effects[0]!)).toBe(1);
+  });
+
   it('a new Slice targets the kit; a new Wave keeps its drum', () => {
     const slice = doc.addEffect(empty, kickHead, 'slice');
     expect(slice.section.effects[0]!.target).toEqual({ kind: 'kit' });
@@ -382,5 +395,31 @@ describe('effects-doc: cells', () => {
     const start = section(fx('a', kickHead), fx('x', snareHead));
     expect(ids(doc.clearCell(start, kickHead))).toEqual(['x']);
     expect(doc.clearCell(start, kickEdge)).toBe(start);
+  });
+});
+
+describe('effects-doc: a new Dot lasts until its dots end (Tim, 2026-10-05)', () => {
+  it('a new Dot starts on Sustain "Until dots end"; other Generators keep the default time', () => {
+    const dot = doc.addEffect(section(), kickHead, 'dot');
+    expect(doc.effectById(dot.section, dot.id!)!.amp.length).toBe('auto');
+    const wave = doc.addEffect(section(), kickHead, 'wave');
+    expect(doc.effectById(wave.section, wave.id!)!.amp.length).toEqual({ ms: 500 });
+  });
+
+  it('switching to Dot turns it on; switching away goes back to a time', () => {
+    const to = doc.setGenerator(section(fx('a', kickHead)), 'a', 'dot');
+    expect(doc.effectById(to, 'a')!.amp.length).toBe('auto');
+    const back = doc.setGenerator(to, 'a', 'wave');
+    expect(doc.effectById(back, 'a')!.amp.length).toEqual({ ms: 500 });
+  });
+});
+
+describe('effects-doc: a Dot\'s Target is left as the author set it (Tim, 2026-10-07)', () => {
+  it('changing Through or the start drum never changes the Target — it says where the dots begin', () => {
+    const start = doc.addEffect(section(), kickHead, 'dot');
+    const id = start.id!;
+    const before = doc.effectById(start.section, id)!.target;
+    const after = doc.setGeneratorParams(doc.setGeneratorParam(start.section, id, 'through', 'space'), id, { startDrum: 'snare' });
+    expect(doc.effectById(after, id)!.target).toEqual(before);
   });
 });

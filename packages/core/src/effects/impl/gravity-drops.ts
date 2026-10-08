@@ -29,14 +29,14 @@ export const gravityDrops: EffectGenerator<GravityDropsState> = {
     'Each hit releases a glowing bead that falls down the struck drum under gravity, leaving a short trail across the hoop stack.',
   tags: ['particle', 'hit', 'per-drum', 'hoop-aware', 'emission'],
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 214, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'fallSpeed', label: 'Fall Speed', type: 'number', default: 0.9, min: 0.05, max: 4, step: 0.05, unit: 'drum/s' },
-    { key: 'gravity', label: 'Gravity', type: 'number', default: 0.7, min: 0, max: 4, step: 0.05, unit: 'drum/s²' },
-    { key: 'trail', label: 'Trail', type: 'number', default: 0.22, min: 0.04, max: 0.75, step: 0.01 },
-    { key: 'spreadDeg', label: 'Spread', type: 'number', default: 42, min: 8, max: 180, unit: '°' },
-    { key: 'lifeMs', label: 'Decay', type: 'number', default: 1900, min: 200, max: 6000, step: 50, unit: 'ms' },
+    { key: 'spreadDeg', label: 'Spread', type: 'number', default: 42, min: 8, max: 180, unit: '°', section: 'Start' },
+    { key: 'trail', label: 'Trail', type: 'number', default: 0.22, min: 0.04, max: 0.75, step: 0.01, section: 'Shape' },
+    { key: 'fallSpeed', label: 'Speed', type: 'number', default: 0.9, min: 0.05, max: 4, step: 0.05, unit: 'drum/s', section: 'Movement' },
+    { key: 'gravity', label: 'Gravity', type: 'number', default: 0.7, min: 0, max: 4, step: 0.05, unit: 'drum/s²', section: 'Movement' },
+    { key: 'lifeMs', label: 'Lifespan', type: 'number', default: 1900, min: 200, max: 6000, step: 50, unit: 'ms', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 214, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   createState(): GravityDropsState {
     return { em: createEmitterState<GravityDropData>() };

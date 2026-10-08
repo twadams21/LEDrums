@@ -16,11 +16,11 @@ export const rainbowFlow: EffectGenerator = {
   name: 'Rainbow Flow',
   category: 'texture',
   paramSpec: [
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'hueOffset', label: 'Hue Offset', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-    { key: 'bands', label: 'Bands', type: 'number', default: 1, min: 0.25, max: 6, step: 0.25 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: -5, max: 5, step: 0.01 },
+    { key: 'bands', label: 'Bands', type: 'number', default: 1, min: 0.25, max: 6, step: 0.25, section: 'Rainbow' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1, min: -5, max: 5, step: 0.01, section: 'Movement' },
+    { key: 'hueOffset', label: 'Colour', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hueOffset', 'saturation', 'brightness'] }, info: 'Where the rainbow starts.' },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hueOffset' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hueOffset' },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);

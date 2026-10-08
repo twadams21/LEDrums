@@ -34,6 +34,7 @@
     envelopePolyline,
     envelopeShapeOf,
     mapTargetKey,
+    mappingGroups,
     mappingTargets,
     newMapping,
     parseMapTargetKey,
@@ -57,8 +58,12 @@
 
   const label = $derived(CONTROL_KIND_LABEL[control.kind]);
   const disabled = $derived(!api.canEdit);
-  const targets = $derived(mappingTargets(effect));
-  const mapOptions = $derived(targets.map((t) => ({ value: mapTargetKey(t.device, t.param), label: t.label })));
+  // What this Control can drive — the Effect's own Opacity / envelope only for Velocity and Random.
+  const targets = $derived(mappingTargets(effect, control.kind));
+  // One "Map to…" per card — Effect, Trigger, the Generator, each Modifier.
+  const mapGroups = $derived(
+    mappingGroups(targets).map((g) => ({ group: g.group, options: g.targets.map((t) => ({ value: mapTargetKey(t.device, t.param), label: t.name })) })),
+  );
 
   const begin = (): void => api.beginGesture();
   const end = (): void => api.endGesture();
@@ -295,21 +300,57 @@
       {/each}
     </ul>
     {#key pickerKey}
-      <Select
-        value=""
-        options={mapOptions}
-        segment={false}
-        disabled={disabled || mapOptions.length === 0}
-        placeholder={mapOptions.length ? 'Map to…' : 'Nothing to map'}
-        ariaLabel={`Map ${label} to a parameter`}
-        onChange={addMapping}
-        class="mappick"
-      />
+      <div class="mapto">
+        {#each mapGroups as g (g.group)}
+          <div class="mapgroup">
+            <span class="glabel">{g.group}</span>
+            <Select
+              value=""
+              options={g.options}
+              segment={false}
+              {disabled}
+              placeholder="Map to…"
+              ariaLabel={`Map ${label} to a ${g.group} setting`}
+              onChange={addMapping}
+              class="mappick"
+            />
+          </div>
+        {:else}
+          <span class="none">Nothing to map</span>
+        {/each}
+      </div>
     {/key}
   </section>
 </DeviceCard>
 
 <style>
+  /* One short list per card: the card's name, then its picker. */
+  .mapto {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mapgroup {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .glabel {
+    flex: 0 0 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+  }
+  .mapgroup :global(.mappick) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .none {
+    color: var(--text-faint);
+    font-size: var(--text-2xs);
+  }
   .settings {
     display: flex;
     flex-direction: column;

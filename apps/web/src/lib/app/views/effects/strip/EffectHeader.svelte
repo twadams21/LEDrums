@@ -26,6 +26,7 @@
   import { pushToast } from '../../../../ui/toast.svelte';
   import { mappable } from '../../../map-mode/mappable.svelte';
   import { GENERATOR_ICON } from './generator-icons';
+  import { modulatedKeys } from './cards/card-model';
   import { BLEND_OPTIONS, RETRIGGER_INFO, RETRIGGER_OPTIONS, effectDisplayName, isControlPress, percent } from './strip-model';
 
   type Props = {
@@ -50,6 +51,8 @@
   let renaming = $state(false);
   const name = $derived(effectDisplayName(effect));
   const disabled = $derived(!api.canEdit);
+  // A Velocity (or Random) Control driving the Effect's Opacity badges it.
+  const effectDriven = $derived(modulatedKeys(effect, 'effect'));
   const fireAt = $derived(api.effectFireAt(effect.id));
   const GenIcon = $derived(GENERATOR_ICON[effect.generator.kind]);
 
@@ -185,7 +188,7 @@
       <span class="ctl" {@attach mappable({ target: { kind: 'opacity', effectId: effect.id }, kind: 'continuous', label: `${name} · Opacity` })}>
         <span class="k">Opacity</span>
         <FaceParamControl kind="number" value={effect.opacity} display={percent(effect.opacity)} min={0} max={1} step={0.01}
-          ariaLabel="Opacity" {disabled} onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}
+          modulated={effectDriven.has('opacity')} ariaLabel="Opacity" {disabled} onGestureStart={() => api.beginGesture()} onGestureEnd={() => api.endGesture()}
           onChange={(v) => api.setEffectOpacity(effect.id, Number(v))} />
       </span>
       <span class="ctl">

@@ -2,7 +2,7 @@
    Trigger / Target cards, the Effect header and the reorder drags all route their decisions
    through here so the rules are unit-tested once and the components stay thin. */
 
-import { effectChain, voice } from '@ledrums/core';
+import { effectChain, voice, type PixelModel } from '@ledrums/core';
 import type { EffectsAuthoringApi, GridRow } from '../../../../trigger-lab/effects-api';
 
 type Effect = effectChain.Effect;
@@ -150,23 +150,32 @@ export function parseMidi(raw: string): number | undefined | null {
 
 // ---- Amp envelope -------------------------------------------------------------------------
 
-export type AmpLengthMode = 'ms' | 'beats' | 'hold' | 'loop';
+export type AmpLengthMode = 'ms' | 'beats' | 'hold' | 'loop' | 'auto';
 
 export const AMP_LENGTH_OPTIONS: Option<AmpLengthMode>[] = [
   { value: 'ms', label: 'Time' },
   { value: 'beats', label: 'Beats' },
   { value: 'hold', label: 'While held' },
-  { value: 'loop', label: 'Loop' },
+  // The light stays up until the Effect is stopped. (Repeating the hit is Loop, a switch of its
+  // own: Tim, 2026-10-07, "loop doesn't seem to be working" — this option never repeated.)
+  { value: 'loop', label: 'Until stopped' },
 ];
 
+/** The Sustain choices for this Generator: the four, plus "until it ends" first where the
+    Generator can say when its content ends (Dot: "Until dots end" — Tim, 2026-10-05). */
+export function ampLengthOptions(device: effectChain.GeneratorDevice): Option<AmpLengthMode>[] {
+  if (!effectChain.supportsAutoLength(device)) return AMP_LENGTH_OPTIONS;
+  return [{ value: 'auto', label: device.kind === 'dot' ? 'Until dots end' : 'Until it ends' }, ...AMP_LENGTH_OPTIONS];
+}
+
 export function ampLengthMode(length: AmpLength): AmpLengthMode {
-  if (length === 'hold' || length === 'loop') return length;
+  if (length === 'hold' || length === 'loop' || length === 'auto') return length;
   return 'ms' in length ? 'ms' : 'beats';
 }
 
 /** Switch the length mode, carrying a sensible value into a timed mode. */
 export function ampLengthFor(mode: AmpLengthMode, current: AmpLength): AmpLength {
-  if (mode === 'hold' || mode === 'loop') return mode;
+  if (mode === 'hold' || mode === 'loop' || mode === 'auto') return mode;
   if (mode === ampLengthMode(current)) return current;
   return mode === 'ms' ? { ms: 500 } : { beats: 1 };
 }
@@ -309,6 +318,56 @@ export interface StripKitInfo {
   drumHoopCount(drumId: string): number;
   /** The kit's bounds in mm, when the host knows its geometry (a Slice's Space box). */
   kitBounds?(): { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } };
+  /** How many pixels hoop `hoop` (1-based) of a drum has (Dot's Start pixel). */
+  hoopPixelCount?(drumId: string, hoop: number): number;
+  /** The kit laid out for a point picker: its bounds and each drum's extent (Dot's Start point). */
+  kitPlan?(): KitPlan;
+  /** The kit's pixel model, for a live preview that runs an effect on it (Dot through space). */
+  pixelModel?(): PixelModel;
+}
+
+type Vec3 = { x: number; y: number; z: number };
+/** The kit for a point picker: its bounds and every drum's hoops as rings of points, mm (z up). */
+export interface KitPlan {
+  bounds: { min: Vec3; max: Vec3 };
+  drums: { id: string; label: string; hoops: Vec3[][] }[];
+}
+
+/** A kit plan from a pixel model: each hoop's pixel positions, thinned to at most 48 a hoop — the
+    drums drawn as the visualiser draws them. */
+export function kitPlanOf(model: PixelModel): KitPlan {
+  const drums = model.drums.map((d) => {
+    const hoops: Vec3[][] = [];
+    let start = d.pixelStart;
+    for (const n of d.hoopPixelCounts) {
+      const every = Math.max(1, Math.ceil(n / 48));
+      const ring: Vec3[] = [];
+      for (let i = 0; i < n; i += every) ring.push({ ...model.pixels[start + i]!.world });
+      if (ring.length) hoops.push(ring);
+      start += n;
+    }
+    return { id: d.drumId, label: d.label, hoops };
+  });
+  return { bounds: { min: { ...model.bounds.min }, max: { ...model.bounds.max } }, drums: drums.filter((d) => d.hoops.length) };
+}
+
+/** A hoop's pixel count from a host that reports it, else 0. */
+export function hoopPixelCount(api: EffectsAuthoringApi, drumId: string, hoop: number): number {
+  const fn = (api as Partial<StripKitInfo>).hoopPixelCount;
+  const n = typeof fn === 'function' ? fn.call(api, drumId, hoop) : 0;
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** The kit's pixel model from a host that reports it, else null. */
+export function kitPixelModel(api: EffectsAuthoringApi): PixelModel | null {
+  const fn = (api as Partial<StripKitInfo>).pixelModel;
+  return typeof fn === 'function' ? fn.call(api) : null;
+}
+
+/** The kit plan from a host that reports it, else null. */
+export function kitPlan(api: EffectsAuthoringApi): KitPlan | null {
+  const fn = (api as Partial<StripKitInfo>).kitPlan;
+  return typeof fn === 'function' ? fn.call(api) : null;
 }
 
 /** The kit's bounds from a host that reports them, else null. */

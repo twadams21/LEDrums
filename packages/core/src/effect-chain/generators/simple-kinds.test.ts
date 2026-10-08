@@ -106,14 +106,14 @@ describe('each Style renders its underlying implementation at default params', (
 });
 
 describe('generatorParamSpec', () => {
-  it('shows the full underlying spec, with common hue params labelled "Hue"', () => {
+  it('shows the full underlying spec, with each Style\'s main hue as its Colour box', () => {
     const keys = (kind: string, style: string) => generatorParamSpec(kind, style).map((p) => p.key);
     expect(keys('meter', 'swing')).toEqual(getEffect('swing').paramSpec.map((p) => p.key));
     const label = (kind: string, style: string, key: string) =>
       generatorParamSpec(kind, style).find((p) => p.key === key)?.label;
-    expect(label('gradient', 'rainbow', 'hueOffset')).toBe('Hue');
-    expect(label('gradient', 'hue-rotate', 'baseHue')).toBe('Hue');
-    expect(label('lightning', 'bolt', 'hue')).toBe('Hue');
+    expect(label('gradient', 'rainbow', 'hueOffset')).toBe('Colour');
+    expect(label('gradient', 'hue-rotate', 'baseHue')).toBe('Colour');
+    expect(label('lightning', 'bolt', 'hue')).toBe('Colour');
   });
 
   it('gives the Scene card the standard canvas scene params', () => {

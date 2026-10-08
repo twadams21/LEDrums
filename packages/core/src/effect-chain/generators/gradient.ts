@@ -7,8 +7,8 @@ export const gradientGenerator: GeneratorDef = {
   description: 'A colour gradient that flows, rotates or sweeps across the kit.',
   icon: 'rainbow',
   styles: [
-    { id: 'rainbow', label: 'Rainbow', effectId: 'rainbow-flow', paramLabels: { hueOffset: 'Hue' } },
-    { id: 'hue-rotate', label: 'Hue Rotate', effectId: 'hue-rotate-kit', paramLabels: { baseHue: 'Hue' } },
+    { id: 'rainbow', label: 'Rainbow', effectId: 'rainbow-flow' },
+    { id: 'hue-rotate', label: 'Hue Rotate', effectId: 'hue-rotate-kit' },
     { id: 'temperature', label: 'Temperature', effectId: 'temp-sweep' },
   ],
 };

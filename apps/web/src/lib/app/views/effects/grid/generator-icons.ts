@@ -15,6 +15,7 @@ import Zap from '@lucide/svelte/icons/zap';
 import Image from '@lucide/svelte/icons/image';
 import Scissors from '@lucide/svelte/icons/scissors';
 import Layers from '@lucide/svelte/icons/layers';
+import CircleDot from '@lucide/svelte/icons/circle-dot';
 
 type GeneratorKind = effectChain.GeneratorKind;
 
@@ -30,6 +31,7 @@ export const GENERATOR_ICONS: Readonly<Record<GeneratorKind, Component>> = {
   scene: Image,
   splice: Scissors,
   slice: Layers,
+  dot: CircleDot,
 };
 
 export interface GeneratorChoice {

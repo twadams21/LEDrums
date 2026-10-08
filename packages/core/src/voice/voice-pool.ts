@@ -52,6 +52,7 @@ export function deactivateVoice(v: Voice): void {
   v.renderGenerator = undefined;
   v.genState = null;
   v.materialCycleMs = undefined;
+  v.loopMs = undefined;
   v.materialCycle = undefined;
   v.modState = undefined;
   v.mixInputs = undefined;
@@ -122,10 +123,31 @@ export class VoicePool {
   cutChainVoices(chainEffectId: string, timeMs: number): void {
     for (const v of this.pool) {
       if (!v.active || v.chainEffectId !== chainEffectId || v.bornAtMs >= timeMs) continue;
+      cutVoice(v, timeMs);
+    }
+  }
+
+  /** An Effect's cap on what stays alive across hits (Dot's Max alive: the oldest hit's dots go
+      first). Keep the newest `keep` voices of this authored Effect born before `timeMs`; the rest
+      are cut NOW, as Retrigger `cut` does — or, given `fadeMs`, fade out over it. A voice already
+      on its way out (cut or fading) no longer counts. */
+  capChainVoices(chainEffectId: string, keep: number, timeMs: number, fadeMs?: number): void {
+    const lit = this.pool.filter(
+      (v) => v.active && v.chainEffectId === chainEffectId && v.bornAtMs < timeMs && !isCut(v)
+        && !(fadeMs !== undefined && v.capReleaseMs !== undefined),
+    );
+    if (lit.length <= keep) return;
+    lit.sort((a, b) => b.bornAtMs - a.bornAtMs);
+    for (const v of lit.slice(Math.max(0, keep))) {
+      if (fadeMs === undefined) {
+        cutVoice(v, timeMs);
+        continue;
+      }
+      // Fade from where it is now: a voice already releasing restarts its ramp from its level.
+      v.capReleaseMs = Math.max(1, fadeMs);
       v.phase = 'release';
       v.releaseAtMs = timeMs;
-      v.releaseFromLevel = 0;
-      v.level = 0;
+      v.releaseFromLevel = v.level;
     }
   }
 
@@ -296,21 +318,31 @@ export class VoicePool {
     slot.lifeEnvelope = life.envelope;
     slot.lifeSpanMs = a.lifeSpanMs ?? life.spanMs;
     slot.releaseMs = a.releaseMs ?? effect.releaseMs;
+    // Loop: the envelope repeats, and the generator starts afresh each cycle (a material cycle).
+    slot.loopMs = a.loopMs;
+    if (a.loopMs) slot.materialCycleMs = a.loopMs;
     slot.phase = 'attack';
     slot.level = 0;
     slot.bornAtMs = deps.timeMs;
     slot.releaseAtMs = null;
     slot.releaseFromLevel = 1;
+    slot.capReleaseMs = undefined;
     slot.via = a.via;
     slot.deckGain = 1;
     slot.pad = deps.pad ?? '';
     slot.originNodeId = a.originNodeId;
     // Effect-path fields — carried verbatim.
     slot.chainEffectId = a.chainEffectId;
+    slot.hitIndex = a.hitIndex;
     slot.blend = a.blend;
     slot.opacity = a.opacity;
     slot.layerOrder = a.layerOrder;
     slot.targets = a.targets;
+    // The drums its Target lights, for a generator that starts there (Dot): a select's drums, a
+    // drum (or hoop) scope's drum, or — the whole kit — none named.
+    slot.targetDrums = a.targets?.length
+      ? [...new Set(a.targets.map((t) => t.split('#')[0]!))]
+      : a.scope !== 'kit' && a.targetId ? [a.targetId.split('#')[0]!] : undefined;
 
     if (a.latchKey) deps.latched.set(a.latchKey, slot.id);
     return slot;
@@ -369,3 +401,16 @@ function makeVoiceSlot(): Voice {
 }
 
 const EMPTY_SPECS: ParamSpec[] = [];
+
+/** Silence a voice NOW with no release ramp; the next frame reaps it. */
+function cutVoice(v: Voice, timeMs: number): void {
+  v.phase = 'release';
+  v.releaseAtMs = timeMs;
+  v.releaseFromLevel = 0;
+  v.level = 0;
+}
+
+/** Was this voice cut (released from silence)? It still occupies a slot until the reap. */
+function isCut(v: Voice): boolean {
+  return v.phase === 'release' && v.releaseFromLevel === 0;
+}

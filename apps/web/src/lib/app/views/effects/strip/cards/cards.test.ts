@@ -3,7 +3,8 @@
    card offers must land in the section as ONE undo step, a drag must fold into one, a viewer
    must not author, and the modulated badge must follow the mappings. */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { fireEvent, render } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { DEFAULT_KIT, effectChain, type KitConfig } from '@ledrums/core';
 import { MASTER_CELL } from '../../../../../trigger-lab/effects-api';
 import { createStandaloneEffectsApi } from '../../../../../trigger-lab/effects-controller.svelte';
@@ -43,6 +44,99 @@ describe('GeneratorCard', () => {
     expect(portrait.container.querySelector('.card')!.classList.contains('landscape')).toBe(false);
   });
 
+  it('sectioned params get capitalised headers, short sections sharing a column', () => {
+    const p = (key: string, section: string) => ({ key, label: key, kind: 'number' as const, min: 0, max: 1, default: 0, section });
+    const params = [p('a', 'Dots'), p('b', 'Dots'), p('c', 'Shape')];
+    const { container } = render(ParamRows, { props: { params, values: {}, onChange: () => {} } });
+    expect([...container.querySelectorAll('.sectitle')].map((h) => h.textContent)).toEqual(['Dots', 'Shape']);
+    expect(container.querySelectorAll('.scol')).toHaveLength(1);
+    expect(container.querySelector('section[aria-label="Shape"] .rows')!.children).toHaveLength(1);
+  });
+
+  it('the controller every Effects mount gets knows the kit — hoops, pixels, plan (Tim, 2026-10-05: Start hoop showed 8 buttons)', () => {
+    const { api } = demo();
+    const kit = api as unknown as { drumHoopCount(id: string): number; hoopPixelCount(id: string, h: number): number; kitPlan(): { drums: unknown[] } };
+    expect(kit.drumHoopCount('kick')).toBeGreaterThan(0);
+    expect(kit.hoopPixelCount('kick', 1)).toBeGreaterThan(0);
+    expect(kit.kitPlan().drums.length).toBe(api.gridRows.length - 1);
+  });
+
+  it('a Dot\'s Start angle is a ring of the hoop\'s pixels — no number — stepped with the arrows', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const ring = container.querySelector<SVGElement>('svg.ring[role="slider"]')!;
+    expect(ring).toBeTruthy();
+    expect(ring.getAttribute('aria-valuetext')).toBe('the front');
+    expect(container.querySelector('svg.ring text.num')).toBeNull();
+    await fireEvent.keyDown(ring, { key: 'ArrowRight' });
+    expect(Number(effect().generator.params.startAngle)).toBeGreaterThan(0);
+    // Start hoop: a button per hoop of the drum.
+    expect(container.querySelectorAll('.row.pick [role="radio"], .row.pick button').length).toBeGreaterThan(0);
+  });
+
+  it('Colour is a colour box that sets hue and saturation in one step', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    // The box opens the colour window; a pick there, closed again, is one undo step.
+    const box = container.querySelector<HTMLButtonElement>('.colorswatch .colorpicker-trigger')!;
+    expect(box).toBeTruthy();
+    const depth = api.undoDepth;
+    await fireEvent.click(box);
+    await tick();
+    const hex = screen.getByLabelText('Hex') as HTMLInputElement;
+    await fireEvent.input(hex, { target: { value: '#ff0000' } });
+    await fireEvent.keyDown(hex, { key: 'Enter' });
+    await fireEvent.click(box);
+    await tick();
+    expect(effect().generator.params).toMatchObject({ hue: 0, saturation: 1 });
+    expect(api.undoDepth).toBe(depth + 1);
+  });
+
+  it('a Palette: colour boxes in order, added to, taken from, filled round the wheel', async () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setGeneratorParams(effect().id, { colorMode: 'per-dot', palette: '#123456,#abcdef,#fedcba' });
+    const { container, getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
+    expect(container.querySelectorAll('.colour-palette .colorpicker-trigger')).toHaveLength(3);
+    await fireEvent.click(getByRole('button', { name: 'Fill round the colour wheel' }));
+    expect(effect().generator.params.palette).toBe('#ff0000,#00ff00,#0000ff');
+    await fireEvent.click(getByRole('button', { name: 'Add a colour' }));
+    expect(String(effect().generator.params.palette).split(',')).toHaveLength(4);
+  });
+
+  it('a Dot that travels further than its Target says so, and one click lights the whole kit', async () => {
+    // Tim, 2026-10-07: "dot seems stuck on tom 1. i can't send the light to any other drum".
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setTarget(effect().id, { kind: 'select', drums: [{ drumId: 'snare' }] });
+    api.setGeneratorParam(effect().id, 'through', 'kit');
+    const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    expect(container.querySelector('.crop')?.textContent).toMatch(/only lights snare/i);
+    await fireEvent.click(getByRole('button', { name: 'Light the whole kit' }));
+    expect(effect().target).toEqual({ kind: 'kit' });
+  });
+
+  it('a setting that doesn\'t apply is dimmed in place and can\'t be used', () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const swing = [...container.querySelectorAll('li.inactive')].find((li) => li.textContent?.includes('Swing'));
+    expect(swing).toBeTruthy();
+  });
+
+  it('through space, Flight is a live preview of the kit to aim the dot on', () => {
+    const { api, effect } = demo();
+    api.setGenerator(effect().id, 'dot');
+    api.setGeneratorParam(effect().id, 'through', 'space');
+    const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
+    const motion = container.querySelector('.motion[role="slider"]')!;
+    expect(motion).toBeTruthy();
+    expect(container.querySelectorAll('.motion canvas')).toHaveLength(2);
+    expect(motion.getAttribute('aria-valuetext')).toBe('Heading 0°, elevation 0°');
+  });
+
   it('swaps the Generator from the kind picker in one undo step, keeping the modifiers', async () => {
     const { api, effect } = demo({ modifiers: [{ uid: 'm1', modifierId: 'strobe' }] });
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
@@ -66,7 +160,8 @@ describe('GeneratorCard', () => {
 
   it('edits a Style param from its face control', async () => {
     const { api, effect } = demo();
-    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && s.min !== undefined && s.max !== undefined)!;
+    // Not one of the colour's params — those are the Colour box now.
+    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && s.min !== undefined && s.max !== undefined && !['hue', 'saturation', 'brightness'].includes(s.key))!;
     const { getByRole } = render(GeneratorCard, { props: { api, effect: effect() } });
     const slider = getByRole('slider', { name: `Wave ${spec.label}` });
     await fireEvent.keyDown(slider, { key: 'ArrowRight' });
@@ -76,7 +171,7 @@ describe('GeneratorCard', () => {
   });
 
   it('badges a param a control drives', () => {
-    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number')!;
+    const spec = effectChain.generatorParamSpec('wave', 'radial').find((s) => s.type === 'number' && !['hue', 'saturation', 'brightness'].includes(s.key))!;
     const { api, effect } = demo({ controls: [{ uid: 'c1', kind: 'lfo', mappings: [{ device: 'generator', param: spec.key }] }] });
     const { container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelectorAll('.modbadge').length).toBe(1);
@@ -92,7 +187,7 @@ describe('GeneratorCard', () => {
     const { api, effect } = demo({ generator: { kind: 'splice', slots: [{ color: '#ff0000' }, { color: '#0000ff' }] } });
     const { getByRole, container } = render(GeneratorCard, { props: { api, effect: effect() } });
     expect(container.querySelector('.preview')).toBeNull(); // a splice previews through its slots
-    expect(container.querySelectorAll('.slot')).toHaveLength(4); // Count 4: the two authored, cycling
+    expect(container.querySelectorAll('.slots .slot')).toHaveLength(4); // Count 4: the two authored, cycling
     await fireEvent.click(getByRole('button', { name: 'Add splice' }));
     expect(effect().generator.slots!.map((s) => s.color)).toEqual(['#ff0000', '#0000ff', '#ff0000', '#0000ff', '#0000ff']);
     expect(effect().generator.params.count).toBe(5);

@@ -12,11 +12,11 @@ export const lavaLamp: EffectGenerator = {
   name: 'Lava Lamp',
   category: 'texture',
   paramSpec: [
-    { key: 'blobs', label: 'Blobs', type: 'number', default: 3, min: 2, max: 4, step: 1 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.5, min: 0, max: 4, step: 0.01 },
-    { key: 'hue', label: 'Hue Base', type: 'number', default: 8, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'blobs', label: 'Blobs', type: 'number', default: 3, min: 2, max: 4, step: 1, section: 'Lava lamp' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 0.5, min: 0, max: 4, step: 0.01, section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 8, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const blobs = Math.max(2, Math.min(4, Math.round(pnum(params, 'blobs', 3))));

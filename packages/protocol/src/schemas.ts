@@ -347,6 +347,15 @@ const serializedModelSchema = z.object({
   }),
 });
 
+const showIfValues = z.array(z.union([z.string(), z.number(), z.boolean()])).readonly();
+type ShowIfWire = { key: string; is?: readonly (string | number | boolean)[]; not?: readonly (string | number | boolean)[] } | { any: readonly ShowIfWire[] };
+const showIfSchema: z.ZodType<ShowIfWire> = z.lazy(() =>
+  z.union([
+    z.object({ key: z.string(), is: showIfValues.optional(), not: showIfValues.optional() }),
+    z.object({ any: z.array(showIfSchema).readonly() }),
+  ]),
+);
+
 const paramSpecSchema = z.object({
   key: z.string(),
   label: z.string(),
@@ -357,6 +366,24 @@ const paramSpecSchema = z.object({
   step: z.number().optional(),
   options: z.array(z.string()).optional(),
   unit: z.string().optional(),
+  section: z.string().optional(),
+  info: z.string().optional(),
+  showIf: z.union([showIfSchema, z.array(showIfSchema).readonly()]).optional(),
+  optionsFrom: z.literal('drums').optional(),
+  widget: z.union([
+    z.object({ kind: z.literal('hoop-pick') }),
+    z.object({ kind: z.literal('hoop-angle') }),
+    z.object({ kind: z.literal('drum-order') }),
+    z.object({ kind: z.literal('space-point'), keys: z.tuple([z.string(), z.string(), z.string()]).readonly() }),
+    z.object({ kind: z.literal('space-motion'), keys: z.tuple([z.string(), z.string()]).readonly() }),
+    z.object({ kind: z.literal('colour'), keys: z.array(z.string()).readonly() }),
+    z.object({ kind: z.literal('palette') }),
+  ]).optional(),
+  slot: z.string().optional(),
+  sub: z.boolean().optional(),
+  aria: z.string().optional(),
+  partOf: z.string().optional(),
+  rangeFrom: z.enum(['start-hoops', 'start-pixels']).optional(),
 });
 
 const effectSpecSchema = z.object({

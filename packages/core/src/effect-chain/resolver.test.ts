@@ -17,7 +17,7 @@ describe('Effect schema', () => {
       cell: { row: 'kick', column: { kind: 'zone', slot: 0 } },
       trigger: { kind: 'zone' },
       retrigger: 'overlap',
-      amp: { attackMs: 10, decayMs: 0, sustainLevel: 1, length: { ms: 500 }, releaseMs: 300 },
+      amp: { attackMs: 10, decayMs: 0, sustainLevel: 1, length: { ms: 500 }, releaseMs: 300, loop: false },
       generator: { kind: 'solid', style: '', params: {} },
       modifiers: [], controls: [],
       target: { kind: 'select', drums: [{ drumId: 'kick' }] },

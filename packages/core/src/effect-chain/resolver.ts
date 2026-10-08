@@ -18,11 +18,13 @@ import { canvasEffectId } from '../canvas/ids';
 import type { CurveValue } from '../model/curve';
 import { defaultEnvelope } from '../voice/envelope';
 import type { PlayAction } from '../voice/play-action';
-import { quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type ModParamSpec, type ModSource } from '../voice/modulation';
+import { applyModulations, quantizeSteppedRandom, sampleRandomDistribution, type Mapping, type ModParamSpec, type ModSource } from '../voice/modulation';
 import type { ParamValues, PlayMode, Scope } from '../voice/types';
 import { resolveGenerator } from './generators';
 import { CHAIN_BUS_ID, chainEffectDefId } from './runtime';
-import { KIT_ROW, type ControlDevice, type Effect, type EffectCell, type EffectTarget } from './types';
+import { EFFECT_DEVICE, EFFECT_TARGETS, FIRE_TIME_CONTROLS, KIT_ROW, type AmpEnvelope, type ControlDevice, type Effect, type EffectCell, type EffectTarget, type GeneratorDevice } from './types';
+import { resolveTempoParams } from './tempo';
+import type { EffectGenerator } from '../effects/types';
 import { isContinuousTarget, type InputMapping } from './input-mappings';
 
 /** The authored slice of a section the resolver reads. */
@@ -157,6 +159,16 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   const params: ParamValues = {};
   for (const spec of hosted.paramSpec) params[spec.key] = spec.default as ParamValues[string];
   Object.assign(params, gen.params);
+  // A choice the plugin no longer offers (an older Dot's Edges "wrap") plays as its default — what
+  // the card shows — so the card and the lights never disagree. Kit-sourced and widget-held values
+  // (a drum id, a palette) aren't in the fixed options, so they pass.
+  for (const spec of hosted.paramSpec) {
+    const v = params[spec.key];
+    const open = spec.optionsFrom || spec.widget?.kind === 'palette' || spec.widget?.kind === 'drum-order';
+    if (spec.type === 'enum' && !open && spec.options?.length && typeof v === 'string' && !spec.options.includes(v)) {
+      params[spec.key] = spec.default as ParamValues[string];
+    }
+  }
 
   const modifiers: ResolvedModifier[] = effect.modifiers.map((m) => {
     const link: ResolvedModifier = { modifierId: m.modifierId, params: { ...m.params }, mix: m.mix };
@@ -176,9 +188,17 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
   });
 
   const generatorMappings: Mapping[] = [];
+  // Mappings onto the Effect itself — Opacity and the envelope — set once, at this fire.
+  const effectMappings: Mapping[] = [];
   for (const control of effect.controls) {
     const source = controlSource(control, ctx.rng);
     for (const mapping of control.mappings) {
+      if (mapping.device === EFFECT_DEVICE) {
+        if (!FIRE_TIME_CONTROLS.includes(control.kind)) continue;
+        const m = toMapping(mapping, source, EFFECT_TARGETS);
+        if (m) effectMappings.push(m);
+        continue;
+      }
       if (mapping.device === 'generator') {
         const m = toMapping(mapping, source, hosted.paramSpec);
         if (m) generatorMappings.push(m);
@@ -194,18 +214,26 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
 
   const amp = effect.amp;
   const msPerBeat = MS_PER_MINUTE / (ctx.bpm > 0 ? ctx.bpm : 120);
+  const length = resolveAmpLength(amp.length, hosted, params, ctx.bpm);
   // A stage in beats resolves at this fire's tempo; otherwise its milliseconds stand.
-  const attackMs = amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs;
-  const releaseMs = amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs;
-  const mode: PlayMode = effect.trigger.kind === 'always' || amp.length === 'loop'
+  const mode: PlayMode = effect.trigger.kind === 'always' || length === 'loop'
     ? 'loop'
-    : amp.length === 'hold' ? 'hold' : 'oneshot';
-  const gateMs = typeof amp.length === 'object'
-    ? 'ms' in amp.length ? amp.length.ms : amp.length.beats * msPerBeat
-    : 0;
+    : length === 'hold' ? 'hold' : 'oneshot';
+  // Then a Velocity (or Random) Control may move them for this hit.
+  const fire = atFire(effectMappings, {
+    opacity: effect.opacity,
+    attack: amp.attackBeats !== undefined ? amp.attackBeats * msPerBeat : amp.attackMs,
+    sustain: typeof length === 'object' ? ('ms' in length ? length.ms : length.beats * msPerBeat) : 0,
+    decay: amp.releaseBeats !== undefined ? amp.releaseBeats * msPerBeat : amp.releaseMs,
+  }, ctx);
+  const attackMs = fire.attack;
+  const releaseMs = fire.decay;
+  const gateMs = typeof length === 'object' ? fire.sustain : 0;
   const shape = ampShape(attackMs, amp.decayMs, amp.sustainLevel);
   const attackEase = amp.attackEase && amp.attackEase.fn !== 'linear' ? { ...amp.attackEase } : undefined;
   const sustainMs = mode === 'oneshot' ? Math.max(0, gateMs - attackMs) : 0;
+  // Loop repeats a timed envelope; a held one (or an Always Effect) already runs until released.
+  const loopMs = amp.loop && mode === 'oneshot' ? Math.max(20, attackMs + sustainMs + releaseMs) : undefined;
 
   const action: PlayAction = {
     kind: 'play',
@@ -223,7 +251,8 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
           spliceInputs: gen.spliceInputs ?? [],
         }
       : {}),
-    mode,
+    mode: loopMs ? 'loop' : mode,
+    ...(loopMs ? { loopMs } : {}),
     ...targetFields(effect, ctx.sourceDrumId),
     busId: CHAIN_BUS_ID,
     params,
@@ -235,7 +264,7 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     releaseMs,
     chainEffectId: effect.id,
     blend: effect.blend,
-    opacity: effect.opacity,
+    opacity: fire.opacity,
     layerOrder: ctx.layerOrder,
     via: `Effect: ${effect.name || effect.id}`,
     latchKey: null,
@@ -243,6 +272,49 @@ export function effectPlayAction(effect: Effect, ctx: EffectFireCtx): PlayAction
     lifeSpanMs: shape.spanMs,
   };
   return action;
+}
+
+/**
+ * Sustain "until it ends" (`auto`) as a concrete length: the hosted effect's content span at this
+ * fire's tempo, `loop` when its content never ends on its own, or the default time when the effect
+ * can't say. Every other length passes through.
+ */
+function resolveAmpLength(
+  length: AmpEnvelope['length'],
+  hosted: EffectGenerator,
+  params: ParamValues,
+  bpm: number,
+): Exclude<AmpEnvelope['length'], 'auto'> {
+  if (length !== 'auto') return length;
+  if (!hosted.contentSpanMs) return { ms: 500 };
+  const resolved: Record<string, number | string | boolean> = { ...params };
+  resolveTempoParams(resolved, hosted.paramSpec, bpm > 0 ? bpm : 120);
+  const span = hosted.contentSpanMs(resolved);
+  return span === null ? 'loop' : { ms: Math.max(0, span) };
+}
+
+/** Whether an Effect's Generator can play Sustain "until it ends" — its hosted effect says how
+    long its content lasts (Dot). */
+export function supportsAutoLength(device: GeneratorDevice): boolean {
+  const gen = resolveGenerator(device);
+  return !!gen && !gen.canvasScene && !!tryGetEffect(gen.effectId)?.contentSpanMs;
+}
+
+/**
+ * The Effect's own Opacity, Attack, Sustain and Decay for this fire, after the Controls that drive
+ * them (Velocity, Random) — the same rule as any mapping: from the setting towards its Min…Max by
+ * the control's value, × Amount, kept in range.
+ */
+function atFire(
+  mappings: readonly Mapping[],
+  base: { opacity: number; attack: number; sustain: number; decay: number },
+  ctx: EffectFireCtx,
+): { opacity: number; attack: number; sustain: number; decay: number } {
+  if (!mappings.length) return base;
+  const out: ParamValues = { ...base };
+  applyModulations({ ...base }, out, mappings, EFFECT_TARGETS, { phase: 0, timeMs: 0, bpm: ctx.bpm, velocity: ctx.velocity });
+  const n = (k: keyof typeof base) => (typeof out[k] === 'number' ? (out[k] as number) : base[k]);
+  return { opacity: n('opacity'), attack: n('attack'), sustain: n('sustain'), decay: n('decay') };
 }
 
 /** An Effect's Generator resolved to the hosted effect implementation it plays, or `null`. */

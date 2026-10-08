@@ -3,7 +3,8 @@
      "brightness envelope" as THE way a hit lights, in place of the ADSR): a live outline, then
      Attack · Curve · Sustain · Decay in the Splice inspector's words. Attack and Decay are each in ms
      or beats; Sustain is how long the light stays up from the hit — a time, a beat count, While
-     held (until the note is released), or Loop. A beat value reads as a division where it is one
+     held (until the note is released), or until stopped; Loop repeats the whole envelope with fresh
+     content each time. A beat value reads as a division where it is one
      (1/16) and can be typed as one.
      One envelope per Effect: a Splice / Slice part that pulses or fades in its turn runs this same
      envelope. The old ADSR's drop to a lower level shows only on an Effect that still uses one,
@@ -16,9 +17,10 @@
   import EasePicker from '../../../../ui/EasePicker.svelte';
   import Tooltip from '../../../../ui/Tooltip.svelte';
   import Info from '@lucide/svelte/icons/info';
+  import Switch from '../../../../ui/Switch.svelte';
   import ParamLine from './ParamLine.svelte';
   import {
-    AMP_LENGTH_OPTIONS,
+    ampLengthOptions,
     ampLengthFor,
     ampLengthMode,
     ampPath,
@@ -28,6 +30,7 @@
     stageUnitPatch,
     type AmpLengthMode,
   } from './strip-model';
+  import { modulatedKeys } from './cards/card-model';
 
   let { api, effect }: { api: EffectsAuthoringApi; effect: effectChain.Effect } = $props();
 
@@ -36,6 +39,8 @@
   const always = $derived(effect.trigger.kind === 'always');
   const path = $derived(ampPath(amp, 200, 24));
   const disabled = $derived(!api.canEdit);
+  // Which stages a Control drives (Velocity → Attack / Sustain / Decay): badged, like a driven param.
+  const driven = $derived(modulatedKeys(effect, 'effect'));
   // The old ADSR's drop: shown only where an Effect still has one (a new Effect never does).
   const legacyDrop = $derived(amp.decayMs > 0 || amp.sustainLevel < 1);
 
@@ -61,8 +66,14 @@
     api.setAmp(effect.id, { attackEase: spec.fn === 'linear' ? undefined : (spec as effectChain.AmpEnvelope['attackEase']) });
   }
 
+  // "Until dots end" joins the choices where the Generator can say when its content ends (Dot).
+  const lengthOptions = $derived(ampLengthOptions(effect.generator));
   const SUSTAIN_INFO =
-    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or looping. Then it decays.';
+    'How long the light stays up from the hit (the attack included): a time, a number of beats, while the note is held, or until the Effect is stopped — or, on a Dot, until its last dot ends (each dot\'s Lifespan decides). Then it decays.';
+  // Loop repeats a timed envelope; held or until-stopped have no end to repeat from (dimmed, Rule 5).
+  const loopable = $derived(mode === 'ms' || mode === 'beats' || mode === 'auto');
+  const LOOP_INFO =
+    'Repeats the hit — Attack, Sustain, Decay, then again, with fresh content each time (a Dot spawns new dots) — until the Effect is stopped.';
   const CURVE_INFO = 'A linear attack reads as brightening too fast — an ease-in curve swells more evenly.';
   const DROP_INFO =
     'From the old ADSR envelope: after the attack the light drops to this level over the Drop time. Set Drop to 100% to remove it.';
@@ -73,16 +84,17 @@
   {@const beats = stageBeats(stage)}
   {@const msKey = stage === 'attack' ? 'attackMs' : 'releaseMs'}
   {@const beatsKey = stage === 'attack' ? 'attackBeats' : 'releaseBeats'}
+  {@const isDriven = driven.has(stage === 'attack' ? 'attack' : 'decay')}
   <ParamLine {label}>
     <Select value={beats === undefined ? 'ms' : 'beats'} options={STAGE_UNITS} segment={false} {disabled}
       ariaLabel={`${label} unit`} onChange={(u) => setStageUnit(stage, u)} />
     {#if beats === undefined}
       <!-- The value alone, as Sustain's is: drag it, or click it and type the exact value. -->
-      <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={1}
+      <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={1} modulated={isDriven}
         ariaLabel={label} entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
         onChange={(v) => api.setAmp(effect.id, { [msKey]: Math.max(0, num(v)) })} />
     {:else}
-      <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+      <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625} modulated={isDriven}
         ariaLabel={`${label} beats`} entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
         onChange={(v) => api.setAmp(effect.id, { [beatsKey]: Math.max(0, num(v)) })} />
     {/if}
@@ -130,15 +142,15 @@
     <!-- The sustain value rides the same line as its mode: the field alone (no rail), so both fit
          the card width and the face never needs to scroll for it. -->
     <ParamLine label="Sustain">
-      <Select value={mode} options={AMP_LENGTH_OPTIONS} onChange={setMode} ariaLabel="Sustain" {disabled} segment={false} />
+      <Select value={mode} options={lengthOptions} onChange={setMode} ariaLabel="Sustain" {disabled} segment={false} />
       {#if typeof amp.length === 'object' && 'ms' in amp.length}
         {@const ms = amp.length.ms}
-        <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10}
+        <FaceParamControl kind="number" value={ms} display={formatMs(ms)} min={0} step={10} modulated={driven.has('sustain')}
           ariaLabel="Sustain time" entry={{ unit: 'ms' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { ms: Math.max(0, num(v)) } })} />
       {:else if typeof amp.length === 'object'}
         {@const beats = amp.length.beats}
-        <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625}
+        <FaceParamControl kind="number" value={beats} display={beatsLabel(beats)} min={0} step={0.0625} modulated={driven.has('sustain')}
           ariaLabel="Sustain beats" entry={{ unit: 'beats' }} {disabled} onGestureStart={begin} onGestureEnd={end}
           onChange={(v) => api.setAmp(effect.id, { length: { beats: Math.max(0, num(v)) } })} />
       {/if}
@@ -147,9 +159,22 @@
   {/if}
 
   {@render stageRow('release', 'Decay', amp.releaseMs)}
+
+  {#if !always}
+    <div class="loop" class:inactive={!loopable}>
+      <ParamLine label="Loop">
+        <Switch checked={amp.loop && loopable} disabled={disabled || !loopable} ariaLabel="Loop" onChange={(on) => api.setAmp(effect.id, { loop: on })} />
+        {@render info(loopable ? LOOP_INFO : `Only with a Sustain time, beats or until it ends. ${LOOP_INFO}`, 'Loop')}
+      </ParamLine>
+    </div>
+  {/if}
 </div>
 
 <style>
+  /* Loop with a held / until-stopped Sustain: in place, greyed (its ⓘ says when it applies). */
+  .loop.inactive :global(:not(.info)) {
+    color: var(--text-faint);
+  }
   .amp {
     display: flex;
     flex-direction: column;

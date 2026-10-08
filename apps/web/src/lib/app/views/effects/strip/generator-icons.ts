@@ -13,6 +13,7 @@ import Zap from '@lucide/svelte/icons/zap';
 import ImageIcon from '@lucide/svelte/icons/image';
 import Scissors from '@lucide/svelte/icons/scissors';
 import Layers from '@lucide/svelte/icons/layers';
+import CircleDot from '@lucide/svelte/icons/circle-dot';
 
 export const GENERATOR_ICON: Record<effectChain.GeneratorKind, Component> = {
   solid: Square,
@@ -26,4 +27,5 @@ export const GENERATOR_ICON: Record<effectChain.GeneratorKind, Component> = {
   scene: ImageIcon,
   splice: Scissors,
   slice: Layers,
+  dot: CircleDot,
 };

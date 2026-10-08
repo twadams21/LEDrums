@@ -26,6 +26,12 @@ export interface Trigger {
   timeMs: number;
   /** Age of the hit at render time, ms. */
   ageMs: number;
+  /** Effect path only: which hit of its Effect this is — 0 for the Effect's first since the show
+      loaded, then 1, 2… (Dot's Colours Per hit steps through its palette by it). */
+  hit?: number;
+  /** Effect path only: the drums the Effect's Target lights, or absent for the whole kit (Dot's
+      Start drum "Target's drums" begins its dots there). */
+  targetDrums?: readonly string[];
 }
 
 /** Everything an effect needs to render a frame — a pure, read-only context. */

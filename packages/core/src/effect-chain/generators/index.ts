@@ -10,6 +10,7 @@
 import { tryGetEffect } from '../../effects/registry';
 import type { ParamSpec } from '../../effects/types';
 import type { GeneratorDevice } from '../types';
+import { dotGenerator } from './dot';
 import { gradientGenerator } from './gradient';
 import { lightningGenerator } from './lightning';
 import { meterGenerator } from './meter';
@@ -32,6 +33,7 @@ const GENERATOR_TABLE: readonly GeneratorDef[] = [
   waveGenerator,
   noiseGenerator,
   particlesGenerator,
+  dotGenerator,
   patternGenerator,
   meterGenerator,
   lightningGenerator,

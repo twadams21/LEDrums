@@ -63,6 +63,7 @@ import {
 } from '../effect-chain/input-mappings';
 import { applySectionMaster, createSectionMasterState, resetSectionMaster } from '../effect-chain/master';
 import { CHAIN_BUS, CHAIN_BUS_ID, chainEffectDef } from '../effect-chain/runtime';
+import { tryGetEffect } from '../effects/registry';
 import type { Effect } from '../effect-chain/types';
 import type {
   EffectSkipReason,
@@ -230,6 +231,8 @@ class VoiceBusEngine implements RenderEngine {
    * a released loop/hold voice fades on its own `releaseMs` rather than a bus crossfade.
    */
   private chainEffects = new Map<string, EffectDef>();
+  /** How many times each Effect has fired since the show loaded — a voice's `Trigger.hit`. */
+  private chainHits = new Map<string, number>();
   private readonly chainBuses = new Map<string, Bus>([[CHAIN_BUS_ID, CHAIN_BUS]]);
   /**
    * MIDI-map (effect chains wave 5): the show's valid InputMappings, re-validated at `setShow`
@@ -912,9 +915,17 @@ class VoiceBusEngine implements RenderEngine {
     // A Splice / Slice member names its own internal def; the pool drops a member whose def is
     // missing, so build each one too (a nested Generator slot would otherwise render blank).
     for (const member of action.spliceInputs ?? []) this.ensureChainEffectDef(member.effectId);
+    // Which hit of this Effect it is (Dot's Colours Per hit steps through its palette by it).
+    const hit = this.chainHits.get(effect.id) ?? 0;
+    this.chainHits.set(effect.id, hit + 1);
+    action.hitIndex = hit;
     if (effect.retrigger === 'restart') this.voices.releaseChainVoices(effect.id, this.timeMs);
     // Retrigger `cut`: this fire silences the earlier light in its cell (its own and its cell-mates').
     for (const id of retriggerCutTargets(section, effect)) this.voices.cutChainVoices(id, this.timeMs);
+    // A cap across hits (Dot's Max alive): the oldest hits' voices go first, cut or faded.
+    const hostedId = this.chainEffects.get(action.effectId)?.generatorId;
+    const cap = hostedId ? tryGetEffect(hostedId)?.liveVoices?.(action.params) : undefined;
+    if (cap) this.voices.capChainVoices(effect.id, cap.keep, this.timeMs, cap.fadeMs);
     this.shapeCascadeVoice(
       this.voices.spawn(action, sourceDrumId, velocity, {
         effectsById: this.chainEffects,

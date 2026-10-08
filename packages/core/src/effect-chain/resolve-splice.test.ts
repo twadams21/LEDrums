@@ -57,14 +57,14 @@ describe('Splice / Slice device → the existing splice layout', () => {
 
   it('resolves a slice with its geometry, drum offset kept live, like the equivalent slice node', () => {
     const params = {
-      ...RICH_PARAMS, axis: 'z', rotX: 30, rotY: -20, rotZ: 370, velocity: 0.5, incrementPct: 25,
+      ...RICH_PARAMS, axis: 'z', rotX: 30, rotY: -20, rotZ: 370, velocity: 0.5, incrementPct: 25, // velocity ignored: the Velocity Control's job
       regionCx: 10, regionCy: 20, regionCz: 30, regionSx: 100, regionSy: 200, regionSz: 300,
     };
     const got = resolveSpliceGenerator(device('slice', params, COLOUR_SLOTS), { bpm: 140 })!;
     const { splicePartition: _p, spliceIncrementPx: _i, ...sliceNode } = RICH_NODE;
     const oracle = resolveSlice(node({
       ...sliceNode, splices: COLOUR_DEFS, sliceAxis: 'z', sliceRotX: 30, sliceRotY: -20, sliceRotZ: 370,
-      sliceVelocity: 0.5, sliceIncrementPct: 25, sliceRegion: { cx: 10, cy: 20, cz: 30, sx: 100, sy: 200, sz: 300 },
+      sliceVelocity: 0, sliceIncrementPct: 25, sliceRegion: { cx: 10, cy: 20, cz: 30, sx: 100, sy: 200, sz: 300 },
     }), 140)!;
     expect(got.splice).toEqual(oracle.config);
     expect(got.splice!.space).toBeDefined();

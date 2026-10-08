@@ -31,10 +31,12 @@ describe('effect registry', () => {
       'sparkler', 'flame-flicker',
       // world-space continuous field (GH #214)
       'spatial-field',
+      // travelling / twinkling dots (Tim, 2026-10-03)
+      'dot',
     ]) {
       expect(tryGetEffect(id), id).toBeDefined();
     }
-    expect(listEffects().length).toBe(48);
+    expect(listEffects().length).toBe(49);
   });
 
   it('no longer registers the effects merged away by the effect-chains model (S08)', () => {

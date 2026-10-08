@@ -67,12 +67,12 @@ export const cometTrails: EffectGenerator<CometTrailsState> = {
   category: 'particle',
   timebase: 'voice',
   paramSpec: [
-    { key: 'comets', label: 'Comets', type: 'number', default: 4, min: 1, max: 32, step: 1 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 180, min: 0, max: 1080, unit: '°/s' },
-    { key: 'tail', label: 'Tail', type: 'number', default: 120, min: 5, max: 350, unit: '°' },
-    { key: 'hue', label: 'Hue', type: 'number', default: 190, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'comets', label: 'Comets', type: 'number', default: 4, min: 1, max: 32, step: 1, section: 'Comets' },
+    { key: 'tail', label: 'Trail', type: 'number', default: 120, min: 5, max: 350, unit: '°', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 180, min: 0, max: 1080, unit: '°/s', section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 190, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   createState(model: PixelModel, seed?: number): CometTrailsState {
     const count = 4;

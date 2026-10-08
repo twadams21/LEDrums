@@ -1,9 +1,6 @@
 import type { GeneratorDef } from './types';
 import { DEAD_DECAY } from './types';
 
-/** Re-labels a `hue` param the underlying effect calls "Hue Base", so every Noise card reads "Hue". */
-const HUE_LABEL = { hue: 'Hue' } as const;
-
 /**
  * Noise Generator — organic, continuously moving textures and flames. Each Style hosts one
  * existing texture / flame implementation at its own defaults (spec "Generators" → Noise).
@@ -16,9 +13,9 @@ export const noiseGenerator: GeneratorDef = {
   styles: [
     { id: 'plasma', label: 'Plasma', effectId: 'plasma' },
     { id: 'clouds', label: 'Clouds', effectId: 'perlin-clouds' },
-    { id: 'lava-lamp', label: 'Lava Lamp', effectId: 'lava-lamp', paramLabels: HUE_LABEL },
-    { id: 'caustics', label: 'Caustics', effectId: 'caustics', paramLabels: HUE_LABEL },
-    { id: 'fire', label: 'Fire', effectId: 'fire', paramLabels: HUE_LABEL },
+    { id: 'lava-lamp', label: 'Lava Lamp', effectId: 'lava-lamp' },
+    { id: 'caustics', label: 'Caustics', effectId: 'caustics' },
+    { id: 'fire', label: 'Fire', effectId: 'fire' },
     { id: 'flicker', label: 'Flicker', effectId: 'flame-flicker', hiddenParams: DEAD_DECAY },
     { id: 'flames', label: 'Velocity Flames', effectId: 'velocity-flames', hiddenParams: DEAD_DECAY },
   ],

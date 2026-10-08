@@ -30,14 +30,14 @@ export const orbitComet: EffectGenerator<OrbitCometState> = {
     'Every hit launches a comet around the struck drum; its tail corkscrews up the hoop stack so one strike reads as a physical orbit, not a flat blink.',
   tags: ['particle', 'hit', 'per-drum', 'hoop-aware', 'emission', 'seeded'],
   paramSpec: [
-    { key: 'hue', label: 'Hue', type: 'number', default: 198, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.95, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 0.8, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat' },
-    { key: 'tailDeg', label: 'Tail', type: 'number', default: 110, min: 12, max: 360, unit: '°' },
-    { key: 'lifeBeats', label: 'Decay', type: 'number', default: 3, min: 0.25, max: 12, step: 0.25, unit: 'beats' },
-    { key: 'riseDeg', label: 'Hoop Rise', type: 'number', default: 34, min: -120, max: 120, unit: '°/hoop' },
-    { key: 'hueDrift', label: 'Hue Drift', type: 'number', default: 70, min: 0, max: 360, unit: '°/rev' },
+    { key: 'tailDeg', label: 'Trail', type: 'number', default: 110, min: 12, max: 360, unit: '°', section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 0.8, min: 0.05, max: 4, step: 0.05, unit: 'rev/beat', section: 'Movement' },
+    { key: 'riseDeg', label: 'Hoop rise', type: 'number', default: 34, min: -120, max: 120, unit: '°/hoop', section: 'Movement' },
+    { key: 'lifeBeats', label: 'Lifespan', type: 'number', default: 3, min: 0.25, max: 12, step: 0.25, unit: 'beats', section: 'Timing' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 198, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 0.95, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'hueDrift', label: 'Cycle', type: 'number', default: 70, min: 0, max: 360, unit: '°/rev', section: 'Colour' },
   ],
   createState(): OrbitCometState {
     return { em: createEmitterState<OrbitCometData>() };

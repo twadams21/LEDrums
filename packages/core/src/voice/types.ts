@@ -665,6 +665,8 @@ export interface Voice extends GeometryState {
   /** Effect-path voices only: the authored Effect id that spawned this voice. Retrigger
       (restart / ignore) and note-off release scan by it. */
   chainEffectId?: string;
+  /** Effect-path voices only: which hit of its Effect spawned it (the generator's `Trigger.hit`). */
+  hitIndex?: number;
   /** Effect-path voices only: the Effect's blend mode (compositing semantics land in S02). */
   blend?: BlendMode;
   /** Effect-path voices only: the Effect's opacity 0..1 (compositing semantics land in S02). */
@@ -677,6 +679,9 @@ export interface Voice extends GeometryState {
    * `targetId`; absent keeps today's scope resolution.
    */
   targets?: string[];
+  /** The drum ids its Target lights (from `targets` / `scope` + `targetId`), or absent for the
+      whole kit — the generator's `Trigger.targetDrums`. Set at spawn. */
+  targetDrums?: string[];
   /**
    * Per-frame effective params (envelopes + tempo-sync applied). A reused scratch
    * object owned by the pool slot — the engine refills it each tick before the
@@ -691,6 +696,8 @@ export interface Voice extends GeometryState {
   attackEase?: EaseSpec;
   sustainMs: number;
   releaseMs: number;
+  /** Loop: the envelope cycle (ms) the voice repeats until released — see `PlayAction.loopMs`. */
+  loopMs?: number;
   /**
    * Authored amplitude-over-life curve, copied from the spawning node (S6b) and already
    * normalised. `null`/absent → no envelope, and every level below is what it always was.
@@ -707,6 +714,9 @@ export interface Voice extends GeometryState {
   bornAtMs: number;
   releaseAtMs: number | null;
   releaseFromLevel: number;
+  /** A release ramp set by an Effect's cap across hits (Dot's Max alive, Fade) — wins over the
+      mode's own ramp for this release. Cleared on spawn. */
+  capReleaseMs?: number;
   via: string;
   deckGain: number;
   /** Spawn key this voice was spawned under (`effect:<id>` on the Effect path). Scopes

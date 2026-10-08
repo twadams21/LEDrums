@@ -18,12 +18,12 @@ export const velocityFlames: EffectGenerator = {
   // so it stays visible for EXP_TAIL_FACTOR time constants and the voice must too.
   voiceLife: { key: 'decayMs', unit: 'ms', factor: EXP_TAIL_FACTOR },
   paramSpec: [
-    { key: 'decayMs', label: 'Decay', type: 'number', default: 700, min: 50, max: 6000, unit: 'ms' },
-    { key: 'flicker', label: 'Flicker', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01 },
-    { key: 'baseHue', label: 'Base Hue', type: 'number', default: 55, min: 0, max: 360, unit: '°' },
-    { key: 'tipHue', label: 'Tip Hue', type: 'number', default: 0, min: 0, max: 360, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
+    { key: 'flicker', label: 'Flicker', type: 'number', default: 0.25, min: 0, max: 1, step: 0.01, section: 'Flames' },
+    { key: 'decayMs', label: 'Lifespan', type: 'number', default: 700, min: 50, max: 6000, unit: 'ms', section: 'Timing' },
+    { key: 'baseHue', label: 'Colour', type: 'number', default: 55, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['baseHue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'baseHue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'baseHue' },
+    { key: 'tipHue', label: 'Tip', type: 'number', default: 0, min: 0, max: 360, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['tipHue', 'saturation', 'brightness'] }, info: 'Shares Colour\'s saturation and brightness.' },
   ],
   render(ctx, params, fb) {
     const decay = Math.max(1, pnum(params, 'decayMs', 700));

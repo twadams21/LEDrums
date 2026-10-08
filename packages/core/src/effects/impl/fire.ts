@@ -53,12 +53,12 @@ export const fire: EffectGenerator = {
   name: 'Fire',
   category: 'texture',
   paramSpec: [
-    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: 0, max: 5, step: 0.01 },
-    { key: 'scale', label: 'Scale', type: 'number', default: 6, min: 1, max: 24, step: 0.5 },
-    { key: 'hue', label: 'Hue Base', type: 'number', default: 12, min: 0, max: 60, unit: '°' },
-    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01 },
-    { key: 'intensity', label: 'Intensity', type: 'number', default: 1, min: 0.2, max: 2, step: 0.01 },
+    { key: 'intensity', label: 'Intensity', type: 'number', default: 1, min: 0.2, max: 2, step: 0.01, section: 'Fire' },
+    { key: 'scale', label: 'Scale', type: 'number', default: 6, min: 1, max: 24, step: 0.5, section: 'Shape' },
+    { key: 'speed', label: 'Speed', type: 'number', default: 1.5, min: 0, max: 5, step: 0.01, section: 'Movement' },
+    { key: 'hue', label: 'Colour', type: 'number', default: 12, min: 0, max: 60, unit: '°', section: 'Colour', widget: { kind: 'colour', keys: ['hue', 'saturation', 'brightness'] } },
+    { key: 'saturation', label: 'Saturation', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
+    { key: 'brightness', label: 'Brightness', type: 'number', default: 1, min: 0, max: 1, step: 0.01, section: 'Colour', partOf: 'hue' },
   ],
   render(ctx, params, fb) {
     const bri = pnum(params, 'brightness', 1);

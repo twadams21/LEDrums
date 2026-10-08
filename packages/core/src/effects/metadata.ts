@@ -90,6 +90,10 @@ export const EFFECT_METADATA: Readonly<Record<string, EffectMetadata>> = {
     description: 'A fixed field of seeded stars twinkles across the pixels, each on its own phase — a near-white, faintly tinted deep-space wash that shimmers without ever repeating in lockstep.',
     tags: ['particle', 'ambient', 'sparkle', 'kit-wide', 'stateful', 'seeded'],
   },
+  dot: {
+    description: 'Small dots — down to a single pixel — travel round a hoop, spiral up a drum, hop across the kit or fly straight through the air between drums, bouncing, wrapping or ping-ponging; at zero speed they sit still and twinkle.',
+    tags: ['particle', 'hit', 'hoop-aware', 'stateful', 'seeded'],
+  },
   'comet-trails': {
     description: 'Comets streak around each drum\'s hoops leaving fading tails, each one a slightly different hue and heading — a restless, glittering orbit that never settles.',
     tags: ['particle', 'per-drum', 'hoop-aware'],

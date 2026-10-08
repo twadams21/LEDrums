@@ -157,10 +157,16 @@
     gap: 2px;
     flex: none;
   }
+  /* The number centred in its box both ways (Tim, 2026-10-07: "the numbers inside the boxes …
+     are not centred in their respective boxes"). */
   .hoop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 20px;
     height: 26px;
     padding: 0;
+    line-height: 1;
     color: var(--text-faint);
     font-family: var(--font-mono);
     font-size: var(--text-2xs);

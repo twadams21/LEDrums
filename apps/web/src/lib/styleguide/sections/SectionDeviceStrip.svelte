@@ -114,6 +114,9 @@
           generator: { kind: 'splice', slots: [{ color: '#ff3b30' }, { color: '#0a84ff' }], params: { chase: 'step', waitMode: 'dark', drumOffsetDivision: '1/8' } },
         }),
         fx({ id: 'fx-slice', name: 'Slice', cell: kickHead, generator: { kind: 'slice' } }),
+        fx({ id: 'fx-dot-kit', name: 'Dots round the kit', cell: kickHead, generator: { kind: 'dot', style: 'dot', params: { startDrum: 'snare', startHoop: 2, startAngle: 90, randAngle: 0.25, through: 'kit', kitOrder: 'kit', colorMode: 'per-pixel', length: 5, shift: 'to-colour', palette: '#ff3b30,#ffd60a,#34c759,#0a84ff,#bf5af2' } }, amp: { length: 'auto' } }),
+        fx({ id: 'fx-dot', name: 'Dots', cell: kickHead, target: { kind: 'kit' }, generator: { kind: 'dot', style: 'dot', params: { count: 3, trail: 4, colorMode: 'per-hit', through: 'space', spaceX: 0.3, spaceY: 0.6, spaceZ: 0.7 } }, amp: { length: 'auto' } }),
+        fx({ id: 'fx-dot-order', name: 'Dots in order', cell: kickHead, target: { kind: 'kit' }, generator: { kind: 'dot', style: 'dot', params: { through: 'kit', kitOrder: 'custom', kitList: 'tom1,snare,tom2,kick' } }, amp: { length: 'auto' } }),
       ],
       master: [],
     },
@@ -121,6 +124,9 @@
   );
   const spliceFx = $derived(spliceApi.effectById('fx-splice')!);
   const sliceFx = $derived(spliceApi.effectById('fx-slice')!);
+  const dotFx = $derived(spliceApi.effectById('fx-dot')!);
+  const dotKitFx = $derived(spliceApi.effectById('fx-dot-kit')!);
+  const dotOrderFx = $derived(spliceApi.effectById('fx-dot-order')!);
 </script>
 
 <section class="block" id="device-strip">
@@ -161,7 +167,7 @@
     <DemoCard
       title="Generator card — Splice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/SlotsEditor']}
-      note="The graph-era Splice inspector's sections and words, one column each: SPLICE · MOVE AROUND · MOVE THROUGH (the brightness envelope is the Effect's own, on the Trigger card — a part that pulses or fades runs it), the Splices rows (one per band — Count) beside the kind picker. Timings are one dropdown (divisions, None, Free (ms)); an active cascade shows its Order — drag the chips or pick a pattern. Rows a mode makes meaningless stay hidden."
+      note="Splice on the Generator standard (docs/design/generator-standard.md), three fixed columns: SPLICES (count, Per, Random, Seed) · SHAPE (Rotate, Smudge) | MOVEMENT with Around and Through sub-headings — Motion, Rate, Increment, Direction; Through kit, Through drum, Around hoop, each with its Order | TIMING (On each hit, While waiting) · COLOUR (the Bands: one line each — grip to order, colour box, its own Generator, on/off, delete — then Tint). A setting a mode makes meaningless is dimmed in place, its ⓘ saying when it applies — nothing appears or disappears, so the card never moves. No envelope (the Trigger card's) and no Velocity (a Velocity Control's)."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={spliceFx} /></div>
@@ -170,15 +176,47 @@
     <DemoCard
       title="Generator card — Slice"
       src={['lib/app/views/effects/strip/cards/SpliceFace', 'lib/app/views/effects/strip/cards/splice-face', 'lib/app/views/effects/strip/cards/ParamRows']}
-      note="The graph-era Slice inspector on the same face: SLICE — On (Kit · Drum · Space; it writes the Effect's Target, Space adds a box of the room, seeded from the kit's bounds), Axis, Tilt X/Y/Z, Slices, Random lengths, Smudge, Seed, Velocity (ⓘ) — then MOVE AROUND (Sweep, not Spin), MOVE THROUGH (THROUGH KIT · THROUGH SLICES · COLOUR CHASE); the envelope is the Trigger card's. A new Slice cuts the whole kit. Past 12 rows any card's param list goes landscape in balanced columns (PARAM_ROWS_MAX)."
+      note="Slice on the same standard: SLICES (count, Random, Seed) · START (On: Kit · Drum · Space — it writes the Effect's Target; its Drum and Space box dimmed until picked) · SHAPE (Axis, Tilt X/Y/Z, Smudge) | MOVEMENT (Sweep, not Spin; Through kit, Through slices) | TIMING · COLOUR (the Bands, Tint, Colour chase). A new Slice cuts the whole kit and comes with a Velocity Control on the Effect's Opacity, so a soft hit is still a dimmer slice."
       wide
     >
       <div class="cards"><GeneratorCard api={spliceApi} effect={sliceFx} /></div>
     </DemoCard>
 
+    <DemoCard
+      title="Generator card — sectioned params (Dot)"
+      src={['lib/app/views/effects/strip/cards/ParamRows', 'lib/app/views/effects/strip/cards/card-model']}
+      note="Laid out by the Generator standard (docs/design/generator-standard.md): FORM (named for the plugin — DOTS) · START · SHAPE · MOVEMENT · TIMING · COLOUR · BACKGROUND, capitalised headers, packed into columns that keep their places. A Random sits as a sub-row (set in, a hairline) directly under what it varies. A setting that doesn't apply in the current mode is DIMMED in place — its ⓘ says when it applies (showIf → 'Only when Through is Space') — never hidden; alternatives share one place the height of the tallest (ParamSpec.slot: Start angle ↔ Start point, Length ↔ Size, Travel angle ↔ Flight, Colour ↔ Palette), so changing Through never moves the card. Colour is a colour box (ColorSwatch), no sliders: an effect's hue / saturation / brightness become one Colour row (a Control can still drive each). Through space shown here: the Start point views and Flight, the live pre-visualiser (drag to aim, the real Dot effect running)."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={dotFx} /></div>
+    </DemoCard>
+
     <DemoCard title="Trigger card — zone" src={['lib/app/views/effects/strip/TriggerCard', 'lib/app/views/effects/strip/AmpEnvelopeField']}
       note="Kind switch moves the Effect's column. Zone is read-only (the cell's). Below, the Effect's brightness envelope: Attack · Curve · Sustain (time, beats, While held, Loop) · Decay — the one envelope the Effect has; the old ADSR drop (Drop / Drop to) shows only on an Effect that still uses one.">
       <div class="cards"><TriggerCard {api} effect={pulse} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — widgets (Dot through the kit)"
+      src={['lib/app/views/effects/strip/cards/HoopAngleRing', 'lib/ui/SegmentedControl', 'lib/app/views/effects/strip/cards/ParamRows']}
+      note="Params can ask for a richer control (core ParamSpec.widget). hoop-pick: a button per hoop of the start drum (rangeFrom start-hoops). hoop-angle: the Start angle as the hoop itself, seen from the throne — one dot per pixel of the start hoop (rangeFrom start-pixels), FRONT at the bottom, the drum's right side on the right as the visualiser shows it; click or drag a pixel, or the arrows. palette: Colours Per dot / Per hit / Per pixel / Random read a Palette — colour boxes in order, − / + and a fill round the colour wheel. Change: To colour (a colour box) with Blend Fade / Wheel and a Time, or Cycle at a Speed — the one that applies in the shared place."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={dotKitFx} /></div>
+    </DemoCard>
+
+    <DemoCard
+      title="Generator card — drum order (Dot)"
+      src={['lib/ui/OrderList', 'lib/app/views/effects/strip/cards/ParamRows']}
+      note="drum-order: the kit's drums as OrderList chips to drag (or ←/→), stored as comma-separated ids. With Kit order Custom the dots begin on the first drum, so Start drum dims (a showIf any-condition). Edges: Repeat · Bounce · Random · Ping-pong · Leave."
+      wide
+    >
+      <div class="cards"><GeneratorCard api={spliceApi} effect={dotOrderFx} /></div>
+    </DemoCard>
+
+    <DemoCard title="Trigger card — Dot" src={['lib/app/views/effects/strip/AmpEnvelopeField', 'lib/app/views/effects/strip/strip-model']}
+      note="Sustain gains Until dots end (amp length auto) where the Generator can say when its content ends — offered first, and a new Dot starts on it: the hit stays up until its last dot finishes, so the Dot's Lifespan is the one length control. Dots that never end on their own (a Stream, Lifespan 0) loop. Switching to a Generator that can't say puts Sustain back on a time.">
+      <div class="cards"><TriggerCard api={spliceApi} effect={dotFx} /></div>
     </DemoCard>
 
     <DemoCard title="Trigger card — clock" src="lib/app/views/effects/strip/TriggerCard" note="Period (beat / bar divisions) and an offset in beats.">
